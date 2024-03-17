@@ -1,0 +1,27 @@
+import jax.numpy as jnp
+from ..env import Env
+
+import chex
+from ..space import Space, Box
+from evorl.types import EnvState, Action
+from evorl.envs import Box
+
+
+class ActionSquashWrapper(Env):
+    """
+        Convert continuous action space from [-1, 1] to [low, high]
+    """
+
+    def __init__(self, env: Env):
+        super().__init__(env)
+
+        # TODO: support pytree action space
+        action_space = self.env.action_space
+        assert isinstance(action_space, Box)
+
+        self.scale = (action_space.high - action_space.low) * 0.5
+        self.bias = (action_space.high + action_space.low)*0.5
+
+    def step(self, state: EnvState, action: Action) -> EnvState:
+        squashed_action = self.scale*action + self.bias
+        return self.env.step(state, squashed_action)
