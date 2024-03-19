@@ -1,2 +1,8 @@
-# xuanwu
-Xuanwu(玄武) is an efficient Evolutionary Reinforcement Learning Framework based on evox
+# EvoRL
+EvoRL is an efficient Evolutionary Reinforcement Learning Framework based on [EvoX](https://github.com/EMI-Group/evox)
+
+# Acknowledgement
+
+- brax
+
+- evox
