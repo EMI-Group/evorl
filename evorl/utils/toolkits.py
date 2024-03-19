@@ -6,8 +6,9 @@ import chex
 from typing import Tuple
 import os
 
-def disable_gpu_preallocation():
-    os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+
+
+
 
 def jit_method(static_argnums):
     """
@@ -57,12 +58,11 @@ def right_shift(arr: chex.Array, shift: int, pad_val=None) -> chex.Array:
     return jnp.concatenate([padding, arr[:-shift]], axis=0)
 
 
-
-def compute_gae(dones: jax.Array, #[T, B]
-                rewards: jax.Array, #[T, B]
-                values: jax.Array, #[T+1, B]
-                gae_lambda: float=1.0,
-                discount: float=0.99)-> Tuple[jax.Array, jax.Array]:
+def compute_gae(dones: jax.Array,  # [T, B]
+                rewards: jax.Array,  # [T, B]
+                values: jax.Array,  # [T+1, B]
+                gae_lambda: float = 1.0,
+                discount: float = 0.99) -> Tuple[jax.Array, jax.Array]:
     """
     Calculates the Generalized Advantage Estimation (GAE).
 

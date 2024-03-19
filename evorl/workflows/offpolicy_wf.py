@@ -4,8 +4,9 @@ import optax
 from omegaconf import DictConfig
 from evox import Stateful, State
 
+from evorl.envs import Env
 from evorl.agents import Agent
-from evorl.types import EnvLike, RolloutMetric, SampleBatch
+from evorl.types import RolloutMetric, SampleBatch
 
 import flashbax
 
@@ -19,7 +20,7 @@ class OffPolicyRLWorkflow(Stateful):
         self,
         config: DictConfig,
         agent: Agent,
-        env: EnvLike,
+        env: Env,
     ):
         self.config = config
         self.agent = agent
@@ -56,9 +57,13 @@ class OffPolicyRLWorkflow(Stateful):
 
 def init_replay_buffer(env, env_state, replay_buffer, key):
     num_envs = jax.tree_leaves(env_state)[0].shape[0]
-    dummy_action = jnp.tile(env.action_space.sample(), (num_envs, 1))
+    # dummy_action = jnp.tile(env.action_space.sample(), 
+    dummy_action = env.action_space.sample()
+    dummy_action = jnp.broadcast_to(dummy_action, (num_envs, *dummy_action.shape))
+    dummy_obs = env.obs_space.sample()
+    dummy_obs = jnp.broadcast_to(dummy_action, (num_envs, *dummy_action.shape))
 
-    dummy_obs = jnp.tile(env.observation_space.sample(), (num_envs, 1))
+    # TODO: handle RewardDict
     dummy_reward = jnp.zeros((num_envs))
     dummy_done = jnp.zeros((num_envs))
 

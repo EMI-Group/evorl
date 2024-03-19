@@ -196,11 +196,11 @@ class SampleBatch(Base):
       Could also be used as a trajectory.
     """
     # TODO: skip None in tree_map (should be work in native jax)
-    obs: Union[chex.ArrayTree, None] = None
-    action: Union[chex.ArrayTree, None] = None
-    reward: Union[chex.ArrayTree, RewardDict, None] = None
-    next_obs: Union[chex.Array, None] = None
-    done: Union[chex.Array, None] = None
+    obs: Optional[chex.ArrayTree] = None
+    action: Optional[chex.ArrayTree] = None
+    reward: Optional[Union[chex.ArrayTree, RewardDict]] = None
+    next_obs: Optional[chex.Array] = None
+    done: Optional[chex.Array] = None
     extras: Union[ExtraInfo, None] = None
 
     def append(self, values: chex.ArrayTree, axis: int = 0) -> Any:

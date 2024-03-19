@@ -164,7 +164,6 @@ class AutoResetWrapper(Wrapper):
 
         return state.replace(pipeline_state=pipeline_state, obs=obs)
 
-
 def has_wrapper(env: Env, wrapper_cls: Type) -> bool:
     """Check if env has a wrapper of type wrapper_cls."""
     while isinstance(env, Wrapper):
@@ -172,3 +171,8 @@ def has_wrapper(env: Env, wrapper_cls: Type) -> bool:
             return True
         env = env.env
     return False
+
+
+def is_autoreset(env: Env) -> bool:
+    """Check if env is autoreset."""
+    return has_wrapper(env, AutoResetWrapper)

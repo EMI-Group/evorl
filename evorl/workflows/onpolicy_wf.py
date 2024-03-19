@@ -5,7 +5,8 @@ from omegaconf import DictConfig
 from evox import Stateful, State
 
 from evorl.agents import Agent
-from evorl.types import EnvLike, RolloutMetric
+from evorl.envs import Env
+from evorl.types import RolloutMetric
 
 """
     Single Agent Off-Policy Reinforcement Learning Workflow
@@ -16,7 +17,7 @@ class OnPolicyRLWorkflow(Stateful):
     def __init__(
         self,
         config: DictConfig,
-        env: EnvLike,
+        env: Env,
         agent: Agent,
         optimizer: optax.GradientTransformation,
     ):

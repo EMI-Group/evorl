@@ -10,7 +10,7 @@ from evorl.types import (
 )
 from evorl.envs.space import Space
 from evorl.utils import running_statistics
-from typing import Mapping, Tuple, Union, Any
+from typing import Mapping, Tuple, Union, Any, Optional
 import dataclasses
 
 AgentParams = Mapping[str, Params]
@@ -19,7 +19,7 @@ AgentParams = Mapping[str, Params]
 @struct.dataclass
 class AgentState:
     params: AgentParams
-    obs_preprocessor_state: Union[running_statistics.RunningStatisticsState, None] = None
+    obs_preprocessor_state: Optional[running_statistics.RunningStatisticsState] = None
     # TODO: define the action_postprocessor_state
     action_postprocessor_state: Any = None
     # opt_state: optax.OptState

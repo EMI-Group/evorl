@@ -36,6 +36,9 @@ class Env(ABC):
 
 
 class EnvAdapter(Env):
+    """
+        Convert envs from other packages to EvoRL's Env API.
+    """
     def __init__(self, env: EnvLike):
         self.env = env
 

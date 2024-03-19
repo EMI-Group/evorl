@@ -1,23 +1,24 @@
 import jax
-from evorl.types import EnvState, Episode, SampleBatch
-from evorl.types import EnvLike
+
 
 import chex
 from typing import Sequence, Tuple, Callable, Union, Protocol
 from evorl.agents import Agent, AgentState
+from evorl.types import EnvState, Episode, SampleBatch
+from evorl.envs import Env
 
 
-def shuffle_sample_batch(sample_batch: SampleBatch, key: chex.PRNGKey): 
+def shuffle_sample_batch(sample_batch: SampleBatch, key: chex.PRNGKey):
     return jax.tree_util.tree_map(
-        lambda x: jax.random.permutation(key, x), 
+        lambda x: jax.random.permutation(key, x),
         sample_batch)
 
 
 def actor_step(
-    env: EnvLike,
+    env: Env,
     env_state: EnvState,
     agent: Agent,
-    agent_state: AgentState, # readonly
+    agent_state: AgentState,  # readonly
     sample_batch: SampleBatch,
     key: chex.PRNGKey,
     env_extra_fields: Sequence[str] = (),
@@ -26,7 +27,8 @@ def actor_step(
         Collect data.
     """
 
-    actions, policy_extras = agent.compute_actions(agent_state, sample_batch, key)
+    actions, policy_extras = agent.compute_actions(
+        agent_state, sample_batch, key)
     env_nstate = env.step(env_state, actions)
 
     info = env_nstate.info
@@ -46,8 +48,66 @@ def actor_step(
     return env_nstate, transition
 
 
+def rollout(
+    env: Env,
+    env_state: EnvState,
+    agent: Agent,
+    agent_state: AgentState,
+    key: chex.PRNGKey,
+    rollout_length: int,
+    extra_fields: Sequence[str] = ('last_obs',)
+) -> Tuple[EnvState, SampleBatch]:
+    """
+        Collect given rollout_length trajectory.
+
+        Args:
+            env: vampped env w/ autoreset
+
+        Returns:
+            env_state: last env_state after rollout
+            trajectory: SampleBatch [T, B, ...], T=rollout_length, B=#envs
+    """
+
+    def fn(carry, unused_t):
+        """
+            sample_batch: one-step obs
+            transition: one-step full info
+        """
+        env_state, sample_batch, current_key = carry
+        next_key, current_key = jax.random.split(current_key, 2)
+
+        # Note: will XLA optimize repeated calls?
+        # transition: [#envs, ...]
+        env_nstate, transition = actor_step(
+            env, env_state,
+            agent, agent_state,
+            sample_batch, current_key, extra_fields
+        )
+
+        # sample_batch: [#envs, ...]
+        sample_batch = SampleBatch(
+            obs=env_nstate.obs,
+            # extras=transition.extras # for RNN hidden_state?
+        )
+
+        return (env_nstate, sample_batch, next_key), transition
+
+    init_sample_batch = SampleBatch(
+        obs=env_state.obs,
+    )
+
+    # trajectory: [T, #envs, ...]
+    (env_state, _, _), trajectory = jax.lax.scan(
+        fn, (env_state, init_sample_batch, key), (),
+        length=rollout_length,
+        # unroll=16 # unroll optimization
+    )
+
+    return env_state, trajectory
+
+
 def rollout_episode(
-    env: EnvLike,
+    env: Env,
     env_state: EnvState,
     agent: Agent,
     agent_state: AgentState,
@@ -64,7 +124,6 @@ def rollout_episode(
     if rollout_length is None:
         rollout_length = env.episode_length
 
-    
     def fn(carry, unused_t):
         """
             sample_batch: one-step obs
@@ -72,13 +131,12 @@ def rollout_episode(
         """
         env_state, sample_batch, current_key = carry
 
-        num_envs = env_state.done.shape[0]
         next_key, current_key = jax.random.split(current_key, 2)
 
         # Note: will XLA optimize repeated calls?
         # transition: [#envs, ...]
         env_nstate, transition = actor_step(
-            env, env_state, 
+            env, env_state,
             agent, agent_state,
             sample_batch, current_key, extra_fields
         )
@@ -92,7 +150,7 @@ def rollout_episode(
         return (env_nstate, sample_batch, next_key), transition
 
     init_sample_batch = SampleBatch(
-        obs = env_state.obs,
+        obs=env_state.obs,
     )
 
     # trajectory: [rollout_length, #envs, ...]
@@ -102,6 +160,7 @@ def rollout_episode(
     episodes = Episode(trajectory=trajectory, last_obs=env_state.obs)
 
     return env_state, episodes
+
 
 def rollout_episode_mod(
     env,
@@ -187,7 +246,7 @@ def rollout_episode_nojit(
         )
 
         env_state, transition = actor_step(
-            env, env_state, 
+            env, env_state,
             agent, agent_state,
             sample_batch, current_key, extra_fields
         )

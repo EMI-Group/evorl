@@ -11,7 +11,7 @@ from evorl.utils.toolkits import compute_gae, tree_concat
 from evorl.workflows import OnPolicyRLWorkflow
 from evorl.agents import AgentState
 from evorl.distributed.gradients import agent_gradient_update
-from evorl.envs import create_brax_env
+from evorl.envs import create_brax_env, Env
 from .agent import Agent, AgentState
 
 from evox import State as EvoXState
@@ -21,7 +21,7 @@ import chex
 import distrax
 import optax
 from evorl.types import (
-    EnvLike, LossDict, Action, Params, PolicyExtraInfo, EnvState,
+    LossDict, Action, Params, PolicyExtraInfo, EnvState,
     Observation
 )
 from typing import Tuple, Sequence
@@ -110,7 +110,7 @@ class A2CAgent(Agent):
 
         policy_extras = dict(
             raw_action=raw_actions,
-            log_prob=actions_dist.log_prob(actions)
+            logp=actions_dist.log_prob(actions)
         )
 
         return jax.lax.stop_gradient(actions), policy_extras
@@ -164,9 +164,11 @@ class A2CAgent(Agent):
         # concated [values, bootstrap_value]
         vs = self.compute_values(agent_state, v_obs)
 
+        # peb_rewards = sample_batch.info["policy_extras"]["peb_rewards"]
+
         v_targets, advantages = compute_gae(
             dones=sample_batch.done,
-            rewards=sample_batch.reward,
+            rewards=sample_batch.reward, # peb_rewards
             values=vs,
             gae_lambda=self.gae_lambda,
             discount=self.discount
@@ -301,7 +303,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
 
 def actor_step(
-    env: EnvLike,
+    env: Env,
     env_state: EnvState,
     agent: Agent,
     agent_state: AgentState,  # readonly
@@ -336,7 +338,7 @@ def actor_step(
 
 
 def rollout(
-    env: EnvLike,
+    env: Env,
     env_state: EnvState,
     agent: A2CAgent,
     agent_state: AgentState,
@@ -349,6 +351,9 @@ def rollout(
 
         Args:
             env: vampped env w/ autoreset
+        Returns:
+            env_state: last env_state after rollout
+            trajectory: SampleBatch [T, #envs, ...], T=rollout_length
     """
 
     def fn(carry, unused_t):
@@ -379,11 +384,11 @@ def rollout(
         )
 
         transition = transition.replace(reward=reward)
+        # transition.info["policy_extras"]["peb_rewards"] = reward # ok for dict
 
-        # sample_batch: [1, #envs, ...]
+        # sample_batch: [#envs, ...]
         sample_batch = SampleBatch(
             obs=env_nstate.obs,
-            # extras=transition.extras # RNN-state?
         )
 
         return (env_nstate, sample_batch, next_key), transition
@@ -394,6 +399,6 @@ def rollout(
 
     # trajectory: [T, #envs, ...]
     (env_state, _, _), trajectory = jax.lax.scan(
-        fn, (env_state, init_sample_batch, key), (), length=rollout_length, unroll=16)
+        fn, (env_state, init_sample_batch, key), (), length=rollout_length)
 
     return env_state, trajectory
