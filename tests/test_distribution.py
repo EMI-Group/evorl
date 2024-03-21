@@ -3,10 +3,9 @@ import jax.numpy as jnp
 import chex
 from evorl.utils.distribution import TanhNormal
 
-from .utils import disable_gpu_preallocation
+
 
 def test_tanh_normal():
-    disable_gpu_preallocation()
 
     T=11
     B=7
@@ -29,7 +28,6 @@ def test_tanh_normal():
 
 
 def test_tanh_normal_grad():
-    disable_gpu_preallocation()
 
     T=32
     B=8

@@ -23,17 +23,21 @@ class Env(ABC):
 
     @property
     @abstractmethod
-    def action_space(self, state: EnvState) -> Space:
+    def action_space(self) -> Space:
         """Return the action space of the environment."""
         raise NotImplementedError
 
     @property
     @abstractmethod
-    def obs_space(self, state: EnvState) -> Space:
+    def obs_space(self) -> Space:
         """Return the observation space of the environment."""
         raise NotImplementedError
 
-
+    @property
+    @abstractmethod
+    def num_envs(self, state: EnvState) -> int:
+        """Return the number of environments."""
+        raise NotImplementedError
 
 class EnvAdapter(Env):
     """

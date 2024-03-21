@@ -7,11 +7,13 @@ from evorl.types import SampleBatch
 from evorl.networks import make_policy_network, make_value_network
 from evorl.utils import running_statistics
 from evorl.utils.distribution import TanhNormal
-from evorl.utils.toolkits import compute_gae, tree_concat
+from evorl.utils.jax_utils import tree_concat
+from evorl.utils.toolkits import compute_gae
 from evorl.workflows import OnPolicyRLWorkflow
 from evorl.agents import AgentState
-from evorl.distributed.gradients import agent_gradient_update
-from evorl.envs import create_brax_env, Env
+from evorl.distributed import agent_gradient_update, psum, pmean
+from evorl.envs import create_env, Env
+from evorl.evaluator import Evaluator
 from .agent import Agent, AgentState
 
 from evox import State as EvoXState
@@ -22,9 +24,9 @@ import distrax
 import optax
 from evorl.types import (
     LossDict, Action, Params, PolicyExtraInfo, EnvState,
-    Observation
+    Observation, TrainMetric
 )
-from typing import Tuple, Sequence
+from typing import Tuple, Sequence, Optional
 import dataclasses
 
 
@@ -35,7 +37,12 @@ class A2CNetworkParams:
     value_params: Params
 
 
-@dataclasses.dataclass
+@struct.dataclass
+class A2CTrainMetric(TrainMetric):
+    train_total_reward: float = 0
+
+
+@struct.dataclass
 class A2CAgent(Agent):
     # policy_network: nn.Module
     # value_network: nn.Module
@@ -78,6 +85,7 @@ class A2CAgent(Agent):
         if self.normalize_obs:
             self.obs_preprocessor = running_statistics.normalize
             dummy_obs = self.obs_space.sample(obs_preprocessor_key)
+            # dummy_obs = jax.broadcast_to(dummy_obs, (self.env.num_envs,) + dummy_obs.shape)
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
             obs_preprocessor_state = None
@@ -115,7 +123,7 @@ class A2CAgent(Agent):
 
         return jax.lax.stop_gradient(actions), policy_extras
 
-    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Action:
+    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         """
             Args:
                 sample_barch: [#env, ...]
@@ -136,7 +144,7 @@ class A2CAgent(Agent):
 
         actions = actions_dist.mode()
 
-        return jax.lax.stop_gradient(actions)
+        return jax.lax.stop_gradient(actions), {}
 
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
@@ -167,9 +175,9 @@ class A2CAgent(Agent):
         # peb_rewards = sample_batch.info["policy_extras"]["peb_rewards"]
 
         v_targets, advantages = compute_gae(
-            dones=sample_batch.done,
-            rewards=sample_batch.reward, # peb_rewards
+            rewards=sample_batch.rewards,  # peb_rewards
             values=vs,
+            dones=sample_batch.dones,
             gae_lambda=self.gae_lambda,
             discount=self.discount
         )
@@ -188,13 +196,13 @@ class A2CAgent(Agent):
             # [T, B]
             actions_logp = actions_dist.log_prob(
                 jnp.clip(
-                    jax.lax.stop_gradient(sample_batch.action),
+                    jax.lax.stop_gradient(sample_batch.actions),
                     -1+eps, 1-eps
                 ))  # avoid nan logp
         else:
             actions_dist = distrax.Categorical(logits=raw_actions)
             actions_logp = actions_dist.log_prob(
-                jax.lax.stop_gradient(sample_batch.action))
+                jax.lax.stop_gradient(sample_batch.actions))
 
         # advantages: [T, B]
         policy_loss = - (advantages * actions_logp).mean()
@@ -223,22 +231,40 @@ class A2CAgent(Agent):
 
 class A2CWorkflow(OnPolicyRLWorkflow):
     def __init__(self, config):
-        env = create_brax_env(
-            config.env, parallel=config.num_envs, autoset=True)
+        env = create_env(
+            config.env,
+            config.env_type,
+            episode_length=1000,
+            parallel=config.num_envs,
+            autoreset=True
+        )
 
         agent = A2CAgent(
             action_space=env.action_space,
             obs_space=env.obs_space,
-            actor_hidden_layer_sizes=config.actor_hidden_layer_sizes,
-            critic_hidden_layer_sizes=config.critic_hidden_layer_sizes,
-            continuous_action=config.continuous_action,
+            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
+            normalize_obs=config.normalize_obs,
+            continuous_action=config.agent_network.continuous_action,
             gae_lambda=config.gae_lambda,
             discount=config.discount
         )
         optimizer = optax.adam(config.optimizer.lr)
-        super(A2CWorkflow, self).__init__(config, env, agent, optimizer)
 
-    # @evox.jit_method
+        eval_env = create_env(
+            config.env,
+            config.env_type,
+            episode_length=1000,
+            parallel=config.num_eval_envs,
+            autoreset=True
+        )
+
+        evaluator = Evaluator(
+            env=eval_env, agent=agent, max_episode_length=1000, discount=1.0)
+
+        super(A2CWorkflow, self).__init__(
+            config, env, agent, optimizer, evaluator)
+
     def step(self, state: EvoXState):
 
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
@@ -246,23 +272,20 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         # trajectory: [T, #envs, ...]
         env_state, trajectory = rollout(
             self.env,
-            state.env_state,
             self.agent,
+            state.env_state,
             state.agent_state,
             rollout_key,
             rollout_length=self.config.rollout_length,
             extra_fields=('last_obs',)
         )
 
-        rollout_metric = state.rollout_metric.replace(
-            timesteps=state.rollout_metric.timesteps + len(trajectory)
-        )
-
         agent_state = state.agent_state
         if agent_state.obs_preprocessor_state is not None:
-            agent_state.replace(
+            agent_state = agent_state.replace(
                 obs_preprocessor_state=running_statistics.update(
-                    agent_state.obs_preprocessor_state, trajectory.obs
+                    agent_state.obs_preprocessor_state, trajectory.obs,
+                    pmap_axis_name=self.pmap_axis_name
                 )
             )
 
@@ -270,42 +293,90 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             # learn all data from trajectory
             loss_dict = self.agent.loss(agent_state, sample_batch, key)
             loss_weights = self.config.optimizer.loss_weights
-            loss_arr = jnp.zeros(len(loss_weights))
+            loss = jnp.zeros(())
             for i, loss_key in enumerate(loss_weights.keys()):
-                loss_arr.at[i].set(loss_weights[loss_key]
-                                   * loss_dict[loss_key])
+                loss += loss_weights[loss_key] * loss_dict[loss_key]
 
-            return loss_arr.sum(), loss_dict
+            return loss, loss_dict
 
         update_fn = agent_gradient_update(
             loss_fn,
             self.optimizer,
-            pmap_axis_name=None,
+            pmap_axis_name=self.pmap_axis_name,
             has_aux=True)
 
-        (loss, metrics), agent_state, opt_state = update_fn(
+        opt_state, (loss, metrics), agent_state = update_fn(
             state.opt_state,
             agent_state,
             trajectory,
             learn_key
         )
 
+        env_timesteps = psum(
+            state.metric.env_timesteps +
+            self.config.rollout_length * self.config.num_envs,
+            axis_name=self.pmap_axis_name
+        )
+
+        metric = TrainMetric(
+            env_timesteps=env_timesteps,
+            iterations=state.metric.iterations + 1
+        )
+
         jax.debug.print("total loss:{x}", x=loss)
         jax.debug.print("losses: {x}", x=metrics)
+        jax.debug.print("metric {x}", x=metric)
 
         return state.update(
             key=key,
-            rollout_metric=rollout_metric,
+            metric=metric,
             agent_state=agent_state,
             env_state=env_state,
             opt_state=opt_state
         )
 
+    def learn(self, state: EvoXState) -> EvoXState:
+        one_step_timesteps = self.config.rollout_length * self.config.num_envs
+        num_iters = self.config.total_timesteps // one_step_timesteps
 
-def actor_step(
+        jit_evaluate = jax.jit(self.evaluator.evaluate, static_argnums=(0,))
+
+        for i in range(num_iters, 1):
+            state = self.step(state)
+
+            if i % self.config.eval_interval == 0:
+                state = self.evaluate(state)
+
+        return state
+
+    def evaluate(self, state: EvoXState) -> EvoXState:
+        key, eval_key = jax.random.split(state.key, num=2)
+        eval_metrics = self.evaluator.evaluate(
+            state.agent_state,
+            num_episodes=self.config.eval_episodes,
+            key=eval_key
+        )
+
+        discount_return = eval_metrics.discount_return.mean()
+        discount_return = pmean(
+            discount_return, axis_name=self.pmap_axis_name)
+
+        jax.debug.print("discount return: {x}", x=discount_return)
+
+        state = state.update(key=key)
+        return state
+
+    def enable_multi_devices(self, state: EvoXState, devices: Optional[Sequence[jax.Device]] = None) -> EvoXState:
+        num_devices = len(devices)
+        self.config.rollout_length = self.config.rollout_length // num_devices
+        self.config.eval_episodes = self.config.eval_episodes // num_devices
+        return super().enable_multi_devices(state, devices)
+
+
+def env_step(
     env: Env,
-    env_state: EnvState,
     agent: Agent,
+    env_state: EnvState,
     agent_state: AgentState,  # readonly
     sample_batch: SampleBatch,
     key: chex.PRNGKey,
@@ -324,9 +395,9 @@ def actor_step(
 
     transition = SampleBatch(
         obs=env_state.obs,
-        action=actions,
-        reward=env_nstate.reward,
-        done=env_nstate.done,
+        actions=actions,
+        rewards=env_nstate.reward,
+        dones=env_nstate.done,
         # next_obs=env_nstate.info["last_obs"],
         next_obs=env_nstate.obs,
         extras=dict(
@@ -339,8 +410,8 @@ def actor_step(
 
 def rollout(
     env: Env,
-    env_state: EnvState,
     agent: A2CAgent,
+    env_state: EnvState,
     agent_state: AgentState,
     key: chex.PRNGKey,
     rollout_length: int,
@@ -356,49 +427,44 @@ def rollout(
             trajectory: SampleBatch [T, #envs, ...], T=rollout_length
     """
 
-    def fn(carry, unused_t):
+    def _one_step_rollout(carry, unused_t):
         """
             sample_batch: one-step obs
             transition: one-step full info
         """
-        env_state, sample_batch, current_key = carry
+        env_state, current_key = carry
         next_key, current_key = jax.random.split(current_key, 2)
+
+        # sample_batch: [#envs, ...]
+        sample_batch = SampleBatch(
+            obs=env_state.obs,
+        )
 
         # Note: will XLA optimize repeated calls?
         # transition: [#envs, ...]
-        env_nstate, transition = actor_step(
-            env, env_state,
-            agent, agent_state,
+        env_nstate, transition = env_step(
+            env, agent, env_state, agent_state,
             sample_batch, current_key, extra_fields
         )
 
         # set PEB reward for GAE:
         truncation = env_nstate.info['truncation']  # [#envs]
         # Note: if truncation happens in any env in the batch, apply PEB
-        reward = transition.reward + agent.discount * jax.lax.cond(
+        rewards = transition.rewards + agent.discount * jax.lax.cond(
             truncation.any(),
             lambda last_obs: agent.compute_values(
                 agent_state, last_obs) * truncation,
-            lambda last_obs: jnp.zeros_like(transition.reward),
+            lambda last_obs: jnp.zeros_like(transition.rewards),
             env_nstate.info["last_obs"]  # [#envs, ...]
         )
 
-        transition = transition.replace(reward=reward)
+        transition = transition.replace(rewards=rewards)
         # transition.info["policy_extras"]["peb_rewards"] = reward # ok for dict
 
-        # sample_batch: [#envs, ...]
-        sample_batch = SampleBatch(
-            obs=env_nstate.obs,
-        )
-
-        return (env_nstate, sample_batch, next_key), transition
-
-    init_sample_batch = SampleBatch(
-        obs=env_state.obs,
-    )
+        return (env_nstate, next_key), transition
 
     # trajectory: [T, #envs, ...]
     (env_state, _, _), trajectory = jax.lax.scan(
-        fn, (env_state, init_sample_batch, key), (), length=rollout_length)
+        _one_step_rollout, (env_state, key), (), length=rollout_length)
 
     return env_state, trajectory

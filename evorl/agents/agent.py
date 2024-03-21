@@ -26,7 +26,7 @@ class AgentState:
 
 
 # @struct.dataclass
-@dataclasses.dataclass
+@struct.dataclass
 class Agent(ABC):
     """
     Base class for all agents.
@@ -48,7 +48,7 @@ class Agent(ABC):
             get actions from the policy model + add exploraton noise.
             This function is exclusively used for rollout.
 
-            sample_batch: only `obs` fields are available.
+            sample_batch: only `obs` field are available.
             key: a single PRNGKey.
 
             Return:
@@ -58,26 +58,13 @@ class Agent(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Action:
+    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         """
             get the best action from the action distribution.
         """
         raise NotImplementedError()
     
-    # def compute_values(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
-    #     """
-    #         get actions from the policy model + add exploraton noise.
-    #         This function is exclusively used for rollout.
-    #     """
-    #     raise NotImplementedError()
-
     @abstractmethod
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         raise NotImplementedError()
 
-    # @abstractmethod
-    # def train(self, train=True):
-    #     raise NotImplementedError()
-
-    # def eval(self):
-    #     self.train(False)

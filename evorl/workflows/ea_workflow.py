@@ -1,23 +1,19 @@
-import evox
-import jax
-import jax.numpy as jnp
-
 import warnings
 from functools import partial
 from typing import Callable, Dict, List, Optional, Union
 
 import jax
 import jax.numpy as jnp
-from jax import jit, lax, pmap, pure_callback
-from jax.sharding import PositionalSharding
-from jax.tree_util import tree_map
 
-from evox import Algorithm, Problem, State, Monitor, jit_method
+from evorl.utils.jax_utils import jit_method
+
+from evox import Algorithm, Problem, State, Monitor
 from evox.utils import parse_opt_direction, algorithm_has_init_ask
 from evox import Stateful
+from .workflow import Workflow
 
 
-class EAWorkflow(Stateful):
+class EAWorkflow(Workflow):
     def __init__(
         self,
         algorithm: Algorithm,
@@ -204,7 +200,7 @@ class EAWorkflow(Stateful):
     def _step(self, state):
         # probe if self.algorithm has override the init_ask function
         if algorithm_has_init_ask(self.algorithm, state):
-            return lax.cond(
+            return jax.lax.cond(
                 state.generation == 0,
                 partial(self._proto_step, True),
                 partial(self._proto_step, False),

@@ -13,16 +13,17 @@ from typing import (
     Protocol, Callable, Iterable
 )
 
-from evorl.utils.toolkits import right_shift
+from evorl.utils.jax_utils import jit_method
 
 
-BatchedPRNGKey = jax.Array # [B, 2]
+BatchedPRNGKey = jax.Array  # [B, 2]
 Metrics = Mapping[str, chex.ArrayTree]
 Observation = chex.Array
 Action = chex.Array
+Reward = chex.Array
 PolicyExtraInfo = Mapping[str, Any]
 ExtraInfo = Mapping[str, Any]
-RewardDict = Mapping[str, chex.ArrayTree]
+RewardDict = Mapping[str, Reward]
 
 LossDict = Mapping[str, chex.Array]
 
@@ -40,6 +41,7 @@ ReplayBufferState = Union[flashbax.buffers.trajectory_buffer.TrajectoryBufferSta
 class ObsPreprocessorFn(Protocol):
     def __call__(self, obs: chex.Array, *args: Any, **kwds: Any) -> chex.Array:
         return obs
+
 
 @struct.dataclass
 class Base:
@@ -197,10 +199,10 @@ class SampleBatch(Base):
     """
     # TODO: skip None in tree_map (should be work in native jax)
     obs: Optional[chex.ArrayTree] = None
-    action: Optional[chex.ArrayTree] = None
-    reward: Optional[Union[chex.ArrayTree, RewardDict]] = None
+    actions: Optional[chex.ArrayTree] = None
+    rewards: Optional[Union[Reward, RewardDict]] = None
     next_obs: Optional[chex.Array] = None
-    done: Optional[chex.Array] = None
+    dones: Optional[chex.Array] = None
     extras: Union[ExtraInfo, None] = None
 
     def append(self, values: chex.ArrayTree, axis: int = 0) -> Any:
@@ -208,7 +210,7 @@ class SampleBatch(Base):
 
     def __len__(self):
         return tree_leaves(self.obs)[0].shape[0]
-    
+
     @staticmethod
     def create_dummy_sample_batch(env, env_state):
         obs = env.observation(env_state)
@@ -216,7 +218,17 @@ class SampleBatch(Base):
         next_obs = env.observation(env_state)
         reward = jnp.zeros((1,))
         done = jnp.zeros((1,))
-        return SampleBatch(obs=obs, action=action, reward=reward, next_obs=next_obs, done=done)
+        return SampleBatch(obs=obs, actions=action, rewards=reward, next_obs=next_obs, dones=done)
+
+
+# @jit_method(static_argnums=(1, 2), donate_argnums=(0,))
+def right_shift(arr: chex.Array, shift: int, pad_val=None) -> chex.Array:
+    padding_shape = (shift, *arr.shape[1:])
+    if pad_val is None:
+        padding = jnp.zeros(padding_shape, dtype=arr.dtype)
+    else:
+        padding = jnp.full(padding_shape, pad_val, dtype=arr.dtype)
+    return jnp.concatenate([padding, arr[:-shift]], axis=0)
 
 
 @struct.dataclass
@@ -226,14 +238,10 @@ class Episode:
 
     @property
     def valid_mask(self) -> chex.Array:
-        return 1-right_shift(self.trajectory.done, 1)
+        return 1-right_shift(self.trajectory.dones, 1)
 
 
 @struct.dataclass
-class RolloutMetric:
-    timesteps: int = 0
-
-
-
-
-
+class TrainMetric:
+    env_timesteps: int = 0
+    iterations: int = 0

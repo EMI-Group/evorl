@@ -32,7 +32,6 @@ class Box(Space):
     low: chex.Array
     high: chex.Array
 
-    
     def __post_init__(self):
         chex.assert_trees_all_equal_dtypes(self.low, self.high)
         # chex.assert_scalar_positive((self.high>=self.low).all().astype(jnp.float32).item())
@@ -40,7 +39,11 @@ class Box(Space):
         
 
     def sample(self, rng) -> chex.Array:
-        return jax.random.uniform(rng, minval=self.low, maxval=self.high)
+        return jax.random.uniform(rng, 
+                                  shape=self.low.shape,
+                                  dtype=self.low.dtype,
+                                  minval=self.low, 
+                                  maxval=self.high)
     
     @property
     def shape(self) -> chex.Shape:

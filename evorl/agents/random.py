@@ -12,23 +12,31 @@ from evorl.types import (
 )
 from .agent import Agent, AgentState
 
-
-class RandomAgent:
+@struct.dataclass
+class RandomAgent(Agent):
     """
-        A duck-type agent that takes random actions.
+        An agent that takes random actions.
         Used for testing and debugging.
     """
-    def __init__(self, env):
-        self.env = env
-        self.action_space = self.env.action_space
-        self.obs_space = self.env.obs_space
+    def init(self, key:chex.PRNGKey) -> AgentState:
+        return AgentState(
+            params={}
+        )
+
 
     def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
-        obs_ndims = len(self.env.obs_space.shape)
-        batch_shapes = sample_batch.obs.shape[:-obs_ndims]
-        actions = self.action_space.sample(batch_shapes)
+        batch_shapes = (sample_batch.obs.shape[0],)
+        actions = self.action_space.sample(key)
         actions =  jnp.broadcast_to(actions, batch_shapes+actions.shape)
         return actions, {}
+    
+    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Action:
+        return self.compute_actions(agent_state, sample_batch, key)
+    
+    def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
+        return dict(
+            loss=jnp.zeros(())
+        )
     
 
         

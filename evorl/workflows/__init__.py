@@ -1,4 +1,3 @@
-from .ea_wf import EAWorkflow
+from .ea_workflow import EAWorkflow
 
-from .onpolicy_wf import OnPolicyRLWorkflow
-from .offpolicy_wf import OffPolicyRLWorkflow
+from .rl_workflow import RLWorkflow, OnPolicyRLWorkflow, OffPolicyRLWorkflow

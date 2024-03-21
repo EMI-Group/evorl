@@ -24,7 +24,7 @@ def test_a2c_rollout():
     config.rollout_length = 11
 
     env = create_brax_env(
-        config.env, parallel=config.num_envs, autoset=True)
+        config.env, parallel=config.num_envs, autoreset=True)
 
     agent = A2CAgent(
         action_space=env.action_space,

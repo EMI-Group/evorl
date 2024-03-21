@@ -52,7 +52,8 @@ class EpisodeWrapper(Wrapper):
 class EpisodeWrapperV2(Wrapper):
     """Maintains episode step count and sets done at episode end.
 
-    When call step() after the env is done, directly return last state.
+    When call step() after the env is done, stop simulation and 
+    directly return last state.
 
     args:
         env: the wrapped env should be a single un-vectorized environment.
@@ -74,8 +75,8 @@ class EpisodeWrapperV2(Wrapper):
     def step(self, state: State, action: jax.Array) -> State:
         return jax.lax.cond(
             state.done,
-            self._normal_step,
             self._dummy_step,
+            self._normal_step,
             state, action
         )
 
@@ -113,13 +114,12 @@ class VmapWrapper(Wrapper):
                 if None, will be inferred from reset rng.shape[0].
     """
 
-    def __init__(self, env: Env, batch_size: Optional[int] = None):
+    def __init__(self, env: Env, num_envs: int = 1):
         super().__init__(env)
-        self.batch_size = batch_size
+        self.num_envs = num_envs
 
     def reset(self, rng: jax.Array) -> State:
-        if self.batch_size is not None:
-            rng = jax.random.split(rng, self.batch_size)
+        rng = jax.random.split(rng, self.num_envs)
         return jax.vmap(self.env.reset)(rng)
 
     def step(self, state: State, action: jax.Array) -> State:
@@ -172,7 +172,9 @@ def has_wrapper(env: Env, wrapper_cls: Type) -> bool:
         env = env.env
     return False
 
-
-def is_autoreset(env: Env) -> bool:
-    """Check if env is autoreset."""
-    return has_wrapper(env, AutoResetWrapper)
+def get_wrapper(env: Env, wrapper_cls: Type) -> Optional[Env]:
+    while isinstance(env, Wrapper):
+        if isinstance(env, wrapper_cls):
+            return env
+        env = env.env
+    return None

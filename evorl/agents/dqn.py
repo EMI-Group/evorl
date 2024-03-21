@@ -5,13 +5,20 @@ from flax import struct
 
 from .agent import Agent, AgentState
 from evorl.networks import make_q_network
-from evorl.utils import running_statistics
+from evorl.workflows import OffPolicyRLWorkflow
+from evorl.envs import create_env, Discrete
+from evorl.types import TrainMetric
 
+from evox import State
+
+from omegaconf import DictConfig
 from typing import Dict, Tuple, Sequence
 import optax
 import chex
 import distrax
 import dataclasses
+
+import flashbax
 
 from evorl.types import (
     EnvLike, LossDict, Action, Params, PolicyExtraInfo, EnvState,
@@ -62,37 +69,112 @@ class DQNAgent(Agent):
         qs = self.q_network.apply(
             agent_state.params.q_params, sample_batch.obs)
 
-        #TODO: check EpsilonGreedy
-        actions_dist = distrax.EpsilonGreedy(qs, epsilon=self.eploration_epsilon)
+        # TODO: check EpsilonGreedy
+        actions_dist = distrax.EpsilonGreedy(
+            qs, epsilon=self.eploration_epsilon)
         actions = actions_dist.sample()
 
         return actions, dict(
             q_values=qs
         )
-    
+
     def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Action:
         """
             Args:
                 sample_barch: [#env, ...]
         """
         qs = self.q_network.apply(
-        agent_state.params.q_params, sample_batch.obs)
+            agent_state.params.q_params, sample_batch.obs)
 
-        actions_dist = distrax.EpsilonGreedy(qs, epsilon=self.eploration_epsilon)
+        actions_dist = distrax.EpsilonGreedy(
+            qs, epsilon=self.eploration_epsilon)
         actions = actions_dist.mode()
 
         return actions
-    
+
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
             Args:
                 sample_barch: [B, ...]
         """
+        # TODO: impl it
         qs = self.q_network.apply(
             agent_state.params.q_params, sample_batch.obs)
 
-        
         td_error = None
 
         return dict(
             q_loss=td_error)
+
+
+class DQNWorkflow(OffPolicyRLWorkflow):
+    def __init__(
+        self,
+        config: DictConfig,
+    ):
+        env = create_env(
+            config.env,
+            config.env_type,
+            episode_length=1000,
+            parallel=config.num_envs,
+            autoreset=True
+        )
+
+        assert isinstance(env.action_space, Discrete), "Only Discrete action space is supported."
+
+        agent = DQNAgent(
+            action_space=env.action_space,
+            obs_space=env.obs_space,
+            q_hidden_layer_sizes=config.agent_network.q_hidden_layer_sizes,
+            discount=config.discount,
+            eploration_epsilon=config.eploration_epsilon
+        )
+
+        optimizer = optax.adam(config.optimizer.lr)
+
+        replay_buffer = flashbax.make_flat_buffer(
+            max_length=config.replay_buffer.capacity,
+            min_length=config.replay_buffer.min_size,
+            sample_batch_size=config.train_batch_size,
+            add_batch_size=config.num_envs*config.rollout_length
+        )
+
+        batch_shape = (config.num_envs*config.rollout_length,)
+        def _replay_buffer_init_fn(replay_buffer, key):
+            # dummy_action = jnp.tile(env.action_space.sample(),
+            dummy_action = env.action_space.sample()
+            dummy_action = jnp.broadcast_to(
+                dummy_action, batch_shape+dummy_action.shape)
+            dummy_obs = env.obs_space.sample()
+            dummy_obs = jnp.broadcast_to(
+                dummy_action, batch_shape+dummy_action.shape)
+
+            # TODO: handle RewardDict
+            dummy_reward = jnp.zeros(batch_shape)
+            dummy_done = jnp.zeros(batch_shape)
+
+            dummy_nest_obs = dummy_obs
+
+            # Customize your algorithm's stored data
+            dummy_sample_batch = SampleBatch(
+                obs=dummy_obs,
+                actions=dummy_action,
+                rewards=dummy_reward,
+                next_obs=dummy_nest_obs,
+                dones=dummy_done
+            )
+
+            replay_buffer_state = replay_buffer.init(dummy_sample_batch)
+
+            return replay_buffer_state
+
+        super(DQNWorkflow, self).__init__(
+            config=config,
+            env=env,
+            agent=agent,
+            optimizer=optimizer,
+            replay_buffer=replay_buffer,
+            replay_buffer_init_fn=_replay_buffer_init_fn
+        )
+
+

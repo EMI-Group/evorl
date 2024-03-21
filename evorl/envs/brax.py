@@ -10,10 +10,22 @@ from .wrappers.brax_mod import (
     EpisodeWrapper, 
     EpisodeWrapperV2,
     AutoResetWrapper, 
-    VmapWrapper
+    VmapWrapper,
+    get_wrapper
 )
 
 class BraxEnvAdapter(EnvAdapter):
+    def __init__(self, env):
+        super(BraxEnvAdapter, self).__init__(self)
+
+        action_spec = self.env.sys.actuator.ctrl_range
+        action_spec = action_spec.astype(jnp.float32)
+        self._action_sapce = Box(low=action_spec[:, 0], high=action_spec[:, 1])
+
+        obs_spec = jnp.full((self.env.observation_size,),
+                            jnp.inf, dtype=jnp.float32)
+        self._obs_space = Box(low=-obs_spec, high=obs_spec)
+
     def reset(self, rng: chex.PRNGKey) -> EnvState:
         return self.env.reset(rng)
 
@@ -22,34 +34,36 @@ class BraxEnvAdapter(EnvAdapter):
 
     @property
     def action_space(self) -> Space:
-        # ref: brax's GymWrapper
-        action_spec = self.env.sys.actuator.ctrl_range
-        action_spec = action_spec.astype(jnp.float32)
-        return Box(low=action_spec[:, 0], high=action_spec[:, 1])
+        return self._action_sapce
 
     @property
     def obs_space(self) -> Space:
-        # ref: brax's GymWrapper
-        obs_spec = jnp.full((self.env.observation_size,),
-                            jnp.inf, dtype=jnp.float32)
-        return Box(low=-obs_spec, high=obs_spec)
+        return self._obs_space
+    
+    @property
+    def num_envs(self, state: EnvState) -> int:
+        vmap_wrapper = get_wrapper(self.env, VmapWrapper)
+        if vmap_wrapper is None:
+            return 1
+        else:
+            return vmap_wrapper.num_envs
 
 
-def create_env(env_name: str,
+def create_brax_env(env_name: str,
                episode_length: int = 1000,
                action_repeat: int = 1,
                parallel: int = 1,
-               autoset: bool = True,
+               autoreset: bool = True,
                **kwargs):
     env = brax.envs.get_environment(env_name, **kwargs)
 
-    if autoset:
+    if autoreset:
         env = EpisodeWrapper(env, episode_length, action_repeat)
-        env = VmapWrapper(env, batch_size=parallel)
+        env = VmapWrapper(env, num_envs=parallel)
         env = AutoResetWrapper(env)
     else:
         env = EpisodeWrapperV2(env, episode_length, action_repeat)
-        env = VmapWrapper(env, batch_size=parallel)
+        env = VmapWrapper(env, num_envs=parallel)
     
     # To EvoRL Env
     env = BraxEnvAdapter(env)

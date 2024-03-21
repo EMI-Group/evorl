@@ -13,7 +13,9 @@ import jax
 import jax.numpy as jnp
 import chex
 
-from .toolkits import tree_zeros_like, tree_ones_like
+from .jax_utils import tree_zeros_like
+
+from .jax_utils import tree_ones_like
 
 
 @struct.dataclass
@@ -32,7 +34,7 @@ class RunningStatisticsState(NestedMeanStd):
 
 def init_state(nest: chex.ArrayTree) -> RunningStatisticsState:
     """Initializes the running statistics for the given nested structure."""
-    dtype_int = jnp.int32 if jax.config.jax_enable_x64 else jnp.int64
+    dtype_int = jnp.int64 if jax.config.jax_enable_x64 else jnp.int32
     dtype_float = jnp.float64 if jax.config.jax_enable_x64 else jnp.float32
 
     return RunningStatisticsState(
@@ -67,7 +69,7 @@ def _validate_batch_shapes(batch: chex.Array,
                             batch: chex.Array) -> None:
         expected_shape = batch_dims + reference_sample.shape
         # assert batch.shape == expected_shape, f'{batch.shape} != {expected_shape}'
-        chex.assert_shape(batch, expected_shape, custom_msg=f'{batch.shape} != {expected_shape}')
+        chex.assert_shape(batch, expected_shape, custom_message=f'{batch.shape} != {expected_shape}')
 
     jax.tree_util.tree_map(validate_node_shape, reference_sample, batch)
 

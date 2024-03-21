@@ -1,6 +1,13 @@
 import os
 import re
 
+import jax
+import jax.numpy as jnp
+import chex
+from functools import partial
+
+from typing import Sequence, Iterable, Callable
+
 
 def disable_gpu_preallocation():
     os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -30,3 +37,48 @@ def set_host_device_count(n):
         r"--xla_force_host_platform_device_count=\S+", "", xla_flags).split()
     os.environ["XLA_FLAGS"] = " ".join(
         ["--xla_force_host_platform_device_count={}".format(n)] + xla_flags)
+
+
+def tree_zeros_like(nest: chex.ArrayTree, dtype=None) -> chex.ArrayTree:
+    return jax.tree_util.tree_map(lambda x: jnp.zeros(x.shape, dtype or x.dtype), nest)
+
+
+def tree_ones_like(nest: chex.ArrayTree, dtype=None) -> chex.ArrayTree:
+    return jax.tree_util.tree_map(lambda x: jnp.ones(x.shape, dtype or x.dtype), nest)
+
+
+def tree_concat(nest1, nest2, axis=0):
+    return jax.tree_util.tree_map(lambda x, y: jnp.concatenate([x, y], axis=axis), nest1, nest2)
+
+
+def jit_method(
+    static_argnums: int | Sequence[int] | None = None,
+    static_argnames: str | Iterable[str] | None = None,
+    donate_argnums: int | Sequence[int] | None = None,
+    donate_argnames: str | Iterable[str] | None = None,
+):
+    """
+    A decorator for `jax.jit` with arguments.
+
+    Args:
+        static_argnums: The positional argument indices that are constant across
+            different calls to the function.
+
+    Returns:
+        A decorator for `jax.jit` with arguments.
+    """
+
+    return partial(jax.jit,
+                   static_argnums=static_argnums,
+                   static_argnames=static_argnames,
+                   donate_argnums=donate_argnums,
+                   donate_argnames=donate_argnames)
+
+
+_vmap_rng_split_fn = jax.vmap(jax.random.split, in_axes=(0, None), out_axes=1)
+
+
+def vmap_rng_split(key: jax.Array, num: int = 2) -> jax.Array:
+    # batched_key [B, 2] -> batched_keys [num, B, 2]
+    chex.assert_shape(key, (None, 2))
+    return _vmap_rng_split_fn(key, jnp.arange(num))

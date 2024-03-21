@@ -1,7 +1,18 @@
-rollout_length: 32
-continuous_action: true
 env: ant
-num_envs: 8 # train_batch_size = rollout_length * num_envs = 256
+env_type: brax
+num_envs: 8 
+
+normalize_obs: true
+rollout_length: 32 # train_batch_size = rollout_length * num_envs = 256
+gae_lambda: 0.95
+discount: 0.99
+
+total_timesteps: 1000000
+
+num_eval_envs: 1
+eval_interval: 1000
+eval_episode: 16 # should be divided by num_envs
+
 optimizer:
   lr: 0.0001
   loss_weights:
@@ -9,8 +20,7 @@ optimizer:
     critic_loss: 0.5
     actor_entropy_loss: -0.01
 
-gae_lambda: 0.95
-discount: 0.99
-
-actor_hidden_layer_sizes: [32, 32]
-critic_hidden_layer_sizes: [32, 32]
+agent_network:
+  continuous_action: true
+  actor_hidden_layer_sizes: [32, 32]
+  critic_hidden_layer_sizes: [32, 32]

@@ -1,6 +1,11 @@
-rollout_length: 1
 env: xxx
-num_envs: 8
+num_envs: 1
+
+rollout_length: 1
+discount: 0.99
+eploration_epsilon: 0.1
+
+train_batch_size: 256
 optimizer:
   lr: 0.0001
 
@@ -8,8 +13,5 @@ replay_buffer:
   capacity: 1000000
   min_size: 10000
 
-train_batch_size: 256
-discount: 0.99
-eploration_epsilon: 0.1
-
-q_hidden_layer_sizes: [32, 32]
+agent_network:
+  q_hidden_layer_sizes: [32, 32]
