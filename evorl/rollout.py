@@ -59,6 +59,7 @@ def rollout(
 ) -> Tuple[EnvState, SampleBatch]:
     """
         Collect given rollout_length trajectory.
+        Tips: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
 
         Args:
             env: vmapped env w/ autoreset
@@ -310,7 +311,7 @@ def eval_rollout_episode(
         env_nstate, transition = jax.lax.cond(
             env_state.done.all(),
             lambda *x: (env_state.replace(), prev_transition.replace()),
-            eval_env_step,
+            _eval_env_step,
             env_state, agent_state,
             sample_batch, current_key
         )
@@ -333,10 +334,10 @@ def eval_rollout_episode(
         length=rollout_length-1
     )
 
-    trajectory = jax.tree_map(
+    episode_trajectory = jax.tree_map(
         lambda x, y: jnp.concatenate((jnp.expand_dims(x, axis=0), y), axis=0),
         transition,
         trajectory
     )
 
-    return env_state, trajectory
+    return env_state, episode_trajectory

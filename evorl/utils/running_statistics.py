@@ -64,7 +64,6 @@ def _validate_batch_shapes(batch: chex.Array,
     Returns:
       None.
     """
-    @chex.chexify
     def validate_node_shape(reference_sample: chex.Array,
                             batch: chex.Array) -> None:
         expected_shape = batch_dims + reference_sample.shape

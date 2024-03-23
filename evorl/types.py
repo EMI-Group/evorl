@@ -12,9 +12,9 @@ from typing import (
     Any, Mapping, Union, Tuple, Dict, Optional, Sequence,
     Protocol, Callable, Iterable
 )
-
+import dataclasses
 from evorl.utils.jax_utils import jit_method
-
+from evorl.distributed import pmean, psum
 
 BatchedPRNGKey = jax.Array  # [B, 2]
 Metrics = Mapping[str, chex.ArrayTree]
@@ -221,7 +221,6 @@ class SampleBatch(Base):
         return SampleBatch(obs=obs, actions=action, rewards=reward, next_obs=next_obs, dones=done)
 
 
-# @jit_method(static_argnums=(1, 2), donate_argnums=(0,))
 def right_shift(arr: chex.Array, shift: int, pad_val=None) -> chex.Array:
     padding_shape = (shift, *arr.shape[1:])
     if pad_val is None:
@@ -241,7 +240,27 @@ class Episode:
         return 1-right_shift(self.trajectory.dones, 1)
 
 
-@struct.dataclass
-class TrainMetric:
-    env_timesteps: int = 0
-    iterations: int = 0
+def metricfield(*, reduce_fn: Callable[[chex.Array, Optional[str]], chex.Array], pytree_node=True, **kwargs):
+    return dataclasses.field(metadata={'pytree_node': pytree_node, 'reduce_fn': reduce_fn}, **kwargs)
+
+
+class MetricBase(struct.PyTreeNode):
+    def all_reduce(self, pmap_axis_name: Optional[str] = None):
+        field_dict = {}
+        for field in dataclasses.fields(self):
+            reduce_fn = field.metadata.get('reduce_fn', None)
+            value = getattr(self, field.name)
+            if pmap_axis_name is not None and isinstance(reduce_fn, Callable):
+                value = reduce_fn(value, pmap_axis_name)
+                field_dict[field.name] = value
+
+        if len(field_dict) == 0:
+            return self
+
+        return self.replace(**field_dict)
+
+
+class TrainMetric(MetricBase):
+    env_timesteps: chex.Array = metricfield(
+        default=jnp.zeros((), dtype=jnp.int32), reduce_fn=pmean)
+    iterations: chex.Array = jnp.zeros((), dtype=jnp.int32)

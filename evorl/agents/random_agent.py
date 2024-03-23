@@ -12,7 +12,10 @@ from evorl.types import (
 )
 from .agent import Agent, AgentState
 
-@struct.dataclass
+import dataclasses
+
+
+@dataclasses.dataclass(unsafe_hash=True)
 class RandomAgent(Agent):
     """
         An agent that takes random actions.
@@ -23,14 +26,13 @@ class RandomAgent(Agent):
             params={}
         )
 
-
     def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         batch_shapes = (sample_batch.obs.shape[0],)
         actions = self.action_space.sample(key)
         actions =  jnp.broadcast_to(actions, batch_shapes+actions.shape)
         return actions, {}
     
-    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Action:
+    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         return self.compute_actions(agent_state, sample_batch, key)
     
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:

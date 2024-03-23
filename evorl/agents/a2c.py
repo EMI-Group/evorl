@@ -1,14 +1,16 @@
 import jax
 import jax.numpy as jnp
 from flax import struct
+import flax.linen as nn
+import math
 
-from evorl.types import SampleBatch
+from evorl.types import SampleBatch, metricfield
 
 from evorl.networks import make_policy_network, make_value_network
 from evorl.utils import running_statistics
-from evorl.utils.distribution import TanhNormal
-from evorl.utils.jax_utils import tree_concat
-from evorl.utils.toolkits import compute_gae
+from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
+from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.toolkits import compute_gae, flatten_rollout_trajectory, average_episode_discount_return
 from evorl.workflows import OnPolicyRLWorkflow
 from evorl.agents import AgentState
 from evorl.distributed import agent_gradient_update, psum, pmean
@@ -37,21 +39,17 @@ class A2CNetworkParams:
     value_params: Params
 
 
-@struct.dataclass
+
 class A2CTrainMetric(TrainMetric):
-    train_total_reward: float = 0
+    train_episode_return: chex.Array = metricfield(default=jnp.zeros(()), reduce_fn=pmean)
 
 
-@struct.dataclass
+@dataclasses.dataclass(unsafe_hash=True)
 class A2CAgent(Agent):
-    # policy_network: nn.Module
-    # value_network: nn.Module
     actor_hidden_layer_sizes: Tuple[int] = (256, 256)
     critic_hidden_layer_sizes: Tuple[int] = (256, 256)
     normalize_obs: bool = False
     continuous_action: bool = False
-    gae_lambda: float = 0.95
-    discount: float = 0.99
 
     def init(self, key: chex.PRNGKey) -> AgentState:
 
@@ -85,7 +83,7 @@ class A2CAgent(Agent):
         if self.normalize_obs:
             self.obs_preprocessor = running_statistics.normalize
             dummy_obs = self.obs_space.sample(obs_preprocessor_key)
-            # dummy_obs = jax.broadcast_to(dummy_obs, (self.env.num_envs,) + dummy_obs.shape)
+            # Note: statistics are broadcasted to [T,B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
             obs_preprocessor_state = None
@@ -109,10 +107,10 @@ class A2CAgent(Agent):
             agent_state.params.policy_params, obs)
 
         if self.continuous_action:
-            actions_dist = TanhNormal(
+            actions_dist = get_tanh_norm_dist(
                 *jnp.split(raw_actions, 2, axis=-1))
         else:
-            actions_dist = distrax.Categorical(logits=raw_actions)
+            actions_dist = get_categorical_dist(raw_actions)
 
         actions = actions_dist.sample(seed=key)
 
@@ -137,10 +135,10 @@ class A2CAgent(Agent):
             agent_state.params.policy_params, obs)
 
         if self.continuous_action:
-            actions_dist = TanhNormal(
+            actions_dist = get_tanh_norm_dist(
                 *jnp.split(raw_actions, 2, axis=-1))
         else:
-            actions_dist = distrax.Categorical(logits=raw_actions)
+            actions_dist = get_categorical_dist(raw_actions)
 
         actions = actions_dist.mode()
 
@@ -149,7 +147,7 @@ class A2CAgent(Agent):
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
 
-            sample_batch: [T, #envs, ...]
+            sample_batch: [T*B, ...]
 
 
             Return: LossDict[
@@ -159,60 +157,40 @@ class A2CAgent(Agent):
             ]
         """
 
-        last_obs = sample_batch.extras['env_extras']['last_obs']
-        v_obs = tree_concat(
-            sample_batch.obs,
-            last_obs[-1:]
-        )
+        obs = sample_batch.obs
         if self.normalize_obs:
-            v_obs = self.obs_preprocessor(
-                v_obs, agent_state.obs_preprocessor_state)
+            obs = self.obs_preprocessor(
+                obs, agent_state.obs_preprocessor_state)
 
         # ======= critic =======
-        # concated [values, bootstrap_value]
-        vs = self.compute_values(agent_state, v_obs)
+        vs = self.value_network.apply(
+            agent_state.params.value_params, obs).squeeze(-1)
 
-        # peb_rewards = sample_batch.info["policy_extras"]["peb_rewards"]
+        v_targets = sample_batch.extras['v_targets']
 
-        v_targets, advantages = compute_gae(
-            rewards=sample_batch.rewards,  # peb_rewards
-            values=vs,
-            dones=sample_batch.dones,
-            gae_lambda=self.gae_lambda,
-            discount=self.discount
-        )
+        value_loss = optax.huber_loss(vs, v_targets, delta=1).mean()
 
         # ====== actor =======
-        obs = v_obs[:-1]
 
-        # [T, B, A]
+        # [T*B, A]
         raw_actions = self.policy_network.apply(
             agent_state.params.policy_params, obs)
 
         if self.continuous_action:
-            actions_dist = TanhNormal(
+            actions_dist = get_tanh_norm_dist(
                 *jnp.split(raw_actions, 2, axis=-1))
-            eps = 1e-6
-            # [T, B]
-            actions_logp = actions_dist.log_prob(
-                jnp.clip(
-                    jax.lax.stop_gradient(sample_batch.actions),
-                    -1+eps, 1-eps
-                ))  # avoid nan logp
         else:
-            actions_dist = distrax.Categorical(logits=raw_actions)
-            actions_logp = actions_dist.log_prob(
-                jax.lax.stop_gradient(sample_batch.actions))
+            actions_dist = get_categorical_dist(raw_actions)
 
-        # advantages: [T, B]
+        # [T*B]
+        actions_logp = actions_dist.log_prob(sample_batch.actions)
+
+        advantages = sample_batch.extras['advantages']
+
+        # advantages: [T*B]
         policy_loss = - (advantages * actions_logp).mean()
-        value_loss = optax.huber_loss(vs[:-1], v_targets, delta=1).mean()
-
-        if self.continuous_action:
-            # TODO: check correctness
-            entropy_loss = - (jnp.exp(actions_logp) * actions_logp).mean()
-        else:
-            entropy_loss = actions_dist.entropy().mean()
+        # entropy: [T*B]
+        entropy_loss = actions_dist.entropy(seed=key).mean()
 
         return dict(
             actor_loss=policy_loss,
@@ -220,11 +198,12 @@ class A2CAgent(Agent):
             actor_entropy_loss=entropy_loss
         )
 
-    def compute_values(self, agent_state: AgentState, obs: Observation) -> chex.Array:
-        """
-            Args:
-                obs: (normalized) obs
-        """
+    def compute_values(self, agent_state: AgentState, sample_batch: SampleBatch) -> chex.Array:
+        obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(
+                obs, agent_state.obs_preprocessor_state)
+
         return self.value_network.apply(
             agent_state.params.value_params, obs).squeeze(-1)
 
@@ -245,11 +224,17 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             normalize_obs=config.normalize_obs,
-            continuous_action=config.agent_network.continuous_action,
-            gae_lambda=config.gae_lambda,
-            discount=config.discount
+            continuous_action=config.agent_network.continuous_action
         )
-        optimizer = optax.adam(config.optimizer.lr)
+
+        if (config.optimizer.grad_clip_norm is not None and
+                config.optimizer.grad_clip_norm > 0):
+            optimizer = optax.chain(
+                optax.clip_by_global_norm(config.optimizer.grad_clip_norm),
+                optax.adam(config.optimizer.lr)
+            )
+        else:
+            optimizer = optax.adam(config.optimizer.lr)
 
         eval_env = create_env(
             config.env,
@@ -260,10 +245,24 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         )
 
         evaluator = Evaluator(
-            env=eval_env, agent=agent, max_episode_length=1000, discount=1.0)
+            env=eval_env, agent=agent, max_episode_length=1000)
 
         super(A2CWorkflow, self).__init__(
             config, env, agent, optimizer, evaluator)
+
+    def setup(self, key):
+        key, agent_key, env_key = jax.random.split(key, 3)
+        agent_state = self.agent.init(agent_key)
+
+        # Note: not need for evaluator state
+
+        return EvoXState(
+            key=key,
+            metric=A2CTrainMetric(),
+            agent_state=agent_state,
+            env_state=self.env.reset(env_key),
+            opt_state=self.optimizer.init(agent_state.params)
+        )
 
     def step(self, state: EvoXState):
 
@@ -277,7 +276,8 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             state.agent_state,
             rollout_key,
             rollout_length=self.config.rollout_length,
-            extra_fields=('last_obs',)
+            discount=self.config.discount,
+            env_extra_fields=('last_obs', 'episode_return')
         )
 
         agent_state = state.agent_state
@@ -289,12 +289,35 @@ class A2CWorkflow(OnPolicyRLWorkflow):
                 )
             )
 
+        # ======== compute GAE =======
+        last_obs = trajectory.extras['env_extras']['last_obs']
+        v_obs = jnp.concatenate(
+            [trajectory.obs, last_obs[-1:]], axis=0
+        )
+        # concat [values, bootstrap_value]
+        vs = self.agent.compute_values(
+            state.agent_state, SampleBatch(obs=v_obs))
+        v_targets, advantages = compute_gae(
+            rewards=trajectory.rewards,  # peb_rewards
+            values=vs,
+            dones=trajectory.dones,
+            gae_lambda=self.config.gae_lambda,
+            discount=self.config.discount
+        )
+
+        trajectory.extras['v_targets'] = v_targets
+        trajectory.extras['advantages'] = advantages
+        # [T,B,...] -> [T*B,...]
+        trajectory = flatten_rollout_trajectory(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
+        # ============================
+
         def loss_fn(agent_state, sample_batch, key):
             # learn all data from trajectory
             loss_dict = self.agent.loss(agent_state, sample_batch, key)
             loss_weights = self.config.optimizer.loss_weights
             loss = jnp.zeros(())
-            for i, loss_key in enumerate(loss_weights.keys()):
+            for loss_key in loss_weights.keys():
                 loss += loss_weights[loss_key] * loss_dict[loss_key]
 
             return loss, loss_dict
@@ -305,26 +328,31 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             pmap_axis_name=self.pmap_axis_name,
             has_aux=True)
 
-        opt_state, (loss, metrics), agent_state = update_fn(
+        opt_state, (loss, loss_dict), agent_state = update_fn(
             state.opt_state,
             agent_state,
             trajectory,
             learn_key
         )
 
-        env_timesteps = psum(
-            state.metric.env_timesteps +
-            self.config.rollout_length * self.config.num_envs,
-            axis_name=self.pmap_axis_name
+        env_timesteps = (state.metric.env_timesteps +
+            self.config.rollout_length * self.config.num_envs)
+        
+        train_episode_return = average_episode_discount_return(
+            trajectory.extras["env_extras"]['episode_return'],
+            trajectory.dones
+        ).mean()
+
+        metric = A2CTrainMetric(
+            env_timesteps=env_timesteps,
+            iterations=state.metric.iterations + 1,
+            train_episode_return=train_episode_return
         )
 
-        metric = TrainMetric(
-            env_timesteps=env_timesteps,
-            iterations=state.metric.iterations + 1
-        )
+        metric = metric.all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         jax.debug.print("total loss:{x}", x=loss)
-        jax.debug.print("losses: {x}", x=metrics)
+        jax.debug.print("losses: {x}", x=loss_dict)
         jax.debug.print("metric {x}", x=metric)
 
         return state.update(
@@ -337,14 +365,12 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
     def learn(self, state: EvoXState) -> EvoXState:
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
-        num_iters = self.config.total_timesteps // one_step_timesteps
+        num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        jit_evaluate = jax.jit(self.evaluator.evaluate, static_argnums=(0,))
-
-        for i in range(num_iters, 1):
+        for i in range(num_iters):
             state = self.step(state)
 
-            if i % self.config.eval_interval == 0:
+            if (i+1) % self.config.eval_interval == 0:
                 state = self.evaluate(state)
 
         return state
@@ -357,16 +383,23 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             key=eval_key
         )
 
-        discount_return = eval_metrics.discount_return.mean()
+        discount_return = eval_metrics.discount_returns.mean()
         discount_return = pmean(
             discount_return, axis_name=self.pmap_axis_name)
 
+        episode_lengths = eval_metrics.episode_lengths.mean()
+        episode_lengths = pmean(
+            episode_lengths, axis_name=self.pmap_axis_name)
+
         jax.debug.print("discount return: {x}", x=discount_return)
+        jax.debug.print("episode lengths: {x}", x=episode_lengths)
 
         state = state.update(key=key)
         return state
 
     def enable_multi_devices(self, state: EvoXState, devices: Optional[Sequence[jax.Device]] = None) -> EvoXState:
+        if devices is None:
+            devices = jax.local_devices()
         num_devices = len(devices)
         self.config.rollout_length = self.config.rollout_length // num_devices
         self.config.eval_episodes = self.config.eval_episodes // num_devices
@@ -415,7 +448,8 @@ def rollout(
     agent_state: AgentState,
     key: chex.PRNGKey,
     rollout_length: int,
-    extra_fields: Sequence[str] = ('last_obs',)
+    discount: float,
+    env_extra_fields: Sequence[str] = ('last_obs',),
 ) -> Tuple[EnvState, SampleBatch]:
     """
         Collect given rollout_length trajectory.
@@ -440,20 +474,19 @@ def rollout(
             obs=env_state.obs,
         )
 
-        # Note: will XLA optimize repeated calls?
         # transition: [#envs, ...]
         env_nstate, transition = env_step(
             env, agent, env_state, agent_state,
-            sample_batch, current_key, extra_fields
+            sample_batch, current_key, env_extra_fields
         )
 
         # set PEB reward for GAE:
         truncation = env_nstate.info['truncation']  # [#envs]
         # Note: if truncation happens in any env in the batch, apply PEB
-        rewards = transition.rewards + agent.discount * jax.lax.cond(
+        rewards = transition.rewards + discount * jax.lax.cond(
             truncation.any(),
             lambda last_obs: agent.compute_values(
-                agent_state, last_obs) * truncation,
+                agent_state, SampleBatch(obs=last_obs)) * truncation,
             lambda last_obs: jnp.zeros_like(transition.rewards),
             env_nstate.info["last_obs"]  # [#envs, ...]
         )
@@ -464,7 +497,7 @@ def rollout(
         return (env_nstate, next_key), transition
 
     # trajectory: [T, #envs, ...]
-    (env_state, _, _), trajectory = jax.lax.scan(
+    (env_state, _), trajectory = jax.lax.scan(
         _one_step_rollout, (env_state, key), (), length=rollout_length)
 
     return env_state, trajectory

@@ -9,6 +9,7 @@ import brax.envs
 from .wrappers.brax_mod import (
     EpisodeWrapper, 
     EpisodeWrapperV2,
+    EpisodeRecordWrapper,
     AutoResetWrapper, 
     VmapWrapper,
     get_wrapper
@@ -16,7 +17,7 @@ from .wrappers.brax_mod import (
 
 class BraxEnvAdapter(EnvAdapter):
     def __init__(self, env):
-        super(BraxEnvAdapter, self).__init__(self)
+        super(BraxEnvAdapter, self).__init__(env)
 
         action_spec = self.env.sys.actuator.ctrl_range
         action_spec = action_spec.astype(jnp.float32)
@@ -41,7 +42,7 @@ class BraxEnvAdapter(EnvAdapter):
         return self._obs_space
     
     @property
-    def num_envs(self, state: EnvState) -> int:
+    def num_envs(self) -> int:
         vmap_wrapper = get_wrapper(self.env, VmapWrapper)
         if vmap_wrapper is None:
             return 1
@@ -54,11 +55,13 @@ def create_brax_env(env_name: str,
                action_repeat: int = 1,
                parallel: int = 1,
                autoreset: bool = True,
+               discount: float = 1.0,
                **kwargs):
     env = brax.envs.get_environment(env_name, **kwargs)
 
     if autoreset:
         env = EpisodeWrapper(env, episode_length, action_repeat)
+        env = EpisodeRecordWrapper(env, discount=discount)
         env = VmapWrapper(env, num_envs=parallel)
         env = AutoResetWrapper(env)
     else:

@@ -1,9 +1,12 @@
-from typing import Optional, Type
+from typing import Optional, Type, Dict
 
 
 from brax.envs.base import Env, State, Wrapper
 import jax
 from jax import numpy as jnp
+from flax import struct
+import chex
+
 
 class EpisodeWrapper(Wrapper):
     """Maintains episode step count and sets done at episode end.
@@ -20,11 +23,11 @@ class EpisodeWrapper(Wrapper):
         self.episode_length = episode_length
         self.action_repeat = action_repeat
 
-    def reset(self, rng: jax.Array) -> State:
+    def reset(self, rng: chex.PRNGKey) -> State:
         state = self.env.reset(rng)
-        state.info['steps'] = jnp.zeros(rng.shape[:-1])
-        state.info["termination"] = jnp.zeros(rng.shape[:-1])
-        state.info['truncation'] = jnp.zeros(rng.shape[:-1])
+        state.info['steps'] = jnp.zeros((), dtype=jnp.int32)
+        state.info["termination"] = jnp.zeros(())
+        state.info['truncation'] = jnp.zeros(())
         return state
 
     def step(self, state: State, action: jax.Array) -> State:
@@ -65,11 +68,11 @@ class EpisodeWrapperV2(Wrapper):
         self.episode_length = episode_length
         self.action_repeat = action_repeat
 
-    def reset(self, rng: jax.Array) -> State:
+    def reset(self, rng: chex.PRNGKey) -> State:
         state = self.env.reset(rng)
-        state.info['steps'] = jnp.zeros(rng.shape[:-1])
-        state.info["termination"] = jnp.zeros(rng.shape[:-1])
-        state.info['truncation'] = jnp.zeros(rng.shape[:-1])
+        state.info['steps'] = jnp.zeros((), dtype=jnp.int32)
+        state.info["termination"] = jnp.zeros(())
+        state.info['truncation'] = jnp.zeros(())
         return state
 
     def step(self, state: State, action: jax.Array) -> State:
@@ -105,6 +108,28 @@ class EpisodeWrapperV2(Wrapper):
         return state.replace()
 
 
+class EpisodeRecordWrapper(Wrapper):
+    def __init__(self, env: Env, discount: float):
+        super().__init__(env)
+        self.discount = discount
+
+    def reset(self, rng: chex.PRNGKey) -> State:
+        state = self.env.reset(rng)
+        state.info['episode_return'] = jnp.zeros(())
+        return state
+
+    def step(self, state: State, action: jax.Array) -> State:
+        prev_done = state.info.get('autoreset', state.done)
+        episode_return = state.info['episode_return'] * (1-prev_done)
+
+        state = self.env.step(state, action)
+        
+        steps = state.info['steps']
+        episode_return += jnp.power(self.discount, steps-1)*state.reward
+        state.info['episode_return'] = episode_return
+        return state
+
+
 class VmapWrapper(Wrapper):
     """
         Vectorizes Brax env.
@@ -124,7 +149,7 @@ class VmapWrapper(Wrapper):
 
     def step(self, state: State, action: jax.Array) -> State:
         return jax.vmap(self.env.step)(state, action)
-    
+
     def num_envs(self, state):
         return state.obs.shape[0]
 
@@ -138,6 +163,7 @@ class AutoResetWrapper(Wrapper):
         state.info['first_obs'] = state.obs
         # add last_obs for PEB (when calc GAE)
         state.info['last_obs'] = jnp.zeros_like(state.obs)
+        state.info["autoreset"] = jnp.zeros_like(state.done)
         return state
 
     def step(self, state: State, action: jax.Array) -> State:
@@ -145,7 +171,9 @@ class AutoResetWrapper(Wrapper):
             steps = state.info['steps']
             steps = jnp.where(state.done, jnp.zeros_like(steps), steps)
             state.info.update(steps=steps)
+        state.info['autoreset'] = state.done # keep the original done
         state = state.replace(done=jnp.zeros_like(state.done))
+        
         state = self.env.step(state, action)
 
         def where_done(x, y):
@@ -164,6 +192,69 @@ class AutoResetWrapper(Wrapper):
 
         return state.replace(pipeline_state=pipeline_state, obs=obs)
 
+
+# @struct.dataclass
+# class EpisodeMetrics:
+#     """Dataclass holding evaluation metrics for Brax.
+
+#     Attributes:
+#         episode_metrics: Aggregated episode metrics since the beginning of the
+#           episode.
+#         active_episodes: Boolean vector tracking which episodes are not done yet.
+#         episode_steps: Integer vector tracking the number of steps in the episode.
+#     """
+
+#     episode_metrics: Dict[str, jax.Array]
+#     active_episodes: jax.Array
+#     episode_steps: jax.Array
+
+
+# class EvalWrapper(Wrapper):
+#     """Brax env with eval metrics."""
+
+#     def reset(self, rng: jax.Array) -> State:
+#         reset_state = self.env.reset(rng)
+#         reset_state.metrics['reward'] = reset_state.reward
+#         eval_metrics = EpisodeMetrics(
+#             episode_metrics=jax.tree_util.tree_map(
+#                 jnp.zeros_like, reset_state.metrics
+#             ),
+#             active_episodes=jnp.ones_like(reset_state.reward),
+#             episode_steps=jnp.zeros_like(reset_state.reward),
+#         )
+#         reset_state.info['eval_metrics'] = eval_metrics
+#         return reset_state
+
+#     def step(self, state: State, action: jax.Array) -> State:
+#         state_metrics = state.info['eval_metrics']
+#         if not isinstance(state_metrics, EpisodeMetrics):
+#             raise ValueError(
+#                 f'Incorrect type for state_metrics: {type(state_metrics)}'
+#             )
+#         del state.info['eval_metrics']
+#         nstate = self.env.step(state, action)
+#         nstate.metrics['reward'] = nstate.reward
+#         episode_steps = jnp.where(
+#             state_metrics.active_episodes,
+#             nstate.info['steps'],
+#             state_metrics.episode_steps,
+#         )
+#         episode_metrics = jax.tree_util.tree_map(
+#             lambda a, b: a + b * state_metrics.active_episodes,
+#             state_metrics.episode_metrics,
+#             nstate.metrics,
+#         )
+#         active_episodes = state_metrics.active_episodes * (1 - nstate.done)
+
+#         eval_metrics = EpisodeMetrics(
+#             episode_metrics=episode_metrics,
+#             active_episodes=active_episodes,
+#             episode_steps=episode_steps,
+#         )
+#         nstate.info['eval_metrics'] = eval_metrics
+#         return nstate
+
+
 def has_wrapper(env: Env, wrapper_cls: Type) -> bool:
     """Check if env has a wrapper of type wrapper_cls."""
     while isinstance(env, Wrapper):
@@ -171,6 +262,7 @@ def has_wrapper(env: Env, wrapper_cls: Type) -> bool:
             return True
         env = env.env
     return False
+
 
 def get_wrapper(env: Env, wrapper_cls: Type) -> Optional[Env]:
     while isinstance(env, Wrapper):

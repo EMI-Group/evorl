@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import chex
-from evorl.utils.distribution import TanhNormal
+from evorl.distribution import TanhNormal
 
 
 

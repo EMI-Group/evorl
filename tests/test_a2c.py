@@ -16,23 +16,29 @@ def test_a2c():
     nstate = learner.step(state)
 
 
-def test_a2c_rollout():
-    config = OmegaConf.creat()
-
+def _create_example_agent_env(num_envs, rollout_length):
+    config = OmegaConf.create()
     config.env = 'ant'
-    config.num_envs = 4
-    config.rollout_length = 11
-
+    config.num_envs = num_envs
+    config.rollout_length = rollout
     env = create_brax_env(
         config.env, parallel=config.num_envs, autoreset=True)
-
     agent = A2CAgent(
         action_space=env.action_space,
         obs_space=env.obs_space,
         continuous_action=True,
-        gae_lambda=config.gae_lambda,
-        discount=config.discount
     )
+
+    return agent, env
+
+
+def test_a2c_agent():
+    agent, _ = _create_example_agent_env(4, 11)
+    hash(agent)
+
+
+def test_a2c_rollout():
+    agent, env = _create_example_agent_env(4, 11)
 
     env_key, agent_key, rollout_key = jax.random.split(
         jax.random.PRNGKey(42), 3)
@@ -46,8 +52,8 @@ def test_a2c_rollout():
         agent,
         agent_state,
         rollout_key,
-        rollout_length=config.rollout_length,
-        extra_fields=('last_obs',)
+        rollout_length=11,
+        env_extra_fields=('last_obs',)
     )
 
     extras = trajectory.extras

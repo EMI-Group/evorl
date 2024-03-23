@@ -78,7 +78,7 @@ class DQNAgent(Agent):
             q_values=qs
         )
 
-    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Action:
+    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         """
             Args:
                 sample_barch: [#env, ...]
@@ -90,7 +90,7 @@ class DQNAgent(Agent):
             qs, epsilon=self.eploration_epsilon)
         actions = actions_dist.mode()
 
-        return actions
+        return actions, {}
 
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """

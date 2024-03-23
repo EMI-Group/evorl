@@ -35,7 +35,7 @@ class Env(ABC):
 
     @property
     @abstractmethod
-    def num_envs(self, state: EnvState) -> int:
+    def num_envs(self) -> int:
         """Return the number of environments."""
         raise NotImplementedError
 

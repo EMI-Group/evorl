@@ -16,17 +16,15 @@ import dataclasses
 AgentParams = Mapping[str, Params]
 
 
-@struct.dataclass
-class AgentState:
+class AgentState(struct.PyTreeNode):
     params: AgentParams
     obs_preprocessor_state: Optional[running_statistics.RunningStatisticsState] = None
     # TODO: define the action_postprocessor_state
     action_postprocessor_state: Any = None
-    # opt_state: optax.OptState
 
 
-# @struct.dataclass
-@struct.dataclass
+
+@dataclasses.dataclass(unsafe_hash=True)
 class Agent(ABC):
     """
     Base class for all agents.
@@ -35,8 +33,8 @@ class Agent(ABC):
     - interactive with environment by compute_actions
     - compute loss by loss
     """
-    action_space: Space
-    obs_space: Space
+    action_space: Space = dataclasses.field(hash=False)
+    obs_space: Space = dataclasses.field(hash=False)
 
     @abstractmethod
     def init(self, key) -> AgentState:
@@ -67,4 +65,3 @@ class Agent(ABC):
     @abstractmethod
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         raise NotImplementedError()
-

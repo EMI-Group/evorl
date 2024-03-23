@@ -107,7 +107,7 @@ def make_policy_network(
       activation=activation,
       kernel_init=jax.nn.initializers.lecun_uniform())
   
-  init_fn = lambda rng: policy_model.init(rng, jnp.ones((obs_size,)))
+  init_fn = lambda rng: policy_model.init(rng, jnp.ones((1,obs_size,)))
 
   return policy_model, init_fn
 
@@ -122,7 +122,7 @@ def make_value_network(
       activation=activation,
       kernel_init=jax.nn.initializers.lecun_uniform())
   
-  init_fn = lambda rng: value_model.init(rng, jnp.ones((obs_size,)))
+  init_fn = lambda rng: value_model.init(rng, jnp.ones((1,obs_size,)))
 
   return value_model, init_fn
 

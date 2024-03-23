@@ -46,14 +46,14 @@ class RLWorkflow(Workflow):
 
         state = jax.device_put_replicated(state, devices)
         self.pmap_axis_name = PMAP_AXIS_NAME
-        self.step = jax.pmap(self.step, axis_name=PMAP_AXIS_NAME,
-                             static_broadcasted_argnums=(0,), donate_argnums=(0,))
+        self.step = jax.pmap(self.step, axis_name=PMAP_AXIS_NAME)
+        self.evaluate = jax.pmap(self.evaluate, axis_name=PMAP_AXIS_NAME)
 
         return state
 
-    def jit(self):
-        self.evaluate = jax.jit(self.evaluate, donate_argnums=(0,))
-        super().jit()
+    def enable_jit(self) -> None:
+        self.evaluate = jax.jit(self.evaluate)
+        super().enable_jit()
 
 
 class OnPolicyRLWorkflow(RLWorkflow):

@@ -8,22 +8,24 @@ from typing import Tuple
 from evorl.types import SampleBatch
 
 
-def compute_episode_timesteps(
+def compute_episode_length(
     dones: chex.Array,  # [T, B]
 ) -> chex.Array:
     """
         dones: should be collected from episodic trajectory
     """
     # [B]
-    timesteps = (1-dones).sum(axis=0)+1
-    return timesteps
+    episode_lengths = (1-dones).sum(axis=0)+1
+    return episode_lengths
 
 
 def compute_discount_return(
         rewards: chex.Array,  # [T, B]
         dones: chex.Array,  # [T, B]
         discount: float = 1.0) -> chex.Array:
-
+    """
+        For episodic trajectory
+    """
     def _compute_discount_return(discount_return, x_t):
         # G_t := r_t + γ * G_{t+1}
         reward_t, discount_t = x_t
@@ -41,6 +43,44 @@ def compute_discount_return(
         reverse=True,
         unroll=16
     )
+
+    return discount_return  # [B]
+
+def compute_discount_return_mod(
+        rewards: chex.Array,  # [T, B]
+        dones: chex.Array,  # [T, B]
+        prev_dones: chex.Array,  # [B]
+        discount: float = 1.0) -> chex.Array:
+    """
+        for autoreset envs trajectory
+    """
+
+    def _compute_discount_return(carry, x_t):
+        # G_t := r_t + γ * G_{t+1}
+
+        discount_return_sum, discount_return = carry
+        reward_t, dones_t = x_t
+        discount_return_sum += discount_return*dones_t
+        discount_return = reward_t + discount_return * (1-dones_t)*discount
+
+        return (discount_return_sum, discount_return), None
+
+    # [#envs]
+    discount_return = jnp.zeros_like(rewards[0])
+
+    discount_return_sum, discount_return, _ = jax.lax.scan(
+        _compute_discount_return,
+        discount_return,
+        (rewards, dones),
+        reverse=True,
+        unroll=16
+    )
+
+    # case: add first episode's discount_return if it is complete:
+    # i.e. prev_dones = 1
+    discount_return_sum += discount_return*prev_dones
+
+    discount_return = discount_return_sum / dones.sum(axis=0)
 
     return discount_return  # [B]
 
@@ -97,4 +137,52 @@ def shuffle_sample_batch(sample_batch: SampleBatch, key: chex.PRNGKey):
     return jax.tree_util.tree_map(
         lambda x: jax.random.permutation(key, x),
         sample_batch
+    )
+
+
+def soft_target_update(target_params, source_params, tau: float):
+    """
+    Perform soft update of target network
+
+    Args:
+        target_params: target network parameters
+        source_params: source network parameters
+        tau: interpolation factor
+
+    Returns:
+        updated target network parameters
+    """
+
+    return jax.tree_util.tree_map(
+        lambda target, source: tau * source + (1 - tau) * target,
+        target_params, source_params)
+
+
+def flatten_rollout_trajectory(trajectory: SampleBatch):
+    """
+        Flatten the trajectory from [T, B, ...] to [T*B, ...]
+    """
+    return jax.tree_util.tree_map(
+        lambda x: x.reshape(-1, *x.shape[2:]),
+        trajectory
+    )
+
+
+def average_episode_discount_return(
+    episode_discount_return: jax.Array,  # [T,B]
+    dones: jax.Array  # [T,B]
+):
+    """
+        For autoreset envs trajectory.
+    """
+    # [B]
+    cnt = dones.sum(axis=0)
+    episode_discount_return_mean = (
+        (episode_discount_return * dones).sum(axis=0) / cnt
+    )
+
+    return jnp.where(
+        jnp.isclose(cnt, 0),
+        jnp.zeros_like(episode_discount_return_mean),
+        episode_discount_return_mean
     )

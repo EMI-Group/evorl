@@ -1,11 +1,23 @@
 import jax
-import jax.numpy as jnp
-import chex
-from omegaconf import DictConfig
 from evox import Stateful, State
-from abc import ABC
 
-class Workflow(Stateful):
+from evox.core.module import MetaStatefulModule
+
+class WorkflowMetaStateful(MetaStatefulModule):
+    def __new__(
+        cls,
+        name,
+        bases,
+        class_dict,
+        force_wrap=["__call__"],
+        ignore=["init", "setup", "enable_jit"],
+        ignore_prefix="_",
+    ):
+
+        return super().__new__(cls, name, bases, class_dict, force_wrap, ignore, ignore_prefix)
+        # return type.__new__(cls, name, bases, class_dict)
+
+class Workflow(Stateful, metaclass=WorkflowMetaStateful):
     def step(self, state: State) -> State:
         raise NotImplementedError
 
@@ -16,5 +28,5 @@ class Workflow(Stateful):
         """
         raise NotImplementedError
 
-    def jit(self) -> None:
-        self.step = jax.jit(self.step, donate_argnums=(0,))
+    def enable_jit(self) -> None:
+        self.step = jax.jit(self.step)
