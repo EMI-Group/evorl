@@ -264,3 +264,8 @@ class TrainMetric(MetricBase):
     env_timesteps: chex.Array = metricfield(
         default=jnp.zeros((), dtype=jnp.int32), reduce_fn=pmean)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.int32)
+
+
+class EvaluateMetric(MetricBase):
+    discount_returns: chex.Array
+    episode_lengths: chex.Array

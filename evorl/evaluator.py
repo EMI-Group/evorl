@@ -3,7 +3,7 @@ import chex
 
 from evorl.envs import Env
 from evorl.agents import Agent
-from evorl.types import MetricBase
+from evorl.types import EvaluateMetric
 from evorl.rollout import eval_rollout_episode
 from evorl.utils.toolkits import compute_discount_return, compute_episode_length
 from flax import struct
@@ -11,11 +11,6 @@ from flax import struct
 import dataclasses
 from typing import Optional
 
-
-
-class EvaluateMetric(MetricBase):
-    discount_returns: chex.Array
-    episode_lengths: chex.Array
 
 
 @dataclasses.dataclass
