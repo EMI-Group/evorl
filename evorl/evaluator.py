@@ -19,10 +19,10 @@ class Evaluator:
     agent: Agent
     max_episode_length: int
     discount: float = 1.0
-    pmap_axis_name: Optional[str] = None
+    # pmap_axis_name: Optional[str] = None
 
-    def enable_multi_devices(self, pmap_axis_name: Optional[str] = None):
-        self.pmap_axis_name = pmap_axis_name
+    # def enable_multi_devices(self, pmap_axis_name: Optional[str] = None):
+    #     self.pmap_axis_name = pmap_axis_name
 
     def evaluate(self, agent_state, num_episodes: int, key: chex.PRNGKey) -> EvaluateMetric:
         num_iters = num_episodes // self.env.num_envs

@@ -267,5 +267,5 @@ class TrainMetric(MetricBase):
 
 
 class EvaluateMetric(MetricBase):
-    discount_returns: chex.Array
-    episode_lengths: chex.Array
+    discount_returns: chex.Array = metricfield(reduce_fn=pmean)
+    episode_lengths: chex.Array = metricfield(reduce_fn=pmean)

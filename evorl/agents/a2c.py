@@ -383,16 +383,10 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             key=eval_key
         )
 
-        discount_return = eval_metrics.discount_returns.mean()
-        discount_return = pmean(
-            discount_return, axis_name=self.pmap_axis_name)
+        eval_metrics = eval_metrics.all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        episode_lengths = eval_metrics.episode_lengths.mean()
-        episode_lengths = pmean(
-            episode_lengths, axis_name=self.pmap_axis_name)
-
-        jax.debug.print("discount return: {x}", x=discount_return)
-        jax.debug.print("episode lengths: {x}", x=episode_lengths)
+        jax.debug.print("discount return: {x}", x=eval_metrics.discount_return)
+        jax.debug.print("episode lengths: {x}", x=eval_metrics.episode_lengths)
 
         state = state.update(key=key)
         return state
