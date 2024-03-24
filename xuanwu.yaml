@@ -1,0 +1,38 @@
+name: jaxrl
+channels:
+  - conda-forge
+  - nvidia/label/cuda-11.8.0
+dependencies:
+  - python=3.10
+  - pip
+  - jupyterlab
+  - tqdm
+  # vscode support
+  - autopep8
+  - pylint
+  - ipywidgets
+  - pytest
+  # -------
+  - pyyaml
+  - ruamel.yaml
+  - orjson
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - seaborn
+  - wandb
+  - hydra-core
+  # jax
+  - nvidia/label/cuda-11.8.0::cuda-nvcc
+  - jaxlib=*=*cuda118*
+  - jax
+  - flax
+  - optax
+  - brax
+  - pip:
+    - evox == 0.7.0
+    - jumanji
+    - pgx
+    - jaxmarl
+    - gymnax
