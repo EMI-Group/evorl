@@ -69,10 +69,10 @@ class DQNAgent(Agent):
         qs = self.q_network.apply(
             agent_state.params.q_params, sample_batch.obs)
 
-        # TODO: check EpsilonGreedy
+        # TODO: use tfp.Distribution
         actions_dist = distrax.EpsilonGreedy(
             qs, epsilon=self.eploration_epsilon)
-        actions = actions_dist.sample()
+        actions = actions_dist.sample(seed=key)
 
         return actions, dict(
             q_values=qs
