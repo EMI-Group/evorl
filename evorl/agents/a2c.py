@@ -241,7 +241,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             config.env_type,
             episode_length=1000,
             parallel=config.num_eval_envs,
-            autoreset=True
+            autoreset=False
         )
 
         evaluator = Evaluator(
