@@ -1,4 +1,4 @@
-name: jaxrl
+name: xuanwu
 channels:
   - conda-forge
   - nvidia/label/cuda-11.8.0
@@ -31,8 +31,9 @@ dependencies:
   - optax
   - brax
   - pip:
-    - evox == 0.7.0
+    - evox == 0.7.1
     - jumanji
     - pgx
     - jaxmarl
     - gymnax
+    - flashbax

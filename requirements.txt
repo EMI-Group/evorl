@@ -1,4 +1,4 @@
-evox == 0.7.0
+evox == 0.7.1
 hydra-core
 flashbax
 gymnax
