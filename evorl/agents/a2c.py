@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 from flax import struct
-import flax.linen as nn
 import math
 
 from evorl.types import SampleBatch, metricfield
@@ -10,23 +9,25 @@ from evorl.networks import make_policy_network, make_value_network
 from evorl.utils import running_statistics
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.utils.jax_utils import tree_stop_gradient
-from evorl.utils.toolkits import compute_gae, flatten_rollout_trajectory, average_episode_discount_return
+from evorl.utils.toolkits import (
+    compute_gae, flatten_rollout_trajectory, 
+    average_episode_discount_return
+)
 from evorl.workflows import OnPolicyRLWorkflow
 from evorl.agents import AgentState
-from evorl.distributed import agent_gradient_update, psum, pmean
+from evorl.distributed import agent_gradient_update, pmean
 from evorl.envs import create_env, Env
 from evorl.evaluator import Evaluator
 from .agent import Agent, AgentState
 
-from evox import State as EvoXState
+from evox import State
 
 # from typing import Dict
 import chex
-import distrax
 import optax
 from evorl.types import (
     LossDict, Action, Params, PolicyExtraInfo, EnvState,
-    Observation, TrainMetric
+    TrainMetric, EvaluateMetric
 )
 from typing import Tuple, Sequence, Optional
 import dataclasses
@@ -83,7 +84,7 @@ class A2CAgent(Agent):
         if self.normalize_obs:
             self.obs_preprocessor = running_statistics.normalize
             dummy_obs = self.obs_space.sample(obs_preprocessor_key)
-            # Note: statistics are broadcasted to [T,B]
+            # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
             obs_preprocessor_state = None
@@ -256,7 +257,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
         # Note: not need for evaluator state
 
-        return EvoXState(
+        return State(
             key=key,
             metric=A2CTrainMetric(),
             agent_state=agent_state,
@@ -264,7 +265,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             opt_state=self.optimizer.init(agent_state.params)
         )
 
-    def step(self, state: EvoXState):
+    def step(self, state: State):
 
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
@@ -353,7 +354,8 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
         jax.debug.print("total loss:{x}", x=loss)
         jax.debug.print("losses: {x}", x=loss_dict)
-        jax.debug.print("metric {x}", x=metric)
+        jax.debug.print("metric: {x}", x=metric)
+
 
         return state.update(
             key=key,
@@ -363,7 +365,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             opt_state=opt_state
         )
 
-    def learn(self, state: EvoXState) -> EvoXState:
+    def learn(self, state: State) -> State:
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
@@ -375,23 +377,31 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
         return state
 
-    def evaluate(self, state: EvoXState) -> EvoXState:
+    def evaluate(self, state: State) -> State:
         key, eval_key = jax.random.split(state.key, num=2)
-        eval_metrics = self.evaluator.evaluate(
+
+        # [#episodes]
+        raw_eval_metrics = self.evaluator.evaluate(
             state.agent_state,
             num_episodes=self.config.eval_episodes,
             key=eval_key
         )
 
+        eval_metrics = EvaluateMetric(
+            discount_returns=raw_eval_metrics.discount_returns.mean(),
+            episode_lengths=raw_eval_metrics.episode_lengths.mean()
+        )
+
         eval_metrics = eval_metrics.all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        jax.debug.print("discount return: {x}", x=eval_metrics.discount_return)
+        jax.debug.print("discount returns: {x}", x=eval_metrics.discount_returns)
         jax.debug.print("episode lengths: {x}", x=eval_metrics.episode_lengths)
+
 
         state = state.update(key=key)
         return state
 
-    def enable_multi_devices(self, state: EvoXState, devices: Optional[Sequence[jax.Device]] = None) -> EvoXState:
+    def enable_multi_devices(self, state: State, devices: Optional[Sequence[jax.Device]] = None) -> State:
         if devices is None:
             devices = jax.local_devices()
         num_devices = len(devices)

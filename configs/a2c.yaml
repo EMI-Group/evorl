@@ -17,11 +17,9 @@ optimizer:
   lr: 0.0001
   grad_clip_norm: 10.0 # set 0 or none to turn-off
   loss_weights:
-    actor_loss: 0.0
+    actor_loss: 1.0
     critic_loss: 0.5
-    actor_entropy_loss: 0.0
-    # critic_loss: 0.5
-    # actor_entropy_loss: -0.01
+    actor_entropy_loss: -0.01
 
 agent_network:
   continuous_action: true

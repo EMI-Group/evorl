@@ -12,8 +12,8 @@ def loss_and_pgrad(loss_fn: Callable[..., float],
     g = jax.value_and_grad(loss_fn, has_aux=has_aux)
 
     def h(*args, **kwargs):
-        value, grad = g(*args, **kwargs)
-        return value, jax.lax.pmean(grad, axis_name=pmap_axis_name)
+        value, grads = g(*args, **kwargs)
+        return value, jax.lax.pmean(grads, axis_name=pmap_axis_name)
 
     return g if pmap_axis_name is None else h
 
@@ -63,6 +63,7 @@ def agent_gradient_update(loss_fn: Callable[..., float],
     def f(opt_state, agent_state, *args, **kwargs):
         value, grads = loss_and_pgrad_fn(
             agent_state.params, agent_state, *args, **kwargs)
+
         params_update, opt_state = optimizer.update(
             grads, opt_state)
         params = optax.apply_updates(agent_state.params, params_update)

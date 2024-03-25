@@ -41,13 +41,24 @@ class RLWorkflow(Workflow):
         raise NotImplementedError
 
     def enable_multi_devices(self, state: State, devices: Optional[Sequence[jax.Device]]) -> State:
+        """
+            Enable multi devices setup for the workflow.
+            Note: this implicitly enables jit for step() and evaluate()
+        """
         if devices is None:
             devices = jax.local_devices()
 
-        state = jax.device_put_replicated(state, devices)
         self.pmap_axis_name = PMAP_AXIS_NAME
         self.step = jax.pmap(self.step, axis_name=PMAP_AXIS_NAME)
         self.evaluate = jax.pmap(self.evaluate, axis_name=PMAP_AXIS_NAME)
+
+        key = state.key
+        state = jax.device_put_replicated(state, devices)
+        # this ensures randomness in different devices
+        key_devices = jax.device_put_sharded(
+            tuple(_key for _key in jax.random.split(key, len(devices))), 
+            devices)
+        state = state.update(key=key_devices)
 
         return state
 
