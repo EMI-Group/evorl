@@ -262,7 +262,7 @@ class MetricBase(struct.PyTreeNode):
 
 class TrainMetric(MetricBase):
     env_timesteps: chex.Array = metricfield(
-        default=jnp.zeros((), dtype=jnp.int32), reduce_fn=pmean)
+        default=jnp.zeros((), dtype=jnp.int32), reduce_fn=psum)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.int32)
 
 
