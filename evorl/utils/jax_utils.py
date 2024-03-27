@@ -50,6 +50,7 @@ def tree_ones_like(nest: chex.ArrayTree, dtype=None) -> chex.ArrayTree:
 def tree_concat(nest1, nest2, axis=0):
     return jax.tree_util.tree_map(lambda x, y: jnp.concatenate([x, y], axis=axis), nest1, nest2)
 
+
 def tree_stop_gradient(nest: chex.ArrayTree) -> chex.ArrayTree:
     return jax.tree_util.tree_map(jax.lax.stop_gradient, nest)
 
@@ -59,6 +60,7 @@ def jit_method(
     static_argnames: str | Iterable[str] | None = None,
     donate_argnums: int | Sequence[int] | None = None,
     donate_argnames: str | Iterable[str] | None = None,
+    **kwargs,
 ):
     """
     A decorator for `jax.jit` with arguments.
@@ -75,7 +77,24 @@ def jit_method(
                    static_argnums=static_argnums,
                    static_argnames=static_argnames,
                    donate_argnums=donate_argnums,
-                   donate_argnames=donate_argnames)
+                   donate_argnames=donate_argnames,
+                   **kwargs)
+
+
+def pmap_method(
+        axis_name, *,
+        static_broadcasted_argnums=(),
+        donate_argnums=(),
+        **kwargs,
+):
+    """
+    A decorator for `jax.pmap` with arguments.
+    """
+    return partial(
+        jax.pmap, axis_name,
+        static_broadcasted_argnums=static_broadcasted_argnums,
+        donate_argnums=donate_argnums,
+        **kwargs)
 
 
 _vmap_rng_split_fn = jax.vmap(jax.random.split, in_axes=(0, None), out_axes=1)

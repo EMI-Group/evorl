@@ -4,14 +4,21 @@ from evox import Stateful, State
 
 from evox.core.module import MetaStatefulModule
 
-class Workflow:
-    """
-        A duck-type of evox.Workflow
-    """
+class WorkflowMetaStateful(MetaStatefulModule):
+    def __new__(
+        cls,
+        name,
+        bases,
+        class_dict
+    ):
+        # return super().__new__(cls, name, bases, class_dict, 
+        #                        ignore=["init", "setup", "enable_jit","enable_multi_devices"])
+        return type.__new__(cls, name, bases, class_dict)
 
+class Workflow(Stateful, metaclass=WorkflowMetaStateful):
     def setup(self, key: jax.Array) -> State:
         """
-            Custom setup.
+            custom setup.
             When call public API init(), setup() would be recursively called.
         """
         raise NotImplementedError
@@ -25,13 +32,6 @@ class Workflow:
             Note: this is designed for the non pure function. Don't wrap it with jit.
         """
         raise NotImplementedError
-
-    def init(self, key: jax.Array) -> State:
-        """
-            Initialize the state of the module.
-            This is the public API
-        """
-        return self.setup(key)
 
     @classmethod
     def enable_jit(cls) -> None:

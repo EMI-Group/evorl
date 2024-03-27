@@ -8,6 +8,7 @@ from evorl.networks import make_q_network
 from evorl.workflows import OffPolicyRLWorkflow
 from evorl.envs import create_env, Discrete
 from evorl.types import TrainMetric
+from evorl.evaluator import Evaluator
 
 from evox import State
 
@@ -24,6 +25,10 @@ from evorl.types import (
     EnvLike, LossDict, Action, Params, PolicyExtraInfo, EnvState,
     Observation, SampleBatch
 )
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @struct.dataclass
@@ -108,10 +113,14 @@ class DQNAgent(Agent):
 
 
 class DQNWorkflow(OffPolicyRLWorkflow):
-    def __init__(
-        self,
-        config: DictConfig,
-    ):
+    @staticmethod
+    def _rescale_config(config, devices) -> None:
+        num_devices = len(devices)
+
+        #TODO: impl it
+
+    @classmethod
+    def _build_from_config(cls, config: DictConfig):
         env = create_env(
             config.env,
             config.env_type,
@@ -119,6 +128,7 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             parallel=config.num_envs,
             autoreset=True
         )
+        
 
         assert isinstance(env.action_space, Discrete), "Only Discrete action space is supported."
 
@@ -145,9 +155,12 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             dummy_action = env.action_space.sample()
             dummy_action = jnp.broadcast_to(
                 dummy_action, batch_shape+dummy_action.shape)
-            dummy_obs = env.obs_space.sample()
-            dummy_obs = jnp.broadcast_to(
-                dummy_action, batch_shape+dummy_action.shape)
+            
+            action_shape = jax.eval_shape(env.action_space.sample)
+            dummy_action = jnp.zeros(batch_shape+action_shape)
+
+            obs_shape = jax.eval_shape(env.obs_space.sample)
+            dummy_obs = jnp.zeors(batch_shape+obs_shape)
 
             # TODO: handle RewardDict
             dummy_reward = jnp.zeros(batch_shape)
@@ -167,14 +180,21 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             replay_buffer_state = replay_buffer.init(dummy_sample_batch)
 
             return replay_buffer_state
+        
 
-        super(DQNWorkflow, self).__init__(
-            config=config,
-            env=env,
-            agent=agent,
-            optimizer=optimizer,
-            replay_buffer=replay_buffer,
-            replay_buffer_init_fn=_replay_buffer_init_fn
+        eval_env = create_env(
+            config.env,
+            config.env_type,
+            episode_length=1000,
+            parallel=config.num_eval_envs,
+            autoreset=False
         )
+
+        evaluator = Evaluator(
+            env=eval_env, agent=agent, max_episode_length=1000)
+
+        return cls(env, agent, optimizer, evaluator, replay_buffer, _replay_buffer_init_fn, config)
+
+
 
 

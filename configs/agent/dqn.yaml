@@ -1,4 +1,7 @@
-env: xxx
+# @package _global_
+
+workflow_cls: evorl.agents.a2c.A2CWorkflow
+
 num_envs: 1
 
 rollout_length: 1

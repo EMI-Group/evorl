@@ -3,6 +3,8 @@ import jax.numpy as jnp
 from flax import struct
 import math
 
+from omegaconf import DictConfig
+
 from evorl.types import SampleBatch, metricfield
 
 from evorl.networks import make_policy_network, make_value_network
@@ -10,7 +12,7 @@ from evorl.utils import running_statistics
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.toolkits import (
-    compute_gae, flatten_rollout_trajectory, 
+    compute_gae, flatten_rollout_trajectory,
     average_episode_discount_return
 )
 from evorl.workflows import OnPolicyRLWorkflow
@@ -32,6 +34,10 @@ from evorl.types import (
 from typing import Tuple, Sequence, Optional
 import dataclasses
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 @struct.dataclass
 class A2CNetworkParams:
@@ -40,9 +46,9 @@ class A2CNetworkParams:
     value_params: Params
 
 
-
 class A2CTrainMetric(TrainMetric):
-    train_episode_return: chex.Array = metricfield(default=jnp.zeros(()), reduce_fn=pmean)
+    train_episode_return: chex.Array = metricfield(
+        default=jnp.zeros(()), reduce_fn=pmean)
 
 
 @dataclasses.dataclass(unsafe_hash=True)
@@ -210,7 +216,25 @@ class A2CAgent(Agent):
 
 
 class A2CWorkflow(OnPolicyRLWorkflow):
-    def __init__(self, config):
+    @staticmethod
+    def _rescale_config(config, devices) -> None:
+        num_devices = len(devices)
+        if config.num_envs % num_devices != 0:
+            logger.warning(
+                f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}),"
+                f"set num_envs to {config.num_envs // num_devices}"
+            )
+        if config.num_eval_envs % num_devices != 0:
+            logger.warning(
+                f"num_eval_envs({config.num_eval_envs}) cannot be divided by num_devices({num_devices}),"
+                f"set num_eval_envs to {config.num_eval_envs // num_devices}"
+            )
+
+        config.num_envs = config.num_envs // num_devices
+        config.num_eval_envs = config.num_eval_envs // num_devices
+
+    @classmethod
+    def _build_from_config(cls, config: DictConfig):
         env = create_env(
             config.env,
             config.env_type,
@@ -248,22 +272,10 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         evaluator = Evaluator(
             env=eval_env, agent=agent, max_episode_length=1000)
 
-        super(A2CWorkflow, self).__init__(
-            config, env, agent, optimizer, evaluator)
+        return cls(env, agent, optimizer, evaluator, config)
 
-    def setup(self, key):
-        key, agent_key, env_key = jax.random.split(key, 3)
-        agent_state = self.agent.init(agent_key)
-
-        # Note: not need for evaluator state
-
-        return State(
-            key=key,
-            metric=A2CTrainMetric(),
-            agent_state=agent_state,
-            env_state=self.env.reset(env_key),
-            opt_state=self.optimizer.init(agent_state.params)
-        )
+    def _setup_train_metrics(self) -> TrainMetric:
+        return A2CTrainMetric()
 
     def step(self, state: State):
 
@@ -336,30 +348,29 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             learn_key
         )
 
-        env_timesteps = (state.metric.env_timesteps +
-            self.config.rollout_length * self.config.num_envs)
-        
+        env_timesteps = (state.train_metrics.env_timesteps +
+                         self.config.rollout_length * self.config.num_envs)
+
         train_episode_return = average_episode_discount_return(
             trajectory.extras["env_extras"]['episode_return'],
             trajectory.dones
         ).mean()
 
-        metric = A2CTrainMetric(
+        train_metrics = A2CTrainMetric(
             env_timesteps=env_timesteps,
-            iterations=state.metric.iterations + 1,
+            iterations=state.train_metrics.iterations + 1,
             train_episode_return=train_episode_return
         )
 
-        metric = metric.all_reduce(pmap_axis_name=self.pmap_axis_name)
+        train_metrics = train_metrics.all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         jax.debug.print("total loss:{x}", x=loss)
         jax.debug.print("losses: {x}", x=loss_dict)
-        jax.debug.print("metric: {x}", x=metric)
-
+        jax.debug.print("metric: {x}", x=train_metrics)
 
         return state.update(
             key=key,
-            metric=metric,
+            train_metrics=train_metrics,
             agent_state=agent_state,
             env_state=env_state,
             opt_state=opt_state
@@ -392,22 +403,15 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             episode_lengths=raw_eval_metrics.episode_lengths.mean()
         )
 
-        eval_metrics = eval_metrics.all_reduce(pmap_axis_name=self.pmap_axis_name)
+        eval_metrics = eval_metrics.all_reduce(
+            pmap_axis_name=self.pmap_axis_name)
 
-        jax.debug.print("discount returns: {x}", x=eval_metrics.discount_returns)
+        jax.debug.print(
+            "discount returns: {x}", x=eval_metrics.discount_returns)
         jax.debug.print("episode lengths: {x}", x=eval_metrics.episode_lengths)
-
 
         state = state.update(key=key)
         return state
-
-    def enable_multi_devices(self, state: State, devices: Optional[Sequence[jax.Device]] = None) -> State:
-        if devices is None:
-            devices = jax.local_devices()
-        num_devices = len(devices)
-        self.config.rollout_length = self.config.rollout_length // num_devices
-        self.config.eval_episodes = self.config.eval_episodes // num_devices
-        return super().enable_multi_devices(state, devices)
 
 
 def env_step(
