@@ -216,13 +216,13 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         num_devices = len(devices)
         if config.num_envs % num_devices != 0:
             logger.warning(
-                f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}),"
-                f"set num_envs to {config.num_envs // num_devices}"
+                f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
+                f"rescale num_envs to {config.num_envs // num_devices}"
             )
         if config.num_eval_envs % num_devices != 0:
             logger.warning(
-                f"num_eval_envs({config.num_eval_envs}) cannot be divided by num_devices({num_devices}),"
-                f"set num_eval_envs to {config.num_eval_envs // num_devices}"
+                f"num_eval_envs({config.num_eval_envs}) cannot be divided by num_devices({num_devices}), "
+                f"rescale num_eval_envs to {config.num_eval_envs // num_devices}"
             )
 
         config.num_envs = config.num_envs // num_devices
