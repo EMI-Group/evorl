@@ -29,7 +29,7 @@ import chex
 import optax
 from evorl.types import (
     LossDict, Action, Params, PolicyExtraInfo, EnvState,
-    TrainMetric, EvaluateMetric
+    TrainMetric, EvaluateMetric, WorkflowMetric
 )
 from typing import Tuple, Sequence, Optional
 import dataclasses
@@ -44,11 +44,6 @@ class A2CNetworkParams:
     """Contains training state for the learner."""
     policy_params: Params
     value_params: Params
-
-
-class A2CTrainMetric(TrainMetric):
-    train_episode_return: chex.Array = metricfield(
-        default=jnp.zeros(()), reduce_fn=pmean)
 
 
 @dataclasses.dataclass(unsafe_hash=True)
@@ -274,10 +269,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
         return cls(env, agent, optimizer, evaluator, config)
 
-    def _setup_train_metrics(self) -> TrainMetric:
-        return A2CTrainMetric()
-
-    def step(self, state: State):
+    def step(self, state: State) -> Tuple[TrainMetric, State]:
 
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
@@ -341,14 +333,16 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             pmap_axis_name=self.pmap_axis_name,
             has_aux=True)
 
-        opt_state, (loss, loss_dict), agent_state = update_fn(
+        (loss, loss_dict), opt_state, agent_state = update_fn(
             state.opt_state,
             agent_state,
             trajectory,
             learn_key
         )
 
-        env_timesteps = (state.train_metrics.env_timesteps +
+        # ======== update metrics ========
+
+        sampled_timesteps = (state.metrics.sampled_timesteps +
                          self.config.rollout_length * self.config.num_envs)
 
         train_episode_return = average_episode_discount_return(
@@ -356,21 +350,20 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             trajectory.dones
         ).mean()
 
-        train_metrics = A2CTrainMetric(
-            env_timesteps=env_timesteps,
-            iterations=state.train_metrics.iterations + 1,
-            train_episode_return=train_episode_return
-        )
+        workflow_metrics = WorkflowMetric(
+            sampled_timesteps=sampled_timesteps,
+            iterations=state.metrics.iterations + 1,
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        train_metrics = train_metrics.all_reduce(pmap_axis_name=self.pmap_axis_name)
+        train_metrics = TrainMetric(
+            train_episode_return=train_episode_return,
+            loss=loss,
+            raw_loss_dict=loss_dict
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        jax.debug.print("total loss:{x}", x=loss)
-        jax.debug.print("losses: {x}", x=loss_dict)
-        jax.debug.print("metric: {x}", x=train_metrics)
-
-        return state.update(
+        return train_metrics, state.update(
             key=key,
-            train_metrics=train_metrics,
+            metrics=workflow_metrics,
             agent_state=agent_state,
             env_state=env_state,
             opt_state=opt_state
@@ -381,36 +374,16 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
         for i in range(num_iters):
-            state = self.step(state)
+            train_metrics, state = self.step(state)
+            workflow_metrics = state.metrics
+
+            logger.info(workflow_metrics)
+            logger.info(train_metrics)
 
             if (i+1) % self.config.eval_interval == 0:
-                state = self.evaluate(state)
+                eval_metrics, state = self.evaluate(state)
+                logger.info(eval_metrics)
 
-        return state
-
-    def evaluate(self, state: State) -> State:
-        key, eval_key = jax.random.split(state.key, num=2)
-
-        # [#episodes]
-        raw_eval_metrics = self.evaluator.evaluate(
-            state.agent_state,
-            num_episodes=self.config.eval_episodes,
-            key=eval_key
-        )
-
-        eval_metrics = EvaluateMetric(
-            discount_returns=raw_eval_metrics.discount_returns.mean(),
-            episode_lengths=raw_eval_metrics.episode_lengths.mean()
-        )
-
-        eval_metrics = eval_metrics.all_reduce(
-            pmap_axis_name=self.pmap_axis_name)
-
-        jax.debug.print(
-            "discount returns: {x}", x=eval_metrics.discount_returns)
-        jax.debug.print("episode lengths: {x}", x=eval_metrics.episode_lengths)
-
-        state = state.update(key=key)
         return state
 
 

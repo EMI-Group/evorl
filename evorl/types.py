@@ -240,8 +240,10 @@ class Episode:
         return 1-right_shift(self.trajectory.dones, 1)
 
 
-def metricfield(*, reduce_fn: Callable[[chex.Array, Optional[str]], chex.Array], pytree_node=True, **kwargs):
+def metricfield(*, reduce_fn: Callable[[chex.Array, Optional[str]], chex.Array] = None, pytree_node=True, **kwargs):
     return dataclasses.field(metadata={'pytree_node': pytree_node, 'reduce_fn': reduce_fn}, **kwargs)
+
+# TODO: use kw_only=True when jax support it
 
 
 class MetricBase(struct.PyTreeNode):
@@ -260,10 +262,18 @@ class MetricBase(struct.PyTreeNode):
         return self.replace(**field_dict)
 
 
-class TrainMetric(MetricBase):
-    env_timesteps: chex.Array = metricfield(
+class WorkflowMetric(MetricBase):
+    sampled_timesteps: chex.Array = metricfield(
         default=jnp.zeros((), dtype=jnp.int32), reduce_fn=psum)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.int32)
+
+
+class TrainMetric(MetricBase):
+    train_episode_return: chex.Array = metricfield(
+        default=jnp.zeros(()), reduce_fn=pmean)
+    # no need reduce_fn since it's already reduced in the step()
+    loss: chex.Array = jnp.zeros((), dtype=jnp.int32)
+    raw_loss_dict: LossDict = metricfield(default_factory=dict)
 
 
 class EvaluateMetric(MetricBase):

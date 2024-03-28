@@ -69,6 +69,6 @@ def agent_gradient_update(loss_fn: Callable[..., float],
         params = optax.apply_updates(agent_state.params, params_update)
 
         agent_state = agent_state.replace(params=params)
-        return opt_state, value, agent_state
+        return value, opt_state, agent_state
 
     return f

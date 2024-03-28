@@ -4,6 +4,8 @@ from evox import Stateful, State
 
 from evox.core.module import MetaStatefulModule
 
+from typing import Any, Tuple, Union
+
 class Workflow:
     """
         A duck-type of evox.Workflow
@@ -16,7 +18,7 @@ class Workflow:
         """
         raise NotImplementedError
 
-    def step(self, key: chex.PRNGKey) -> State:
+    def step(self, key: chex.PRNGKey) -> Union[State, Tuple[State, Any]]:
         raise NotImplementedError
 
     def learn(self, state: State) -> State:
@@ -29,7 +31,7 @@ class Workflow:
     def init(self, key: jax.Array) -> State:
         """
             Initialize the state of the module.
-            This is the public API
+            This is the public API to call for instance state initialization.
         """
         return self.setup(key)
 
