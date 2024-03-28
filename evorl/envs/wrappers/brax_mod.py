@@ -143,7 +143,7 @@ class VmapWrapper(Wrapper):
         super().__init__(env)
         self.num_envs = num_envs
 
-    def reset(self, rng: jax.Array) -> State:
+    def reset(self, rng: chex.PRNGKey) -> State:
         rng = jax.random.split(rng, self.num_envs)
         return jax.vmap(self.env.reset)(rng)
 
@@ -157,7 +157,7 @@ class VmapWrapper(Wrapper):
 class AutoResetWrapper(Wrapper):
     """Automatically resets Brax envs that are done."""
 
-    def reset(self, rng: jax.Array) -> State:
+    def reset(self, rng: chex.PRNGKey) -> State:
         state = self.env.reset(rng)
         state.info['first_pipeline_state'] = state.pipeline_state
         state.info['first_obs'] = state.obs

@@ -39,7 +39,8 @@ class RLWorkflow(Workflow):
     @classmethod
     def build_from_config(cls, config: DictConfig, enable_multi_devices: bool = False, devices: Optional[Sequence[jax.Device]] = None):
         config = copy.deepcopy(config)  # avoid in-place modification
-        devices = jax.local_devices() if devices is None else devices
+        if devices is None:
+            devices = jax.local_devices()
 
         if enable_multi_devices:
             cls.step = jax.pmap(
@@ -47,7 +48,7 @@ class RLWorkflow(Workflow):
             cls.evaluate = jax.pmap(
                 cls.evaluate, axis_name=PMAP_AXIS_NAME, static_broadcasted_argnums=(0,))
             OmegaConf.set_readonly(config, False)
-            config = cls._rescale_config(config, devices)
+            cls._rescale_config(config, devices)
 
         OmegaConf.set_readonly(config, True)
 
@@ -63,7 +64,7 @@ class RLWorkflow(Workflow):
         raise NotImplementedError
 
     @staticmethod
-    def _rescale_config(config, devices) -> None:
+    def _rescale_config(config: DictConfig, devices) -> None:
         """
             When enable_multi_devices=True, rescale config settings to match multi-devices
         """

@@ -44,8 +44,7 @@ def unpmap(x, axis_name: Optional[str] = None):
 
 
 def split_key_to_devices(key: chex.PRNGKey, devices: Sequence[jax.Device]):
-    num_devices = len(devices)
     return jax.device_put_sharded(
-        jnp.split(jax.random.split(key, num_devices), num_devices),
+        tuple(jax.random.split(key, len(devices))),
         devices
     )
