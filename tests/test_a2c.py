@@ -10,10 +10,13 @@ from omegaconf import OmegaConf
 
 def test_a2c():
     with initialize(config_path='../configs'):
-        cfg = compose(config_name='a2c')
-    learner = A2CWorkflow(cfg)
+        cfg = compose(config_name="config", overrides=["agent=a2c"])
+    
+    A2CWorkflow.enable_jit()
+    learner = A2CWorkflow.build_from_config(cfg)
     state = learner.init(jax.random.PRNGKey(42))
-    nstate = learner.step(state)
+    state = learner.step(state)
+    state = learner.evaluate(state)
 
 
 def _create_example_agent_env(num_envs, rollout_length):
