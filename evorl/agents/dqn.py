@@ -152,14 +152,14 @@ class DQNWorkflow(OffPolicyRLWorkflow):
         batch_shape = (config.num_envs*config.rollout_length,)
         def _replay_buffer_init_fn(replay_buffer, key):
             # dummy_action = jnp.tile(env.action_space.sample(),
-            dummy_action = env.action_space.sample()
+            dummy_action = jax.eval_shape(env.action_space.sample, key)
             dummy_action = jnp.broadcast_to(
                 dummy_action, batch_shape+dummy_action.shape)
             
-            action_shape = jax.eval_shape(env.action_space.sample)
+            action_shape = jax.eval_shape(env.action_space.sample, key)
             dummy_action = jnp.zeros(batch_shape+action_shape)
 
-            obs_shape = jax.eval_shape(env.obs_space.sample)
+            obs_shape = jax.eval_shape(env.obs_space.sample, key)
             dummy_obs = jnp.zeors(batch_shape+obs_shape)
 
             # TODO: handle RewardDict
