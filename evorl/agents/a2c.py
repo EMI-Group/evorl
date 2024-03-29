@@ -192,7 +192,10 @@ class A2CAgent(Agent):
         # advantages: [T*B]
         policy_loss = - (advantages * actions_logp).mean()
         # entropy: [T*B]
-        entropy_loss = actions_dist.entropy(seed=key).mean()
+        if self.continuous_action:
+            entropy_loss = actions_dist.entropy(seed=key).mean()
+        else:
+            entropy_loss = actions_dist.entropy().mean()
 
         return dict(
             actor_loss=policy_loss,
@@ -377,8 +380,8 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            logger.info(workflow_metrics)
-            logger.info(train_metrics)
+            # logger.info(workflow_metrics)
+            # logger.info(train_metrics)
 
             if (i+1) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
