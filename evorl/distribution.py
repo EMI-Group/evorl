@@ -6,7 +6,7 @@ from typing import Any, List, Optional, Sequence, Union, Callable
 
 from tensorflow_probability.substrates import jax as tfp
 tfd = tfp.distributions # note: tfp use lazy init.
-# import tensorflow_probability.substrates.jax.distributions as tfd
+from tensorflow_probability.substrates.jax.distributions import Categorical
 
 def get_categorical_dist(logits: jax.Array):
     return tfd.Categorical(logits=logits)

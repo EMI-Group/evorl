@@ -56,7 +56,13 @@ def create_brax_env(env_name: str,
                parallel: int = 1,
                autoreset: bool = True,
                discount: float = 1.0,
-               **kwargs):
+               **kwargs)-> BraxEnvAdapter:
+    """
+        Args:
+            Autoreset: When use envs for RL training, set autoreset=True. When use envs for evaluation, set autoreset=False.
+            discount: discount factor for episode return calculation. The episode returns are Only recorded when autoreset=True.
+    """
+
     env = brax.envs.get_environment(env_name, **kwargs)
 
     if autoreset:

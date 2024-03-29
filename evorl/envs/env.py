@@ -1,7 +1,7 @@
 import chex
-from ..types import EnvLike
+
 from .space import Space
-from evorl.types import EnvState, Action
+from evorl.types import EnvLike, EnvState, Action
 
 from abc import ABC,abstractmethod
 

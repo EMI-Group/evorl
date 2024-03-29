@@ -5,7 +5,7 @@ workflow_cls: evorl.agents.a2c.A2CWorkflow
 num_envs: 8
 
 normalize_obs: true
-rollout_length: 32 # train_batch_size = rollout_length * num_envs = 256
+rollout_length: 50 # train_batch_size = rollout_length * num_envs = 256
 gae_lambda: 0.95
 discount: 0.99
 

@@ -150,9 +150,6 @@ class VmapWrapper(Wrapper):
     def step(self, state: State, action: jax.Array) -> State:
         return jax.vmap(self.env.step)(state, action)
 
-    def num_envs(self, state):
-        return state.obs.shape[0]
-
 
 class AutoResetWrapper(Wrapper):
     """Automatically resets Brax envs that are done."""
