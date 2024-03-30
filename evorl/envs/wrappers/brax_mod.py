@@ -145,7 +145,12 @@ class VmapWrapper(Wrapper):
         self.num_envs = num_envs
 
     def reset(self, rng: chex.PRNGKey) -> State:
-        rng = jax.random.split(rng, self.num_envs)
+        """
+            Args:
+                rng: support batched rngs [B,2] or single rng [2]
+        """
+        if rng.ndim<=1:
+            rng = jax.random.split(rng, self.num_envs)
         return jax.vmap(self.env.reset)(rng)
 
     def step(self, state: State, action: jax.Array) -> State:

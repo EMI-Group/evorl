@@ -27,6 +27,8 @@ def test_rollout():
 
     agent_state = agent.init(agent_key)
 
+    env_extra_fields=('termination','truncation','discount','last_obs','steps','episode_return')
+
     env_nstate, trajectory = rollout(
         env,
         agent,
@@ -34,14 +36,18 @@ def test_rollout():
         agent_state,
         rollout_key,
         rollout_length=1000,
-        env_extra_fields=('termination','truncation')
+        env_extra_fields=env_extra_fields
     )
 
+    env_extras = trajectory.extras['env_extras']
+    for key in env_extra_fields:
+        assert key in env_extras, f"{key} not in rollout trjectory"
 
 
 
 
-def test_rollout():
+
+def test_rollout_episode():
     env = create_brax_env(
         "ant",
         parallel=6,

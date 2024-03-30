@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import chex
 from gymnax.environments.environment import Environment, EnvState, EnvParams
 from flax import struct
+from evorl.utils.jax_utils import vmap_rng_split
 
 import math
 
@@ -109,7 +110,8 @@ class AutoResetWrapper(Wrapper):
 
         state = self.env.step(state, action)
 
-        rng, reset_rng = jax.random.split(state.info["_rng"])
+        # rng, reset_rng = jax.random.split(state.info["_rng"])
+        rng, reset_rng = vmap_rng_split(state.info["_rng"])
         state.info["_rng"] = rng
 
         state_reset = self.env.reset(reset_rng)
