@@ -15,12 +15,12 @@ from gymnax.environments.spaces import (
     Discrete as gymnaxDiscrete,
 )
 from typing import Any, Dict, Optional
+from .wrappers.gymnax_mod import AutoResetWrapper
 from .wrappers.brax_mod import (
     EpisodeWrapper,
     EpisodeWrapperV2,
     VmapWrapper,
     EpisodeRecordWrapper,
-    AutoResetWrapper,
     get_wrapper
 )
 

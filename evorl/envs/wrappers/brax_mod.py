@@ -119,7 +119,8 @@ class EpisodeRecordWrapper(Wrapper):
         return state
 
     def step(self, state: State, action: jax.Array) -> State:
-        prev_done = state.info.get('autoreset', state.done)
+        # prev_done = state.info.get('autoreset', state.done)
+        prev_done = state.done
         episode_return = state.info['episode_return'] * (1-prev_done)
 
         state = self.env.step(state, action)
@@ -160,7 +161,7 @@ class AutoResetWrapper(Wrapper):
         state.info['first_obs'] = state.obs
         # add last_obs for PEB (when calc GAE)
         state.info['last_obs'] = jnp.zeros_like(state.obs)
-        state.info["autoreset"] = jnp.zeros_like(state.done)
+        # state.info["autoreset"] = jnp.zeros_like(state.done)
         return state
 
     def step(self, state: State, action: jax.Array) -> State:
@@ -168,14 +169,16 @@ class AutoResetWrapper(Wrapper):
             steps = state.info['steps']
             steps = jnp.where(state.done, jnp.zeros_like(steps), steps)
             state.info.update(steps=steps)
-        state.info['autoreset'] = state.done # keep the original done
-        state = state.replace(done=jnp.zeros_like(state.done))
+        # state.info['autoreset'] = state.done # keep the original done
+
+        # unnecessary, since `env.step(state)` isn't dependent on state.done
+        # state = state.replace(done=jnp.zeros_like(state.done))
         
         state = self.env.step(state, action)
 
         def where_done(x, y):
             done = state.done
-            if done.shape:
+            if len(done.shape)>0:
                 done = jnp.reshape(
                     done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
             return jnp.where(done, x, y)
@@ -183,9 +186,9 @@ class AutoResetWrapper(Wrapper):
         pipeline_state = jax.tree_map(
             where_done, state.info['first_pipeline_state'], state.pipeline_state
         )
-        # the real next_obs at the end of an episode
-        state.info['last_obs'] = state.obs
         obs = where_done(state.info['first_obs'], state.obs)
+        # the real next_obs at the end of episodes
+        state.info['last_obs'] = state.obs
 
         return state.replace(pipeline_state=pipeline_state, obs=obs)
 

@@ -67,6 +67,7 @@ class GymnaxToBraxWrapper(Env):
         rng, step_rng = jax.random.split(state_info["_rng"])
 
         # call step_env() instead of step() to disable autoreset
+        # we handle the autoreset at AutoResetWrapper
         o, pipeline_state, r, d, info = self.env.step_env(
             step_rng, state.pipeline_state, action, state_info["_env_params"])
         
@@ -89,3 +90,42 @@ class GymnaxToBraxWrapper(Env):
 
     def backend(self) -> str:
         return "gymnax"
+
+class AutoResetWrapper(Wrapper):
+    """Automatically resets Brax envs that are done."""
+
+    def reset(self, rng: chex.PRNGKey) -> State:
+        state = self.env.reset(rng)
+        # add last_obs for PEB (when calc GAE)
+        state.info['last_obs'] = jnp.zeros_like(state.obs)
+        return state
+
+    def step(self, state: State, action: jax.Array) -> State:
+        if 'steps' in state.info:
+            steps = state.info['steps']
+            steps = jnp.where(state.done, jnp.zeros_like(steps), steps)
+            state.info.update(steps=steps)
+        # state.info['autoreset'] = state.done # keep the original prev_done
+
+        state = self.env.step(state, action)
+
+        rng, reset_rng = jax.random.split(state.info["_rng"])
+        state.info["_rng"] = rng
+
+        state_reset = self.env.reset(reset_rng)
+
+        def where_done(x, y):
+            done = state.done
+            if len(done.shape)>0:
+                done = jnp.reshape(
+                    done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
+            return jnp.where(done, x, y)
+
+        pipeline_state = jax.tree_map(
+            where_done, state_reset.pipeline_state, state.pipeline_state
+        )
+        obs = where_done(state_reset.obs, state.obs)
+        # the real next_obs at the end of episodes
+        state.info['last_obs'] = state.obs
+
+        return state.replace(pipeline_state=pipeline_state, obs=obs)
