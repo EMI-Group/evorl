@@ -19,7 +19,7 @@ class ActionSquashWrapper(Env):
         action_space = self.env.action_space
         assert isinstance(action_space, Box)
 
-        self.scale = (action_space.high - action_space.low) * 0.5
+        self.scale = (action_space.high - action_space.low)*0.5
         self.bias = (action_space.high + action_space.low)*0.5
 
     def step(self, state: EnvState, action: Action) -> EnvState:

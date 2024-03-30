@@ -23,6 +23,7 @@ from .wrappers.brax_mod import (
     EpisodeRecordWrapper,
     get_wrapper
 )
+from .wrappers.action_wrapper import ActionSquashWrapper
 
 
 @struct.dataclass
@@ -109,4 +110,12 @@ def create_gymnax_env(env_name: str,
         env = VmapWrapper(env, num_envs=parallel)
 
     env = GymnaxAdapter(env)
+
+    if isinstance(env.action_space, Box):
+        if not jnp.logical_and(
+            (env.action_space.low == -1).all(),
+            (env.action_space.high == 1).all()
+        ):
+            env = ActionSquashWrapper(env)
+
     return env
