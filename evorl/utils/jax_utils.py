@@ -103,4 +103,4 @@ _vmap_rng_split_fn = jax.vmap(jax.random.split, in_axes=(0, None), out_axes=1)
 def vmap_rng_split(key: jax.Array, num: int = 2) -> jax.Array:
     # batched_key [B, 2] -> batched_keys [num, B, 2]
     chex.assert_shape(key, (None, 2))
-    return _vmap_rng_split_fn(key, jnp.arange(num))
+    return _vmap_rng_split_fn(key, num)
