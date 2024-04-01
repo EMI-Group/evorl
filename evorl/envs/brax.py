@@ -15,9 +15,9 @@ from .wrappers.brax_mod import (
     get_wrapper
 )
 
-class BraxEnvAdapter(EnvAdapter):
+class BraxAdapter(EnvAdapter):
     def __init__(self, env):
-        super(BraxEnvAdapter, self).__init__(env)
+        super(BraxAdapter, self).__init__(env)
 
         action_spec = self.env.sys.actuator.ctrl_range
         action_spec = action_spec.astype(jnp.float32)
@@ -56,7 +56,7 @@ def create_brax_env(env_name: str,
                parallel: int = 1,
                autoreset: bool = True,
                discount: float = 1.0,
-               **kwargs)-> BraxEnvAdapter:
+               **kwargs)-> BraxAdapter:
     """
         Args:
             Autoreset: When use envs for RL training, set autoreset=True. When use envs for evaluation, set autoreset=False.
@@ -75,6 +75,6 @@ def create_brax_env(env_name: str,
         env = VmapWrapper(env, num_envs=parallel)
     
     # To EvoRL Env
-    env = BraxEnvAdapter(env)
+    env = BraxAdapter(env)
 
     return env
