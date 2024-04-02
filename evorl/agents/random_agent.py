@@ -2,13 +2,12 @@
 import jax
 import jax.numpy as jnp
 import chex
-from flax import struct
 
-from evorl.types import PolicyExtraInfo, SampleBatch
-from typing import Tuple, Sequence
+from evorl.types import PolicyExtraInfo
+from evorl.sample_batch import SampleBatch
+from typing import Tuple
 from evorl.types import (
-    EnvLike, LossDict, Action, Params, PolicyExtraInfo, EnvState,
-    Observation
+    LossDict, Action, PolicyExtraInfo,
 )
 from .agent import Agent, AgentState
 

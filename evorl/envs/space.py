@@ -8,7 +8,7 @@ class Space:
         a jax version of the gym.Space
     """
 
-    def sample(self, rng) -> chex.Array:
+    def sample(self, key: chex.PRNGKey) -> chex.Array:
         """Randomly sample an element of this space.
 
         Can be uniform or non-uniform sampling based on boundedness of space.
@@ -38,8 +38,8 @@ class Box(Space):
         assert (self.high>=self.low).all(), "high should be greater than or equal to low"
         
 
-    def sample(self, rng) -> chex.Array:
-        return jax.random.uniform(rng, 
+    def sample(self, key: chex.PRNGKey) -> chex.Array:
+        return jax.random.uniform(key, 
                                   shape=self.low.shape,
                                   dtype=self.low.dtype,
                                   minval=self.low, 
@@ -59,8 +59,8 @@ class Discrete(Space):
     def __post_init__(self):
         assert self.n > 0, "n should be a positive integer"
 
-    def sample(self, rng) -> chex.Array:
-        return jax.random.randint(rng, shape=(), minval=0, maxval=self.n)
+    def sample(self, key: chex.PRNGKey) -> chex.Array:
+        return jax.random.randint(key, shape=(), minval=0, maxval=self.n)
     
     @property
     def shape(self) -> chex.Shape:

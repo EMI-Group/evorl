@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 import optax
 
 import chex
-from evorl.types import SampleBatch
+from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action, Params, PolicyExtraInfo, LossDict
 )

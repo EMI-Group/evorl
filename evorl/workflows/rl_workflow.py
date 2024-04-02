@@ -10,7 +10,7 @@ from evorl.agents import Agent
 from evorl.envs import Env
 from evorl.evaluator import Evaluator
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
-from evorl.types import TrainMetric, EvaluateMetric, WorkflowMetric
+from evorl.metrics import TrainMetric, EvaluateMetric, WorkflowMetric
 from typing import Any, Callable, Sequence, Optional, Tuple
 from typing_extensions import (
     Self  # pytype: disable=not-supported-yet

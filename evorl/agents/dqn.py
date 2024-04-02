@@ -7,9 +7,11 @@ from .agent import Agent, AgentState
 from evorl.networks import make_q_network
 from evorl.workflows import OffPolicyRLWorkflow
 from evorl.envs import create_env, Discrete
-from evorl.types import TrainMetric
+from evorl.sample_batch import SampleBatch
 from evorl.evaluator import Evaluator
-
+from evorl.types import (
+    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict
+)
 from evox import State
 
 from omegaconf import DictConfig
@@ -21,10 +23,7 @@ import dataclasses
 
 import flashbax
 
-from evorl.types import (
-    EnvLike, LossDict, Action, Params, PolicyExtraInfo, EnvState,
-    Observation, SampleBatch
-)
+
 
 import logging
 
@@ -79,7 +78,7 @@ class DQNAgent(Agent):
             qs, epsilon=self.eploration_epsilon)
         actions = actions_dist.sample(seed=key)
 
-        return actions, dict(
+        return actions, PyTreeDict(
             q_values=qs
         )
 
@@ -95,7 +94,7 @@ class DQNAgent(Agent):
             qs, epsilon=self.eploration_epsilon)
         actions = actions_dist.mode()
 
-        return actions, {}
+        return actions, PyTreeDict()
 
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
@@ -108,7 +107,7 @@ class DQNAgent(Agent):
 
         td_error = None
 
-        return dict(
+        return PyTreeDict(
             q_loss=td_error)
 
 
@@ -191,7 +190,7 @@ class DQNWorkflow(OffPolicyRLWorkflow):
         )
 
         evaluator = Evaluator(
-            env=eval_env, agent=agent, max_episode_length=1000)
+            env=eval_env, agent=agent, max_episode_steps=1000)
 
         return cls(env, agent, optimizer, evaluator, replay_buffer, _replay_buffer_init_fn, config)
 

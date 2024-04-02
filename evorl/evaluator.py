@@ -3,7 +3,7 @@ import chex
 
 from evorl.envs import Env
 from evorl.agents import Agent
-from evorl.types import EvaluateMetric
+from evorl.metrics import EvaluateMetric
 from evorl.rollout import eval_rollout_episode
 from evorl.utils.toolkits import compute_discount_return, compute_episode_length
 from flax import struct
@@ -17,7 +17,7 @@ from typing import Optional
 class Evaluator:
     env: Env
     agent: Agent
-    max_episode_length: int
+    max_episode_steps: int
     discount: float = 1.0
     # pmap_axis_name: Optional[str] = None
 
@@ -34,7 +34,7 @@ class Evaluator:
 
             env_state, episode_trajectory = eval_rollout_episode(
                 self.env, self.agent, env_state, agent_state,
-                key, self.max_episode_length
+                key, self.max_episode_steps
             )
 
             discount_returns = compute_discount_return(

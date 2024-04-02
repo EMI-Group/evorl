@@ -1,29 +1,24 @@
 
 import jax
 import jax.numpy as jnp
-from .env import EnvAdapter
+
 from flax import struct
 import chex
+from .env import EnvAdapter, EnvState
 from .space import Space, Box, Discrete
-from evorl.types import EnvState, Action, EnvLike
+from .wrappers.action_wrapper import ActionSquashWrapper
+
+from evorl.types import Action, PyTreeDict
 
 import gymnax
 from gymnax.environments.environment import Environment as GymnaxEnv
-from .wrappers.gymnax_mod import GymnaxToBraxWrapper
 from gymnax.environments.spaces import (
-    Box as gymnaxBox,
-    Discrete as gymnaxDiscrete,
+    Space as GymnaxSpace,
+    Box as GymnaxBox,
+    Discrete as GymnaxDiscrete,
 )
 from typing import Any, Dict, Optional
-from .wrappers.gymnax_mod import AutoResetWrapper
-from .wrappers.brax_mod import (
-    EpisodeWrapper,
-    EpisodeWrapperV2,
-    VmapWrapper,
-    EpisodeRecordWrapper,
-    get_wrapper
-)
-from .wrappers.action_wrapper import ActionSquashWrapper
+
 
 
 @struct.dataclass
@@ -38,55 +33,75 @@ class State:
 
 
 class GymnaxAdapter(EnvAdapter):
-    def __init__(self, env: EnvLike):
-        self.env = env
-        self.gymnax_env: GymnaxEnv = env.unwrapped.env
-        self.env_params = env.env_params
+    def __init__(self, env: GymnaxEnv, env_params: Optional[chex.ArrayTree] = None):
+        super(GymnaxAdapter, self).__init__(env)
+        self.env_params = env_params or env.default_params
 
-    def reset(self, rng: chex.PRNGKey) -> EnvState:
-        return self.env.reset(rng)
+        self._action_space = gymnax_space_to_evorl_space(
+            self.gymnax_env.action_space(self.env_params)
+        )
+        self._obs_space = gymnax_space_to_evorl_space(
+            self.gymnax_env.observation_space(self.env_params)
+        )
+
+    def reset(self, key: chex.PRNGKey) -> EnvState:
+        key, reset_key = jax.random.split(key)
+        obs, env_state = self.env.reset(reset_key, self.env_params)
+
+        info = PyTreeDict(
+            discount=jnp.ones(()),
+            env_params=self.env_params,
+            step_key=key,
+        )
+
+        return EnvState(
+            env_state=env_state,
+            obs=obs,
+            reward=jnp.zeros(()),
+            done=jnp.zeros(()),
+            info=info
+        )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        return self.env.step(state, action)
+        state_info = state.info
+        key, step_key = jax.random.split(state.info.step_key)
+
+        # call step_env() instead of step() to disable autoreset
+        # we handle the autoreset at AutoResetWrapper
+        o, env_state, r, d, info = self.env.step_env(
+            step_key, state.pipeline_state, action, state.info.env_params)
+        r = r.astype(jnp.float32)
+        d = d.astype(jnp.float32)
+
+        state_info.update(info)
+        state.info.step_key = key
+
+        return state.replace(
+            env_state=env_state,
+            obs=o,
+            reward=r,
+            done=d
+        )
 
     @property
     def action_space(self) -> Space:
-        env_params = self.env.env_params
-        return gymnax_space_to_evorl_space(
-            self.gymnax_env.action_space(env_params)
-        )
+        return self._action_sapce
 
     @property
     def obs_space(self) -> Space:
-        env_params = self.env.env_params
-        return gymnax_space_to_evorl_space(
-            self.gymnax_env.observation_space(env_params)
-        )
-
-    @property
-    def num_envs(self) -> int:
-        vmap_wrapper = get_wrapper(self.env, VmapWrapper)
-        if vmap_wrapper is None:
-            return 1
-        else:
-            return vmap_wrapper.num_envs
+        return self._obs_space
 
 
-def gymnax_space_to_evorl_space(space):
-    if isinstance(space, gymnaxBox):
+def gymnax_space_to_evorl_space(space: GymnaxSpace):
+    if isinstance(space, GymnaxBox):
         return Box(low=space.low, high=space.high)
-    elif isinstance(space, gymnaxDiscrete):
+    elif isinstance(space, GymnaxDiscrete):
         return Discrete(n=space.n)
     else:
         raise NotImplementedError(f"Unsupported space type: {type(space)}")
 
 
-def create_gymnax_env(env_name: str,
-                      action_repeat: int = 1,
-                      parallel: int = 1,
-                      autoreset: bool = True,
-                      discount: float = 1.0,
-                      **kwargs) -> GymnaxAdapter:
+def create_gymnax_env(env_name: str, **kwargs) -> GymnaxAdapter:
     env, env_params = gymnax.make(env_name)
 
     update_env_params = {
@@ -95,21 +110,7 @@ def create_gymnax_env(env_name: str,
     }
     env_params = env_params.replace(**update_env_params)
 
-    # To Brax Env
-    env = GymnaxToBraxWrapper(env, env_params)
-
-    episode_length = env_params.max_steps_in_episode
-
-    if autoreset:
-        env = EpisodeWrapper(env, episode_length, action_repeat)
-        env = EpisodeRecordWrapper(env, discount=discount)
-        env = VmapWrapper(env, num_envs=parallel)
-        env = AutoResetWrapper(env)
-    else:
-        env = EpisodeWrapperV2(env, episode_length, action_repeat)
-        env = VmapWrapper(env, num_envs=parallel)
-
-    env = GymnaxAdapter(env)
+    env = GymnaxAdapter(env, env_params)
 
     if isinstance(env.action_space, Box):
         if not jnp.logical_and(

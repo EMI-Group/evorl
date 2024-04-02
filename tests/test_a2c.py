@@ -15,8 +15,8 @@ def test_a2c():
     A2CWorkflow.enable_jit()
     learner = A2CWorkflow.build_from_config(cfg)
     state = learner.init(jax.random.PRNGKey(42))
-    state = learner.step(state)
-    state = learner.evaluate(state)
+    train_metric, state = learner.step(state)
+    eval_metric, state = learner.evaluate(state)
 
 
 def _create_example_agent_env(num_envs, rollout_length):

@@ -1,10 +1,10 @@
 defaults:
   - agent: null
+  - env: brax
   - logging
   - _self_
 
-env: ant
-env_type: brax
+
 
 seed: 42
 debug: false

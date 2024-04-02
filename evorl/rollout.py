@@ -1,17 +1,20 @@
 import jax
 import jax.numpy as jnp
-
+from jax.tree_util import tree_leaves, tree_map
 import chex
-from typing import Sequence, Tuple, Callable, Union, Protocol
-from evorl.agents import Agent, AgentState
-
-from evorl.types import (
-    EnvState, Episode, SampleBatch,
-    Reward, RewardDict
+from flax import struct
+from typing import (
+    Any, Union, Tuple, Optional, Sequence,
 )
-from evorl.envs import Env
+from evorl.agents import Agent, AgentState
+from evorl.types import (
+    Reward, RewardDict, ExtraInfo, PyTreeData, PyTreeDict
+)
+from evorl.sample_batch import SampleBatch, Episode
+from evorl.envs import Env, EnvState
 from functools import partial
 
+#TODO: add RNN Policy support
 
 def env_step(
     env: Env,
@@ -39,7 +42,7 @@ def env_step(
         rewards=env_nstate.reward,
         dones=env_nstate.done,
         next_obs=env_nstate.obs,
-        extras=dict(
+        extras=PyTreeDict(
             policy_extras=policy_extras,
             env_extras=env_extras
         )
@@ -136,7 +139,7 @@ def rollout_episode_mod(
     """
         Collect given rollout_length trajectory.
         Avoid unnecessary env_step()
-        
+
         This method is more efficient than rollout_episode() if 
         the terminated_steps << rollout_length. But it is a little 
         bit slower if the terminated_steps ~ rollout_length.
@@ -170,24 +173,15 @@ def rollout_episode_mod(
 
         return (env_nstate, next_key, transition), transition
 
-    # run one-step rollout first
-    sample_batch = SampleBatch(
-        obs=env_state.obs,
-    )
-    key, current_key = jax.random.split(key, 2)
-    env_state, transition = _env_step(
+    # run one-step rollout first to get bootstrap transition
+    _, bootstrap_transition = _env_step(
         env_state, agent_state,
-        sample_batch, current_key
+        SampleBatch(obs=env_state.obs), key
     )
 
-    # then run rollout_length-1 steps rollouts
     (env_state, _, _), trajectory = jax.lax.scan(
-        _one_step_rollout, (env_state, key, transition), (), length=rollout_length-1)
-
-    trajectory = jax.tree_map(
-        lambda x, y: jnp.concatenate((jnp.expand_dims(x, axis=0), y), axis=0),
-        transition,
-        trajectory
+        _one_step_rollout, (env_state, key, bootstrap_transition),
+        (), length=rollout_length
     )
 
     # valid_mask is still ensured
@@ -318,26 +312,17 @@ def eval_rollout_episode(
 
         return (env_nstate, next_key, transition), transition
 
-    # run one-step rollout first
-    sample_batch = SampleBatch(
-        obs=env_state.obs,
-    )
-    key, current_key = jax.random.split(key, 2)
-    env_state, transition = _eval_env_step(
+    # run one-step rollout first to get bootstrap transition
+    # it will not include in the trajectory when env_state is from env.reset()
+    # this is manually controlled by user.
+    _, transition = _eval_env_step(
         env_state, agent_state,
-        sample_batch, current_key
+        SampleBatch(obs=env_state.obs), key
     )
 
-    # then run rollout_length-1 steps rollouts
     (env_state, _, _), trajectory = jax.lax.scan(
-        _one_step_rollout, (env_state, key, transition), (),
-        length=rollout_length-1
+        _one_step_rollout, (env_state, key, transition),
+        (), length=rollout_length
     )
 
-    episode_trajectory = jax.tree_map(
-        lambda x, y: jnp.concatenate((jnp.expand_dims(x, axis=0), y), axis=0),
-        transition,
-        trajectory
-    )
-
-    return env_state, episode_trajectory
+    return env_state, trajectory

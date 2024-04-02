@@ -2,10 +2,8 @@ import jax
 import jax.numpy as jnp
 
 import chex
-
 from typing import Tuple
-
-from evorl.types import SampleBatch
+from evorl.sample_batch import SampleBatch
 
 
 def compute_episode_length(

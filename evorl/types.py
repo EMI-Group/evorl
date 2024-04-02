@@ -1,41 +1,37 @@
 import copy
 import jax
 import jax.numpy as jnp
-from jax import vmap
-from jax.tree_util import tree_leaves, tree_map
+from jax.tree_util import tree_map
 from flax import struct
 import chex
 
-import flashbax.buffers.trajectory_buffer
-
+from collections import OrderedDict
 from typing import (
-    Any, Mapping, Union, Tuple, Dict, Optional, Sequence,
-    Protocol, Callable, Iterable
+    Any, Mapping, Union, Dict, Optional, Sequence,
+    Protocol
 )
-import dataclasses
-from evorl.utils.jax_utils import jit_method
-from evorl.distributed import pmean, psum
 
-BatchedPRNGKey = jax.Array  # [B, 2]
+from jax._src.util import safe_zip
+
 Metrics = Mapping[str, chex.ArrayTree]
 Observation = chex.Array
 Action = chex.Array
 Reward = chex.Array
+Done = chex.Array
 PolicyExtraInfo = Mapping[str, Any]
 ExtraInfo = Mapping[str, Any]
 RewardDict = Mapping[str, Reward]
 
 LossDict = Mapping[str, chex.Array]
 
-# TODO: test it
-EnvState = Mapping[str, chex.ArrayTree]
+EnvInternalState = Mapping[str, chex.ArrayTree]
 
 Params = chex.ArrayTree
 ObsPreprocessorParams = Mapping[str, Any]
 ActionPostprocessorParams = Mapping[str, Any]
 
 
-ReplayBufferState = Union[flashbax.buffers.trajectory_buffer.TrajectoryBufferState, chex.ArrayTree]
+ReplayBufferState = chex.ArrayTree
 
 
 class ObsPreprocessorFn(Protocol):
@@ -44,12 +40,7 @@ class ObsPreprocessorFn(Protocol):
 
 
 @struct.dataclass
-class Base:
-    """Base functionality extending all brax types.
-
-    These methods allow for brax types to be operated like arrays/matrices.
-    """
-
+class PyTreeData:
     def __add__(self, o: Any) -> Any:
         return tree_map(lambda x, y: x + y, self, o)
 
@@ -122,7 +113,7 @@ class Base:
 
     def tree_replace(
         self, params: Dict[str, Optional[jax.typing.ArrayLike]]
-    ) -> 'Base':
+    ) -> 'PyTreeData':
         """Creates a new object with parameters set.
 
         Args:
@@ -148,10 +139,10 @@ class Base:
 
 
 def _tree_replace(
-    base: Base,
+    base: PyTreeData,
     attr: Sequence[str],
     val: Optional[jax.typing.ArrayLike],
-) -> Base:
+) -> PyTreeData:
     """Sets attributes in a struct.dataclass with values."""
     if not attr:
         return base
@@ -175,107 +166,81 @@ def _tree_replace(
         **{attr[0]: _tree_replace(getattr(base, attr[0]), attr[1:], val)}
     )
 
+@jax.tree_util.register_pytree_node_class
+class PyTreeDict(OrderedDict):
+    """
+        An easydict with pytree support
+        Adapted from src: https://github.com/makinacorpus/easydict
+    """
+    def __init__(self, d=None, **kwargs):
+        if d is None:
+            d = {}
+        if kwargs:
+            d.update(**kwargs)
+
+        for k, v in sorted(d.items()):
+            setattr(self, k, v)
+
+
+        # # Class attributes
+        # for k in self.__class__.__dict__.keys():
+        #     if not (k.startswith('__') and k.endswith('__')) and not k in ('update', 'pop', 'tree_flatten', 'tree_unflatten'):
+        #         setattr(self, k, getattr(self, k))
+
+    def __setattr__(self, name, value):
+        if isinstance(value, (list, tuple)):
+            value = [self.__class__(x)
+                     if isinstance(x, dict) else x for x in value]
+        elif isinstance(value, dict) and not isinstance(value, self.__class__):
+            value = self.__class__(value)
+        super(PyTreeDict, self).__setattr__(name, value)
+        super(PyTreeDict, self).__setitem__(name, value)
+
+    __setitem__ = __setattr__
+
+    def update(self, e=None, **f):
+        d = e or dict()
+        d.update(f)
+        for k in d:
+            setattr(self, k, d[k])
+
+    def pop(self, k, d=None):
+        delattr(self, k)
+        return super(PyTreeDict, self).pop(k, d)
+    
+    def tree_flatten(self):
+        keys = tuple(sorted(self.keys()))
+        values = tuple(self[k] for k in keys)
+
+        return values, keys
+    
+    @classmethod
+    def tree_unflatten(cls, keys, values):
+        return cls(OrderedDict(safe_zip(keys, values)))
+
+
+
+# jax.tree_util.register_pytree_node(
+#     PyTreeDict,
+#     lambda d: (tuple(d.values()), tuple(d.keys())),
+#     lambda keys, values: PyTreeDict(OrderedDict(safe_zip(keys, values)))
+# )
+
 
 class EnvLike(Protocol):
-    """
-        Use Brax.Env style API
-        For gymnax-style envs (eg: gymnax, minmax), use gymnax.wrappers.brax.GymnaxToBraxWrapper
-    """
-
-    def reset(self, rng: chex.PRNGKey, *args, **kwargs) -> EnvState:
+    def reset(self, *args, **kwargs) -> Any:
         """Resets the environment to an initial state."""
         pass
 
-    def step(self, state: EnvState, action: Action, *args, **kwargs) -> EnvState:
+    def step(self, *args, **kwargs) -> Any:
         """Run one timestep of the environment's dynamics."""
         pass
 
 
-@struct.dataclass
-class SampleBatch(Base):
-    """
-      Batched transitions w/ additional first axis as batch_axis.
-      Could also be used as a trajectory.
-    """
-    # TODO: skip None in tree_map (should be work in native jax)
-    obs: Optional[chex.ArrayTree] = None
-    actions: Optional[chex.ArrayTree] = None
-    rewards: Optional[Union[Reward, RewardDict]] = None
-    next_obs: Optional[chex.Array] = None
-    dones: Optional[chex.Array] = None
-    extras: Union[ExtraInfo, None] = None
-
-    def append(self, values: chex.ArrayTree, axis: int = 0) -> Any:
-        return tree_map(lambda x, v: jnp.append(x, v, axis=axis), self, values)
-
-    def __len__(self):
-        return tree_leaves(self.obs)[0].shape[0]
-
-    @staticmethod
-    def create_dummy_sample_batch(env, env_state):
-        obs = env.observation(env_state)
-        action = env.action_space.sample()
-        next_obs = env.observation(env_state)
-        reward = jnp.zeros((1,))
-        done = jnp.zeros((1,))
-        return SampleBatch(obs=obs, actions=action, rewards=reward, next_obs=next_obs, dones=done)
 
 
-def right_shift(arr: chex.Array, shift: int, pad_val=None) -> chex.Array:
-    padding_shape = (shift, *arr.shape[1:])
-    if pad_val is None:
-        padding = jnp.zeros(padding_shape, dtype=arr.dtype)
-    else:
-        padding = jnp.full(padding_shape, pad_val, dtype=arr.dtype)
-    return jnp.concatenate([padding, arr[:-shift]], axis=0)
 
 
-@struct.dataclass
-class Episode:
-    trajectory: SampleBatch
-    last_obs: chex.ArrayTree
-
-    @property
-    def valid_mask(self) -> chex.Array:
-        return 1-right_shift(self.trajectory.dones, 1)
 
 
-def metricfield(*, reduce_fn: Callable[[chex.Array, Optional[str]], chex.Array] = None, pytree_node=True, **kwargs):
-    return dataclasses.field(metadata={'pytree_node': pytree_node, 'reduce_fn': reduce_fn}, **kwargs)
 
-# TODO: use kw_only=True when jax support it
-
-
-class MetricBase(struct.PyTreeNode):
-    def all_reduce(self, pmap_axis_name: Optional[str] = None):
-        field_dict = {}
-        for field in dataclasses.fields(self):
-            reduce_fn = field.metadata.get('reduce_fn', None)
-            value = getattr(self, field.name)
-            if pmap_axis_name is not None and isinstance(reduce_fn, Callable):
-                value = reduce_fn(value, pmap_axis_name)
-                field_dict[field.name] = value
-
-        if len(field_dict) == 0:
-            return self
-
-        return self.replace(**field_dict)
-
-
-class WorkflowMetric(MetricBase):
-    sampled_timesteps: chex.Array = metricfield(
-        default=jnp.zeros((), dtype=jnp.int32), reduce_fn=psum)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.int32)
-
-
-class TrainMetric(MetricBase):
-    train_episode_return: chex.Array = metricfield(
-        default=jnp.zeros(()), reduce_fn=pmean)
-    # no need reduce_fn since it's already reduced in the step()
-    loss: chex.Array = jnp.zeros((), dtype=jnp.int32)
-    raw_loss_dict: LossDict = metricfield(default_factory=dict)
-
-
-class EvaluateMetric(MetricBase):
-    discount_returns: chex.Array = metricfield(reduce_fn=pmean)
-    episode_lengths: chex.Array = metricfield(reduce_fn=pmean)

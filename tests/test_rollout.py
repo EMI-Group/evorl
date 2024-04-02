@@ -4,12 +4,13 @@ import chex
 from evorl.rollout import rollout, rollout_episode, rollout_episode_mod, eval_rollout, eval_rollout_episode
 
 from evorl.agents.random_agent import RandomAgent
-from evorl.envs import create_brax_env
+from evorl.envs import create_env
 
 
 def test_rollout():
-    env = create_brax_env(
-        "ant",
+    env = create_env(
+        'ant',
+        'brax',
         parallel=7,
         autoreset=True
     )
@@ -27,7 +28,7 @@ def test_rollout():
 
     agent_state = agent.init(agent_key)
 
-    env_extra_fields=('termination','truncation','discount','last_obs','steps','episode_return')
+    env_extra_fields=('termination','truncation','last_obs','steps','episode_return')
 
     env_nstate, trajectory = rollout(
         env,
@@ -41,7 +42,7 @@ def test_rollout():
 
     env_extras = trajectory.extras['env_extras']
     for key in env_extra_fields:
-        assert key in env_extras, f"{key} not in rollout trjectory"
+        assert key in env_extras, f'{key} not in rollout trjectory'
 
 
 
@@ -49,7 +50,7 @@ def test_rollout():
 
 def test_rollout_episode():
     env = create_brax_env(
-        "ant",
+        'ant',
         parallel=6,
         autoreset=False
     )
