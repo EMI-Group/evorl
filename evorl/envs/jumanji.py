@@ -4,12 +4,13 @@ from .env import EnvAdapter, EnvState
 import chex
 from evorl.types import Action
 from .space import Space, Box, Discrete
-import jumanji
+from .utils import sort_dict
+from jumanji.env import Environment as JumanjiEnv
 from jumanji.specs import Spec, DiscreteArray, BoundedArray, Array
 
 
 class JumanjiAdapter(EnvAdapter):
-    def __init__(self, env):
+    def __init__(self, env: JumanjiEnv):
         super(JumanjiAdapter, self).__init__(env)
         self._action_sapce = jumanji_specs_to_evorl_space(env.action_spec)
         self._obs_space = jumanji_specs_to_evorl_space(env.observation_spec)
@@ -21,7 +22,7 @@ class JumanjiAdapter(EnvAdapter):
             obs=transition.observation,
             reward=transition.reward,
             done=jnp.array(transition.last(), dtype=jnp.float32),
-            info=transition.extras
+            info=sort_dict(transition.extras)
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:

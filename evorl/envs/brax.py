@@ -5,11 +5,13 @@ from flax import struct
 import chex
 from .env import EnvAdapter, EnvState
 from .space import Space, Box
+from .utils import sort_dict
 from evorl.types import Action, PyTreeDict
 from brax.envs import (
     Env as BraxEnv,
     get_environment
 )
+
 
 
 class BraxAdapter(EnvAdapter):
@@ -27,10 +29,8 @@ class BraxAdapter(EnvAdapter):
     def reset(self, key: chex.PRNGKey) -> EnvState:
         brax_state = self.env.reset(key)
 
-        info = PyTreeDict({
-            **brax_state.info,
-            'metrics': PyTreeDict(brax_state.metrics)
-        })
+        info = PyTreeDict(sort_dict(brax_state.info))
+        info.metrics = PyTreeDict(sort_dict(brax_state.metrics))
 
         return EnvState(
             env_state=brax_state,

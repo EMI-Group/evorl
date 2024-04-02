@@ -18,6 +18,16 @@ def test_a2c():
     train_metric, state = learner.step(state)
     eval_metric, state = learner.evaluate(state)
 
+def test_a2c_learn():
+    with initialize(config_path='../configs'):
+        cfg = compose(config_name="config", overrides=["agent=a2c"])
+    
+    cfg.total_timesteps=1000
+    cfg.eval_interval=1
+    A2CWorkflow.enable_jit()
+    learner = A2CWorkflow.build_from_config(cfg)
+    state = learner.init(jax.random.PRNGKey(42))
+    state = learner.learn(state)
 
 def _create_example_agent_env(num_envs, rollout_length):
     config = OmegaConf.create()

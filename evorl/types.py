@@ -166,8 +166,8 @@ def _tree_replace(
         **{attr[0]: _tree_replace(getattr(base, attr[0]), attr[1:], val)}
     )
 
-@jax.tree_util.register_pytree_node_class
-class PyTreeDict(OrderedDict):
+# @jax.tree_util.register_pytree_node_class
+class PyTreeDict(dict):
     """
         An easydict with pytree support
         Adapted from src: https://github.com/makinacorpus/easydict
@@ -178,9 +178,8 @@ class PyTreeDict(OrderedDict):
         if kwargs:
             d.update(**kwargs)
 
-        for k, v in sorted(d.items()):
+        for k, v in d.items():
             setattr(self, k, v)
-
 
         # # Class attributes
         # for k in self.__class__.__dict__.keys():
@@ -208,23 +207,12 @@ class PyTreeDict(OrderedDict):
         delattr(self, k)
         return super(PyTreeDict, self).pop(k, d)
     
-    def tree_flatten(self):
-        keys = tuple(sorted(self.keys()))
-        values = tuple(self[k] for k in keys)
 
-        return values, keys
-    
-    @classmethod
-    def tree_unflatten(cls, keys, values):
-        return cls(OrderedDict(safe_zip(keys, values)))
-
-
-
-# jax.tree_util.register_pytree_node(
-#     PyTreeDict,
-#     lambda d: (tuple(d.values()), tuple(d.keys())),
-#     lambda keys, values: PyTreeDict(OrderedDict(safe_zip(keys, values)))
-# )
+jax.tree_util.register_pytree_node(
+    PyTreeDict,
+    lambda d: (tuple(d.values()), tuple(d.keys())),
+    lambda keys, values: PyTreeDict(dict(safe_zip(keys, values)))
+)
 
 
 class EnvLike(Protocol):
