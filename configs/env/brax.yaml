@@ -1,0 +1,5 @@
+# @package _global_
+
+env: ant
+env_type: brax
+max_episode_steps: 1000
