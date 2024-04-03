@@ -1,5 +1,5 @@
 # EvoRL
-EvoRL is an efficient Evolutionary Reinforcement Learning Framework based on [EvoX](https://github.com/EMI-Group/evox)
+EvoRL is an efficient Evolutionary Reinforcement Learning Framework based on [EvoX](https://github.com/EMI-Group/evox) (A JAX-accelerated EC Framework)
 
 
 # Setup
@@ -10,7 +10,7 @@ conda activate xuanwu
 
 # Usage
 
-EvoRL uses [hydra](https://hydra.cc/) to run algorithms.
+EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms.
 
 Train agents from cli:
 ```shell
