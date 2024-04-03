@@ -4,7 +4,5 @@ defaults:
   - logging
   - _self_
 
-
-
 seed: 42
-debug: false
+

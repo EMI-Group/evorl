@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train(config: DictConfig) -> None:
-    logger.info(OmegaConf.to_yaml(config))
+    logger.info("config:\n"+OmegaConf.to_yaml(config))
 
     workflow_cls = hydra.utils.get_class(config.workflow_cls)
 

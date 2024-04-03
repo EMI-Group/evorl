@@ -1,0 +1,3 @@
+env_name: inverted_double_pendulum
+env_type: brax
+max_episode_steps: 1000

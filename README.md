@@ -10,11 +10,16 @@ conda activate xuanwu
 
 # Usage
 
+EvoRL use [hydra](https://hydra.cc/) to run algorithms.
+
 Train agents from cli:
 ```shell
-python -m evorl.train agent=a2c env=brax env_name=ant
+python -m evorl.train agent=a2c env=brax/ant
 
 python -m evorl.train agent=a2c env=gymnax/CartPole-v1 agent_network.continuous_action=false
+
+# sweep over multiple config values (seed=114 or seed=514):
+python -m evorl.train -m  agent=a2c env=brax/ant seed=114,514
 ```
 
 # Acknowledgement
