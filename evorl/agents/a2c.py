@@ -33,7 +33,7 @@ from evorl.types import (
 from evorl.metrics import TrainMetric, WorkflowMetric
 from typing import Tuple, Sequence, Optional
 import dataclasses
-
+import wandb
 import logging
 
 logger = logging.getLogger(__name__)
@@ -214,8 +214,8 @@ class A2CAgent(Agent):
 
 
 class A2CWorkflow(OnPolicyRLWorkflow):
-    @property
-    def name(self):
+    @classmethod
+    def name(cls):
         return "A2C"
 
     @staticmethod
@@ -388,9 +388,15 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
+            self.recorder.write(train_metrics.to_local_dict(), i)
+            self.recorder.write(workflow_metrics.to_local_dict(), i)
+
             if (i+1) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
-                logger.info(eval_metrics)
+                self.recorder.write({'eval': eval_metrics.to_local_dict()}, i)
+                logger.debug(eval_metrics)
+                
+
 
             self.checkpoint_manager.save(
                 i,

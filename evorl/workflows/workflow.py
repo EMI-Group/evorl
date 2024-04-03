@@ -46,10 +46,10 @@ class Workflow(ABC):
         """
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
-    @property
-    def name(self) -> str:
+    @classmethod
+    def name(cls) -> str:
         """
             Name of the workflow(eg. PPO, PSO, etc.)
             Default is the Workflow class name.
         """
-        return self.__class__.__name__
+        return cls.__name__

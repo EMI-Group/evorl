@@ -14,7 +14,7 @@ def compute_episode_length(
     """
     # [B]
     episode_lengths = (1-dones).sum(axis=0)+1
-    return episode_lengths
+    return episode_lengths.astype(jnp.int32)
 
 
 def compute_discount_return(
@@ -169,7 +169,7 @@ def flatten_rollout_trajectory(trajectory: SampleBatch):
 def average_episode_discount_return(
     episode_discount_return: jax.Array,  # [T,B]
     dones: jax.Array  # [T,B]
-):
+)-> jax.Array:
     """
         For autoreset envs trajectory.
     """

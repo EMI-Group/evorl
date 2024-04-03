@@ -5,3 +5,8 @@ hydra:
     dir: multirun/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
     subdir: ${hydra.job.override_dirname}
   verbose: false
+
+wandb:
+  enable: true
+  project: "EvoRL"
+  tags: []

@@ -6,6 +6,7 @@ import chex
 import copy
 
 from .workflow import Workflow
+from evorl.recorders import Recorder, ChainRecorder, WandbRecorder, LogRecorder
 from evorl.agents import Agent
 from evorl.envs import Env
 from evorl.evaluator import Evaluator
@@ -25,10 +26,27 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
+    output_dir = Path(HydraConfig.get().run.dir).absolute()
+    ckpt_options = ocp.CheckpointManagerOptions(
+        save_interval_steps=config.checkpoint.save_interval_steps,
+        max_to_keep=config.checkpoint.max_to_keep
+    )
+    ckpt_path = output_dir/'checkpoints'
+    logger.info(f'set checkpoint path: {ckpt_path}')
+    checkpoint_manager = ocp.CheckpointManager(
+        ckpt_path,
+        options=ckpt_options,
+        metadata=OmegaConf.to_container(config)  # rescaled real config
+    )
+    return checkpoint_manager
+
+
 class RLWorkflow(Workflow):
     def __init__(
         self,
-        config: DictConfig,
+        config: DictConfig
     ):
         """
             config:
@@ -38,19 +56,9 @@ class RLWorkflow(Workflow):
         self.config = config
         self.pmap_axis_name = None
         self.devices = jax.local_devices()[:1]
+        self.checkpoint_manager = setup_checkpoint_manager(config)
+        self.recorder = ChainRecorder([]) # dummy recorder
 
-        output_dir = Path(HydraConfig.get().run.dir).absolute()
-        ckpt_options = ocp.CheckpointManagerOptions(
-            save_interval_steps=config.checkpoint.save_interval_steps,
-            max_to_keep=config.checkpoint.max_to_keep
-        )
-        ckpt_path = output_dir/'checkpoints'
-        logger.info(f'set checkpoint path: {ckpt_path}')
-
-        self.checkpoint_manager = ocp.CheckpointManager(
-            ckpt_path,
-            options=ckpt_options,
-        )
 
     @property
     def enable_multi_devices(self) -> bool:
@@ -95,6 +103,12 @@ class RLWorkflow(Workflow):
             Customize the workflow metrics.
         """
         return WorkflowMetric()
+    
+
+    def add_recorders(self, recorders: Recorder) -> None:
+        for recorder in recorders:
+            self.recorder.add_recorder(recorder)
+
 
     def step(self, key: chex.PRNGKey) -> Tuple[TrainMetric, State]:
         raise NotImplementedError
@@ -210,7 +224,8 @@ class OffPolicyRLWorkflow(RLWorkflow):
         if self.enable_multi_devices:
             workflow_metrics, agent_state, opt_state, replay_buffer_state = \
                 jax.device_put_replicated(
-                    (workflow_metrics, agent_state, opt_state, replay_buffer_state),
+                    (workflow_metrics, agent_state,
+                     opt_state, replay_buffer_state),
                     self.devices
                 )
 
