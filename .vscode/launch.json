@@ -14,7 +14,11 @@
                 "env=brax/ant",
                 "debug=true",
                 // "hydra.verbose=true",
-            ]
+            ],
+            "env": {
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                // "CUDA_VISIBLE_DEVICES": "4,5,6"
+            }
         }
     ]
 }

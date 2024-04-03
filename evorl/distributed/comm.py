@@ -42,6 +42,8 @@ def unpmap(x, axis_name: Optional[str] = None):
     else:
         return x[0]
 
+def tree_unpmap(tree:chex.ArrayTree, axis_name: Optional[str] = None):
+    return jax.tree_map(lambda x: unpmap(x, axis_name), tree)
 
 def split_key_to_devices(key: chex.PRNGKey, devices: Sequence[jax.Device]):
     return jax.device_put_sharded(

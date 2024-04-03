@@ -15,11 +15,7 @@ logger = logging.getLogger(__name__)
 def train(config: DictConfig) -> None:
     logger.info("config:\n"+OmegaConf.to_yaml(config))
 
-    
-
     workflow_cls = hydra.utils.get_class(config.workflow_cls)
-
-
 
     devices = jax.local_devices()
     if len(devices) > 1:

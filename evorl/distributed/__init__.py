@@ -1,4 +1,4 @@
-from .comm import psum, pmean, pmin, pmax, unpmap, split_key_to_devices
+from .comm import psum, pmean, pmin, pmax, unpmap, tree_unpmap, split_key_to_devices
 
 from .gradients import agent_gradient_update
 
