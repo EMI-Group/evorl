@@ -38,10 +38,10 @@ class GymnaxAdapter(EnvAdapter):
         self.env_params = env_params or env.default_params
 
         self._action_space = gymnax_space_to_evorl_space(
-            self.gymnax_env.action_space(self.env_params)
+            self.env.action_space(self.env_params)
         )
         self._obs_space = gymnax_space_to_evorl_space(
-            self.gymnax_env.observation_space(self.env_params)
+            self.env.observation_space(self.env_params)
         )
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
@@ -63,7 +63,6 @@ class GymnaxAdapter(EnvAdapter):
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        state_info = state.info
         key, step_key = jax.random.split(state.info.step_key)
 
         # call step_env() instead of step() to disable autoreset
@@ -73,7 +72,7 @@ class GymnaxAdapter(EnvAdapter):
         reward = reward.astype(jnp.float32)
         done = done.astype(jnp.float32)
 
-        state_info.update(info)
+        state.info.update(info)
         state.info.step_key = key
 
         return state.replace(
@@ -85,7 +84,7 @@ class GymnaxAdapter(EnvAdapter):
 
     @property
     def action_space(self) -> Space:
-        return self._action_sapce
+        return self._action_space
 
     @property
     def obs_space(self) -> Space:

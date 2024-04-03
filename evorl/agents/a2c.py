@@ -144,7 +144,7 @@ class A2CAgent(Agent):
 
         actions = actions_dist.mode()
 
-        return jax.lax.stop_gradient(actions), {}
+        return jax.lax.stop_gradient(actions), PyTreeDict()
 
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
@@ -233,11 +233,11 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        max_episode_steps = config.get('max_episode_steps', 1000)
+        max_episode_steps = config.env.get('max_episode_steps', 1000)
 
         env = create_env(
-            config.env,
-            config.env_type,
+            config.env.env_name,
+            config.env.env_type,
             episode_length=max_episode_steps,
             parallel=config.num_envs,
             autoreset=True
@@ -262,8 +262,8 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             optimizer = optax.adam(config.optimizer.lr)
 
         eval_env = create_env(
-            config.env,
-            config.env_type,
+            config.env.env_name,
+            config.env.env_type,
             episode_length=max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset=False

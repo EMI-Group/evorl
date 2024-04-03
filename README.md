@@ -12,7 +12,9 @@ conda activate xuanwu
 
 Train agents from cli:
 ```shell
-python -m evorl.train agent=a2c env=ant
+python -m evorl.train agent=a2c env=brax env_name=ant
+
+python -m evorl.train agent=a2c env=gymnax/CartPole-v1 agent_network.continuous_action=false
 ```
 
 # Acknowledgement
@@ -20,3 +22,6 @@ python -m evorl.train agent=a2c env=ant
 - brax
 - acme
 - evox
+- gymnax
+- jumanji
+- jaxmarl

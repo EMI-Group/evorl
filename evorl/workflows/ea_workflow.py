@@ -196,7 +196,7 @@ class EAWorkflow(Workflow):
 
     # wrap around _proto_step
     # to handle init_ask and init_tell
-    @jit_method
+    @jit_method()
     def _step(self, state):
         # probe if self.algorithm has override the init_ask function
         if algorithm_has_init_ask(self.algorithm, state):

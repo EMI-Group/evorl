@@ -14,17 +14,17 @@ from typing import (
 from jax._src.util import safe_zip
 
 Metrics = Mapping[str, chex.ArrayTree]
-Observation = chex.Array
-Action = chex.Array
-Reward = chex.Array
-Done = chex.Array
+Observation = Union[chex.Array, Mapping[str,chex.Array]]
+Action = Union[chex.Array, Mapping[str,chex.Array]]
+Reward = Union[chex.Array, Mapping[str,chex.Array]]
+Done = Union[chex.Array, Mapping[str,chex.Array]]
 PolicyExtraInfo = Mapping[str, Any]
 ExtraInfo = Mapping[str, Any]
 RewardDict = Mapping[str, Reward]
 
 LossDict = Mapping[str, chex.Array]
 
-EnvInternalState = Mapping[str, chex.ArrayTree]
+EnvInternalState = chex.ArrayTree
 
 Params = chex.ArrayTree
 ObsPreprocessorParams = Mapping[str, Any]
