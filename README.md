@@ -10,7 +10,7 @@ conda activate xuanwu
 
 # Usage
 
-EvoRL use [hydra](https://hydra.cc/) to run algorithms.
+EvoRL uses [hydra](https://hydra.cc/) to run algorithms.
 
 Train agents from cli:
 ```shell
