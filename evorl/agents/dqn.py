@@ -43,7 +43,7 @@ class DQNAgent(Agent):
     """
     q_hidden_layer_sizes: Tuple[int] = (256, 256)
     discount: float = 0.99
-    eploration_epsilon: float = 0.1
+    exploration_epsilon: float = 0.1
 
     def init(self, key: chex.PRNGKey) -> AgentState:
         obs_size = self.obs_space.shape[0]
@@ -75,7 +75,7 @@ class DQNAgent(Agent):
 
         # TODO: use tfp.Distribution
         actions_dist = distrax.EpsilonGreedy(
-            qs, epsilon=self.eploration_epsilon)
+            qs, epsilon=self.exploration_epsilon)
         actions = actions_dist.sample(seed=key)
 
         return actions, PyTreeDict(
@@ -91,7 +91,7 @@ class DQNAgent(Agent):
             agent_state.params.q_params, sample_batch.obs)
 
         actions_dist = distrax.EpsilonGreedy(
-            qs, epsilon=self.eploration_epsilon)
+            qs, epsilon=self.exploration_epsilon)
         actions = actions_dist.mode()
 
         return actions, PyTreeDict()
@@ -136,7 +136,7 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             obs_space=env.obs_space,
             q_hidden_layer_sizes=config.agent_network.q_hidden_layer_sizes,
             discount=config.discount,
-            eploration_epsilon=config.eploration_epsilon
+            exploration_epsilon=config.exploration_epsilon
         )
 
         optimizer = optax.adam(config.optimizer.lr)

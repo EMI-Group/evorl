@@ -7,7 +7,7 @@ from evorl.types import PolicyExtraInfo
 from evorl.sample_batch import SampleBatch
 from typing import Tuple
 from evorl.types import (
-    LossDict, Action, PolicyExtraInfo,
+    LossDict, Action, PolicyExtraInfo, PyTreeDict
 )
 from .agent import Agent, AgentState
 
@@ -29,13 +29,13 @@ class RandomAgent(Agent):
         batch_shapes = (sample_batch.obs.shape[0],)
         actions = self.action_space.sample(key)
         actions =  jnp.broadcast_to(actions, batch_shapes+actions.shape)
-        return actions, {}
+        return actions, PyTreeDict()
     
     def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         return self.compute_actions(agent_state, sample_batch, key)
     
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
-        return dict(
+        return PyTreeDict(
             loss=jnp.zeros(())
         )
     

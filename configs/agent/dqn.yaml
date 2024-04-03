@@ -6,7 +6,7 @@ num_envs: 1
 
 rollout_length: 1
 discount: 0.99
-eploration_epsilon: 0.1
+exploration_epsilon: 0.1
 
 train_batch_size: 256
 optimizer:
