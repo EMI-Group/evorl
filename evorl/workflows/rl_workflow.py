@@ -17,6 +17,13 @@ from typing_extensions import (
 )
 from evox import State
 
+import orbax.checkpoint as ocp
+from hydra.core.hydra_config import HydraConfig
+from pathlib import Path
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RLWorkflow(Workflow):
     def __init__(
@@ -31,6 +38,19 @@ class RLWorkflow(Workflow):
         self.config = config
         self.pmap_axis_name = None
         self.devices = jax.local_devices()[:1]
+
+        output_dir = Path(HydraConfig.get().run.dir).absolute()
+        ckpt_options = ocp.CheckpointManagerOptions(
+            save_interval_steps=config.checkpoint.save_interval_steps,
+            max_to_keep=config.checkpoint.max_to_keep
+        )
+        ckpt_path = output_dir/'checkpoints'
+        logger.info(f'set checkpoint path: {ckpt_path}')
+
+        self.checkpoint_manager = ocp.CheckpointManager(
+            ckpt_path,
+            options=ckpt_options,
+        )
 
     @property
     def enable_multi_devices(self) -> bool:

@@ -6,12 +6,12 @@ from flax import struct
 from typing import (
     Any, Union, Tuple, Optional, Sequence,
 )
-from evorl.agents import Agent, AgentState
-from evorl.types import (
+from .agents import Agent, AgentState
+from .types import (
     Reward, RewardDict, ExtraInfo, PyTreeData, PyTreeDict
 )
-from evorl.sample_batch import SampleBatch, Episode
-from evorl.envs import Env, EnvState
+from .sample_batch import SampleBatch, Episode
+from .envs import Env, EnvState
 from functools import partial
 
 #TODO: add RNN Policy support

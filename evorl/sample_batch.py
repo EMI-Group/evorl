@@ -2,7 +2,7 @@ import jax.numpy as jnp
 from jax.tree_util import tree_leaves, tree_map
 import chex
 from flax import struct
-from evorl.types import (
+from .types import (
     Reward, RewardDict, ExtraInfo, PyTreeData
 )
 from typing import (

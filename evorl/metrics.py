@@ -1,11 +1,9 @@
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_leaves, tree_map
 import chex
 from flax import struct
-from typing import (
-    Any, Union, Tuple, Optional, Sequence, Callable
-)
+from typing import Optional, Callable
+
 
 from .types import LossDict
 from .distributed import pmean, psum

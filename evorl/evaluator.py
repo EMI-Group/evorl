@@ -6,10 +6,8 @@ from evorl.agents import Agent
 from evorl.metrics import EvaluateMetric
 from evorl.rollout import eval_rollout_episode
 from evorl.utils.toolkits import compute_discount_return, compute_episode_length
-from flax import struct
 
 import dataclasses
-from typing import Optional
 
 
 

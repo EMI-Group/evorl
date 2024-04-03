@@ -6,11 +6,14 @@ from evox.core.module import MetaStatefulModule
 
 from typing import Any, Tuple, Union
 
-class Workflow:
+from abc import ABC, abstractmethod
+
+class Workflow(ABC):
     """
         A duck-type of evox.Workflow
     """
 
+    @abstractmethod
     def setup(self, key: jax.Array) -> State:
         """
             Custom setup.
@@ -18,6 +21,7 @@ class Workflow:
         """
         raise NotImplementedError
 
+    @abstractmethod
     def step(self, key: chex.PRNGKey) -> Union[State, Tuple[State, Any]]:
         raise NotImplementedError
 
@@ -41,3 +45,11 @@ class Workflow:
         in-place update Workflow class with jitted functions        
         """
         cls.step = jax.jit(cls.step, static_argnums=(0,))
+
+    @property
+    def name(self) -> str:
+        """
+            Name of the workflow(eg. PPO, PSO, etc.)
+            Default is the Workflow class name.
+        """
+        return self.__class__.__name__

@@ -31,6 +31,7 @@ dependencies:
   - optax
   - brax
   - pip:
+    - orbax-checkpoint
     - evox == 0.7.1
     - jumanji
     - pgx

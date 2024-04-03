@@ -24,7 +24,7 @@ from .agent import Agent, AgentState
 
 from evox import State
 
-
+import orbax.checkpoint as ocp
 import chex
 import optax
 from evorl.types import (
@@ -214,6 +214,10 @@ class A2CAgent(Agent):
 
 
 class A2CWorkflow(OnPolicyRLWorkflow):
+    @property
+    def name(self):
+        return "A2C"
+
     @staticmethod
     def _rescale_config(config, devices) -> None:
         num_devices = len(devices)
@@ -233,7 +237,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        max_episode_steps = config.env.get('max_episode_steps', 1000)
+        max_episode_steps = config.env.max_episode_steps
 
         env = create_env(
             config.env.env_name,
@@ -378,16 +382,20 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        for i in range(num_iters):
+        start_iteration = state.metrics.iterations
+
+        for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
-
-            # logger.info(workflow_metrics)
-            # logger.info(train_metrics)
 
             if (i+1) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 logger.info(eval_metrics)
+
+            self.checkpoint_manager.save(
+                i,
+                args=ocp.args.StandardSave(state)
+            )
 
         return state
 
