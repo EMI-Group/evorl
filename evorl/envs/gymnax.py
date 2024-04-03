@@ -68,19 +68,19 @@ class GymnaxAdapter(EnvAdapter):
 
         # call step_env() instead of step() to disable autoreset
         # we handle the autoreset at AutoResetWrapper
-        o, env_state, r, d, info = self.env.step_env(
-            step_key, state.pipeline_state, action, state.info.env_params)
-        r = r.astype(jnp.float32)
-        d = d.astype(jnp.float32)
+        obs, env_state, reward, done, info = self.env.step_env(
+            step_key, state.env_state, action, state.info.env_params)
+        reward = reward.astype(jnp.float32)
+        done = done.astype(jnp.float32)
 
         state_info.update(info)
         state.info.step_key = key
 
         return state.replace(
             env_state=env_state,
-            obs=o,
-            reward=r,
-            done=d
+            obs=obs,
+            reward=reward,
+            done=done
         )
 
     @property
