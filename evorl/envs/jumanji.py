@@ -5,6 +5,7 @@ import chex
 from evorl.types import Action
 from .space import Space, Box, Discrete
 from .utils import sort_dict
+import jumanji
 from jumanji.env import Environment as JumanjiEnv
 from jumanji.specs import Spec, DiscreteArray, BoundedArray, Array
 
