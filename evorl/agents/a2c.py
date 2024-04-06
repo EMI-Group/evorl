@@ -28,13 +28,13 @@ import orbax.checkpoint as ocp
 import chex
 import optax
 from evorl.types import (
-    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict
+    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field
 )
 from evorl.metrics import TrainMetric, WorkflowMetric
-from typing import Tuple, Sequence, Optional
-import dataclasses
-import wandb
+from typing import Tuple, Sequence, Optional, Any
 import logging
+import flax.linen as nn
+from flax import struct
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +45,14 @@ class A2CNetworkParams:
     policy_params: Params
     value_params: Params
 
-
-@dataclasses.dataclass(unsafe_hash=True)
 class A2CAgent(Agent):
     actor_hidden_layer_sizes: Tuple[int] = (256, 256)
     critic_hidden_layer_sizes: Tuple[int] = (256, 256)
     normalize_obs: bool = False
     continuous_action: bool = False
+    policy_network: nn.Module = pytree_field(lazy_init=True) # nn.Module is ok
+    value_network: nn.Module = pytree_field(lazy_init=True)
+    obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
     def init(self, key: chex.PRNGKey) -> AgentState:
 
@@ -64,18 +65,21 @@ class A2CAgent(Agent):
             action_size = self.action_space.n
 
         policy_key, value_key, obs_preprocessor_key = jax.random.split(key, 3)
-        self.policy_network, policy_init_fn = make_policy_network(
+        policy_network, policy_init_fn = make_policy_network(
             action_size=action_size,
             obs_size=obs_size,
             hidden_layer_sizes=self.actor_hidden_layer_sizes
         )
         policy_params = policy_init_fn(policy_key)
 
-        self.value_network, value_init_fn = make_value_network(
+        value_network, value_init_fn = make_value_network(
             obs_size=obs_size,
             hidden_layer_sizes=self.critic_hidden_layer_sizes
         )
         value_params = value_init_fn(value_key)
+
+        self.set_frozen_attr('policy_network', policy_network)
+        self.set_frozen_attr('value_network', value_network)
 
         params_state = A2CNetworkParams(
             policy_params=policy_params,
@@ -83,7 +87,8 @@ class A2CAgent(Agent):
         )
 
         if self.normalize_obs:
-            self.obs_preprocessor = running_statistics.normalize
+            obs_preprocessor = running_statistics.normalize
+            self.set_frozen_attr('obs_preprocessor', obs_preprocessor)
             dummy_obs = self.obs_space.sample(obs_preprocessor_key)
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)

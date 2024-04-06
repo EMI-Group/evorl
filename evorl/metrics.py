@@ -6,17 +6,14 @@ from flax import struct
 from typing import Optional, Callable
 
 
-from .types import LossDict, PyTreeDict
+from .types import LossDict, PyTreeDict, PyTreeNode
 from .distributed import pmean, psum
 import dataclasses
 
 def metricfield(*, reduce_fn: Callable[[chex.Array, Optional[str]], chex.Array] = None, pytree_node=True, **kwargs):
     return dataclasses.field(metadata={'pytree_node': pytree_node, 'reduce_fn': reduce_fn}, **kwargs)
 
-# TODO: use kw_only=True when jax support it
-
-
-class MetricBase(struct.PyTreeNode):
+class MetricBase(PyTreeNode, kw_only=True):
     def all_reduce(self, pmap_axis_name: Optional[str] = None):
         field_dict = {}
         for field in dataclasses.fields(self):

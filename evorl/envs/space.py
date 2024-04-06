@@ -33,8 +33,7 @@ class Box(Space):
     high: chex.Array
 
     def __post_init__(self):
-        chex.assert_trees_all_equal_dtypes(self.low, self.high)
-        # chex.assert_scalar_positive((self.high>=self.low).all().astype(jnp.float32).item())
+        chex.assert_trees_all_equal_dtypes(self.low, self.high, custom_message="low and high should have the same shape and dtype!")
         assert (self.high>=self.low).all(), "high should be greater than or equal to low"
         
 

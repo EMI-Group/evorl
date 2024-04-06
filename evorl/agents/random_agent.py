@@ -14,7 +14,6 @@ from .agent import Agent, AgentState
 import dataclasses
 
 
-@dataclasses.dataclass(unsafe_hash=True)
 class RandomAgent(Agent):
     """
         An agent that takes random actions.

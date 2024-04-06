@@ -1,31 +1,29 @@
 from flax import struct
 
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 import optax
 
 import chex
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
-    Action, Params, PolicyExtraInfo, LossDict
+    Action, Params, PolicyExtraInfo, LossDict, PyTreeNode
 )
 from evorl.envs.space import Space
 from evorl.utils import running_statistics
 from typing import Mapping, Tuple, Union, Any, Optional
-import dataclasses
+from flax import struct
 
 AgentParams = Mapping[str, Params]
 
 
-class AgentState(struct.PyTreeNode):
+class AgentState(PyTreeNode):
     params: AgentParams
     obs_preprocessor_state: Optional[running_statistics.RunningStatisticsState] = None
     # TODO: define the action_postprocessor_state
     action_postprocessor_state: Any = None
 
 
-
-@dataclasses.dataclass(unsafe_hash=True)
-class Agent(ABC):
+class Agent(PyTreeNode, metaclass=ABCMeta):
     """
     Base class for all agents.
     Usage:
@@ -33,8 +31,9 @@ class Agent(ABC):
     - interactive with environment by compute_actions
     - compute loss by loss
     """
-    action_space: Space = dataclasses.field(hash=False)
-    obs_space: Space = dataclasses.field(hash=False)
+
+    action_space: Space
+    obs_space: Space
 
     @abstractmethod
     def init(self, key) -> AgentState:

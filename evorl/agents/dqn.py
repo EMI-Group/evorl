@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 from flax import struct
-
+import flax.linen as nn
 
 from .agent import Agent, AgentState
 from evorl.networks import make_q_network
@@ -10,7 +10,7 @@ from evorl.envs import create_env, Discrete
 from evorl.sample_batch import SampleBatch
 from evorl.evaluator import Evaluator
 from evorl.types import (
-    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict
+    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field
 )
 from evox import State
 
@@ -44,17 +44,19 @@ class DQNAgent(Agent):
     q_hidden_layer_sizes: Tuple[int] = (256, 256)
     discount: float = 0.99
     exploration_epsilon: float = 0.1
+    q_network: nn.Module = pytree_field(lazy_init=True)
 
     def init(self, key: chex.PRNGKey) -> AgentState:
         obs_size = self.obs_space.shape[0]
         action_size = self.action_space.n
 
-        self.q_network, q_init_fn = make_q_network(
+        q_network, q_init_fn = make_q_network(
             obs_size=obs_size,
             action_size=action_size,
             hidden_layer_sizes=self.q_hidden_layer_sizes,
             n_critics=1
         )
+        self.set_frozen_attr('q_network', q_network)
 
         key, q_key = jax.random.split(key)
 
@@ -148,22 +150,14 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             add_batch_size=config.num_envs*config.rollout_length
         )
 
-        batch_shape = (config.num_envs*config.rollout_length,)
         def _replay_buffer_init_fn(replay_buffer, key):
             # dummy_action = jnp.tile(env.action_space.sample(),
-            dummy_action = jax.eval_shape(env.action_space.sample, key)
-            dummy_action = jnp.broadcast_to(
-                dummy_action, batch_shape+dummy_action.shape)
-            
-            action_shape = jax.eval_shape(env.action_space.sample, key)
-            dummy_action = jnp.zeros(batch_shape+action_shape)
-
-            obs_shape = jax.eval_shape(env.obs_space.sample, key)
-            dummy_obs = jnp.zeors(batch_shape+obs_shape)
+            dummy_action = env.action_space.sample(key)
+            dummy_obs = env.obs_space.sample(key)
 
             # TODO: handle RewardDict
-            dummy_reward = jnp.zeros(batch_shape)
-            dummy_done = jnp.zeros(batch_shape)
+            dummy_reward = jnp.zeros(())
+            dummy_done = jnp.zeros(())
 
             dummy_nest_obs = dummy_obs
 
@@ -173,7 +167,11 @@ class DQNWorkflow(OffPolicyRLWorkflow):
                 actions=dummy_action,
                 rewards=dummy_reward,
                 next_obs=dummy_nest_obs,
-                dones=dummy_done
+                dones=dummy_done,
+                extras=PyTreeDict(
+                    policy_extras=PyTreeDict(),
+                    env_extras=PyTreeDict()
+                )
             )
 
             replay_buffer_state = replay_buffer.init(dummy_sample_batch)

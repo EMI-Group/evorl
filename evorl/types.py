@@ -10,14 +10,18 @@ from typing import (
     Any, Mapping, Union, Dict, Optional, Sequence,
     Protocol
 )
+from typing_extensions import (
+    dataclass_transform,  # pytype: disable=not-supported-yet
+)
+import dataclasses
 
 from jax._src.util import safe_zip
 
 Metrics = Mapping[str, chex.ArrayTree]
-Observation = Union[chex.Array, Mapping[str,chex.Array]]
-Action = Union[chex.Array, Mapping[str,chex.Array]]
-Reward = Union[chex.Array, Mapping[str,chex.Array]]
-Done = Union[chex.Array, Mapping[str,chex.Array]]
+Observation = Union[chex.Array, Mapping[str, chex.Array]]
+Action = Union[chex.Array, Mapping[str, chex.Array]]
+Reward = Union[chex.Array, Mapping[str, chex.Array]]
+Done = Union[chex.Array, Mapping[str, chex.Array]]
 PolicyExtraInfo = Mapping[str, Any]
 ExtraInfo = Mapping[str, Any]
 RewardDict = Mapping[str, Reward]
@@ -166,12 +170,13 @@ def _tree_replace(
         **{attr[0]: _tree_replace(getattr(base, attr[0]), attr[1:], val)}
     )
 
-# @jax.tree_util.register_pytree_node_class
+
 class PyTreeDict(dict):
     """
         An easydict with pytree support
         Adapted from src: https://github.com/makinacorpus/easydict
     """
+
     def __init__(self, *args, **kwargs):
         d = dict(*args, **kwargs)
 
@@ -203,7 +208,7 @@ class PyTreeDict(dict):
     def pop(self, k, d=None):
         delattr(self, k)
         return super(PyTreeDict, self).pop(k, d)
-    
+
 
 jax.tree_util.register_pytree_node(
     PyTreeDict,
@@ -222,10 +227,33 @@ class EnvLike(Protocol):
         pass
 
 
+def pytree_field(*, lazy_init=False, pytree_node=True, **kwargs):
+    """
+        lazy_init: When set to True, the field will not be initialized in __init__,
+            and we can use set_frozen_attr to set the value after __init__
+    """
+    if lazy_init:
+        kwargs.update(dict(init=False, repr=False))
+    return dataclasses.field(metadata={'pytree_node': pytree_node, 'lazy_init': lazy_init}, **kwargs)
 
 
+@dataclass_transform(field_specifiers=(pytree_field,), kw_only_default=True)
+class PyTreeNode:
+    def __init_subclass__(cls, **kwargs):
+        struct.dataclass(cls, **kwargs)
 
+    def set_frozen_attr(self, name, value):
+        """
+            Force set attribute after __init__ of the dataclass
+        """
+        for field in dataclasses.fields(self):
+            if field.name == name:
+                if field.metadata.get('lazy_init', False):
+                    object.__setattr__(self, name, value)
+                    return
+                else:
+                    raise dataclasses.FrozenInstanceError(
+                        f"cannot assign to non-lazy_init field {name}")
 
-
-
-
+        raise ValueError(
+            f"field {name} not found in {self.__class__.__name__}")

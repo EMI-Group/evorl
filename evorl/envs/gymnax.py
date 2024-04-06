@@ -8,7 +8,7 @@ from .env import EnvAdapter, EnvState
 from .space import Space, Box, Discrete
 from .wrappers.action_wrapper import ActionSquashWrapper
 
-from evorl.types import Action, PyTreeDict
+from evorl.types import Action, PyTreeDict, pytree_field
 
 import gymnax
 from gymnax.environments.environment import Environment as GymnaxEnv
@@ -29,7 +29,7 @@ class State:
     obs: jax.Array
     reward: jax.Array
     done: jax.Array
-    info: Dict[str, Any] = struct.field(default_factory=dict)
+    info: Dict[str, Any] = pytree_field(default_factory=dict)
 
 
 class GymnaxAdapter(EnvAdapter):

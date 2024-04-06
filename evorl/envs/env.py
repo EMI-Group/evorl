@@ -2,7 +2,7 @@ import chex
 from flax import struct
 
 from .space import Space
-from evorl.types import PyTreeDict, EnvLike, EnvInternalState, Action, Observation, Reward, Done, ExtraInfo
+from evorl.types import PyTreeDict, EnvLike, EnvInternalState, Action, Observation, Reward, Done, pytree_field
 from typing import Tuple
 
 from abc import ABC, abstractmethod
@@ -18,7 +18,7 @@ class EnvState:
     obs: Observation
     reward: Reward
     done: Done
-    info: PyTreeDict = struct.field(default_factory=PyTreeDict)
+    info: PyTreeDict = pytree_field(default_factory=PyTreeDict)
 
 
 class Env(ABC):
