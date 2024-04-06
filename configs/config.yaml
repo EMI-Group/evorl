@@ -1,6 +1,6 @@
 defaults:
   - agent: null
-  - env: brax
+  - env: brax/ant
   - logging
   - _self_
 
