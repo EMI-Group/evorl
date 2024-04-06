@@ -4,7 +4,7 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 import logging
 
-from hydra.core.hydra_config import HydraConfig
+from evorl.utils.cfg_utils import get_output_dir
 from evorl.recorders import WandbRecorder, LogRecorder, ChainRecorder
 from pathlib import Path
 
@@ -28,7 +28,7 @@ def train(config: DictConfig) -> None:
         workflow = workflow_cls.build_from_config(config)
 
 
-    output_dir = Path(HydraConfig.get().run.dir).absolute()
+    output_dir = get_output_dir()
     wandb_project = config.wandb.project
     if config.debug:
         wandb_project = wandb_project + '_debug'

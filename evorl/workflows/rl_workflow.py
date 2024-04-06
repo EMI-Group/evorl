@@ -12,6 +12,7 @@ from evorl.envs import Env
 from evorl.evaluator import Evaluator
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
 from evorl.metrics import TrainMetric, EvaluateMetric, WorkflowMetric
+from evorl.utils.cfg_utils import get_output_dir
 from typing import Any, Callable, Sequence, Optional, Tuple
 from typing_extensions import (
     Self  # pytype: disable=not-supported-yet
@@ -19,7 +20,7 @@ from typing_extensions import (
 from evox import State
 
 import orbax.checkpoint as ocp
-from hydra.core.hydra_config import HydraConfig
+
 from pathlib import Path
 
 import logging
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
-    output_dir = Path(HydraConfig.get().run.dir).absolute()
+    output_dir = get_output_dir()
     ckpt_options = ocp.CheckpointManagerOptions(
         save_interval_steps=config.checkpoint.save_interval_steps,
         max_to_keep=config.checkpoint.max_to_keep

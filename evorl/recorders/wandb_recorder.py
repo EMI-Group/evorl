@@ -2,8 +2,6 @@ import wandb
 from .recorder import Recorder
 from typing import Mapping, Any, Optional
 
-from hydra.core.hydra_config import HydraConfig
-
 class WandbRecorder(Recorder):
     def __init__(self, *, project, name, config, tags, dir, mode='disabled', **kwargs):
         wandb.init(
