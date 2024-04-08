@@ -4,7 +4,7 @@ import jax.numpy as jnp
 
 from flax import struct
 import chex
-from .env import EnvAdapter, EnvState
+from .env import EnvAdapter, EnvState, Env
 from .space import Space, Box, Discrete
 from .wrappers.action_wrapper import ActionSquashWrapper
 
@@ -19,17 +19,7 @@ from gymnax.environments.spaces import (
 )
 from typing import Any, Dict, Optional
 
-
-
-@struct.dataclass
-class State:
-    """Environment state for training and inference."""
-
-    env_state: chex.ArrayTree
-    obs: jax.Array
-    reward: jax.Array
-    done: jax.Array
-    info: Dict[str, Any] = pytree_field(default_factory=dict)
+from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAutoResetWrapper, VmapWrapper, VmapAutoResetWrapperV2
 
 
 class GymnaxAdapter(EnvAdapter):
@@ -117,5 +107,28 @@ def create_gymnax_env(env_name: str, **kwargs) -> GymnaxAdapter:
             (env.action_space.high == 1).all()
         ):
             env = ActionSquashWrapper(env)
+
+    return env
+
+
+def create_wrapped_gymnax_env(env_name: str,
+                              episode_length: int = 1000,
+                              parallel: int = 1,
+                              autoreset: bool = True,
+                              fast_reset: bool = False,
+                              discount: float = 1.0,
+                              **kwargs) -> Env:
+    env = create_gymnax_env(env_name, **kwargs)
+
+    if autoreset:
+        env = EpisodeWrapper(env, episode_length,
+                             record_episode_return=True, discount=discount)
+        if fast_reset:
+            env = VmapAutoResetWrapperV2(env, num_envs=parallel)
+        else:
+            env = VmapAutoResetWrapper(env, num_envs=parallel)
+    else:
+        env = OneEpisodeWrapper(env, episode_length)
+        env = VmapWrapper(env, num_envs=parallel, vmap_step=False)
 
     return env

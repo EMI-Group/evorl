@@ -18,6 +18,7 @@ from typing_extensions import (
     Self  # pytype: disable=not-supported-yet
 )
 from evox import State
+# from evorl.types import State
 
 import orbax.checkpoint as ocp
 
@@ -58,26 +59,31 @@ class RLWorkflow(Workflow):
         self.pmap_axis_name = None
         self.devices = jax.local_devices()[:1]
         self.checkpoint_manager = setup_checkpoint_manager(config)
-        self.recorder = ChainRecorder([]) # dummy recorder
-
+        self.recorder = ChainRecorder([])  # dummy recorder
 
     @property
     def enable_multi_devices(self) -> bool:
         return self.pmap_axis_name is not None
 
     @classmethod
-    def build_from_config(cls, config: DictConfig, enable_multi_devices: bool = False, devices: Optional[Sequence[jax.Device]] = None):
+    def build_from_config(cls, config: DictConfig, enable_multi_devices: bool = False, devices: Optional[Sequence[jax.Device]] = None, enable_jit: bool = True):
         config = copy.deepcopy(config)  # avoid in-place modification
         if devices is None:
             devices = jax.local_devices()
 
         if enable_multi_devices:
             cls.step = jax.pmap(
-                cls.step, axis_name=PMAP_AXIS_NAME, static_broadcasted_argnums=(0,))
+                cls.step, axis_name=PMAP_AXIS_NAME,
+                static_broadcasted_argnums=(0,)
+            )
             cls.evaluate = jax.pmap(
-                cls.evaluate, axis_name=PMAP_AXIS_NAME, static_broadcasted_argnums=(0,))
+                cls.evaluate, axis_name=PMAP_AXIS_NAME,
+                static_broadcasted_argnums=(0,)
+            )
             OmegaConf.set_readonly(config, False)
             cls._rescale_config(config, devices)
+        elif enable_jit:
+            cls.enable_jit()
 
         OmegaConf.set_readonly(config, True)
 
@@ -104,12 +110,10 @@ class RLWorkflow(Workflow):
             Customize the workflow metrics.
         """
         return WorkflowMetric()
-    
 
     def add_recorders(self, recorders: Recorder) -> None:
         for recorder in recorders:
             self.recorder.add_recorder(recorder)
-
 
     def step(self, key: chex.PRNGKey) -> Tuple[TrainMetric, State]:
         raise NotImplementedError
@@ -119,8 +123,9 @@ class RLWorkflow(Workflow):
 
     @classmethod
     def enable_jit(cls) -> None:
+        # donate_argnums = (1,) if donate_buffer else None
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
-        super().enable_jit()
+        cls.step = jax.jit(cls.step, static_argnums=(0,))
 
 
 class OnPolicyRLWorkflow(RLWorkflow):

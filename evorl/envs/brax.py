@@ -3,7 +3,7 @@ import jax.numpy as jnp
 
 from flax import struct
 import chex
-from .env import EnvAdapter, EnvState
+from .env import EnvAdapter, EnvState, Env
 from .space import Space, Box
 from .utils import sort_dict
 from evorl.types import Action, PyTreeDict
@@ -12,6 +12,7 @@ from brax.envs import (
     get_environment
 )
 
+from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAutoResetWrapper, VmapWrapper, VmapAutoResetWrapperV2
 
 
 class BraxAdapter(EnvAdapter):
@@ -22,8 +23,9 @@ class BraxAdapter(EnvAdapter):
             env.sys.actuator.ctrl_range, dtype=jnp.float32)
         self._action_sapce = Box(low=action_spec[:, 0], high=action_spec[:, 1])
 
+        # Note: use jnp.inf or jnp.finfo(jnp.float32).min|max causes inf
         obs_spec = jnp.full((env.observation_size,),
-                            jnp.inf, dtype=jnp.float32)
+                            1e10, dtype=jnp.float32)
         self._obs_space = Box(low=-obs_spec, high=obs_spec)
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
@@ -53,7 +55,6 @@ class BraxAdapter(EnvAdapter):
             done=brax_state.done,
         )
 
-
     @property
     def action_space(self) -> Space:
         return self._action_sapce
@@ -72,5 +73,27 @@ def create_brax_env(env_name: str, **kwargs) -> BraxAdapter:
 
     env = get_environment(env_name, **kwargs)
     env = BraxAdapter(env)
+
+    return env
+
+
+def create_wrapped_brax_env(env_name: str,
+                            episode_length: int = 1000,
+                            parallel: int = 1,
+                            autoreset: bool = True,
+                            fast_reset: bool = False,
+                            discount: float = 1.0,
+                            **kwargs) -> Env:
+    env = create_brax_env(env_name, **kwargs)
+    if autoreset:
+        env = EpisodeWrapper(env, episode_length,
+                             record_episode_return=True, discount=discount)
+        if fast_reset:
+            env = VmapAutoResetWrapperV2(env, num_envs=parallel)
+        else:
+            env = VmapAutoResetWrapper(env, num_envs=parallel)
+    else:
+        env = OneEpisodeWrapper(env, episode_length)
+        env = VmapWrapper(env, num_envs=parallel, vmap_step=False)
 
     return env

@@ -178,7 +178,7 @@ class VmapAutoResetWrapper(Wrapper):
         new_key, reset_key = jax.random.split(state.info.reset_key)
         reset_state = self.env.reset(reset_key)
 
-        state.replace(
+        state = state.replace(
             env_state=reset_state.env_state,
             obs=reset_state.obs,
         )
@@ -235,7 +235,7 @@ class VmapAutoResetWrapperV2(Wrapper):
 
         def where_done(x, y):
             done = state.done
-            if done.ndim > 1:
+            if done.ndim > 0:
                 done = jnp.reshape(
                     done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
             return jnp.where(done, x, y)

@@ -8,6 +8,7 @@ from typing import Any, Tuple, Union
 
 from abc import ABC, abstractmethod
 
+
 class Workflow(ABC):
     """
         A duck-type of evox.Workflow
@@ -22,7 +23,7 @@ class Workflow(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def step(self, key: chex.PRNGKey) -> Union[State, Tuple[State, Any]]:
+    def step(self, state: State) -> Union[State, Tuple[State, Any]]:
         raise NotImplementedError
 
     def learn(self, state: State) -> State:
@@ -38,13 +39,6 @@ class Workflow(ABC):
             This is the public API to call for instance state initialization.
         """
         return self.setup(key)
-
-    @classmethod
-    def enable_jit(cls) -> None:
-        """
-        in-place update Workflow class with jitted functions        
-        """
-        cls.step = jax.jit(cls.step, static_argnums=(0,))
 
     @classmethod
     def name(cls) -> str:
