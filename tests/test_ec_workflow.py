@@ -1,12 +1,12 @@
 import jax
 import jax.numpy as jnp
 import chex
-from evorl.workflows import EAWorkflow
+from evorl.workflows import ECWorkflow
 
 from evox import algorithms, problems, monitors
 
 
-def test_ea_workflow():
+def test_ec_workflow():
     pso = algorithms.PSO(
         lb=jnp.full(shape=(2,), fill_value=-32),
         ub=jnp.full(shape=(2,), fill_value=32),
@@ -15,7 +15,7 @@ def test_ea_workflow():
     ackley = problems.numerical.Ackley()
     # monitor = monitors.EvalMonitor()
 
-    workflow = EAWorkflow(
+    workflow = ECWorkflow(
         algorithm=pso,
         problem=ackley,
     )

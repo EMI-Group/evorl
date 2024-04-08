@@ -13,7 +13,7 @@ from evox import Stateful
 from .workflow import Workflow
 
 
-class EAWorkflow(Workflow):
+class MetaEvoRLWorkflow(Workflow):
     def __init__(
         self,
         algorithm: Algorithm,
@@ -23,8 +23,6 @@ class EAWorkflow(Workflow):
         sol_transforms: List[Callable] = [],
         fit_transforms: List[Callable] = [],
         jit_problem: bool = True,
-        num_objectives: Optional[int] = None,
-        monitor=None,
     ):
         """
         Parameters
@@ -222,3 +220,12 @@ class EAWorkflow(Workflow):
             monitor.post_step(state)
 
         return state
+    
+# TODO
+class PBTWorkflow(MetaEvoRLWorkflow):
+    pass
+
+
+class BiLIWorkflow(MetaEvoRLWorkflow):
+    "Bi-Level Iteration"
+    pass

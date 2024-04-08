@@ -34,6 +34,7 @@ Params = chex.ArrayTree
 ObsPreprocessorParams = Mapping[str, Any]
 ActionPostprocessorParams = Mapping[str, Any]
 
+AgentID = Any
 
 ReplayBufferState = chex.ArrayTree
 

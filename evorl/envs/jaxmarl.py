@@ -4,13 +4,15 @@ import chex
 import jaxmarl
 from jaxmarl.environments import MultiAgentEnv
 
+
 from evorl.types import (
-    PyTreeDict, Action
+    PyTreeDict, Action, AgentID
 )
+from .space import Space
 from .multi_agent_env import MultiAgentEnvAdapter
 from .env import EnvState
 from .utils import sort_dict
-from typing import Tuple
+from typing import Tuple, Mapping, List
 from evorl.utils.jax_utils import tree_zeros_like
 
 
@@ -27,6 +29,7 @@ def get_random_actions(batch_shape: Tuple[int], env: MultiAgentEnv):
 class JaxMARLAdapter(MultiAgentEnvAdapter):
     def __init__(self, env: MultiAgentEnv):
         super(JaxMARLAdapter, self).__init__(env)
+        
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         key, reset_key, dummy_step_key = jax.random.split(key, 3)
@@ -70,15 +73,53 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
         )
 
     @property
-    def action_space(self):
+    def action_space(self) -> Mapping[AgentID, Space]:
         return self.env.action_spaces
 
     @property
-    def obs_space(self):
+    def obs_space(self) -> Mapping[AgentID, Space]:
         return self.env.observation_spaces
+    
+    @property
+    def agents(self) -> List[AgentID]:
+        return self.env.agents
 
+
+supported_jaxmarl_env_list = (
+    "MPE_simple_v3",
+    "MPE_simple_tag_v3",
+    "MPE_simple_world_comm_v3",
+    "MPE_simple_spread_v3",
+    "MPE_simple_crypto_v3",
+    "MPE_simple_speaker_listener_v4",
+    "MPE_simple_push_v3",
+    "MPE_simple_adversary_v3",
+    "MPE_simple_reference_v3",
+    "MPE_simple_facmac_v1",
+    "MPE_simple_facmac_3a_v1",
+    "MPE_simple_facmac_6a_v1",
+    "MPE_simple_facmac_9a_v1",
+    # "switch_riddle",
+    # "SMAX",
+    # "HeuristicEnemySMAX",
+    # "LearnedPolicyEnemySMAX",
+    "ant_4x2",
+    "halfcheetah_6x1",
+    "hopper_3x1",
+    "humanoid_9|8",
+    "walker2d_2x3",
+    # "storm",
+    # "storm_2p",
+    # "hanabi",
+    # "overcooked",
+    # "coin_game",
+)
 
 def create_jaxmarl_env(env_name: str, **kwargs) -> JaxMARLAdapter:
+    if env_name not in supported_jaxmarl_env_list:
+        raise ValueError(f"Unsupported jaxmarl env: {env_name}")
+
+
     env = jaxmarl.make(env_name, **kwargs)
 
     #TODO: add jaxmarl's vamp and log wrapper

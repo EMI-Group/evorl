@@ -46,6 +46,7 @@ class JumanjiAdapter(EnvAdapter):
     def obs_space(self) -> Space:
         return self._obs_space
 
+#TODO: multi-agent EnvAdapter
 
 def jumanji_specs_to_evorl_space(spec):
     if isinstance(spec, DiscreteArray):

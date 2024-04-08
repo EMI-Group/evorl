@@ -178,7 +178,8 @@ class A2CAgent(Agent):
 
         v_targets = sample_batch.extras.v_targets
 
-        value_loss = optax.huber_loss(vs, v_targets, delta=1).mean()
+        # value_loss = optax.huber_loss(vs, v_targets, delta=1).mean()
+        value_loss = optax.l2_loss(vs, v_targets).mean()
 
         # ====== actor =======
 
@@ -252,7 +253,8 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             config.env.env_type,
             episode_length=max_episode_steps,
             parallel=config.num_envs,
-            autoreset=True
+            autoreset=True,
+            fast_reset=True
         )
 
         agent = A2CAgent(
@@ -401,8 +403,8 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             workflow_metrics = tree_unpmap(
                 workflow_metrics, self.pmap_axis_name)
 
-            self.recorder.write(train_metrics.to_local_dict(), i)
             self.recorder.write(workflow_metrics.to_local_dict(), i)
+            self.recorder.write(train_metrics.to_local_dict(), i)
 
             if (i+1) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)

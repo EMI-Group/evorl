@@ -4,23 +4,25 @@ from jax.tree_util import tree_leaves, tree_map
 import chex
 from flax import struct
 from typing import (
-    Any, Union, Tuple, Optional, Sequence,
+    Any, Union, Tuple, Optional, Sequence, Mapping
 )
 from evorl.agents import Agent, AgentState
 from evorl.types import (
-    Reward, RewardDict, ExtraInfo, PyTreeData, PyTreeDict
+    Reward, RewardDict, ExtraInfo, PyTreeData, PyTreeDict, AgentID
 )
 from evorl.sample_batch import SampleBatch, Episode
 from evorl.envs import Env, EnvState
+from evorl.utils.ma_utils import batchify, unbatchify, multi_agent_episode_done
 from functools import partial
 
-#TODO: add RNN Policy support
+# TODO: add RNN Policy support
+
 
 def env_step(
     env: Env,
-    agent: Agent,
+    agents: Mapping[AgentID, Agent],
     env_state: EnvState,
-    agent_state: AgentState,  # readonly
+    agent_states: AgentState,  # readonly
     sample_batch: SampleBatch,
     key: chex.PRNGKey,
     env_extra_fields: Sequence[str] = (),
@@ -29,8 +31,20 @@ def env_step(
         Collect one-step data.
     """
 
-    actions, policy_extras = agent.compute_actions(
-        agent_state, sample_batch, key)
+    num_agents = len(agents)
+    env_keys = jax.random.split(key, num_agents)
+
+    def _single_action_step(carray):
+        agent, agent_state, sample_batch, key = carray
+        return agent.compute_actions(agent_state, sample_batch, key)
+
+    # assume agents have different models, non-parallel
+    for agent_id in
+    for agent in agents:
+        actions, policy_extras = _single_action_step
+
+    actions = unbatchify(actions, )
+
     env_nstate = env.step(env_state, actions)
 
     info = env_nstate.info
