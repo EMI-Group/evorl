@@ -1,14 +1,13 @@
-
-
 import jax
 from jax import numpy as jnp
 from flax import struct
 
-from evorl.utils.jax_utils import vmap_rng_split
+from evorl.utils.jax_utils import vmap_rng_split, tree_ones_like
 from ..env import Env, EnvState
 from .wrapper import Wrapper
 import chex
 from typing import Tuple
+
 
 class EpisodeWrapper(Wrapper):
     """Maintains episode step count and sets done at episode end.
@@ -23,13 +22,9 @@ class EpisodeWrapper(Wrapper):
     """
 
     def __init__(self, env: Env,
-                 episode_length: int,
-                 record_episode_return: bool = False,
-                 discount: float = 1.0):
+                 episode_length: int):
         super().__init__(env)
         self.episode_length = episode_length
-        self.record_episode_return = record_episode_return
-        self.discount = discount
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         state = self.env.reset(key)
@@ -37,9 +32,7 @@ class EpisodeWrapper(Wrapper):
         state.info.steps = jnp.zeros((), dtype=jnp.int32)
         state.info.termination = jnp.zeros(())
         state.info.truncation = jnp.zeros(())
-        state.info.last_obs = jnp.zeros_like(state.obs)
-        if self.record_episode_return:
-            state.info.episode_return = jnp.zeros(())
+        state.info.last_obs = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), state.obs)
 
         return state
 
@@ -49,34 +42,31 @@ class EpisodeWrapper(Wrapper):
     def _step(self, state: EnvState, action: jax.Array) -> EnvState:
         state = self.env.step(state, action)
 
-        if self.record_episode_return:
-            # reset the episode_return when the episode is done
-            episode_return = state.info.episode_return * (1-state.done)
-
-        steps = state.info.steps * (1-state.done).astype(jnp.int32) + 1
+        termination = state.done['__all__']
+        steps = state.info.steps * (1-termination).astype(jnp.int32) + 1
         done = jnp.where(
             steps >= self.episode_length,
-            jnp.ones_like(state.done),
+            jnp.ones_like(termination),
+            termination
+        )
+        
+        agents_done = jax.tree_util.tree_map(
+            lambda x: jnp.where(done, x, jnp.ones_like(x)),
             state.done
         )
 
         state.info.steps = steps
-        state.info.termination = state.done
+        state.info.termination = termination
         state.info.truncation = jnp.where(
             steps >= self.episode_length,
-            1 - state.done,
-            jnp.zeros_like(state.done)
+            1 - termination,
+            jnp.zeros_like(termination)
         )
         # the real next_obs at the end of episodes, where
         # state.obs could be changed in VmapAutoResetWrapper
         state.info.last_obs = state.obs
 
-        if self.record_episode_return:
-            # only change the episode_return when the episode is done
-            episode_return += jnp.power(self.discount, steps-1)*state.reward
-            state.info.episode_return = episode_return
-
-        return state.replace(done=done)
+        return state.replace(done=agents_done)
 
 
 class OneEpisodeWrapper(EpisodeWrapper):
@@ -91,16 +81,15 @@ class OneEpisodeWrapper(EpisodeWrapper):
     """
 
     def __init__(self, env: Env, episode_length: int):
-        super().__init__(env, episode_length, False)
+        super().__init__(env, episode_length)
 
     def step(self, state: EnvState, action: jax.Array) -> EnvState:
         return jax.lax.cond(
-            state.done,
+            state.done['__all__'],
             lambda state, action: state.replace(),
             self._step,
             state, action
         )
-
 
 class VmapWrapper(Wrapper):
     """
@@ -194,7 +183,7 @@ class VmapAutoResetWrapper(Wrapper):
         """
 
         return jax.lax.cond(
-            state.done,
+            state.done['__all__'],
             self._auto_reset,
             lambda state: state,
             state,
@@ -234,7 +223,7 @@ class FastVmapAutoResetWrapper(Wrapper):
         state = jax.vmap(self.env.step)(state, action)
 
         def where_done(x, y):
-            done = state.done
+            done = state.done['__all__']
             if done.ndim > 0:
                 done = jnp.reshape(
                     done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore

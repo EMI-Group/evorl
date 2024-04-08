@@ -1,8 +1,8 @@
 import chex
 from .env import Env, EnvState
+from .space import Space
 from evorl.types import (
     EnvLike,
-    Space,
     Action,
     AgentID
 )

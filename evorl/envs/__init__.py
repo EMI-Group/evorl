@@ -13,6 +13,9 @@ if importlib.util.find_spec("gymnax") is not None:
 if importlib.util.find_spec("jumanji") is not None:
     from .jumanji import create_jumanji_env
 
+if importlib.util.find_spec("jaxmarl") is not None:
+    from .jaxmarl import create_wrapped_mabrax_env
+
 
 # TODO: unifiy env creator
 def create_env(env_name: str, env_type: str,**kwargs):
@@ -29,6 +32,8 @@ def create_env(env_name: str, env_type: str,**kwargs):
         env = create_wrapped_gymnax_env(env_name, **kwargs)
     elif env_type == 'jumanji':
         env = create_jumanji_env(env_name, **kwargs)
+    elif env_type == 'jaxmarl':
+        env = create_wrapped_mabrax_env(env_name, **kwargs)
     else:
         raise ValueError(f'env_type {env_type} not supported')
 

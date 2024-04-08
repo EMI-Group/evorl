@@ -12,37 +12,48 @@ from .space import Space
 from .multi_agent_env import MultiAgentEnvAdapter
 from .env import EnvState
 from .utils import sort_dict
-from typing import Tuple, Mapping, List
+from typing import Tuple, Mapping, List, Dict
 from evorl.utils.jax_utils import tree_zeros_like
 
+from .wrappers.ma_training_wrapper import (
+    EpisodeWrapper, OneEpisodeWrapper,
+    VmapAutoResetWrapper, FastVmapAutoResetWrapper, VmapWrapper
+)
+from .jaxmarl_envs import make_mabrax_env
+from .gymnax import gymnax_space_to_evorl_space
 
-def get_random_actions(batch_shape: Tuple[int], env: MultiAgentEnv):
-    dummy_action_dict = {}
-    for agent, action_space in zip(env.agents, env.action_space):
-        dummy_action = env.action_space.sample()
-        dummy_action_dict[agent] = jnp.broadcast_to(
-            dummy_action, batch_shape+dummy_action.shape)
 
-    return dummy_action_dict
+def get_random_actions(env: MultiAgentEnv):
+    dummy_key = jax.random.PRNGKey(42)
+
+    return {
+        agent_id: env.action_space(agent_id).sample(dummy_key)
+        for agent_id in env.agents
+    }
+
+
+def _tree_astype(tree, dtype):
+    return jax.tree_util.tree_map(lambda x: x.astype(dtype), tree)
 
 
 class JaxMARLAdapter(MultiAgentEnvAdapter):
     def __init__(self, env: MultiAgentEnv):
         super(JaxMARLAdapter, self).__init__(env)
-        
+        self._action_space = jaxmarl_space_to_evorl_space(env.action_spaces)
+        self._obs_space = jaxmarl_space_to_evorl_space(env.observation_spaces)
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         key, reset_key, dummy_step_key = jax.random.split(key, 3)
         obs, env_state = self.env.reset(reset_key)
 
-        action = get_random_actions(obs.shape[:1], self.env)
-        
+        dummy_action = get_random_actions(self.env)
+
         # run one dummy step to get reward,done,info shape
         _, _, dummy_reward, dummy_done, dummy_info = self.env.step_env(
-            dummy_step_key, env_state, action)
+            dummy_step_key, env_state, dummy_action)
 
         info = PyTreeDict(sort_dict(dummy_info))
-        info.step_key = key 
+        info.step_key = key
 
         return EnvState(
             env_state=env_state,
@@ -59,8 +70,8 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
         # we handle the autoreset at AutoResetWrapper
         obs, env_state, reward, done, info = self.env.step_env(
             step_key, state.env_state, action)
-        reward = reward.astype(jnp.float32)
-        done = done.astype(jnp.float32)
+        reward = _tree_astype(reward, jnp.float32)
+        done = _tree_astype(done, jnp.float32)
 
         state.info.update(info)
         state.info.step_key = key
@@ -74,15 +85,22 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
 
     @property
     def action_space(self) -> Mapping[AgentID, Space]:
-        return self.env.action_spaces
+        return self._action_space
 
     @property
     def obs_space(self) -> Mapping[AgentID, Space]:
-        return self.env.observation_spaces
-    
+        return self._obs_space
+
     @property
     def agents(self) -> List[AgentID]:
         return self.env.agents
+
+
+def jaxmarl_space_to_evorl_space(space):
+    return {
+        agent_id: gymnax_space_to_evorl_space(space)
+        for agent_id, space in space.items()
+    }
 
 
 supported_jaxmarl_env_list = (
@@ -115,15 +133,43 @@ supported_jaxmarl_env_list = (
     # "coin_game",
 )
 
-def create_jaxmarl_env(env_name: str, **kwargs) -> JaxMARLAdapter:
-    if env_name not in supported_jaxmarl_env_list:
+ma_brax_env_list = (
+    "ant_4x2",
+    "halfcheetah_6x1",
+    "hopper_3x1",
+    "humanoid_9|8",
+    "walker2d_2x3",
+)
+
+
+def create_mabrax_env(env_name: str,
+                      **kwargs) -> JaxMARLAdapter:
+    if env_name not in ma_brax_env_list:
         raise ValueError(f"Unsupported jaxmarl env: {env_name}")
 
+    env = make_mabrax_env(env_name, **kwargs)
 
-    env = jaxmarl.make(env_name, **kwargs)
-
-    #TODO: add jaxmarl's vamp and log wrapper
-
+    # Note: mabrax internally use brax's traning wrapper (EpisodeWrapper)
     env = JaxMARLAdapter(env)
+
+    return env
+
+
+def create_wrapped_mabrax_env(env_name: str,
+                              episode_length: int = 1000,
+                              parallel: int = 1,
+                              autoreset: bool = True,
+                              fast_reset: bool = False,
+                              **kwargs) -> JaxMARLAdapter:
+    env = create_mabrax_env(env_name, **kwargs)
+    if autoreset:
+        env = EpisodeWrapper(env, episode_length)
+        if fast_reset:
+            env = FastVmapAutoResetWrapper(env, num_envs=parallel)
+        else:
+            env = VmapAutoResetWrapper(env, num_envs=parallel)
+    else:
+        env = OneEpisodeWrapper(env, episode_length)
+        env = VmapWrapper(env, num_envs=parallel, vmap_step=True)
 
     return env

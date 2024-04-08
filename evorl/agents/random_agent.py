@@ -25,7 +25,7 @@ class RandomAgent(Agent):
         )
 
     def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
-        batch_shapes = (sample_batch.obs.shape[0],)
+        batch_shapes = sample_batch.obs.shape[:1]
         actions = self.action_space.sample(key)
         actions =  jnp.broadcast_to(actions, batch_shapes+actions.shape)
         return actions, PyTreeDict()

@@ -12,7 +12,7 @@ from brax.envs import (
     get_environment
 )
 
-from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAutoResetWrapper, VmapWrapper, VmapAutoResetWrapperV2
+from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAutoResetWrapper, VmapWrapper, FastVmapAutoResetWrapper
 
 
 class BraxAdapter(EnvAdapter):
@@ -89,11 +89,11 @@ def create_wrapped_brax_env(env_name: str,
         env = EpisodeWrapper(env, episode_length,
                              record_episode_return=True, discount=discount)
         if fast_reset:
-            env = VmapAutoResetWrapperV2(env, num_envs=parallel)
+            env = FastVmapAutoResetWrapper(env, num_envs=parallel)
         else:
             env = VmapAutoResetWrapper(env, num_envs=parallel)
     else:
         env = OneEpisodeWrapper(env, episode_length)
-        env = VmapWrapper(env, num_envs=parallel, vmap_step=False)
+        env = VmapWrapper(env, num_envs=parallel, vmap_step=True)
 
     return env

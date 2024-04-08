@@ -19,7 +19,7 @@ from gymnax.environments.spaces import (
 )
 from typing import Any, Dict, Optional
 
-from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAutoResetWrapper, VmapWrapper, VmapAutoResetWrapperV2
+from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAutoResetWrapper, VmapWrapper, FastVmapAutoResetWrapper
 
 
 class GymnaxAdapter(EnvAdapter):
@@ -80,10 +80,14 @@ class GymnaxAdapter(EnvAdapter):
     def obs_space(self) -> Space:
         return self._obs_space
 
+def _inf_to_num(x, num=1e10):
+    return jnp.nan_to_num(x, posinf=num, neginf=-num)
 
 def gymnax_space_to_evorl_space(space: GymnaxSpace):
     if isinstance(space, GymnaxBox):
-        return Box(low=space.low, high=space.high)
+        low = _inf_to_num(jnp.broadcast_to(space.low, space.shape).astype(space.dtype))
+        high = _inf_to_num(jnp.broadcast_to(space.high, space.shape).astype(space.dtype))
+        return Box(low=low, high=high)
     elif isinstance(space, GymnaxDiscrete):
         return Discrete(n=space.n)
     else:
@@ -124,11 +128,11 @@ def create_wrapped_gymnax_env(env_name: str,
         env = EpisodeWrapper(env, episode_length,
                              record_episode_return=True, discount=discount)
         if fast_reset:
-            env = VmapAutoResetWrapperV2(env, num_envs=parallel)
+            env = FastVmapAutoResetWrapper(env, num_envs=parallel)
         else:
             env = VmapAutoResetWrapper(env, num_envs=parallel)
     else:
         env = OneEpisodeWrapper(env, episode_length)
-        env = VmapWrapper(env, num_envs=parallel, vmap_step=False)
+        env = VmapWrapper(env, num_envs=parallel, vmap_step=True)
 
     return env
