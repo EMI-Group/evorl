@@ -97,6 +97,10 @@ def _to_local_dict_inner(obj, dict_factory):
         # generator (which is not true for namedtuples, handled
         # above).
         return type(obj)(_to_local_dict_inner(v, dict_factory) for v in obj)
+    elif isinstance(obj, PyTreeDict):
+        return dict((_to_local_dict_inner(k, dict_factory),
+                          _to_local_dict_inner(v, dict_factory))
+                         for k, v in obj.items())
     elif isinstance(obj, dict):
         return type(obj)((_to_local_dict_inner(k, dict_factory),
                           _to_local_dict_inner(v, dict_factory))

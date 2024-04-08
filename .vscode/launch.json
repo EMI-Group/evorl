@@ -18,7 +18,7 @@
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",
-                "JAX_DISABLE_JIT": "ture"
+                // "JAX_DISABLE_JIT": "true"
             }
         }
     ]

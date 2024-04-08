@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 def train(config: DictConfig) -> None:
     logger.info("config:\n"+OmegaConf.to_yaml(config))
 
+    if config.debug:
+        from jax import config as jax_config
+        jax_config.update("jax_debug_nans", True)
+        # jax_config.update("jax_debug_infs", True)
+
     workflow_cls = hydra.utils.get_class(config.workflow_cls)
 
     devices = jax.local_devices()
@@ -25,7 +30,9 @@ def train(config: DictConfig) -> None:
         )
     else:
         workflow = workflow_cls.build_from_config(
-            config, enable_jit=True)
+            config, 
+            enable_jit=True
+            )
 
     output_dir = get_output_dir()
     wandb_project = config.wandb.project
