@@ -36,8 +36,7 @@ class MetricBase(PyTreeNode, kw_only=True):
         return to_local_dict(self)
 
 class WorkflowMetric(MetricBase):
-    sampled_timesteps: chex.Array = metricfield(
-        default=jnp.zeros((), dtype=jnp.int32), reduce_fn=psum)
+    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.int32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.int32)
 
 

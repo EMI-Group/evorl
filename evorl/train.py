@@ -21,17 +21,14 @@ def train(config: DictConfig) -> None:
     if len(devices) > 1:
         logger.info(f"Enable Multi Devices: {devices}")
         workflow = workflow_cls.build_from_config(
-            config, enable_multi_devices=True, devices=devices
+            config, enable_multi_devices=True, devices=devices,
         )
     else:
-        workflow_cls.enable_jit()
-        workflow = workflow_cls.build_from_config(config)
-
+        workflow = workflow_cls.build_from_config(
+            config, enable_jit=True)
 
     output_dir = get_output_dir()
     wandb_project = config.wandb.project
-    if config.debug:
-        wandb_project = wandb_project + '_debug'
     wandb_tags = [workflow_cls.name(), config.env.env_name, config.env.env_type] + \
         OmegaConf.to_container(config.wandb.tags)
     wandb_name = ','.join(

@@ -17,12 +17,14 @@ from evorl.utils.toolkits import (
 )
 from evorl.workflows import OnPolicyRLWorkflow
 from evorl.agents import AgentState
-from evorl.distributed import agent_gradient_update, tree_unpmap
+from evorl.distributed import agent_gradient_update, tree_unpmap, psum
 from evorl.envs import create_env, Env, EnvState
 from evorl.evaluator import Evaluator
 from .agent import Agent, AgentState
 
 from evox import State
+# from evorl.types import State
+
 
 import orbax.checkpoint as ocp
 import chex
@@ -45,12 +47,13 @@ class A2CNetworkParams:
     policy_params: Params
     value_params: Params
 
+
 class A2CAgent(Agent):
     actor_hidden_layer_sizes: Tuple[int] = (256, 256)
     critic_hidden_layer_sizes: Tuple[int] = (256, 256)
     normalize_obs: bool = False
     continuous_action: bool = False
-    policy_network: nn.Module = pytree_field(lazy_init=True) # nn.Module is ok
+    policy_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
     value_network: nn.Module = pytree_field(lazy_init=True)
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
@@ -356,16 +359,16 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
         # ======== update metrics ========
 
-        sampled_timesteps = (state.metrics.sampled_timesteps +
-                             self.config.rollout_length * self.config.num_envs)
-
+        sampled_timesteps = psum(self.config.rollout_length * self.config.num_envs,
+                                  axis_name=self.pmap_axis_name)
+                             
         train_episode_return = average_episode_discount_return(
             trajectory.extras.env_extras.episode_return,
             trajectory.dones
         ).mean()
 
         workflow_metrics = WorkflowMetric(
-            sampled_timesteps=sampled_timesteps,
+            sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
             iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
@@ -387,14 +390,16 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = tree_unpmap(
+            state.metrics.iterations, self.pmap_axis_name)
 
         for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
             train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
+            workflow_metrics = tree_unpmap(
+                workflow_metrics, self.pmap_axis_name)
 
             self.recorder.write(train_metrics.to_local_dict(), i)
             self.recorder.write(workflow_metrics.to_local_dict(), i)
@@ -407,7 +412,8 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
             self.checkpoint_manager.save(
                 i,
-                args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name))
+                args=ocp.args.StandardSave(
+                    tree_unpmap(state, self.pmap_axis_name))
             )
 
         return state
