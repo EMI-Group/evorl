@@ -427,7 +427,8 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             
             return state, train_metrics
         
-        condition = jax.lax.lt(state.metrics.iterations, (self.config.learning_starts/self.config.num_envs/self.config.rollout_length))
+        learn_start = jnp.floor(self.config.learning_starts/self.config.num_envs/self.config.rollout_length).astype(state.metrics.iterations.dtype)
+        condition = jax.lax.lt(state.metrics.iterations, learn_start)
         state, train_metrics = jax.lax.cond(
             condition,
             fill_replay_buffer,
