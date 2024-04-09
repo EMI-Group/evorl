@@ -30,9 +30,9 @@ def train(config: DictConfig) -> None:
         )
     else:
         workflow = workflow_cls.build_from_config(
-            config, 
+            config,
             enable_jit=True
-            )
+        )
 
     output_dir = get_output_dir()
     wandb_project = config.wandb.project
@@ -51,7 +51,8 @@ def train(config: DictConfig) -> None:
         dir=output_dir,
         mode=wandb_mode
     )
-    log_recorder = LogRecorder(log_path=output_dir/'train.log', console=config.debug)
+    log_recorder = LogRecorder(
+        log_path=output_dir/'train.log', console=config.debug)
     workflow.add_recorders([wandb_recorder, log_recorder])
 
     state = workflow.init(jax.random.PRNGKey(config.seed))

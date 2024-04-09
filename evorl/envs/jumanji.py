@@ -46,7 +46,8 @@ class JumanjiAdapter(EnvAdapter):
     def obs_space(self) -> Space:
         return self._obs_space
 
-#TODO: multi-agent EnvAdapter
+# TODO: multi-agent EnvAdapter
+
 
 def jumanji_specs_to_evorl_space(spec):
     if isinstance(spec, DiscreteArray):
@@ -60,7 +61,8 @@ def jumanji_specs_to_evorl_space(spec):
         return Box(low=-high, high=high)
     else:
         raise NotImplementedError(f"Unsupported space type: {type(spec)}")
-    #TODO: support nested Space for envs like Sudoku
+    # TODO: support nested Space for envs like Sudoku
+
 
 def create_jumanji_env(env_name: str, **kwargs) -> JumanjiAdapter:
     env = jumanji.make(env_name, **kwargs)

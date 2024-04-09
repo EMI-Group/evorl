@@ -8,12 +8,13 @@ from jaxmarl.environments import MultiAgentEnv
 from evorl.types import (
     PyTreeDict, Action, AgentID
 )
+
 from .space import Space
 from .multi_agent_env import MultiAgentEnvAdapter
 from .env import EnvState
 from .utils import sort_dict
 from typing import Tuple, Mapping, List, Dict
-from evorl.utils.jax_utils import tree_zeros_like
+from evorl.utils.jax_utils import tree_zeros_like, tree_astype
 
 from .wrappers.ma_training_wrapper import (
     EpisodeWrapper, OneEpisodeWrapper,
@@ -30,10 +31,6 @@ def get_random_actions(env: MultiAgentEnv):
         agent_id: env.action_space(agent_id).sample(dummy_key)
         for agent_id in env.agents
     }
-
-
-def _tree_astype(tree, dtype):
-    return jax.tree_util.tree_map(lambda x: x.astype(dtype), tree)
 
 
 class JaxMARLAdapter(MultiAgentEnvAdapter):
@@ -70,8 +67,8 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
         # we handle the autoreset at AutoResetWrapper
         obs, env_state, reward, done, info = self.env.step_env(
             step_key, state.env_state, action)
-        reward = _tree_astype(reward, jnp.float32)
-        done = _tree_astype(done, jnp.float32)
+        reward = tree_astype(reward, jnp.float32)
+        done = tree_astype(done, jnp.float32)
 
         state.info.update(info)
         state.info.step_key = key

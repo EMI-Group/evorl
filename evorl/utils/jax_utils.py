@@ -56,6 +56,9 @@ def tree_stop_gradient(nest: chex.ArrayTree) -> chex.ArrayTree:
     return jax.tree_util.tree_map(jax.lax.stop_gradient, nest)
 
 
+def tree_astype(tree, dtype):
+    return jax.tree_util.tree_map(lambda x: x.astype(dtype), tree)
+
 def jit_method(*,
                static_argnums: int | Sequence[int] | None = None,
                static_argnames: str | Iterable[str] | None = None,
@@ -105,3 +108,5 @@ def vmap_rng_split(key: jax.Array, num: int = 2) -> jax.Array:
     # batched_key [B, 2] -> batched_keys [num, B, 2]
     chex.assert_shape(key, (None, 2))
     return _vmap_rng_split_fn(key, num)
+
+
