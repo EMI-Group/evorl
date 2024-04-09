@@ -39,6 +39,10 @@ AgentID = Any
 ReplayBufferState = chex.ArrayTree
 
 
+MISSING_REWARD = -1e10
+
+
+
 class ObsPreprocessorFn(Protocol):
     def __call__(self, obs: chex.Array, *args: Any, **kwds: Any) -> chex.Array:
         return obs

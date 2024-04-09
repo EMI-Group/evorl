@@ -7,11 +7,13 @@ from typing import Optional, Callable
 
 
 from .types import LossDict, PyTreeDict, PyTreeNode
-from .distributed import pmean, psum
+from .distributed import pmean, psum, tree_pmean
 import dataclasses
+
 
 def metricfield(*, reduce_fn: Callable[[chex.Array, Optional[str]], chex.Array] = None, pytree_node=True, **kwargs):
     return dataclasses.field(metadata={'pytree_node': pytree_node, 'reduce_fn': reduce_fn}, **kwargs)
+
 
 class MetricBase(PyTreeNode, kw_only=True):
     def all_reduce(self, pmap_axis_name: Optional[str] = None):
@@ -35,17 +37,20 @@ class MetricBase(PyTreeNode, kw_only=True):
         """
         return to_local_dict(self)
 
+
 class WorkflowMetric(MetricBase):
     sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.int32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.int32)
 
 
 class TrainMetric(MetricBase):
-    train_episode_return: chex.Array = metricfield(
-        default=jnp.zeros(()), reduce_fn=pmean)
+    # manually reduce in the step()
+    train_episode_return: Optional[chex.Array] = None
+
     # no need reduce_fn since it's already reduced in the step()
-    loss: chex.Array = jnp.zeros((), dtype=jnp.int32)
-    raw_loss_dict: LossDict = metricfield(default_factory=PyTreeDict)
+    loss: chex.Array = jnp.zeros((), dtype=jnp.float32)
+    raw_loss_dict: LossDict = metricfield(
+        default_factory=PyTreeDict, reduce_fn=tree_pmean)
 
 
 class EvaluateMetric(MetricBase):
@@ -53,14 +58,15 @@ class EvaluateMetric(MetricBase):
     episode_lengths: chex.Array = metricfield(reduce_fn=pmean)
 
 
-
 def _is_dataclass_instance(obj):
     """Returns True if obj is an instance of a dataclass."""
     return hasattr(type(obj), '__dataclass_fields__')
 
+
 def to_local_dict(obj, *, dict_factory=dict):
     if not _is_dataclass_instance(obj):
-        raise TypeError("to_local_dict() should be called on dataclass instances")
+        raise TypeError(
+            "to_local_dict() should be called on dataclass instances")
     return _to_local_dict_inner(obj, dict_factory)
 
 
@@ -99,8 +105,8 @@ def _to_local_dict_inner(obj, dict_factory):
         return type(obj)(_to_local_dict_inner(v, dict_factory) for v in obj)
     elif isinstance(obj, PyTreeDict):
         return dict((_to_local_dict_inner(k, dict_factory),
-                          _to_local_dict_inner(v, dict_factory))
-                         for k, v in obj.items())
+                     _to_local_dict_inner(v, dict_factory))
+                    for k, v in obj.items())
     elif isinstance(obj, dict):
         return type(obj)((_to_local_dict_inner(k, dict_factory),
                           _to_local_dict_inner(v, dict_factory))
@@ -110,4 +116,3 @@ def _to_local_dict_inner(obj, dict_factory):
             return obj.tolist()
         else:
             return obj
-

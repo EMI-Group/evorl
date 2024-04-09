@@ -42,6 +42,9 @@ def unpmap(x, axis_name: Optional[str] = None):
     else:
         return x[0]
 
+def tree_pmean(tree: chex.ArrayTree, axis_name: Optional[str] = None):
+    return jax.tree_map(lambda x: pmean(x, axis_name), tree)
+
 def tree_unpmap(tree:chex.ArrayTree, axis_name: Optional[str] = None):
     return jax.tree_map(lambda x: unpmap(x, axis_name), tree)
 

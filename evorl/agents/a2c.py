@@ -30,7 +30,8 @@ import orbax.checkpoint as ocp
 import chex
 import optax
 from evorl.types import (
-    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field
+    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field,
+    MISSING_REWARD
 )
 from evorl.metrics import TrainMetric, WorkflowMetric
 from typing import Tuple, Sequence, Optional, Any
@@ -366,8 +367,9 @@ class A2CWorkflow(OnPolicyRLWorkflow):
                              
         train_episode_return = average_episode_discount_return(
             trajectory.extras.env_extras.episode_return,
-            trajectory.dones
-        ).mean()
+            trajectory.dones,
+            pmap_axis_name=self.pmap_axis_name
+        )
 
         workflow_metrics = WorkflowMetric(
             sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
@@ -404,7 +406,10 @@ class A2CWorkflow(OnPolicyRLWorkflow):
                 workflow_metrics, self.pmap_axis_name)
 
             self.recorder.write(workflow_metrics.to_local_dict(), i)
-            self.recorder.write(train_metrics.to_local_dict(), i)
+            train_metric_data = train_metrics.to_local_dict()
+            if train_metrics.train_episode_return==MISSING_REWARD:
+                del train_metric_data['train_episode_return']
+            self.recorder.write(train_metric_data, i)
 
             if (i+1) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)

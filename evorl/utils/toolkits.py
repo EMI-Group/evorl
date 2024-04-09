@@ -2,8 +2,9 @@ import jax
 import jax.numpy as jnp
 
 import chex
-from typing import Tuple
+from typing import Tuple, Optional
 from evorl.sample_batch import SampleBatch
+from evorl.types import MISSING_REWARD
 
 
 def compute_episode_length(
@@ -168,19 +169,20 @@ def flatten_rollout_trajectory(trajectory: SampleBatch):
 
 def average_episode_discount_return(
     episode_discount_return: jax.Array,  # [T,B]
-    dones: jax.Array  # [T,B]
+    dones: jax.Array,  # [T,B]
+    pmap_axis_name: Optional[str] = None
 )-> jax.Array:
-    """
-        For autoreset envs trajectory.
-    """
-    # [B]
-    cnt = dones.sum(axis=0)
-    episode_discount_return_mean = (
-        (episode_discount_return * dones).sum(axis=0) / cnt
-    )
-
+    
+    cnt = dones.sum()
+    episode_discount_return_sum = (episode_discount_return * dones).sum()
+    
+    if pmap_axis_name is not None:
+        episode_discount_return_sum = jax.lax.psum(
+            episode_discount_return_sum, pmap_axis_name)
+        cnt = jax.lax.psum(cnt, pmap_axis_name)
+    
     return jnp.where(
         jnp.isclose(cnt, 0),
-        jnp.zeros_like(episode_discount_return_mean),
-        episode_discount_return_mean
+        jnp.full_like(episode_discount_return_sum, MISSING_REWARD),
+        episode_discount_return_sum/cnt
     )
