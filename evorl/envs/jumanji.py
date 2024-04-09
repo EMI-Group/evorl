@@ -56,7 +56,7 @@ def jumanji_specs_to_evorl_space(spec):
         high = jnp.broadcast_to(spec.maximum, spec.shape)
         return Box(low=low, high=high)
     elif isinstance(spec, Array):
-        high = jnp.full(spec.shape, jnp.inf)
+        high = jnp.full(spec.shape, 1e10)
         return Box(low=-high, high=high)
     else:
         raise NotImplementedError(f"Unsupported space type: {type(spec)}")
