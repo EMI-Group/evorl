@@ -38,7 +38,7 @@ def train(config: DictConfig) -> None:
     wandb_project = config.wandb.project
     wandb_tags = [workflow_cls.name(), config.env.env_name, config.env.env_type] + \
         OmegaConf.to_container(config.wandb.tags)
-    wandb_name = ','.join(
+    wandb_name = '-'.join(
         [workflow_cls.name(), config.env.env_name, config.env.env_type]
     )
     wandb_mode = 'online' if config.wandb.enable and not config.debug else 'disabled'
@@ -51,8 +51,7 @@ def train(config: DictConfig) -> None:
         dir=output_dir,
         mode=wandb_mode
     )
-    log_recorder = LogRecorder(
-        log_path=output_dir/'train.log', console=config.debug)
+    log_recorder = LogRecorder(log_path=output_dir/f'{wandb_name}.log')
     workflow.add_recorders([wandb_recorder, log_recorder])
 
     state = workflow.init(jax.random.PRNGKey(config.seed))

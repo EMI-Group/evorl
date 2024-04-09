@@ -10,7 +10,7 @@ import json
 class JsonRecorder(Recorder):
     """Log file recorder"""
 
-    def __init__(self, path: str, console: bool = True):
+    def __init__(self, path: str):
         path = Path(path)
         if not path.parent.exists():
             path.parent.mkdir(parents=True)
