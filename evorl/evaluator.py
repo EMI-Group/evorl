@@ -8,7 +8,11 @@ from evorl.rollout import eval_rollout_episode
 from evorl.utils.toolkits import compute_discount_return, compute_episode_length
 
 import dataclasses
+import logging
 
+import math
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass
@@ -23,8 +27,12 @@ class Evaluator:
     #     self.pmap_axis_name = pmap_axis_name
 
     def evaluate(self, agent_state, num_episodes: int, key: chex.PRNGKey) -> EvaluateMetric:
-        num_iters = num_episodes // self.env.num_envs
-
+        num_envs = self.env.num_envs
+        num_iters = math.ceil(num_episodes / num_envs)
+        if num_episodes % num_envs != 0:
+            logger.warn(f"num_episode ({num_episodes}) cannot be divided by parallel_envs ({num_envs}),"
+                        f"set new num_episodes={self.num_iters*num_envs}"
+                        )
         def _evaluate_fn(key, unused_t):
 
             next_key, init_env_key = jax.random.split(key, 2)
