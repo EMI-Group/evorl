@@ -10,16 +10,17 @@ exploration_epsilon: 0.5
 total_timesteps: 1000000
 
 num_eval_envs: 8
-eval_interval: 50
+eval_interval: 100
+log_interval: 100
 eval_episodes: 16 # should be divided by num_eval_envs
 critor_update_interval: 1
 actor_update_interval: 2
 tau: 0.005
-learning_starts: 10000 # steps before training starts 25000
+learning_starts: 300 # steps before training starts 25000
 
 optimizer:
   lr: 3e-4
-  grad_clip_norm: 10.0 # set 0 or none to turn-off
+  grad_clip_norm: 5.0 # set 0 or none to turn-off
   loss_weights:
     actor_loss: 1.0
     critic_loss: 1.0
