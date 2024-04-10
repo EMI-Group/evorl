@@ -213,6 +213,10 @@ class PyTreeDict(dict):
     def pop(self, k, d=None):
         delattr(self, k)
         return super(PyTreeDict, self).pop(k, d)
+    
+    def copy(self):
+        d = super().copy() # dict
+        return self.__class__(d)
 
 
 jax.tree_util.register_pytree_node(
