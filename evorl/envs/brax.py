@@ -46,7 +46,7 @@ class BraxAdapter(EnvAdapter):
         brax_state = self.env.step(state.env_state, action)
 
         state.info.update(brax_state.info)
-        state.info.metrics = PyTreeDict(sort_dict(brax_state.metrics))
+        state.info.metrics.update(brax_state.metrics)
 
         return state.replace(
             env_state=brax_state,
