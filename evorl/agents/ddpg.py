@@ -528,7 +528,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                     )
                 )
 
-            condition = (
+            update_condition = (
                 state.metrics.iterations % self.config.actor_update_interval
             ) == 0
 
@@ -618,9 +618,9 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 )
 
             loss, loss_dict, critic_opt_state, actor_opt_state, agent_state = (
-                jax.lax.cond(condition, update_both, update_critic, agent_state)
+                jax.lax.cond(update_condition, update_both, update_critic, agent_state)
             )
-
+            
             state = state.update(
                 env_state=env_state,
                 replay_buffer_state=replay_buffer_state,
@@ -647,11 +647,11 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             / self.config.num_envs
             / self.config.rollout_length
         ).astype(state.metrics.iterations.dtype)
-        condition = jax.lax.lt(state.metrics.iterations, learn_start)
+        start_condition = jax.lax.lt(state.metrics.iterations, learn_start)
         state, train_metrics = jax.lax.cond(
-            condition, fill_replay_buffer, normal_step, state
+            start_condition, fill_replay_buffer, normal_step, state
         )
-
+       
         # calculate the numbner of timestep
         sampled_timesteps = (
             state.metrics.sampled_timesteps
@@ -667,9 +667,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         return train_metrics, state.update(
             key=key,
             metrics=workflow_metrics,
-            sample_actions=self.agent.compute_actions(
-                state.agent_state, SampleBatch(obs=state.env_state.obs), key
-            )[0],
         )
 
     def learn(self, state: State) -> State:
@@ -682,17 +679,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             if (i + 1) % self.config.log_interval == 0:
                 logger.info(workflow_metrics)
                 logger.info(train_metrics)
-                # logger.info(state.sample_actions.flatten())
-                logger.info(
-                    "action value max: {}".format(
-                        jnp.amax(state.sample_actions, axis=0)
-                    )
-                )
-                logger.info(
-                    "action value min: {}".format(
-                        jnp.amin(state.sample_actions, axis=0)
-                    )
-                )
 
             if (i + 1) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
