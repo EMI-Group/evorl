@@ -14,10 +14,10 @@ from evorl.utils import running_statistics
 from evorl.rollout import rollout, env_step
 from evox import State
 from evorl.networks import MLP
-from evorl.distributed import agent_gradient_update, pmean
+from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
 from evorl.utils.toolkits import average_episode_discount_return, soft_target_update
 from omegaconf import DictConfig
-from typing import Tuple, Any, Sequence, Callable
+from typing import Tuple, Any, Sequence, Callable, Optional
 import optax
 import chex
 import distrax
@@ -37,14 +37,14 @@ import flax.linen as nn
 
 logger = logging.getLogger(__name__)
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
-
+Initializer = Callable[..., Any]
 
 @struct.dataclass
 class DDPGNetworkParams:
     """Contains training state for the learner."""
 
-    q_params: Params
-    target_q_params: Params
+    critic_params: Params
+    target_critic_params: Params
     actor_params: Params
     target_actor_params: Params
 
@@ -54,12 +54,12 @@ class DDPGAgent(Agent):
     DDPG
     """
 
-    q_hidden_layer_sizes: Tuple[int] = (256, 256)
+    critic_hidden_layer_sizes: Tuple[int] = (256, 256)
     actor_hidden_layer_sizes: Tuple[int] = (256, 256)
     discount: float = 1
-    exploration_epsilon: float = 0.1
+    exploration_epsilon: float = 0.5
     normalize_obs: bool = False
-    q_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
+    critic_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
     actor_network: nn.Module = pytree_field(lazy_init=True)
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
@@ -68,17 +68,17 @@ class DDPGAgent(Agent):
         action_size = self.action_space.shape[0]
 
         # the output of the q_network is b*n_critics, n_critics is the number of critics, b is the batch size
-        q_network, q_init_fn = make_q_network(
+        critic_network, critic_init_fn = make_q_network(
             obs_size=obs_size,
             action_size=action_size,
-            hidden_layer_sizes=self.q_hidden_layer_sizes,
+            hidden_layer_sizes=self.critic_hidden_layer_sizes,
             n_critics=1,
         )
 
         key, q_key, actor_key, obs_preprocessor_key = jax.random.split(key, num=4)
 
-        q_params = q_init_fn(q_key)
-        target_q_params = q_params
+        critic_params = critic_init_fn(q_key)
+        target_critic_params = critic_params
 
         # the output of the actor_network is b, b is the batch size
         action_scale = jnp.array((self.action_space.high - self.action_space.low) / 2.0)
@@ -94,12 +94,12 @@ class DDPGAgent(Agent):
         actor_params = actor_init_fn(actor_key)
         target_actor_params = actor_params
 
-        self.set_frozen_attr("q_network", q_network)
+        self.set_frozen_attr("critic_network", critic_network)
         self.set_frozen_attr("actor_network", actor_network)
 
         params_state = DDPGNetworkParams(
-            q_params=q_params,
-            target_q_params=target_q_params,
+            critic_params=critic_params,
+            target_critic_params=target_critic_params,
             actor_params=actor_params,
             target_actor_params=target_actor_params,
         )
@@ -150,6 +150,81 @@ class DDPGAgent(Agent):
 
         return jax.lax.stop_gradient(action), PyTreeDict()
 
+    def cirtic_loss(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> LossDict:
+        """
+        Args:
+            sample_barch: [B, ...]
+
+        Return: LossDict[
+            actor_loss
+            critic_loss
+            actor_entropy_loss
+        ]
+        """
+        next_obs = sample_batch.next_obs
+        obs = sample_batch.obs
+        actions = sample_batch.actions
+
+        if self.normalize_obs:
+            next_obs = self.obs_preprocessor(
+                next_obs, agent_state.obs_preprocessor_state
+            )
+            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
+
+        # ======= critic =======
+        actor = self.actor_network.apply(agent_state.params.target_actor_params, obs)
+
+        next_qs = self.critic_network.apply(
+            agent_state.params.target_critic_params, next_obs, actor
+        ).squeeze(-1)
+
+        target_qs = (
+            sample_batch.rewards + self.discount * (1 - sample_batch.dones) * next_qs
+        )
+        target_qs = jax.lax.stop_gradient(target_qs)
+
+        qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions).squeeze(-1)
+
+        # in DDPG, we use the target network to compute the target value and in cleanrl, the lose is MSE loss
+        # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
+        q_loss = ((qs - target_qs) ** 2).mean()
+
+        return dict(critic_loss=q_loss)
+
+    def actor_loss(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> LossDict:
+        """
+        Args:
+            sample_barch: [B, ...]
+
+        Return: LossDict[
+            actor_loss
+            critic_loss
+            actor_entropy_loss
+        ]
+        """
+        next_obs = sample_batch.next_obs
+        obs = sample_batch.obs
+
+        if self.normalize_obs:
+            next_obs = self.obs_preprocessor(
+                next_obs, agent_state.obs_preprocessor_state
+            )
+            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
+
+        # [T*B, A]
+        gen_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+
+        actor_loss = -jnp.mean(
+            self.critic_network.apply(agent_state.params.critic_params, obs, gen_actions).squeeze(
+                -1
+            )
+        )
+        return dict(actor_loss=actor_loss)
+
     def loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
@@ -176,17 +251,17 @@ class DDPGAgent(Agent):
 
         # ======= critic =======
         actor = self.actor_network.apply(agent_state.params.target_actor_params, obs)
-       
 
-        next_qs = self.q_network.apply(
-            agent_state.params.target_q_params, next_obs, actor
+        next_qs = self.critic_network.apply(
+            agent_state.params.target_critic_params, next_obs, actor
         ).squeeze(-1)
 
         target_qs = (
             sample_batch.rewards + self.discount * (1 - sample_batch.dones) * next_qs
         )
         target_qs = jax.lax.stop_gradient(target_qs)
-        qs = self.q_network.apply(agent_state.params.q_params, obs, actions).squeeze(-1)
+
+        qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions).squeeze(-1)
 
         # in DDPG, we use the target network to compute the target value and in cleanrl, the lose is MSE loss
         # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
@@ -198,7 +273,7 @@ class DDPGAgent(Agent):
         gen_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
 
         actor_loss = -jnp.mean(
-            self.q_network.apply(agent_state.params.q_params, obs, gen_actions).squeeze(
+            self.critic_network.apply(agent_state.params.critic_params, obs, gen_actions).squeeze(
                 -1
             )
         )
@@ -222,7 +297,7 @@ class DDPGAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        return self.q_network.apply(
+        return self.critic_network.apply(
             agent_state.params.value_params, obs, actions
         ).squeeze(-1)
 
@@ -282,7 +357,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         agent = DDPGAgent(
             action_space=env.action_space,
             obs_space=env.obs_space,
-            q_hidden_layer_sizes=config.agent_network.q_hidden_layer_sizes,
+            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
@@ -337,6 +412,44 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             replay_buffer,
             _replay_buffer_init_fn,
             config,
+        )
+
+    def setup(self, key: chex.PRNGKey) -> State:
+        key, agent_key, env_key, buffer_key = jax.random.split(key, 4)
+
+        agent_state = self.agent.init(agent_key)
+
+        workflow_metrics = self._setup_workflow_metrics()
+
+        critic_opt_state = self.optimizer.init(agent_state.params.critic_params)
+        actor_opt_state = self.optimizer.init(agent_state.params.actor_params)
+
+        replay_buffer_state = self._init_replay_buffer(self.replay_buffer, buffer_key)
+
+        if self.enable_multi_devices:
+            workflow_metrics, agent_state, opt_state, replay_buffer_state = (
+                jax.device_put_replicated(
+                    (workflow_metrics, agent_state, opt_state, replay_buffer_state),
+                    self.devices,
+                )
+            )
+
+            # key and env_state should be different over devices
+            key = split_key_to_devices(key, self.devices)
+
+            env_key = split_key_to_devices(env_key, self.devices)
+            env_state = jax.pmap(self.env.reset, axis_name=self.pmap_axis_name)(env_key)
+        else:
+            env_state = self.env.reset(env_key)
+
+        return State(
+            key=key,
+            metrics=workflow_metrics,
+            replay_buffer_state=replay_buffer_state,
+            agent_state=agent_state,
+            env_state=env_state,
+            actor_opt_state=actor_opt_state,
+            critic_opt_state=critic_opt_state,
         )
 
     def step(self, state: State) -> Tuple[TrainMetric, State]:
@@ -419,39 +532,70 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 state.metrics.iterations % self.config.actor_update_interval
             ) == 0
 
-            @jax.jit
-            def loss_fn(agent_state, sample_batch, key):
-                loss_dict = self.agent.loss(agent_state, sample_batch, key)
-                loss_weights = self.config.optimizer.loss_weights
-
-                def get_both_loss():
-                    return (
-                        loss_weights["actor_loss"] * loss_dict["actor_loss"]
-                        + loss_weights["critic_loss"] * loss_dict["critic_loss"]
-                    )
-
-                def get_critic_loss():
-                    return loss_weights["critic_loss"] * loss_dict["critic_loss"]
-
-                # condition = (state.metrics.iterations % self.config.actor_update_interval) == 0
-                loss = jax.lax.cond(condition, get_both_loss, get_critic_loss)
+            def critic_loss_fn(agent_state, sample_batch, key):
+                loss_dict = self.agent.cirtic_loss(agent_state, sample_batch, key)
+                loss = loss_dict["critic_loss"]
                 return loss, loss_dict
 
-            update_fn = agent_gradient_update(
-                loss_fn,
+            def actor_loss_fn(agent_state, sample_batch, key):
+                loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
+                loss = loss_dict["actor_loss"]
+                return loss, loss_dict
+
+            critic_gradient_update = critic_agent_gradient_update(
+                critic_loss_fn,
                 self.optimizer,
                 pmap_axis_name=self.pmap_axis_name,
                 has_aux=True,
             )
 
-            (loss, loss_dict), opt_state, agent_state = update_fn(
-                state.opt_state, agent_state, sampled_batch.experience, learn_key
+            actor_gradient_update = actor_agent_gradient_update(
+                actor_loss_fn,
+                self.optimizer,
+                pmap_axis_name=self.pmap_axis_name,
+                has_aux=True,
             )
 
-            def update_target_params():
-                target_q_params = soft_target_update(
-                    agent_state.params.target_q_params,
-                    agent_state.params.q_params,
+            def update_critic(agent_state):
+                (critic_loss, critic_loss_dict), critic_opt_state, agent_state = (
+                    critic_gradient_update(
+                        state.critic_opt_state,
+                        agent_state,
+                        sampled_batch.experience,
+                        learn_key,
+                    )
+                )
+                actor_loss_dict = dict(actor_loss=jnp.zeros(()))
+                return (
+                    critic_loss,
+                    {**critic_loss_dict, **actor_loss_dict},
+                    critic_opt_state,
+                    state.actor_opt_state,
+                    agent_state,
+                )
+
+            def update_both(agent_state):
+                (critic_loss, critic_loss_dict), critic_opt_state, agent_state = (
+                    critic_gradient_update(
+                        state.critic_opt_state,
+                        agent_state,
+                        sampled_batch.experience,
+                        learn_key,
+                    )
+                )
+
+                (actor_loss, actor_loss_dict), actor_opt_state, agent_state = (
+                    actor_gradient_update(
+                        state.actor_opt_state,
+                        agent_state,
+                        sampled_batch.experience,
+                        learn_key,
+                    )
+                )
+                
+                target_critic_params = soft_target_update(
+                    agent_state.params.target_critic_params,
+                    agent_state.params.critic_params,
                     self.config.tau,
                 )
                 target_actor_params = soft_target_update(
@@ -460,23 +604,29 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                     self.config.tau,
                 )
                 params = agent_state.params.replace(
-                    target_q_params=target_q_params,
+                    target_critic_params=target_critic_params,
                     target_actor_params=target_actor_params,
                 )
-                return params
+                agent_state = agent_state.replace(params=params)
 
-            def keep_target_params():
-                return agent_state.params
+                return (
+                    critic_loss + actor_loss,
+                    {**critic_loss_dict, **actor_loss_dict},
+                    critic_opt_state,
+                    actor_opt_state,
+                    agent_state,
+                )
 
-            params = jax.lax.cond(condition, update_target_params, keep_target_params)
-
-            agent_state = agent_state.replace(params=params)
+            loss, loss_dict, critic_opt_state, actor_opt_state, agent_state = (
+                jax.lax.cond(condition, update_both, update_critic, agent_state)
+            )
 
             state = state.update(
                 env_state=env_state,
                 replay_buffer_state=replay_buffer_state,
                 agent_state=agent_state,
-                opt_state=opt_state,
+                critic_opt_state=critic_opt_state,
+                actor_opt_state=actor_opt_state,
             )
 
             # get episode return, in DDPG the return is the rewards
@@ -514,7 +664,13 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        return train_metrics, state.update(key=key, metrics=workflow_metrics,  sample_actions = self.agent.compute_actions(state.agent_state, SampleBatch(obs=state.env_state.obs), key)[0],)
+        return train_metrics, state.update(
+            key=key,
+            metrics=workflow_metrics,
+            sample_actions=self.agent.compute_actions(
+                state.agent_state, SampleBatch(obs=state.env_state.obs), key
+            )[0],
+        )
 
     def learn(self, state: State) -> State:
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
@@ -527,8 +683,16 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 logger.info(workflow_metrics)
                 logger.info(train_metrics)
                 # logger.info(state.sample_actions.flatten())
-                logger.info("action value max: {}".format(jnp.amax(state.sample_actions,axis=0)))
-                logger.info("action value min: {}".format(jnp.amin(state.sample_actions,axis=0)))
+                logger.info(
+                    "action value max: {}".format(
+                        jnp.amax(state.sample_actions, axis=0)
+                    )
+                )
+                logger.info(
+                    "action value min: {}".format(
+                        jnp.amin(state.sample_actions, axis=0)
+                    )
+                )
 
             if (i + 1) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
@@ -536,44 +700,13 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 
         return state
 
-    # def fill_replay_buffer(self, state: State) -> State:
-    #     key = state.key
-    #     key, loop_key = jax.random.split(key, num=2)
-    #     env_state = state.env_state
-    #     replay_buffer_state = state.replay_buffer_state
-    #     sample_batch = SampleBatch(
-    #         obs=env_state.obs
-    #     )
 
-    #     def step_fn(carry, _):
-    #         env_state, replay_buffer_state, loop_key = carry
-    #         loop_key, current_key = jax.random.split(loop_key)
-    #         actions, _ = self.agent.compute_random_actions(current_key, sample_batch)
-    #         env_nstate = self.env.step(env_state, actions)
-    #         transition = SampleBatch(
-    #             obs=env_state.obs,
-    #             actions=actions,
-    #             rewards=env_nstate.reward,
-    #             next_obs=env_nstate.obs,
-    #             dones=env_nstate.done,
-    #             extras=PyTreeDict(
-    #                 policy_extras=PyTreeDict(),
-    #                 env_extras=PyTreeDict()
-    #             )
-    #         )
-    #         # transition = jax.tree_util.tree_map(lambda x: jax.lax.collapse(x,0,2), transition)
-    #         replay_buffer_state = self.replay_buffer.add(replay_buffer_state, transition)
-    #         return (env_nstate, replay_buffer_state, loop_key), None
-
-    #     (env_state, replay_buffer_state, loop_key), _ = jax.lax.scan(
-    #         step_fn, (env_state, replay_buffer_state, loop_key), (),length=self.config.learning_starts
-    #     )
-    #     state = state.update(env_state=env_state, key=key, replay_buffer_state=replay_buffer_state)
-
-    #     return state
-
-
-class Actor(MLP):
+class Actor(nn.Module):
+    layer_sizes: Sequence[int]
+    activation: ActivationFn = nn.relu
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
+    activate_final: bool = False
+    bias: bool = True
     action_scale: jnp.ndarray = 1.0
     action_bias: jnp.ndarray = 0.0
 
@@ -613,3 +746,73 @@ def make_actor_network(
     init_fn = lambda rng: actor.init(rng, jnp.ones((1, obs_size)))
 
     return actor, init_fn
+
+
+def loss_and_pgrad(
+    loss_fn: Callable[..., float], pmap_axis_name: Optional[str], has_aux: bool = False
+):
+    g = jax.value_and_grad(loss_fn, has_aux=has_aux)
+
+    def h(*args, **kwargs):
+        value, grads = g(*args, **kwargs)
+        return value, jax.lax.pmean(grads, axis_name=pmap_axis_name)
+
+    return g if pmap_axis_name is None else h
+
+
+def actor_agent_gradient_update(
+    loss_fn: Callable[..., float],
+    optimizer: optax.GradientTransformation,
+    pmap_axis_name: Optional[str],
+    has_aux: bool = False,
+):
+    def _loss_fn(actor_params, agent_state, sample_batch, key):
+        p = agent_state.params.replace(actor_params=actor_params)
+        return loss_fn(agent_state.replace(params=p), sample_batch, key)
+
+    loss_and_pgrad_fn = loss_and_pgrad(
+        _loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux
+    )
+
+    def f(opt_state, agent_state, *args, **kwargs):
+        value, grads = loss_and_pgrad_fn(
+            agent_state.params.actor_params, agent_state, *args, **kwargs
+        )
+
+        actor_params_update, opt_state = optimizer.update(grads, opt_state)
+        updated_actor_params = optax.apply_updates(agent_state.params.actor_params, actor_params_update)
+        updated_params = agent_state.params.replace(actor_params=updated_actor_params)
+        agent_state = agent_state.replace(params=updated_params)
+        
+        return value, opt_state, agent_state
+
+    return f
+
+
+def critic_agent_gradient_update(
+    loss_fn: Callable[..., float],
+    optimizer: optax.GradientTransformation,
+    pmap_axis_name: Optional[str],
+    has_aux: bool = False,
+):
+    def _loss_fn(critic_params, agent_state, sample_batch, key):
+        p = agent_state.params.replace(critic_params=critic_params)
+        return loss_fn(agent_state.replace(params=p), sample_batch, key)
+
+    loss_and_pgrad_fn = loss_and_pgrad(
+        _loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux
+    )
+
+    def f(opt_state, agent_state, *args, **kwargs):
+        value, grads = loss_and_pgrad_fn(
+            agent_state.params.critic_params, agent_state, *args, **kwargs
+        )
+
+        critic_params_update, opt_state = optimizer.update(grads, opt_state)
+        updated_critic_params = optax.apply_updates(agent_state.params.critic_params, critic_params_update)
+        updated_params = agent_state.params.replace(critic_params=updated_critic_params)
+        agent_state = agent_state.replace(params=updated_params)
+        
+        return value, opt_state, agent_state
+
+    return f
