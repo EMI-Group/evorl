@@ -176,6 +176,7 @@ class DDPGAgent(Agent):
 
         # ======= critic =======
         actor = self.actor_network.apply(agent_state.params.target_actor_params, obs)
+       
 
         next_qs = self.q_network.apply(
             agent_state.params.target_q_params, next_obs, actor
@@ -184,12 +185,12 @@ class DDPGAgent(Agent):
         target_qs = (
             sample_batch.rewards + self.discount * (1 - sample_batch.dones) * next_qs
         )
-
+        target_qs = jax.lax.stop_gradient(target_qs)
         qs = self.q_network.apply(agent_state.params.q_params, obs, actions).squeeze(-1)
 
         # in DDPG, we use the target network to compute the target value and in cleanrl, the lose is MSE loss
-        q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
-        # q_loss = jnp.mean((qs - target_qs) ** 2)
+        # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
+        q_loss = ((qs - target_qs) ** 2).mean()
 
         # ====== actor =======
 
@@ -451,14 +452,12 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 target_q_params = soft_target_update(
                     agent_state.params.target_q_params,
                     agent_state.params.q_params,
-                    self.config.tau
-                    * (state.metrics.iterations % self.config.actor_update_interval),
+                    self.config.tau,
                 )
                 target_actor_params = soft_target_update(
                     agent_state.params.target_actor_params,
                     agent_state.params.actor_params,
-                    self.config.tau
-                    * (state.metrics.iterations % self.config.actor_update_interval),
+                    self.config.tau,
                 )
                 params = agent_state.params.replace(
                     target_q_params=target_q_params,
@@ -515,7 +514,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        return train_metrics, state.update(key=key, metrics=workflow_metrics)
+        return train_metrics, state.update(key=key, metrics=workflow_metrics,  sample_actions = self.agent.compute_actions(state.agent_state, SampleBatch(obs=state.env_state.obs), key)[0],)
 
     def learn(self, state: State) -> State:
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
@@ -527,6 +526,9 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             if (i + 1) % self.config.log_interval == 0:
                 logger.info(workflow_metrics)
                 logger.info(train_metrics)
+                # logger.info(state.sample_actions.flatten())
+                logger.info("action value max: {}".format(jnp.amax(state.sample_actions,axis=0)))
+                logger.info("action value min: {}".format(jnp.amin(state.sample_actions,axis=0)))
 
             if (i + 1) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)

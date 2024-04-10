@@ -6,7 +6,7 @@ num_envs: 8
 normalize_obs: false
 rollout_length: 1
 discount: 0.99
-exploration_epsilon: 0.5
+exploration_epsilon: 0.1
 total_timesteps: 1000000
 
 num_eval_envs: 8
