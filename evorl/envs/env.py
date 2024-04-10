@@ -18,7 +18,8 @@ class EnvState:
     obs: Observation
     reward: Reward
     done: Done
-    info: PyTreeDict = pytree_field(default_factory=PyTreeDict)
+    info: PyTreeDict = pytree_field(default_factory=PyTreeDict) # info from env
+    extra: PyTreeDict = pytree_field(default_factory=PyTreeDict) # extra info for interal use
 
 
 class Env(ABC):

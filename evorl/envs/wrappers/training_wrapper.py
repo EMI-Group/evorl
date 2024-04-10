@@ -154,7 +154,7 @@ class VmapAutoResetWrapper(Wrapper):
 
         reset_key, key = vmap_rng_split(key)
         state = jax.vmap(self.env.reset)(key)
-        state.info.reset_key = reset_key  # for autoreset
+        state.extra.reset_key = reset_key  # for autoreset
 
         return state
 
@@ -175,7 +175,7 @@ class VmapAutoResetWrapper(Wrapper):
         """
         # Make sure that the random key in the environment changes at each call to reset.
         # State is a type variable hence it does not have key type hinted, so we type ignore.
-        new_key, reset_key = jax.random.split(state.info.reset_key)
+        new_key, reset_key = jax.random.split(state.extra.reset_key)
         reset_state = self.env.reset(reset_key)
 
         state = state.replace(
@@ -183,7 +183,7 @@ class VmapAutoResetWrapper(Wrapper):
             obs=reset_state.obs,
         )
 
-        state.info.reset_key = new_key
+        state.extra.reset_key = new_key
 
         return state
 

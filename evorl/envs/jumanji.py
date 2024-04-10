@@ -9,7 +9,7 @@ import jumanji
 from jumanji.env import Environment as JumanjiEnv
 from jumanji.specs import Spec, DiscreteArray, BoundedArray, Array
 
-
+# Note: this is used for singel agent envs.
 class JumanjiAdapter(EnvAdapter):
     def __init__(self, env: JumanjiEnv):
         super(JumanjiAdapter, self).__init__(env)
@@ -22,7 +22,7 @@ class JumanjiAdapter(EnvAdapter):
             env_state=env_state,
             obs=transition.observation,
             reward=transition.reward,
-            done=jnp.array(transition.last(), dtype=jnp.float32),
+            done=jnp.asarray(transition.last(), dtype=jnp.float32),
             info=sort_dict(transition.extras)
         )
 
@@ -35,7 +35,7 @@ class JumanjiAdapter(EnvAdapter):
             env_state=env_state,
             obs=transition.observation,
             reward=transition.reward,
-            done=jnp.array(transition.last(), dtype=jnp.float32),
+            done=jnp.asarray(transition.last(), dtype=jnp.float32),
         )
 
     @property
