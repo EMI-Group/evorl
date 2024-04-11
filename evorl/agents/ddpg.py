@@ -368,6 +368,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             exploration_epsilon=config.exploration_epsilon,
         )
 
+        # one optimizer, two opt_states (in setup function) for both actor and critic
         optimizer = optax.adam(learning_rate=config.optimizer.lr)
 
         replay_buffer = flashbax.make_item_buffer(
@@ -459,8 +460,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 
     def step(self, state: State) -> Tuple[TrainMetric, State]:
         """
-        Args:
-            state: State
+        the basic step function for the workflow to update agent
         """
         key, rollout_key, learn_key, buffer_key = jax.random.split(state.key, num=4)
 
@@ -486,9 +486,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             state.update(env_state=env_state, replay_buffer_state=replay_buffer_state)
 
             # get episode return, in DDPG the return is the rewards
-            # train_episode_return = average_episode_discount_return(
-            #     env_state.info.episode_return, trajectory.dones
-            # ).mean()
             train_episode_return = env_state.info.episode_return.mean()
             loss = jnp.zeros(())
             loss_dict = dict(
@@ -635,9 +632,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             )
 
             # get episode return, in DDPG the return is the rewards
-            # train_episode_return = average_episode_discount_return(
-            #     env_state.info.episode_return, trajectory.dones
-            # ).mean()
             train_episode_return = env_state.info.episode_return.mean()
 
             train_metrics = TrainMetric(
@@ -664,7 +658,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             + self.config.rollout_length * self.config.num_envs
         )
 
-        # workflow_metrics
+        # iterations is the number of updates of the agent
         workflow_metrics = WorkflowMetric(
             sampled_timesteps=sampled_timesteps,
             iterations=state.metrics.iterations + 1,
@@ -682,6 +676,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
+            # the log_interval should be odd due to the frequency of updating actor is even
             if (i + 1) % self.config.log_interval == 0:
                 logger.info(workflow_metrics)
                 logger.info(train_metrics)
@@ -694,6 +689,10 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 
 
 class Actor(nn.Module):
+    """
+    the network for actor
+    """
+
     layer_sizes: Sequence[int]
     activation: ActivationFn = nn.relu
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
@@ -740,6 +739,7 @@ def make_actor_network(
     return actor, init_fn
 
 
+# get the loss and the gradient
 def loss_and_pgrad(
     loss_fn: Callable[..., float], pmap_axis_name: Optional[str], has_aux: bool = False
 ):
@@ -752,6 +752,7 @@ def loss_and_pgrad(
     return g if pmap_axis_name is None else h
 
 
+# update the gradient for the actor (agent_state.params.actor_params)
 def actor_agent_gradient_update(
     loss_fn: Callable[..., float],
     optimizer: optax.GradientTransformation,
@@ -783,6 +784,7 @@ def actor_agent_gradient_update(
     return f
 
 
+# update the gradient for the critic (agent_state.params.critic_params)
 def critic_agent_gradient_update(
     loss_fn: Callable[..., float],
     optimizer: optax.GradientTransformation,
