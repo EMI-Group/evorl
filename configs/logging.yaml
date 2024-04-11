@@ -13,6 +13,6 @@ hydra:
   verbose: false
 
 wandb:
-  enable: true
+  enable: false
   project: "EvoRL"
   tags: []
