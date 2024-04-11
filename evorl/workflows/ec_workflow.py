@@ -109,9 +109,9 @@ class ECWorkflow(Workflow):
 
         return cand_sol, state
 
-    def candidate_evaluation(self, state, transformed_cand_sol):
+    def candidate_evaluation(self, state, transformed_cands):
         if self.jit_problem:
-            fitness, state = self.problem.evaluate(state, transformed_cand_sol)
+            fitness, state = self.problem.evaluate(state, transformed_cands)
         else:
             pass
             # TODO: get cand_sol_size from state
@@ -152,24 +152,24 @@ class ECWorkflow(Workflow):
             monitor.pre_ask(state)
 
         # candidate solution
-        cand_sol, state = self.candidate_generation(state, is_init)
+        cands, state = self.candidate_generation(state, is_init)
 
         for monitor in self.registered_hooks["post_ask"]:
-            monitor.post_ask(state, cand_sol)
+            monitor.post_ask(state, cands)
 
-        transformed_cand_sol = cand_sol
+        transformed_cands = cands
         for transform in self.sol_transforms:
-            transformed_cand_sol = transform(transformed_cand_sol)
+            transformed_cands = transform(transformed_cands)
 
         # =========== problem evaluation ===========
         for monitor in self.registered_hooks["pre_eval"]:
-            monitor.pre_eval(state, cand_sol, transformed_cand_sol)
+            monitor.pre_eval(state, cands, transformed_cands)
 
-        fitness, state = self.candidate_evaluation(state, transformed_cand_sol)
+        fitness, state = self.candidate_evaluation(state, transformed_cands)
         fitness = fitness * self.opt_direction
 
         for monitor in self.registered_hooks["post_eval"]:
-            monitor.post_eval(state, cand_sol, transformed_cand_sol, fitness)
+            monitor.post_eval(state, cands, transformed_cands, fitness)
 
         # =========== algorithm iteration ===========
 
@@ -179,7 +179,7 @@ class ECWorkflow(Workflow):
 
         for monitor in self.registered_hooks["pre_tell"]:
             monitor.pre_tell(
-                state, cand_sol, transformed_cand_sol, fitness, transformed_fitness
+                state, cands, transformed_cands, fitness, transformed_fitness
             )
 
         state = self.learn_one_step(state, transformed_fitness, is_init)

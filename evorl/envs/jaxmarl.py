@@ -50,14 +50,15 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
             dummy_step_key, env_state, dummy_action)
 
         info = PyTreeDict(sort_dict(dummy_info))
-        info.step_key = key
+        extra = PyTreeDict(step_key=key)
 
         return EnvState(
             env_state=env_state,
             obs=obs,
             reward=tree_zeros_like(dummy_reward, dtype=jnp.float32),
             done=tree_zeros_like(dummy_done, dtype=jnp.float32),
-            info=info
+            info=info,
+            extra=extra
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
@@ -71,7 +72,7 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
         done = tree_astype(done, jnp.float32)
 
         state.info.update(info)
-        state.info.step_key = key
+        state.extra.step_key = key
 
         return state.replace(
             env_state=env_state,
