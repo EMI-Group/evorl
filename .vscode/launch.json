@@ -10,8 +10,8 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=ddpg",
-                "env=brax/hopper",
+                "agent=a2c",
+                "env=brax/ant",
                 "debug=true",
                 // "hydra.verbose=true",
             ],
