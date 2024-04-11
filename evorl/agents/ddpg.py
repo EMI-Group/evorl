@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
+
 @struct.dataclass
 class DDPGNetworkParams:
     """Contains training state for the learner."""
@@ -185,7 +186,9 @@ class DDPGAgent(Agent):
         )
         target_qs = jax.lax.stop_gradient(target_qs)
 
-        qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions).squeeze(-1)
+        qs = self.critic_network.apply(
+            agent_state.params.critic_params, obs, actions
+        ).squeeze(-1)
 
         # in DDPG, we use the target network to compute the target value and in cleanrl, the lose is MSE loss
         # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
@@ -219,9 +222,9 @@ class DDPGAgent(Agent):
         gen_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
 
         actor_loss = -jnp.mean(
-            self.critic_network.apply(agent_state.params.critic_params, obs, gen_actions).squeeze(
-                -1
-            )
+            self.critic_network.apply(
+                agent_state.params.critic_params, obs, gen_actions
+            ).squeeze(-1)
         )
         return dict(actor_loss=actor_loss)
 
@@ -261,7 +264,9 @@ class DDPGAgent(Agent):
         )
         target_qs = jax.lax.stop_gradient(target_qs)
 
-        qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions).squeeze(-1)
+        qs = self.critic_network.apply(
+            agent_state.params.critic_params, obs, actions
+        ).squeeze(-1)
 
         # in DDPG, we use the target network to compute the target value and in cleanrl, the lose is MSE loss
         # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
@@ -273,9 +278,9 @@ class DDPGAgent(Agent):
         gen_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
 
         actor_loss = -jnp.mean(
-            self.critic_network.apply(agent_state.params.critic_params, obs, gen_actions).squeeze(
-                -1
-            )
+            self.critic_network.apply(
+                agent_state.params.critic_params, obs, gen_actions
+            ).squeeze(-1)
         )
 
         return dict(
@@ -592,7 +597,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                         learn_key,
                     )
                 )
-                
+
                 target_critic_params = soft_target_update(
                     agent_state.params.target_critic_params,
                     agent_state.params.critic_params,
@@ -620,7 +625,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             loss, loss_dict, critic_opt_state, actor_opt_state, agent_state = (
                 jax.lax.cond(update_condition, update_both, update_critic, agent_state)
             )
-            
+
             state = state.update(
                 env_state=env_state,
                 replay_buffer_state=replay_buffer_state,
@@ -628,13 +633,13 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 critic_opt_state=critic_opt_state,
                 actor_opt_state=actor_opt_state,
             )
-            
+
             # get episode return, in DDPG the return is the rewards
             # train_episode_return = average_episode_discount_return(
             #     env_state.info.episode_return, trajectory.dones
             # ).mean()
             train_episode_return = env_state.info.episode_return.mean()
-            
+
             train_metrics = TrainMetric(
                 train_episode_return=train_episode_return,
                 loss=loss,
@@ -652,7 +657,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         state, train_metrics = jax.lax.cond(
             start_condition, fill_replay_buffer, normal_step, state
         )
-       
+
         # calculate the numbner of timestep
         sampled_timesteps = (
             state.metrics.sampled_timesteps
@@ -767,10 +772,12 @@ def actor_agent_gradient_update(
         )
 
         actor_params_update, opt_state = optimizer.update(grads, opt_state)
-        updated_actor_params = optax.apply_updates(agent_state.params.actor_params, actor_params_update)
+        updated_actor_params = optax.apply_updates(
+            agent_state.params.actor_params, actor_params_update
+        )
         updated_params = agent_state.params.replace(actor_params=updated_actor_params)
         agent_state = agent_state.replace(params=updated_params)
-        
+
         return value, opt_state, agent_state
 
     return f
@@ -796,10 +803,12 @@ def critic_agent_gradient_update(
         )
 
         critic_params_update, opt_state = optimizer.update(grads, opt_state)
-        updated_critic_params = optax.apply_updates(agent_state.params.critic_params, critic_params_update)
+        updated_critic_params = optax.apply_updates(
+            agent_state.params.critic_params, critic_params_update
+        )
         updated_params = agent_state.params.replace(critic_params=updated_critic_params)
         agent_state = agent_state.replace(params=updated_params)
-        
+
         return value, opt_state, agent_state
 
     return f
