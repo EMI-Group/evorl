@@ -628,12 +628,15 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 critic_opt_state=critic_opt_state,
                 actor_opt_state=actor_opt_state,
             )
-
+            jax.debug.print("episode_return: {}", env_state.info.episode_return)
+            jax.debug.print("dones: {}", trajectory.dones)
+            
             # get episode return, in DDPG the return is the rewards
-            train_episode_return = average_episode_discount_return(
-                env_state.info.episode_return, trajectory.dones
-            ).mean()
-
+            # train_episode_return = average_episode_discount_return(
+            #     env_state.info.episode_return, trajectory.dones
+            # ).mean()
+            train_episode_return = env_state.info.episode_return.mean()
+            
             train_metrics = TrainMetric(
                 train_episode_return=train_episode_return,
                 loss=loss,
