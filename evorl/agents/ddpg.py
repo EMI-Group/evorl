@@ -481,10 +481,10 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             state.update(env_state=env_state, replay_buffer_state=replay_buffer_state)
 
             # get episode return, in DDPG the return is the rewards
-            train_episode_return = average_episode_discount_return(
-                env_state.info.episode_return, trajectory.dones
-            ).mean()
-
+            # train_episode_return = average_episode_discount_return(
+            #     env_state.info.episode_return, trajectory.dones
+            # ).mean()
+            train_episode_return = env_state.info.episode_return.mean()
             loss = jnp.zeros(())
             loss_dict = dict(
                 actor_loss=loss,
