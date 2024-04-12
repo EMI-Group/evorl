@@ -8,10 +8,10 @@
             "name": "Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "module": "evorl.test_load",
             "args": [
-                "agent=a2c",
-                "env=brax/ant",
+                "agent=ddpg",
+                "env=brax/hopper",
                 "debug=true",
                 // "hydra.verbose=true",
             ],
