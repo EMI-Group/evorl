@@ -228,4 +228,4 @@ pyrightconfig.json
 /outputs
 /multirun
 /debug
-/test*.py
+/test*
