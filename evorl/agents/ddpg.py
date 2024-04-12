@@ -694,7 +694,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                     args=ocp.args.StandardSave(
                         tree_unpmap(state, self.pmap_axis_name))
                 )
-
+        logger.info("finish!")
         return state    
 
 
