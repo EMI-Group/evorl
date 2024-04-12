@@ -11,9 +11,8 @@ class MOAlgorithmWrapper(Algorithm):
             - Use flatten objectives
     """
 
-    def __init__(self, algo: Algorithm, agent: Agent, param_vec_spec: ParamVectorSpec):
+    def __init__(self, algo: Algorithm, param_vec_spec: ParamVectorSpec):
         self.algo = algo
-        self.agent = agent
         self.param_vec_spec = param_vec_spec
 
     def setup(self, key):
@@ -22,10 +21,24 @@ class MOAlgorithmWrapper(Algorithm):
 
     def init_ask(self, state):
         flat_pop, state = self.algo.init_ask(state)
-        return self.param_vec_spec.to_tree(flat_pop), state
+        return self._postprocess_pop(flat_pop), state
 
     def init_tell(self, state, fitness):
-        # flatten pytree fitness: -> [pop_size, #obj]
-        fitness = jnp.stack([f for f in fitness.values()])
+        # fitness = self._preprocess_fitness(fitness)
         return self.algo.init_tell(state, fitness)
+    
+    def ask(self, state):
+        flat_pop, state = self.algo.ask(state)
+        return self._postprocess_pop(flat_pop), state
+    
+    def tell(self, state, fitness):
+        # fitness = self._preprocess_fitness(fitness)
+        return self.algo.tell(state, fitness)
+    
+    def _postprocess_pop(self, flat_pop):
+        return self.param_vec_spec.to_tree(flat_pop)
+    
+    # def _preprocess_fitness(self, fitness):
+    #     # flatten pytree fitness: -> [pop_size, #obj]
+    #     return jnp.stack([f for f in fitness.values()])
 

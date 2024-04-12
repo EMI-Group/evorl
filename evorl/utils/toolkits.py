@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 
 import chex
 from typing import Tuple, Optional
@@ -133,7 +134,7 @@ def compute_gae(rewards: jax.Array,  # [T, B]
 
 
 def shuffle_sample_batch(sample_batch: SampleBatch, key: chex.PRNGKey):
-    return jax.tree_util.tree_map(
+    return jtu.tree_map(
         lambda x: jax.random.permutation(key, x),
         sample_batch
     )
@@ -152,7 +153,7 @@ def soft_target_update(target_params, source_params, tau: float):
         updated target network parameters
     """
 
-    return jax.tree_util.tree_map(
+    return jtu.tree_map(
         lambda target, source: tau * source + (1 - tau) * target,
         target_params, source_params)
 
@@ -161,7 +162,7 @@ def flatten_rollout_trajectory(trajectory: SampleBatch):
     """
         Flatten the trajectory from [T, B, ...] to [T*B, ...]
     """
-    return jax.tree_util.tree_map(
+    return jtu.tree_map(
         lambda x: x.reshape(-1, *x.shape[2:]),
         trajectory
     )

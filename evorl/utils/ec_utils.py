@@ -14,22 +14,26 @@ class ParamVectorSpec:
         self.vec_size = flat.shape[0]
         self.to_vec_fn = lambda x: ravel_pytree(x)[0]
 
-    def to_vector(self, x)-> Tuple[jax.Array, Callable]:
+    def to_vector(self, x)-> jax.Array:
         """
             Return: (flat, to_tree_fn)
                 see jax.flatten_util.ravel_pytree
         """
         leaves = tree_leaves(x)
         batch_ndim = leaves[0].ndim - self._ndim
-        vmap_to_tree = self.to_vec_fn
+        vmap_to_vector = self.to_vec_fn
 
         for _ in range(batch_ndim):
-            vmap_to_tree = jax.vmap(vmap_to_tree)
-        
-        flat = vmap_to_tree(x)
+            vmap_to_vector = jax.vmap(vmap_to_vector)
 
+        return vmap_to_vector(x)
+
+    def to_tree(self,x)-> jax.Array:
+        leaves = tree_leaves(x)
+        batch_ndim = leaves[0].ndim - self._ndim
         vmap_to_tree = self.to_tree_fn
+
         for _ in range(batch_ndim):
             vmap_to_tree = jax.vmap(vmap_to_tree)
 
-        return flat, vmap_to_tree
+        return vmap_to_tree(x)
