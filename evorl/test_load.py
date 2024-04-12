@@ -5,6 +5,7 @@ import orbax.checkpoint as ocp
 
 from evorl.utils.cfg_utils import get_output_dir
 from evorl.recorders import WandbRecorder, LogRecorder, ChainRecorder
+from evorl.distributed import tree_unpmap
 from pathlib import Path
 import logging
 
@@ -44,18 +45,36 @@ def load_model(config: DictConfig) -> None:
             config,
             enable_jit=False
         )
+    
+    output_dir = get_output_dir()
+    wandb_project = config.wandb.project
+    wandb_tags = [workflow_cls.name(), config.env.env_name, config.env.env_type] + \
+        OmegaConf.to_container(config.wandb.tags)
+    wandb_name = '-'.join(
+        [workflow_cls.name(), config.env.env_name, config.env.env_type]
+    )
+    wandb_mode = 'online' if config.wandb.enable and not config.debug else 'disabled'
+
+    wandb_recorder = WandbRecorder(
+        project=wandb_project,
+        name=wandb_name,
+        config=OmegaConf.to_container(config),  # save the unrescaled config
+        tags=wandb_tags,
+        dir=output_dir,
+        mode=wandb_mode
+    )
+    log_recorder = LogRecorder(log_path=output_dir/f'{wandb_name}.log')
+    workflow.add_recorders([wandb_recorder, log_recorder])
     # Setup the checkpoint manager
     checkpoint_manager = setup_checkpoint_manager(config)
     
     state = workflow.init(jax.random.PRNGKey(config.seed))
+    pmap_axis_name = None
     # state = checkpoint_manager.restore(last_step)
     # target_state = {'layer0': {'bias': 0.0, 'weight': 0.0}}
+    # state = checkpoint_manager.restore(last_step, args=ocp.args.StandardRestore(tree_unpmap(state,None)))
     state = checkpoint_manager.restore(last_step, args=ocp.args.StandardRestore(state))
-    print()
-    
-   
-        # If the model or workflow requires to directly use this loaded state, add those steps here.
-        # E.g., workflow.restore_state(state)
+    print("finished loading model")
 
 if __name__ == "__main__":
     load_model()
