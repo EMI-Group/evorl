@@ -3,6 +3,7 @@ import re
 
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import chex
 from functools import partial
 
@@ -41,23 +42,24 @@ def disable_gpu_preallocation():
 
 
 def tree_zeros_like(nest: chex.ArrayTree, dtype=None) -> chex.ArrayTree:
-    return jax.tree_util.tree_map(lambda x: jnp.zeros(x.shape, dtype or x.dtype), nest)
+    return jtu.tree_map(lambda x: jnp.zeros(x.shape, dtype or x.dtype), nest)
 
 
 def tree_ones_like(nest: chex.ArrayTree, dtype=None) -> chex.ArrayTree:
-    return jax.tree_util.tree_map(lambda x: jnp.ones(x.shape, dtype or x.dtype), nest)
+    return jtu.tree_map(lambda x: jnp.ones(x.shape, dtype or x.dtype), nest)
 
 
 def tree_concat(nest1, nest2, axis=0):
-    return jax.tree_util.tree_map(lambda x, y: jnp.concatenate([x, y], axis=axis), nest1, nest2)
+    return jtu.tree_map(lambda x, y: jnp.concatenate([x, y], axis=axis), nest1, nest2)
 
 
 def tree_stop_gradient(nest: chex.ArrayTree) -> chex.ArrayTree:
-    return jax.tree_util.tree_map(jax.lax.stop_gradient, nest)
+    return jtu.tree_map(jax.lax.stop_gradient, nest)
 
 
 def tree_astype(tree, dtype):
-    return jax.tree_util.tree_map(lambda x: x.astype(dtype), tree)
+    return jtu.tree_map(lambda x: x.astype(dtype), tree)
+
 
 def jit_method(*,
                static_argnums: int | Sequence[int] | None = None,
@@ -110,3 +112,12 @@ def vmap_rng_split(key: jax.Array, num: int = 2) -> jax.Array:
     return _vmap_rng_split_fn(key, num)
 
 
+def rng_split(key: jax.Array, num: int = 2) -> jax.Array:
+    """
+        Unified Version of `jax.random.split` for both single key and batched keys.
+    """
+    if key.ndim == 1:
+        chex.assert_shape(key, (2,))
+        return jax.random.split(key, num)
+    else:
+        return vmap_rng_split(key, num)

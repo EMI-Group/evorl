@@ -1,5 +1,6 @@
 import jax
 from jax import numpy as jnp
+import jax.tree_util as jtu
 from flax import struct
 
 from evorl.utils.jax_utils import vmap_rng_split, tree_ones_like
@@ -32,7 +33,7 @@ class EpisodeWrapper(Wrapper):
         state.info.steps = jnp.zeros((), dtype=jnp.int32)
         state.info.termination = jnp.zeros(())
         state.info.truncation = jnp.zeros(())
-        state.info.last_obs = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), state.obs)
+        state.info.last_obs = jtu.tree_map(lambda x: jnp.zeros_like(x), state.obs)
 
         return state
 
@@ -50,7 +51,7 @@ class EpisodeWrapper(Wrapper):
             termination
         )
         
-        agents_done = jax.tree_util.tree_map(
+        agents_done = jtu.tree_map(
             lambda x: jnp.where(done, x, jnp.ones_like(x)),
             state.done
         )

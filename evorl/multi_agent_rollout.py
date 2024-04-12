@@ -1,14 +1,11 @@
 import jax
-import jax.numpy as jnp
-from jax.tree_util import tree_leaves, tree_map
 import chex
-from flax import struct
 from typing import (
-    Any, Union, Tuple, Optional, Sequence, Mapping
+    Tuple, Sequence, Mapping
 )
 from evorl.agents import Agent, AgentState
 from evorl.types import (
-    Reward, RewardDict, ExtraInfo, PyTreeData, PyTreeDict, AgentID
+    PyTreeDict, AgentID
 )
 from evorl.sample_batch import SampleBatch, Episode
 from evorl.envs import Env, EnvState

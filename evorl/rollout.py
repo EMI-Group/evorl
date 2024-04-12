@@ -1,14 +1,11 @@
 import jax
-import jax.numpy as jnp
-from jax.tree_util import tree_leaves, tree_map
 import chex
-from flax import struct
 from typing import (
-    Any, Union, Tuple, Optional, Sequence,
+    Union, Tuple, Sequence,
 )
 from .agents import Agent, AgentState
 from .types import (
-    Reward, RewardDict, ExtraInfo, PyTreeData, PyTreeDict
+    Reward, RewardDict, PyTreeDict
 )
 from .sample_batch import SampleBatch, Episode
 from .envs import Env, EnvState

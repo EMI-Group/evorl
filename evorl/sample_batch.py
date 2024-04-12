@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jax.tree_util import tree_leaves, tree_map
+from jax.tree_util import tree_leaves
 import chex
 from flax import struct
 from .types import (

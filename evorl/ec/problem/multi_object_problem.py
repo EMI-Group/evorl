@@ -2,13 +2,14 @@ import jax
 import jax.numpy as jnp
 from evox import Problem, State
 import chex
-from typing import Tuple, Union
+from typing import Tuple, Union, Callable, List
 
 from evorl.agents import Agent, AgentState
 from evorl.envs import create_wrapped_brax_env, Env, EnvState
 from evorl.rollout import SampleBatch
-from evorl.types import Reward, RewardDict, Callable, Action, PolicyExtraInfo, PyTreeDict
+from evorl.types import Reward, RewardDict, Action, PolicyExtraInfo, PyTreeDict
 from evorl.utils.toolkits import compute_discount_return, compute_episode_length
+from evorl.utils.jax_utils import rng_split
 import math
 from functools import partial
 import logging
@@ -18,50 +19,52 @@ logger = logging.getLogger(__name__)
 
 # TODO: use dataclass after evox update
 
+ReductionFn = Callable[[jnp.ndarray], jnp.ndarray]
 
 class MultiObjectiveBraxProblem(Problem):
     def __init__(
         self,
         agent: Agent,
-        env_name: str,
-        parallel_envs: int = 1,
-        max_episode_steps: int = 1000,
+        env,
         num_episodes: int = 10,
+        max_episode_steps: int = 1000,
         discount: float = 1.0,
         metric_names: Tuple[str] = ('reward',),
-        **env_kwargs
+        flatten_objectives: bool = True,
+        reduce_fn: Union[ReductionFn, List[ReductionFn]] = jnp.mean,
     ):
         """
             Args:
                 agent: agent model that defined the weights
                 env_name: name of the environment
-                parallel_envs: number of parallel environments for a individual
-                max_episode_steps: maximum number of steps in an episode
                 num_episodes: number of episodes to evaluate,
                 discount: discount factor for episode return calculation
                 metric_names: names of the metrics to record as objectives.
                     By default, only original reward is recorded.
+                flatten_objectives: whether to flatten the objectives.
         """
         self.agent = agent
-        self.max_episode_steps = max_episode_steps
+        self.env = env
+
         self.num_episodes = num_episodes
+        self.max_episode_steps = max_episode_steps
         self.discount = discount
         self.metric_names = metric_names
+        self.flatten_objectives = flatten_objectives
 
+        if isinstance(reduce_fn, list):
+            assert len(reduce_fn) == len(metric_names), "when reduce_fn is a list, it should have the same length as metric_names"
+            self.reduce_fn = reduce_fn
+        else:
+            self.reduce_fn = [reduce_fn] * len(metric_names)
+
+        parallel_envs = env.num_envs
         self.num_iters = math.ceil(num_episodes / parallel_envs)
         if num_episodes % parallel_envs != 0:
-            logger.warn(f"num_episode ({num_episodes}) cannot be divided by parallel_envs ({parallel_envs}),"
+            logger.warn(f"num_episode ({num_episodes}) cannot be divided by parallel envs ({parallel_envs}),"
                         f"set new num_episodes={self.num_iters*parallel_envs}"
                         )
 
-        self.env = create_wrapped_brax_env(
-            env_name,
-            episode_length=max_episode_steps,
-            parallel=parallel_envs,
-            autoreset=False,
-            fast_reset=True,
-            **env_kwargs
-        )
         self.agent_eval_actions = jax.vmap(
             self.agent.evaluate_actions, axis_name='pop')
         # Note: there are two vmap: [#pop, #envs, ...]
@@ -78,31 +81,34 @@ class MultiObjectiveBraxProblem(Problem):
 
         def _evaluate_fn(key, unused_t):
 
-            next_key, init_env_key = jax.random.split(key, 2)
+            next_key, init_env_key, rollout_key = jax.random.split(key, 3)
             env_state = self.env_reset(
                 jax.random.split(init_env_key, num=pop_size))
 
             env_state, episode_trajectory = eval_rollout_episode(
-                self.env_step, self.agent, env_state, pop_agent_state,
-                key, self.max_episode_steps, metric_names=self.metric_names
+                self.env_step, self.agent_eval_actions,
+                env_state, pop_agent_state,
+                jax.random.split(rollout_key, num=pop_size),
+                self.max_episode_steps,
+                metric_names=self.metric_names
             )
 
             objectives = PyTreeDict()
-            for name in episode_trajectory.rewards.keys():
+            for name in self.metric_names:
                 if 'reward' in name:
                     objectives[name] = compute_discount_return(
                         episode_trajectory.rewards[name],
                         episode_trajectory.dones,
                         self.discount
                     )
+                elif 'episode_length' == name:
+                    objectives[name] = compute_episode_length(
+                        episode_trajectory.dones)
                 else:
                     # For other metrics like 'x_position', we use the last value as the objective.
-                    # Note: It is ok to use [-1], since wrapper ensures that the last value 
+                    # Note: It is ok to use [-1], since wrapper ensures that the last value
                     # repeats the terminal step value.
                     objectives[name] = episode_trajectory.rewards[name][-1]
-
-            objectives.episode_lengths = compute_episode_length(
-                episode_trajectory.dones)
 
             return next_key, objectives  # [#envs]
 
@@ -112,11 +118,17 @@ class MultiObjectiveBraxProblem(Problem):
             state.key, (),
             length=self.num_iters)
 
-        for k in objectives.keys():
-            objectives[k] = jax.lax.collapse(
+        for k, reduce_fn in zip(objectives.keys(), self.reduce_fn):
+            objective = jax.lax.collapse(
                 jnp.swapaxes(objectives[k], 0, 1),
                 1, 3
-            ) # [#pop, num_episodes]
+            )  # [#pop, num_episodes]
+            objectives[k] = reduce_fn(objective, axis=-1)
+
+
+        if self.flatten_objectives:
+            # by default, we use the mean value over different episodes.
+            objectives = jnp.stack(list(objectives.values()), axis=-1)
 
         return objectives, state.update(key=key)
 
@@ -168,7 +180,8 @@ def eval_rollout_episode(
             env: vmapped env w/o autoreset
     """
 
-    _eval_env_step = partial(eval_env_step, env_fn, action_fn, metric_names=metric_names)
+    _eval_env_step = partial(eval_env_step, env_fn,
+                             action_fn, metric_names=metric_names)
 
     def _one_step_rollout(carry, unused_t):
         """
@@ -176,7 +189,8 @@ def eval_rollout_episode(
             transition: one-step full info
         """
         env_state, current_key, prev_transition = carry
-        next_key, current_key = jax.random.split(current_key, 2)
+        # next_key, current_key = jax.random.split(current_key, 2)
+        next_key, current_key = rng_split(current_key, 2)
 
         sample_batch = SampleBatch(
             obs=env_state.obs,
