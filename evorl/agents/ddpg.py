@@ -670,8 +670,8 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         )
 
     def learn(self, state: State) -> State:
-        one_step_timesteps = self.config.rollout_length * self.config.num_envs
-        num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
+        # one_step_timesteps = self.config.rollout_length * self.config.num_envs
+        num_iters = self.config.total_timesteps
         for i in range(num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
