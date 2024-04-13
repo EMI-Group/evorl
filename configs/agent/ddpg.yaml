@@ -16,7 +16,9 @@ eval_episodes: 20 # should be divided by num_eval_envs
 critor_update_interval: 1
 actor_update_interval: 2
 tau: 0.005
-learning_starts: 2500 # steps before training starts 25000
+learning_starts: 30 # steps before training starts 25000
+load: true
+load_path: ./outputs/train/2024-04-12_09-27-58
 
 optimizer:
   lr: 3e-4

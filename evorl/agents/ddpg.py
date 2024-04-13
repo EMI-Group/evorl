@@ -18,7 +18,7 @@ from evox import State
 from evorl.networks import MLP
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices, tree_unpmap
 from evorl.utils.toolkits import average_episode_discount_return, soft_target_update
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from typing import Tuple, Any, Sequence, Callable, Optional
 import optax
 import chex
@@ -435,11 +435,21 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         replay_buffer_state = self._init_replay_buffer(self.replay_buffer, buffer_key)
 
         if self.enable_multi_devices:
-            workflow_metrics, agent_state, opt_state, replay_buffer_state = (
-                jax.device_put_replicated(
-                    (workflow_metrics, agent_state, opt_state, replay_buffer_state),
-                    self.devices,
-                )
+            (
+                workflow_metrics,
+                agent_state,
+                critic_opt_state,
+                actor_opt_state,
+                replay_buffer_state,
+            ) = jax.device_put_replicated(
+                (
+                    workflow_metrics,
+                    agent_state,
+                    critic_opt_state,
+                    actor_opt_state,
+                    replay_buffer_state,
+                ),
+                self.devices,
             )
 
             # key and env_state should be different over devices
@@ -674,8 +684,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
     def learn(self, state: State) -> State:
         # one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = self.config.total_timesteps
-        start_iteration = tree_unpmap(
-            state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
         for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
@@ -688,14 +697,34 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             if (i + 1) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 logger.info(eval_metrics)
-            
+
             self.checkpoint_manager.save(
-                    i,
-                    args=ocp.args.StandardSave(
-                        tree_unpmap(state, self.pmap_axis_name))
+                i,
+                args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
+            )
+
+            if self.config.load and self.config.learning_starts+1 < i:
+                ckpt_options = ocp.CheckpointManagerOptions(
+                save_interval_steps=self.config.checkpoint.save_interval_steps,
+                max_to_keep=self.config.checkpoint.max_to_keep
                 )
+                ckpt_path = self.config.load_path + '/checkpoints'
+                logger.info(f'Set loadiong checkpoint path: {ckpt_path}')
+                checkpoint_manager = ocp.CheckpointManager(
+                    ckpt_path,
+                    options=ckpt_options,
+                    metadata=OmegaConf.to_container(self.config)  # Rescaled real config
+                )
+                last_step = checkpoint_manager.latest_step()
+                reload_state = checkpoint_manager.restore(
+                    last_step,
+                    args=ocp.args.StandardRestore(tree_unpmap(state, self.pmap_axis_name))
+                )
+                logger.info(f"Reloaded from step {last_step}")
+                break
+
         logger.info("finish!")
-        return state    
+        return state
 
 
 class Actor(nn.Module):
