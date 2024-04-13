@@ -57,7 +57,7 @@ def train(config: DictConfig) -> None:
     state = workflow.init(jax.random.PRNGKey(config.seed))
     state = workflow.learn(state)
 
-    workflow.recorder.close()
+    workflow.close()
 
 
 if __name__ == "__main__":

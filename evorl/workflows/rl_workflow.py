@@ -127,6 +127,10 @@ class RLWorkflow(Workflow):
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
+    def close(self) -> None:
+        self.checkpoint_manager.close()
+        self.recorder.close()
+
 
 class OnPolicyRLWorkflow(RLWorkflow):
     def __init__(
