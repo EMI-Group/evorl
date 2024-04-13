@@ -67,14 +67,15 @@ def load_model(config: DictConfig) -> None:
     workflow.add_recorders([wandb_recorder, log_recorder])
     # Setup the checkpoint manager
     checkpoint_manager = setup_checkpoint_manager(config)
-    
-    state = workflow.init(jax.random.PRNGKey(config.seed))
+    last_step = checkpoint_manager.latest_step()
     pmap_axis_name = None
+    state = workflow.init(jax.random.PRNGKey(config.seed))
+    # state = checkpoint_manager.restore(last_step, args=ocp.args.StandardRestore(state))
+    state = checkpoint_manager.restore(last_step, args=ocp.args.StandardRestore(tree_unpmap(state,None)))
     # state = checkpoint_manager.restore(last_step)
     # target_state = {'layer0': {'bias': 0.0, 'weight': 0.0}}
-    # state = checkpoint_manager.restore(last_step, args=ocp.args.StandardRestore(tree_unpmap(state,None)))
-    state = checkpoint_manager.restore(last_step, args=ocp.args.StandardRestore(state))
     print("finished loading model")
+    
 
 if __name__ == "__main__":
     load_model()
