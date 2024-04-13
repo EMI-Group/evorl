@@ -29,17 +29,21 @@ class BraxAdapter(EnvAdapter):
         self._obs_space = Box(low=-obs_spec, high=obs_spec)
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        brax_state = self.env.reset(key)
+        key, reset_key = jax.random.split(key)
+        brax_state = self.env.reset(reset_key)
 
         info = PyTreeDict(sort_dict(brax_state.info))
         info.metrics = PyTreeDict(sort_dict(brax_state.metrics))
+        # not necessary, but we need non-empty extra until orbax fixes #818
+        extra = PyTreeDict(step_key=key) 
 
         return EnvState(
             env_state=brax_state,
             obs=brax_state.obs,
             reward=brax_state.reward,
             done=brax_state.done,
-            info=info
+            info=info,
+            extra=extra
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
