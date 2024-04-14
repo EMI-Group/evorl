@@ -43,7 +43,7 @@ Initializer = Callable[..., Any]
 
 
 @struct.dataclass
-class DDPGNetworkParams:
+class TD3NetworkParams:
     """Contains training state for the learner."""
 
     critic_params: Params
@@ -52,7 +52,7 @@ class DDPGNetworkParams:
     target_actor_params: Params
 
 
-class DDPGAgent(Agent):
+class TD3Agent(Agent):
     """
     DDPG
     """
@@ -75,7 +75,7 @@ class DDPGAgent(Agent):
             obs_size=obs_size,
             action_size=action_size,
             hidden_layer_sizes=self.critic_hidden_layer_sizes,
-            n_critics=1,
+            n_critics=self.config.n_critics,
         )
 
         key, q_key, actor_key, obs_preprocessor_key = jax.random.split(key, num=4)
@@ -100,7 +100,7 @@ class DDPGAgent(Agent):
         self.set_frozen_attr("critic_network", critic_network)
         self.set_frozen_attr("actor_network", actor_network)
 
-        params_state = DDPGNetworkParams(
+        params_state = TD3NetworkParams(
             critic_params=critic_params,
             target_critic_params=target_critic_params,
             actor_params=actor_params,
@@ -177,14 +177,19 @@ class DDPGAgent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # ======= critic =======
-        actor = self.actor_network.apply(agent_state.params.target_actor_params, obs)
-
+        action = self.actor_network.apply(agent_state.params.target_actor_params, obs)
+        # add random noise
+        noise = jnp.clip(jax.random.normal(key, action.shape) * self.config.policy_noise, -self.config.policy_noise_clip, self.config.policy_noise_clip) * (self.action_space.high - self.action_space.low)
+        action = jnp.clip(action + noise, self.action_space.low, self.action_space.high)
+        
         next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, actor
-        ).squeeze(-1)
+            agent_state.params.target_critic_params, next_obs, action
+        )
+        
+        min_next_q = jnp.min(next_qs, axis=0)
 
         target_qs = (
-            sample_batch.rewards + self.discount * (1 - sample_batch.dones) * next_qs
+            sample_batch.rewards + self.discount * (1 - sample_batch.dones) * min_next_q
         )
         target_qs = jax.lax.stop_gradient(target_qs)
 
@@ -226,7 +231,7 @@ class DDPGAgent(Agent):
         actor_loss = -jnp.mean(
             self.critic_network.apply(
                 agent_state.params.critic_params, obs, gen_actions
-            ).squeeze(-1)
+            ).squeeze(-1)[0]
         )
         return dict(actor_loss=actor_loss)
 
@@ -259,10 +264,11 @@ class DDPGAgent(Agent):
 
         next_qs = self.critic_network.apply(
             agent_state.params.target_critic_params, next_obs, actor
-        ).squeeze(-1)
+        )
+        min_next_q = jnp.min(next_qs, axis=0)
 
         target_qs = (
-            sample_batch.rewards + self.discount * (1 - sample_batch.dones) * next_qs
+            sample_batch.rewards + self.discount * (1 - sample_batch.dones) * min_next_q
         )
         target_qs = jax.lax.stop_gradient(target_qs)
 
@@ -304,9 +310,9 @@ class DDPGAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        return self.critic_network.apply(
+        return jnp.min(self.critic_network.apply(
             agent_state.params.value_params, obs, actions
-        ).squeeze(-1)
+        ), axis=0)
 
     def compute_random_actions(
         self, key: chex.PRNGKey, sample_batch: SampleBatch
@@ -324,7 +330,7 @@ class DDPGAgent(Agent):
         return jax.lax.stop_gradient(action), policy_extras
 
 
-class DDPGWorkflow(OffPolicyRLWorkflow):
+class TD3Workflow(OffPolicyRLWorkflow):
 
     @staticmethod
     def _rescale_config(config, devices) -> None:
