@@ -5,6 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                // "CUDA_VISIBLE_DEVICES": "4,5,6",
+                // "JAX_DISABLE_JIT": "true"
+            },
+        },
+        {
             "name": "Train",
             "type": "debugpy",
             "request": "launch",
@@ -27,24 +40,6 @@
             "type": "debugpy",
             "request": "launch",
             "module": "evorl.ec.ec_train",
-            "env": {
-                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
-                // "CUDA_VISIBLE_DEVICES": "4,5,6",
-                // "JAX_DISABLE_JIT": "true"
-            },
-            "justMyCode": false
-        },
-        {
-            "name": "test Load",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "evorl.test_load",
-            "args": [
-                "agent=ddpg",
-                "env=brax/hopper",
-                "debug=true",
-                // "hydra.verbose=true",
-            ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",

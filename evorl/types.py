@@ -217,6 +217,12 @@ class PyTreeDict(dict):
     def copy(self):
         d = super().copy() # dict
         return self.__class__(d)
+    
+    def replace(self, **d):
+        clone = self.copy()
+        clone.update(**d)
+        return clone
+
 
 
 jax.tree_util.register_pytree_node(
