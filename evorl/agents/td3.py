@@ -7,7 +7,6 @@ import orbax.checkpoint as ocp
 import math
 
 from .agent import Agent, AgentState
-from evorl.networks import make_q_network, make_policy_network
 from evorl.workflows import OffPolicyRLWorkflow
 from evorl.envs import create_env, Box, Env, EnvState
 from evorl.sample_batch import SampleBatch
@@ -71,7 +70,7 @@ class TD3Agent(Agent):
         action_size = self.action_space.shape[0]
 
         # the output of the q_network is b*n_critics, n_critics is the number of critics, b is the batch size
-        critic_network, critic_init_fn = make_q_network(
+        critic_network, critic_init_fn = make_critic_networks(
             obs_size=obs_size,
             action_size=action_size,
             hidden_layer_sizes=self.critic_hidden_layer_sizes,
@@ -79,8 +78,8 @@ class TD3Agent(Agent):
         )
 
         key, q_key, actor_key, obs_preprocessor_key = jax.random.split(key, num=4)
-
-        critic_params = critic_init_fn(q_key)
+        q_keys = jax.random.split(q_key, self.config.n_critics)
+        critic_params = critic_init_fn(q_keys)
         target_critic_params = critic_params
 
         # the output of the actor_network is b, b is the batch size
@@ -179,13 +178,16 @@ class TD3Agent(Agent):
         # ======= critic =======
         action = self.actor_network.apply(agent_state.params.target_actor_params, obs)
         # add random noise
-        noise = jnp.clip(jax.random.normal(key, action.shape) * self.config.policy_noise, -self.config.policy_noise_clip, self.config.policy_noise_clip) * (self.action_space.high - self.action_space.low)
+        noise = jnp.clip(
+            jax.random.normal(key, action.shape) * self.config.policy_noise,
+            -self.config.policy_noise_clip,
+            self.config.policy_noise_clip,
+        ) * (self.action_space.high - self.action_space.low)
         action = jnp.clip(action + noise, self.action_space.low, self.action_space.high)
-        
-        next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, action
-        )
-        
+
+        batch_apply = jax.vmap(self.critic_network.apply, in_axes=(0, None, None))
+        next_qs = batch_apply(agent_state.params.target_critic_params, next_obs, action)
+
         min_next_q = jnp.min(next_qs, axis=0)
 
         target_qs = (
@@ -230,8 +232,8 @@ class TD3Agent(Agent):
 
         actor_loss = -jnp.mean(
             self.critic_network.apply(
-                agent_state.params.critic_params, obs, gen_actions
-            ).squeeze(-1)[0]
+                agent_state.params.critic_params[0], obs, gen_actions
+            )
         )
         return dict(actor_loss=actor_loss)
 
@@ -287,7 +289,7 @@ class TD3Agent(Agent):
 
         actor_loss = -jnp.mean(
             self.critic_network.apply(
-                agent_state.params.critic_params, obs, gen_actions
+                agent_state.params.critic_params[0], obs, gen_actions
             ).squeeze(-1)
         )
 
@@ -310,9 +312,10 @@ class TD3Agent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        return jnp.min(self.critic_network.apply(
-            agent_state.params.value_params, obs, actions
-        ), axis=0)
+        return jnp.min(
+            self.critic_network.apply(agent_state.params.value_params, obs, actions),
+            axis=0,
+        )
 
     def compute_random_actions(
         self, key: chex.PRNGKey, sample_batch: SampleBatch
@@ -367,7 +370,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
             env.action_space, Box
         ), "Only continue action space is supported."
 
-        agent = DDPGAgent(
+        agent = TD3Agent(
             action_space=env.action_space,
             obs_space=env.obs_space,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
@@ -709,22 +712,26 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
             )
 
-            if self.config.load and self.config.learning_starts+1 < i:
+            if self.config.load and self.config.learning_starts + 1 < i:
                 ckpt_options = ocp.CheckpointManagerOptions(
-                save_interval_steps=self.config.checkpoint.save_interval_steps,
-                max_to_keep=self.config.checkpoint.max_to_keep
+                    save_interval_steps=self.config.checkpoint.save_interval_steps,
+                    max_to_keep=self.config.checkpoint.max_to_keep,
                 )
-                ckpt_path = self.config.load_path + '/checkpoints'
-                logger.info(f'Set loadiong checkpoint path: {ckpt_path}')
+                ckpt_path = self.config.load_path + "/checkpoints"
+                logger.info(f"Set loadiong checkpoint path: {ckpt_path}")
                 checkpoint_manager = ocp.CheckpointManager(
                     ckpt_path,
                     options=ckpt_options,
-                    metadata=OmegaConf.to_container(self.config)  # Rescaled real config
+                    metadata=OmegaConf.to_container(
+                        self.config
+                    ),  # Rescaled real config
                 )
                 last_step = checkpoint_manager.latest_step()
                 reload_state = checkpoint_manager.restore(
                     last_step,
-                    args=ocp.args.StandardRestore(tree_unpmap(state, self.pmap_axis_name))
+                    args=ocp.args.StandardRestore(
+                        tree_unpmap(state, self.pmap_axis_name)
+                    ),
                 )
                 logger.info(f"Reloaded from step {last_step}")
                 break
@@ -782,6 +789,25 @@ def make_actor_network(
     init_fn = lambda rng: actor.init(rng, jnp.ones((1, obs_size)))
 
     return actor, init_fn
+
+
+def make_critic_networks(
+    obs_size: int,
+    action_size: int,
+    hidden_layer_sizes: Sequence[int] = (256, 256),
+    activation: ActivationFn = nn.relu,
+    n_critics: int = 2,
+) -> nn.Module:
+    network = MLP(
+        layer_sizes=list(hidden_layer_sizes) + [1],
+        activation=activation,
+        kernel_init=jax.nn.initializers.lecun_uniform(),
+    )
+    # _init_fn =
+    init_fn = jax.vmap(
+        lambda rng: network.init(rng, jnp.ones(1, obs_size), jnp.ones(1, action_size))
+    )
+    return network, init_fn
 
 
 # get the loss and the gradient
