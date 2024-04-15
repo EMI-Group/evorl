@@ -23,7 +23,7 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=a2c",
+                "agent=ppo",
                 "env=brax/ant",
                 "debug=true",
                 // "hydra.verbose=true",
