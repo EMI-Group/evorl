@@ -1,16 +1,14 @@
 # @package _global_
 
-workflow_cls: evorl.agents.ddpg.TD3Workflow
+workflow_cls: evorl.agents.td3.TD3Workflow
 
 num_envs: 10
 normalize_obs: false
 rollout_length: 1
 discount: 0.99
 exploration_epsilon: 0.1
-policy_noise: 0.2
-policy_noise_clip: 0.5
 total_timesteps: 97800 #97800
-n_critics: 2
+
 num_eval_envs: 10
 eval_interval: 101
 log_interval: 101
@@ -31,6 +29,9 @@ replay_buffer:
   sample_batch_size: 256
 
 agent_network:
+  n_critics: 2
+  policy_noise: 0.2
+  policy_noise_clip: 0.5
   continuous_action: true
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]

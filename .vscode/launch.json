@@ -23,7 +23,7 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=ddpg",
+                "agent=td3",
                 "env=brax/hopper",
                 "debug=true",
                 // "hydra.verbose=true",

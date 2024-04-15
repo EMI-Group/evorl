@@ -64,6 +64,9 @@ class TD3Agent(Agent):
     critic_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
     actor_network: nn.Module = pytree_field(lazy_init=True)
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
+    n_critics: int = 2
+    policy_noise: float = 0.2
+    policy_noise_clip: float = 0.5
 
     def init(self, key: chex.PRNGKey) -> AgentState:
         obs_size = self.obs_space.shape[0]
@@ -74,11 +77,11 @@ class TD3Agent(Agent):
             obs_size=obs_size,
             action_size=action_size,
             hidden_layer_sizes=self.critic_hidden_layer_sizes,
-            n_critics=self.config.n_critics,
+            n_critics=self.n_critics,
         )
 
         key, q_key, actor_key, obs_preprocessor_key = jax.random.split(key, num=4)
-        q_keys = jax.random.split(q_key, self.config.n_critics)
+        q_keys = jax.random.split(q_key, self.n_critics)
         critic_params = critic_init_fn(q_keys)
         target_critic_params = critic_params
 
@@ -179,16 +182,24 @@ class TD3Agent(Agent):
         action = self.actor_network.apply(agent_state.params.target_actor_params, obs)
         # add random noise
         noise = jnp.clip(
-            jax.random.normal(key, action.shape) * self.config.policy_noise,
-            -self.config.policy_noise_clip,
-            self.config.policy_noise_clip,
+            jax.random.normal(key, action.shape) * self.policy_noise,
+            -self.policy_noise_clip,
+            self.policy_noise_clip,
         ) * (self.action_space.high - self.action_space.low)
         action = jnp.clip(action + noise, self.action_space.low, self.action_space.high)
+        input_data = jnp.concatenate([obs, action], axis=-1)
+        # batch_apply = jax.lax.map(lambda x: self.critic_network.apply(x, input_data),in_axes=0)
+        # next_qs = batch_apply(agent_state.params.target_critic_params)
+        for i in range(self.n_critics):
+            next_qs = self.critic_network.apply(
+                agent_state.params.target_critic_params[i], input_data
+            )
+            if i == 0:
+                min_next_q = next_qs
+            else:
+                min_next_q = jnp.minimum(min_next_q, next_qs, axis=0)
 
-        batch_apply = jax.vmap(self.critic_network.apply, in_axes=(0, None, None))
-        next_qs = batch_apply(agent_state.params.target_critic_params, next_obs, action)
-
-        min_next_q = jnp.min(next_qs, axis=0)
+        # min_next_q = jnp.min(next_qs, axis=0)
 
         target_qs = (
             sample_batch.rewards + self.discount * (1 - sample_batch.dones) * min_next_q
@@ -232,7 +243,7 @@ class TD3Agent(Agent):
 
         actor_loss = -jnp.mean(
             self.critic_network.apply(
-                agent_state.params.critic_params[0], obs, gen_actions
+                agent_state.params.critic_params[0],  jnp.concatenate([obs, gen_actions],axis=-1)
             )
         )
         return dict(actor_loss=actor_loss)
@@ -377,6 +388,9 @@ class TD3Workflow(OffPolicyRLWorkflow):
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
+            n_critics=config.agent_network.n_critics,
+            policy_noise=config.agent_network.policy_noise,
+            policy_noise_clip=config.agent_network.policy_noise_clip,
         )
 
         # one optimizer, two opt_states (in setup function) for both actor and critic
@@ -803,10 +817,13 @@ def make_critic_networks(
         activation=activation,
         kernel_init=jax.nn.initializers.lecun_uniform(),
     )
-    # _init_fn =
-    init_fn = jax.vmap(
-        lambda rng: network.init(rng, jnp.ones(1, obs_size), jnp.ones(1, action_size))
-    )
+
+    def init_fn(rng):
+        params = []
+        for i in (rng):
+            params.append(network.init(i, jnp.ones((1, obs_size + action_size))))
+        return params
+
     return network, init_fn
 
 
