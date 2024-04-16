@@ -179,40 +179,33 @@ class TD3Agent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # ======= critic =======
-        action = self.actor_network.apply(agent_state.params.target_actor_params, obs)
+        next_action = self.actor_network.apply(agent_state.params.target_actor_params, obs)
         # add random noise
         noise = jnp.clip(
-            jax.random.normal(key, action.shape) * self.policy_noise,
+            jax.random.normal(key, next_action.shape) * self.policy_noise,
             -self.policy_noise_clip,
             self.policy_noise_clip,
         ) * (self.action_space.high - self.action_space.low)
-        action = jnp.clip(action + noise, self.action_space.low, self.action_space.high)
-        input_data = jnp.concatenate([obs, action], axis=-1)
-        # batch_apply = jax.lax.map(lambda x: self.critic_network.apply(x, input_data),in_axes=0)
-        # next_qs = batch_apply(agent_state.params.target_critic_params)
-        for i in range(self.n_critics):
-            next_qs = self.critic_network.apply(
-                agent_state.params.target_critic_params[i], input_data
-            )
-            if i == 0:
-                min_next_q = next_qs
-            else:
-                min_next_q = jnp.minimum(min_next_q, next_qs, axis=0)
+        next_action = jnp.clip(next_action + noise, self.action_space.low, self.action_space.high)
+        input_data = jnp.concatenate([obs, next_action], axis=-1)
+        q_net_batch_apply= jax.vmap(lambda x: self.critic_network.apply(x, input_data),in_axes=0)
+        next_qs = q_net_batch_apply(agent_state.params.target_critic_params).squeeze(-1)
 
-        # min_next_q = jnp.min(next_qs, axis=0)
-
+        min_next_q = jnp.min(next_qs, axis=0)
         target_qs = (
             sample_batch.rewards + self.discount * (1 - sample_batch.dones) * min_next_q
         )
         target_qs = jax.lax.stop_gradient(target_qs)
 
-        qs = self.critic_network.apply(
-            agent_state.params.critic_params, obs, actions
-        ).squeeze(-1)
+        input_data = jnp.concatenate([obs, actions], axis=-1)
+        q_net_batch_apply = jax.vmap(
+            lambda x: self.critic_network.apply(x, input_data), in_axes=0
+        )
+        qs = q_net_batch_apply(agent_state.params.critic_params).squeeze(-1)
 
         # in DDPG, we use the target network to compute the target value and in cleanrl, the lose is MSE loss
         # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
-        q_loss = ((qs - target_qs) ** 2).mean()
+        q_loss = ((qs - target_qs) ** 2).mean(axis=1).sum()
 
         return dict(critic_loss=q_loss)
 
@@ -241,9 +234,10 @@ class TD3Agent(Agent):
         # [T*B, A]
         gen_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
 
+        q0_params = jax.tree_util.tree_map(lambda x: x[0], agent_state.params.critic_params)
         actor_loss = -jnp.mean(
             self.critic_network.apply(
-                agent_state.params.critic_params[0],  jnp.concatenate([obs, gen_actions],axis=-1)
+                q0_params, jnp.concatenate([obs, gen_actions], axis=-1)
             )
         )
         return dict(actor_loss=actor_loss)
@@ -818,11 +812,7 @@ def make_critic_networks(
         kernel_init=jax.nn.initializers.lecun_uniform(),
     )
 
-    def init_fn(rng):
-        params = []
-        for i in (rng):
-            params.append(network.init(i, jnp.ones((1, obs_size + action_size))))
-        return params
+    init_fn = jax.vmap(lambda x: network.init(x, jnp.ones((1, obs_size + action_size))), in_axes=(0,))
 
     return network, init_fn
 
