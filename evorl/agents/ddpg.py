@@ -706,20 +706,20 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         # not completed
         else:
             ckpt_options = ocp.CheckpointManagerOptions(
-            save_interval_steps=self.config.checkpoint.save_interval_steps,
-            max_to_keep=self.config.checkpoint.max_to_keep
+                save_interval_steps=self.config.checkpoint.save_interval_steps,
+                max_to_keep=self.config.checkpoint.max_to_keep,
             )
-            ckpt_path = self.config.load_path + '/checkpoints'
-            logger.info(f'Set loadiong checkpoint path: {ckpt_path}')
+            ckpt_path = self.config.load_path + "/checkpoints"
+            logger.info(f"Set loadiong checkpoint path: {ckpt_path}")
             checkpoint_manager = ocp.CheckpointManager(
                 ckpt_path,
                 options=ckpt_options,
-                metadata=OmegaConf.to_container(self.config)  # Rescaled real config
+                metadata=OmegaConf.to_container(self.config),  # Rescaled real config
             )
             last_step = checkpoint_manager.latest_step()
             reload_state = checkpoint_manager.restore(
                 last_step,
-                args=ocp.args.StandardRestore(tree_unpmap(state, self.pmap_axis_name))
+                args=ocp.args.StandardRestore(tree_unpmap(state, self.pmap_axis_name)),
             )
             logger.info(f"Reloaded from step {last_step}")
 

@@ -179,16 +179,22 @@ class TD3Agent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # ======= critic =======
-        next_action = self.actor_network.apply(agent_state.params.target_actor_params, obs)
+        next_action = self.actor_network.apply(
+            agent_state.params.target_actor_params, obs
+        )
         # add random noise
         noise = jnp.clip(
             jax.random.normal(key, next_action.shape) * self.policy_noise,
             -self.policy_noise_clip,
             self.policy_noise_clip,
         ) * (self.action_space.high - self.action_space.low)
-        next_action = jnp.clip(next_action + noise, self.action_space.low, self.action_space.high)
+        next_action = jnp.clip(
+            next_action + noise, self.action_space.low, self.action_space.high
+        )
         input_data = jnp.concatenate([obs, next_action], axis=-1)
-        q_net_batch_apply= jax.vmap(lambda x: self.critic_network.apply(x, input_data),in_axes=0)
+        q_net_batch_apply = jax.vmap(
+            lambda x: self.critic_network.apply(x, input_data), in_axes=0
+        )
         next_qs = q_net_batch_apply(agent_state.params.target_critic_params).squeeze(-1)
 
         min_next_q = jnp.min(next_qs, axis=0)
@@ -234,7 +240,9 @@ class TD3Agent(Agent):
         # [T*B, A]
         gen_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
 
-        q0_params = jax.tree_util.tree_map(lambda x: x[0], agent_state.params.critic_params)
+        q0_params = jax.tree_util.tree_map(
+            lambda x: x[0], agent_state.params.critic_params
+        )
         actor_loss = -jnp.mean(
             self.critic_network.apply(
                 q0_params, jnp.concatenate([obs, gen_actions], axis=-1)
@@ -712,13 +720,14 @@ class TD3Workflow(OffPolicyRLWorkflow):
                     train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
                     self.recorder.write(train_metrics.to_local_dict(), i)
                     workflow_metrics = tree_unpmap(
-                    workflow_metrics, self.pmap_axis_name)
+                        workflow_metrics, self.pmap_axis_name
+                    )
                     self.recorder.write(workflow_metrics.to_local_dict(), i)
 
                 if (i + 1) % self.config.eval_interval == 0:
                     eval_metrics, state = self.evaluate(state)
                     eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                    self.recorder.write({'eval': eval_metrics.to_local_dict()}, i)
+                    self.recorder.write({"eval": eval_metrics.to_local_dict()}, i)
 
                 self.checkpoint_manager.save(
                     i,
@@ -735,19 +744,14 @@ class TD3Workflow(OffPolicyRLWorkflow):
             checkpoint_manager = ocp.CheckpointManager(
                 ckpt_path,
                 options=ckpt_options,
-                metadata=OmegaConf.to_container(
-                    self.config
-                ),  # Rescaled real config
+                metadata=OmegaConf.to_container(self.config),  # Rescaled real config
             )
             last_step = checkpoint_manager.latest_step()
             reload_state = checkpoint_manager.restore(
                 last_step,
-                args=ocp.args.StandardRestore(
-                    tree_unpmap(state, self.pmap_axis_name)
-                ),
+                args=ocp.args.StandardRestore(tree_unpmap(state, self.pmap_axis_name)),
             )
             logger.info(f"Reloaded from step {last_step}")
-            break
 
         logger.info("finish!")
         return state
@@ -817,7 +821,9 @@ def make_critic_networks(
         kernel_init=jax.nn.initializers.lecun_uniform(),
     )
 
-    init_fn = jax.vmap(lambda x: network.init(x, jnp.ones((1, obs_size + action_size))), in_axes=(0,))
+    init_fn = jax.vmap(
+        lambda x: network.init(x, jnp.ones((1, obs_size + action_size))), in_axes=(0,)
+    )
 
     return network, init_fn
 
