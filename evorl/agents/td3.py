@@ -399,13 +399,13 @@ class TD3Workflow(OffPolicyRLWorkflow):
         optimizer = optax.adam(learning_rate=config.optimizer.lr)
 
         replay_buffer = flashbax.make_item_buffer(
-            max_length=config.replay_buffer.capacity,
+            max_length=config.replay_buffer.capacity//jax.device_count(),
             min_length=config.replay_buffer.min_size,
             sample_batch_size=config.replay_buffer.sample_batch_size,
             add_batches=True,
         )
 
-        def _replay_buffer_init_fn(replay_buffer, key):
+        def _replay_buffer_init_fn(key):
             # create dummy data to initialize the replay buffer
             dummy_action = jnp.zeros(env.action_space.shape)
             dummy_obs = jnp.zeros(env.obs_space.shape)
@@ -457,22 +457,18 @@ class TD3Workflow(OffPolicyRLWorkflow):
         critic_opt_state = self.optimizer.init(agent_state.params.critic_params)
         actor_opt_state = self.optimizer.init(agent_state.params.actor_params)
 
-        replay_buffer_state = self._init_replay_buffer(self.replay_buffer, buffer_key)
-
         if self.enable_multi_devices:
             (
                 workflow_metrics,
                 agent_state,
                 critic_opt_state,
-                actor_opt_state,
-                replay_buffer_state,
+                actor_opt_state, 
             ) = jax.device_put_replicated(
                 (
                     workflow_metrics,
                     agent_state,
                     critic_opt_state,
                     actor_opt_state,
-                    replay_buffer_state,
                 ),
                 self.devices,
             )
@@ -482,8 +478,13 @@ class TD3Workflow(OffPolicyRLWorkflow):
 
             env_key = split_key_to_devices(env_key, self.devices)
             env_state = jax.pmap(self.env.reset, axis_name=self.pmap_axis_name)(env_key)
+            buffer_key = split_key_to_devices(buffer_key, self.devices)
+            replay_buffer_state = jax.pmap(
+                self._init_replay_buffer, axis_name=self.pmap_axis_name
+            )(buffer_key)
         else:
             env_state = self.env.reset(env_key)
+            replay_buffer_state = self._init_replay_buffer(buffer_key)
 
         return State(
             key=key,
