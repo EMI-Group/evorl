@@ -209,4 +209,7 @@ class DeterministicECAgent(Agent):
         return self.compute_actions(agent_state, sample_batch, key)
 
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
+        """
+            Users can define custom loss here as an objetive for EC agents.
+        """
         raise NotImplementedError()
