@@ -23,6 +23,7 @@ class MABraxEnvV2(MABraxEnv):
         **kwargs
     ):
         """Multi-Agent Brax environment.
+        Compared to the original MABraxEnv, this version disables the autoreset and other wrappers in internal brax envs.
 
         Args:
             env_name: Name of the environment to be used.
@@ -85,6 +86,29 @@ class MABraxEnvV2(MABraxEnv):
             )
             for agent in self.agents
         }
+
+    @partial(jax.jit, static_argnums=(0,))
+    def global_step_env(
+        self,
+        key: chex.PRNGKey,
+        state: envs.State,
+        global_action: chex.Array,
+    ) -> Tuple[
+        Dict[str, chex.Array], envs.State, Dict[str, float], Dict[str, bool], Dict
+    ]:
+        next_state = self.env.step(state, global_action)  # type: ignore
+        observations = self.get_obs(next_state)
+        rewards = {agent: next_state.reward for agent in self.agents}
+        rewards["__all__"] = next_state.reward
+        dones = {agent: next_state.done.astype(jnp.bool_) for agent in self.agents}
+        dones["__all__"] = next_state.done.astype(jnp.bool_)
+        return (
+            observations,
+            next_state,  # type: ignore
+            rewards,
+            dones,
+            next_state.info,
+        )
 
 
 class Ant(MABraxEnvV2):

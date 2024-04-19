@@ -41,7 +41,9 @@ class MultiAgentEnv(Env):
     def agents(self) -> List[AgentID]:
         raise NotImplementedError
     
-    
+    @property
+    def unwrapped(self) -> EnvLike:
+        return self.env
 
 
 class MultiAgentEnvAdapter(MultiAgentEnv):

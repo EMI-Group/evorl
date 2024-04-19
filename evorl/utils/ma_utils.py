@@ -1,39 +1,47 @@
 import jax
 import jax.numpy as jnp
 import chex
-from evorl.types import Done
-
+from evorl.types import Done, AgentID
+from typing import Dict
 """
 Utils for Multi-Agent RL
 """
 
 
-
-def batchify(x: dict, agent_list, num_actors, padding=False):
+def batchify(x: Dict[AgentID, jax.Array], agent_list, padding=False) -> jax.Array:
     """
         Batchify the data for multi-agent training.
+        Output batched data
         Args:
-            x: dict, data from each agent
+            x: data from each agent, [batch_dims..., val]
+                Note: Currently, only the last dimension is viewed as value, and the rest are batch dimensions.
             agent_list: list, list of agent names
             num_actors: int, number of actors
-            padding: bool, whether to pad the data to the same length
+            padding: bool, whether to pad the data to the same length over the last dimension.
+                set to False if the data already has same length.
     """
-
     if padding:
-        max_dim = max([x[a].shape[-1] for a in agent_list])
-
-        def pad(z, length):
+        def _pad(z, length):
             return jnp.concatenate([z, jnp.zeros(z.shape[:-1] + [length - z.shape[-1]])], -1)
-        x = jnp.stack([x[a] if x[a].shape[-1] == max_dim else pad(x[a])
+
+        max_dim = max([x[a].shape[-1] for a in agent_list])
+        x = jnp.stack([x[a] if x[a].shape[-1] == max_dim else _pad(x[a], max_dim)
                     for a in agent_list])
     else:
         x = jnp.stack([x[a] for a in agent_list])
 
-    return x.reshape((num_actors, -1))
+    return x #[num_actors, batch_dims..., val]
 
 
-def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
-    x = x.reshape((num_actors, num_envs, -1))
+def unbatchify(x: jax.Array, agent_list) -> Dict[AgentID, jax.Array]:
+    """
+        Unbatchify the data for multi-agent training.
+        Here we assume actions have the same shape for each agent. (True for MaBrax)
+        Args:
+            x: batched data, [num_actors, batch_dims..., val]
+                Note: Currently, only the last dimension is viewed as value, and the rest are batch dimensions.
+            agent_list: list, list of agent names
+    """
     return {a: x[i] for i, a in enumerate(agent_list)}
 
 

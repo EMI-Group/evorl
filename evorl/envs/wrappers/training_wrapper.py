@@ -2,13 +2,12 @@
 
 import jax
 from jax import numpy as jnp
-from flax import struct
 
 from evorl.utils.jax_utils import vmap_rng_split
 from ..env import Env, EnvState
 from .wrapper import Wrapper
 import chex
-from typing import Tuple
+
 
 class EpisodeWrapper(Wrapper):
     """Maintains episode step count and sets done at episode end.
