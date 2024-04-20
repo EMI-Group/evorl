@@ -20,6 +20,7 @@ from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices, tree_unpmap
 from evorl.utils.toolkits import average_episode_discount_return, soft_target_update
 from omegaconf import DictConfig, OmegaConf
 from typing import Tuple, Any, Sequence, Callable, Optional
+from evorl.utils.orbax_utils import load
 import optax
 import chex
 import distrax
@@ -709,24 +710,10 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                     args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
                 )
         # not completed
-        else:
-            ckpt_options = ocp.CheckpointManagerOptions(
-                save_interval_steps=self.config.checkpoint.save_interval_steps,
-                max_to_keep=self.config.checkpoint.max_to_keep,
-            )
+        else:  
             ckpt_path = self.config.load_path + "/checkpoints"
             logger.info(f"Set loadiong checkpoint path: {ckpt_path}")
-            checkpoint_manager = ocp.CheckpointManager(
-                ckpt_path,
-                options=ckpt_options,
-                metadata=OmegaConf.to_container(self.config),  # Rescaled real config
-            )
-            last_step = checkpoint_manager.latest_step()
-            reload_state = checkpoint_manager.restore(
-                last_step,
-                args=ocp.args.StandardRestore(tree_unpmap(state, self.pmap_axis_name)),
-            )
-            logger.info(f"Reloaded from step {last_step}")
+            state = load(path=ckpt_path, state=state)        
 
         logger.info("finish!")
         return state
