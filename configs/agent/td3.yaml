@@ -2,7 +2,7 @@
 
 workflow_cls: evorl.agents.td3.TD3Workflow
 
-num_envs: 10
+num_envs: 1
 normalize_obs: false
 rollout_length: 1
 discount: 0.99
