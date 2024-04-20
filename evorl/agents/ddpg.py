@@ -692,12 +692,17 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 
                 # the log_interval should be odd due to the frequency of updating actor is even
                 if (i + 1) % self.config.log_interval == 0:
-                    self.recorder.write(workflow_metrics)
-                    self.recorder.write(train_metrics)
+                    train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+                    self.recorder.write(train_metrics.to_local_dict(), i)
+                    workflow_metrics = tree_unpmap(
+                        workflow_metrics, self.pmap_axis_name
+                    )
+                    self.recorder.write(workflow_metrics.to_local_dict(), i)
 
                 if (i + 1) % self.config.eval_interval == 0:
                     eval_metrics, state = self.evaluate(state)
-                    self.recorder.write(eval_metrics)
+                    eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                    self.recorder.write({"eval": eval_metrics.to_local_dict()}, i)
 
                 self.checkpoint_manager.save(
                     i,

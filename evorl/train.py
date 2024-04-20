@@ -1,5 +1,9 @@
-import jax
+import os
+os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=2"
 
+import jax
+# 确保JAX使用CPU
+jax.config.update("jax_platform_name", "cpu")
 from omegaconf import DictConfig, OmegaConf
 import hydra
 import logging
