@@ -1,0 +1,3 @@
+env_name: SimpleBandit-bsuite
+env_type: gymnax
+max_episode_steps: 100

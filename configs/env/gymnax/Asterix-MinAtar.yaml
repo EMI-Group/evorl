@@ -1,0 +1,3 @@
+env_name: Asterix-MinAtar
+env_type: gymnax
+max_episode_steps: 1000

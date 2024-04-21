@@ -1,0 +1,3 @@
+env_name: FourRooms-misc
+env_type: gymnax
+max_episode_steps: 500
