@@ -1,4 +1,4 @@
-from .algorithm.multi_object_algo import MOAlgorithmWrapper
+from .algorithms.multi_object_algo import MOAlgorithmWrapper
 
 
-from .problem.multi_object_problem import MultiObjectiveBraxProblem
+from .problems.multi_object_problem import MultiObjectiveBraxProblem

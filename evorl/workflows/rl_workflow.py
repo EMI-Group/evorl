@@ -122,7 +122,7 @@ class RLWorkflow(Workflow):
         raise NotImplementedError
 
     @classmethod
-    def enable_jit(cls) -> None:
+    def enable_jit(cls, device: jax.Device = None) -> None:
         # donate_argnums = (1,) if donate_buffer else None
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls.step = jax.jit(cls.step, static_argnums=(0,))

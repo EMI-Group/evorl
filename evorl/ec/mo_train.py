@@ -59,6 +59,7 @@ def train(seed=42):
         pop_size=pop_size,
     )
 
+    # TODO: add op for MLP
     nsga2_rl = MOAlgorithmWrapper(
         algo=nsga2,
         param_vec_spec=param_vec_spec
