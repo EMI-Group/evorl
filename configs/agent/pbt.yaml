@@ -8,7 +8,16 @@ workflow_cls: evorl.agents.meta.pbt.PBTWorkflow
 
 pop_size: 8
 
-parallel_training: true
+parallel_train: true
+parallel_eval: true
+per_iter_workflow_steps: 1
+
+# PBT hyperparameters:
+bottom_ratio: 0.2
+top_ratio: 0.2
+
+perturb_factor:
+  lr: 0.2
 
 search_space:
   lr:

@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 from flax import struct
 import math
 
@@ -32,8 +33,7 @@ import orbax.checkpoint as ocp
 import chex
 import optax
 from evorl.types import (
-    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field,
-    MISSING_REWARD
+    PyTreeNode, PyTreeDict
 )
 from evorl.metrics import TrainMetric, WorkflowMetric
 from typing import Tuple, Sequence, Optional, Any
@@ -45,7 +45,11 @@ from omegaconf import OmegaConf
 
 
 class TrainMetric(MetricBase):
-    best_workflow_return: chex.Array = jnp.zeros((), dtype=jnp.float32)
+    pop_discount_returns: chex.Array
+
+
+class HyperParams(PyTreeNode):
+    lr: chex.Array
 
 
 class PBTWorkflow(RLWorkflow):
@@ -96,24 +100,21 @@ class PBTWorkflow(RLWorkflow):
 
         key, workflow_key, pop_key = jax.random.split(key, num=3)
         self.workflow.optimizer = optax.inject_hyperparams(
-            optax.adam, static_args=('b1','b2','eps','eps_root')
+            optax.adam, static_args=('b1', 'b2', 'eps', 'eps_root')
         )(learning_rate=self.config.search_space.lr.low)
 
         pop_workflow_state = jax.vmap(self.workflow.setup)(
-            jax.random.split(key, pop_size)
+            jax.random.split(workflow_key, pop_size)
         )
 
-        pop_lr = jax.random.uniform(pop_key, (pop_size,),
-                                 minval=self.config.search_space.lr.low,
-                                 maxval=self.config.search_space.lr.high)
+        pop = PyTreeDict(
+            lr=jax.random.uniform(pop_key, (pop_size,),
+                                  minval=self.config.search_space.lr.low,
+                                  maxval=self.config.search_space.lr.high)
+        )
 
-        def _apply_lr_to_workflow_state(lr, workflow_state):
-            opt_state = workflow_state.opt_state
-            opt_state.hyperparams['learning_rate'] = lr
-            return workflow_state.update(opt_state=opt_state)
-        
-        pop_workflow_state = jax.vmap(_apply_lr_to_workflow_state)(
-            pop_lr, pop_workflow_state
+        pop_workflow_state = jax.vmap(apply_lr_to_workflow_state)(
+            pop, pop_workflow_state
         )
 
         workflow_metrics = self._setup_workflow_metrics()
@@ -122,20 +123,107 @@ class PBTWorkflow(RLWorkflow):
             key=key,
             metrics=workflow_metrics,
             pop_workflow_state=pop_workflow_state,
-            pop_lr=pop_lr,
+            pop=pop,
         )
-    
+
     def step(self, state: State) -> Tuple[TrainMetric, State]:
         pop_workflow_state = state.pop_workflow_state
-        pop_lr = state.pop_lr
+        pop = state.pop
 
-        pop_workflow_state, metrics = jax.vmap(self.workflow.step)(
-            pop_workflow_state
+        # ===== step ======
+        def _train_steps(wf_state):
+            def _one_step(wf_state):
+                train_metrics, wf_state = self.workflow.step(wf_state)
+                return wf_state, train_metrics
+
+            wf_state, train_metrics_trajectory = jax.lax.scan(
+                _one_step, wf_state, None, length=self.config.per_iter_workflow_steps
+            )
+
+            train_metrics = jtu.tree_map(
+                lambda x: x[-1], train_metrics_trajectory)
+
+            return train_metrics, wf_state
+
+        if self.config.parallel_train:
+            pop_train_metrics, pop_workflow_state = jax.vmap(_train_steps)(
+                pop_workflow_state
+            )
+        else:
+            pop_train_metrics, pop_workflow_state = jax.lax.map(
+                _train_steps, pop_workflow_state
+            )
+
+        # ===== eval ======
+        if self.config.parallel_eval:
+            pop_eval_metrics, pop_workflow_state = jax.vmap(
+                self.workflow.evaluate)(pop_workflow_state)
+        else:
+            pop_eval_metrics, pop_workflow_state = jax.lax.map(
+                self.workflow.evaluate, pop_workflow_state
+            )
+        pop_discount_returns = pop_eval_metrics.discount_returns
+
+        # ===== exploit & explore ======
+        bottoms_num = round(self.config.pop_size * self.config.bottom_ratio)
+        tops_num = round(self.config.pop_size * self.config.top_ratio)
+        indices = jnp.argsort(pop_discount_returns)
+        bottoms_indices = indices[:bottoms_num]
+        tops_indices = indices[-tops_num:]
+
+        key, exploit_key, explore_key = jax.random.split(state.key, 3)
+
+        def _exploit_and_explore(key, top, top_wf_state):
+            new = PyTreeDict()
+            for hp_name in top.keys():
+                new[hp_name] = top[hp_name] * (
+                    1+jax.random.uniform(
+                        key,
+                        minval=-self.config.perturb_factor[hp_name],
+                        maxval=self.config.perturb_factor[key])
+                )
+            #TODO: check deepcopy is necessary (does not change the original state)
+
+            new_wf_state = apply_lr_to_workflow_state(new, copy.deepcopy(top_wf_state))
+            return new, new_wf_state
+
+        # replace bottoms with random tops
+        tops_choice_indices = jax.random.choice(
+            exploit_key, tops_indices, (len(bottoms_indices),))
+
+        def _read(indices, pop):
+            return jtu.tree_map(lambda x: x[indices], pop)
+
+        def _write(indices, pop, new):
+            return jtu.tree_multimap(lambda x, y: x.at[indices].set(y), pop, new)
+
+        new_bottoms, new_bottoms_wf_state = jax.vmap(_exploit_and_explore)(
+            jax.random.split(explore_key, len(bottoms_indices)),
+            _read(tops_choice_indices, pop),
+            _read(tops_choice_indices, pop_workflow_state)
+        )
+        pop = _write(bottoms_indices, pop, new_bottoms)
+        pop_workflow_state = _write(
+            bottoms_indices, pop_workflow_state, new_bottoms_wf_state)
+
+        # ===== record metrics ======
+        pop_wf_metrics = [wf_state.metrics for wf_state in pop_workflow_state]
+        workflow_metrics = state.metrics.replace(
+            sampled_timesteps=sum(
+                [m.sampled_timesteps for m in pop_wf_metrics]),
+            iterations=state.metrics.iterations + 1
         )
 
-        return metrics, state.update(pop_workflow_state=pop_workflow_state)
-        
+        train_metrics = TrainMetric(
+            pop_discount_returns=pop_discount_returns
+        )
 
+        return train_metrics, state.update(
+            key=key,
+            metrics=workflow_metrics,
+            pop=pop,
+            pop_workflow_state=pop_workflow_state
+        )
 
     def learn(self, state: State) -> State:
         for _ in range(self.config.num_steps):
@@ -143,3 +231,9 @@ class PBTWorkflow(RLWorkflow):
             self.recorder.record(metrics)
 
         return state
+
+
+def apply_lr_to_workflow_state(lr, workflow_state):
+    opt_state = copy.deepcopy(workflow_state.opt_state)
+    opt_state.hyperparams['learning_rate'] = lr
+    return workflow_state.update(opt_state=opt_state)
