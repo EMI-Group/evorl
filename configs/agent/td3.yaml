@@ -10,8 +10,9 @@ exploration_epsilon: 0.1
 total_timesteps: 1000000 
 
 num_eval_envs: 1
-eval_interval: 101 # should be divided by num_eval_envs
+eval_interval: 101 
 log_interval: 101
+eval_episodes: 10 # should be divided by num_eval_envs, keep the evaluation's trajatory numbers
 actor_update_interval: 2
 tau: 0.005
 learning_starts: 25000 # steps before training starts 25000
