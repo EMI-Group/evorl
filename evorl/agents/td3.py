@@ -19,10 +19,12 @@ from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices, tree_unpmap
 from evorl.utils.toolkits import average_episode_discount_return, soft_target_update
 from omegaconf import DictConfig, OmegaConf
 from typing import Tuple, Any, Sequence, Callable, Optional
+from evorl.utils.orbax_utils import load
 import optax
 import chex
 import distrax
 import dataclasses
+import os
 from evorl.metrics import TrainMetric, WorkflowMetric
 import flashbax
 from evorl.types import (
@@ -711,6 +713,23 @@ class TD3Workflow(OffPolicyRLWorkflow):
         # one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = self.config.total_timesteps
         start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
+
+        ckpt_path = self.config.load_path + "/checkpoints"
+        if self.config.check_load and os.path.isdir(ckpt_path):
+            ckpt_options = ocp.CheckpointManagerOptions(
+                save_interval_steps=self.config.checkpoint.save_interval_steps,
+                max_to_keep=self.config.checkpoint.max_to_keep,
+            )
+            logger.info(f"Set loadiong checkpoint path: {ckpt_path}")
+            checkpoint_manager = ocp.CheckpointManager(
+                ckpt_path,
+                options=ckpt_options,
+                metadata=OmegaConf.to_container(self.config),  # Rescaled real config
+            )
+            last_step = checkpoint_manager.latest_step()
+            state = load(path=ckpt_path, state=state)
+            start_iteration = tree_unpmap(last_step, self.pmap_axis_name)
+
         if not self.config.load:
             for i in range(start_iteration, num_iters):
                 train_metrics, state = self.step(state)
