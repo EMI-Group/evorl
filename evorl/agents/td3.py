@@ -524,7 +524,19 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 raw_loss_dict=loss_dict,
             ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-            return state, train_metrics
+            # calculate the numbner of timestep
+            sampled_timesteps = (
+                state.metrics.sampled_timesteps
+                + self.config.rollout_length * self.config.num_envs
+            )
+
+            # iterations is the number of updates of the agent
+            workflow_metrics = WorkflowMetric(
+                sampled_timesteps=sampled_timesteps,
+                iterations=state.metrics.iterations + self.config.num_envs,
+            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+            return state, train_metrics, workflow_metrics
 
         def normal_step(state: State):
             # the trajectory (T*B*variable dim), dim T = 1 (default) and B = num_envs
@@ -672,29 +684,26 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 raw_loss_dict=loss_dict,
             ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-            return state, train_metrics
+            # calculate the numbner of timestep
+            sampled_timesteps = (
+                state.metrics.sampled_timesteps
+                + self.config.rollout_length * self.config.num_envs
+            )
 
-        learn_start = jnp.floor(
-            self.config.learning_starts
-            / self.config.num_envs
-            / self.config.rollout_length
-        ).astype(state.metrics.iterations.dtype)
-        start_condition = jax.lax.lt(state.metrics.iterations, learn_start)
-        state, train_metrics = jax.lax.cond(
+            # iterations is the number of updates of the agent
+            workflow_metrics = WorkflowMetric(
+                sampled_timesteps=sampled_timesteps,
+                iterations=state.metrics.iterations + 1,
+            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+            return state, train_metrics, workflow_metrics
+
+        start_condition = jax.lax.lt(
+            state.metrics.iterations, self.config.learning_starts
+        )
+        state, train_metrics, workflow_metrics = jax.lax.cond(
             start_condition, fill_replay_buffer, normal_step, state
         )
-
-        # calculate the numbner of timestep
-        sampled_timesteps = (
-            state.metrics.sampled_timesteps
-            + self.config.rollout_length * self.config.num_envs
-        )
-
-        # iterations is the number of updates of the agent
-        workflow_metrics = WorkflowMetric(
-            sampled_timesteps=sampled_timesteps,
-            iterations=state.metrics.iterations + 1,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         return train_metrics, state.update(
             key=key,
