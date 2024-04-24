@@ -57,6 +57,6 @@ class Evaluator:
             length=num_iters)
 
         return EvaluateMetric(
-            discount_returns=discount_returns.flatten(),  # [#iters * #envs]
+            episode_returns=discount_returns.flatten(),  # [#iters * #envs]
             episode_lengths=episode_lengths.flatten()
         )

@@ -217,7 +217,7 @@ class OnPolicyRLWorkflow(RLWorkflow):
         )
 
         eval_metrics = EvaluateMetric(
-            discount_returns=raw_eval_metrics.discount_returns.mean(),
+            episode_returns=raw_eval_metrics.episode_returns.mean(),
             episode_lengths=raw_eval_metrics.episode_lengths.mean()
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
@@ -295,7 +295,7 @@ class OffPolicyRLWorkflow(RLWorkflow):
         )
 
         eval_metrics = EvaluateMetric(
-            discount_returns=raw_eval_metrics.discount_returns.mean(),
+            episode_returns=raw_eval_metrics.episode_returns.mean(),
             episode_lengths=raw_eval_metrics.episode_lengths.mean()
         )
 

@@ -47,12 +47,12 @@ from omegaconf import OmegaConf
 from functools import partial
 
 class TrainMetric(MetricBase):
-    pop_discount_returns: chex.Array
+    pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
 
 
 class EvalMetric(MetricBase):
-    pop_discount_returns: chex.Array
+    pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
 
 
@@ -179,12 +179,12 @@ class PBTWorkflow(RLWorkflow):
             pop_eval_metrics, pop_workflow_state = jax.lax.map(
                 self.workflow.evaluate, pop_workflow_state
             )
-        pop_discount_returns = pop_eval_metrics.discount_returns
+        pop_episode_returns = pop_eval_metrics.episode_returns
 
         # ===== warmup or exploit & explore ======
         key, exploit_and_explore_key = jax.random.split(state.key)
 
-        def _dummy_fn(key, pop_discount_returns, pop, pop_workflow_state):
+        def _dummy_fn(key, pop_episode_returns, pop, pop_workflow_state):
             return pop, pop_workflow_state
         
         _exploit_and_explore = partial(exploit_and_explore, self.config)
@@ -194,7 +194,7 @@ class PBTWorkflow(RLWorkflow):
                                                  self.config.per_iter_workflow_steps),
             _dummy_fn,
             _exploit_and_explore,
-            exploit_and_explore_key, pop_discount_returns, pop, pop_workflow_state
+            exploit_and_explore_key, pop_episode_returns, pop, pop_workflow_state
         )
 
         # ===== record metrics ======
@@ -204,7 +204,7 @@ class PBTWorkflow(RLWorkflow):
         )
 
         train_metrics = TrainMetric(
-            pop_discount_returns=pop_eval_metrics.discount_returns,
+            pop_episode_returns=pop_eval_metrics.episode_returns,
             pop_episode_lengths=pop_eval_metrics.episode_lengths
         )
 
@@ -240,17 +240,17 @@ class PBTWorkflow(RLWorkflow):
             )
 
         eval_metrics = EvalMetric(
-            pop_discount_returns=pop_eval_metrics.discount_returns,
+            pop_episode_returns=pop_eval_metrics.episode_returns,
             pop_episode_lengths=pop_eval_metrics.episode_lengths
         )
 
         return eval_metrics, state.replace(pop_workflow_state=pop_workflow_state)
 
 
-def exploit_and_explore(config, key, pop_discount_returns, pop, pop_workflow_state):
+def exploit_and_explore(config, key, pop_episode_returns, pop, pop_workflow_state):
     bottoms_num = round(config.pop_size * config.bottom_ratio)
     tops_num = round(config.pop_size * config.top_ratio)
-    indices = jnp.argsort(pop_discount_returns)
+    indices = jnp.argsort(pop_episode_returns)
     bottoms_indices = indices[:bottoms_num]
     tops_indices = indices[-tops_num:]
 
