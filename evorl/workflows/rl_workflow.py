@@ -29,19 +29,45 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class DummyCheckpointManager:
+    def save(self,
+             step: int,
+             items=None,
+             save_kwargs=None,
+             metrics=None,
+             force=False,
+             args=None,
+             ) -> bool:
+        return True
+    
+    def restore(
+        self,
+        step,
+        items = None,
+        restore_kwargs= None,
+        directory = None,
+        args = None,
+    ):
+        raise NotImplementedError('UwU')
+
+
 def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
-    output_dir = get_output_dir()
-    ckpt_options = ocp.CheckpointManagerOptions(
-        save_interval_steps=config.checkpoint.save_interval_steps,
-        max_to_keep=config.checkpoint.max_to_keep
-    )
-    ckpt_path = output_dir/'checkpoints'
-    logger.info(f'set checkpoint path: {ckpt_path}')
-    checkpoint_manager = ocp.CheckpointManager(
-        ckpt_path,
-        options=ckpt_options,
-        metadata=OmegaConf.to_container(config)  # rescaled real config
-    )
+    if config.checkpoint.enable:
+        output_dir = get_output_dir()
+        ckpt_options = ocp.CheckpointManagerOptions(
+            save_interval_steps=config.checkpoint.save_interval_steps,
+            max_to_keep=config.checkpoint.max_to_keep
+        )
+        ckpt_path = output_dir/'checkpoints'
+        logger.info(f'set checkpoint path: {ckpt_path}')
+        checkpoint_manager = ocp.CheckpointManager(
+            ckpt_path,
+            options=ckpt_options,
+            metadata=OmegaConf.to_container(config)  # rescaled real config
+        )
+    else:
+        checkpoint_manager = DummyCheckpointManager()
+        
     return checkpoint_manager
 
 

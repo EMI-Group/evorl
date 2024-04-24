@@ -1,3 +1,4 @@
+from optax.schedules import InjectStatefulHyperparamsState
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -5,7 +6,7 @@ from flax import struct
 import math
 
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict, read_write
 
 
 from evorl.sample_batch import SampleBatch
@@ -43,9 +44,16 @@ from flax import struct
 import copy
 from omegaconf import OmegaConf
 
+from functools import partial
 
 class TrainMetric(MetricBase):
     pop_discount_returns: chex.Array
+    pop_episode_lengths: chex.Array
+
+
+class EvalMetric(MetricBase):
+    pop_discount_returns: chex.Array
+    pop_episode_lengths: chex.Array
 
 
 class HyperParams(PyTreeNode):
@@ -63,8 +71,6 @@ class PBTWorkflow(RLWorkflow):
     @classmethod
     def build_from_config(cls, config: DictConfig, enable_jit: bool = True):
         config = copy.deepcopy(config)  # avoid in-place modification
-        if devices is None:
-            devices = jax.local_devices()
 
         # Tips: Multi-Device Training is done by sub-workflow
         if enable_jit:
@@ -79,17 +85,28 @@ class PBTWorkflow(RLWorkflow):
     @classmethod
     def _build_from_config(cls, config: DictConfig):
         target_workflow_config = config.target_workflow
+        target_workflow_config = copy.deepcopy(target_workflow_config)
         target_workflow_cls = hydra.utils.get_class(
             target_workflow_config.workflow_cls)
 
         devices = jax.local_devices()
+
+        # OmegaConf.set_struct(target_workflow_config, True)
+        
+        with read_write(target_workflow_config):
+            with open_dict(target_workflow_config):
+                target_workflow_config.env = copy.deepcopy(config.env)
+                target_workflow_config.checkpoint = OmegaConf.create(dict(enable=False))
+
+        OmegaConf.set_readonly(target_workflow_config, True)
+
         if len(devices) > 1:
             target_workflow = target_workflow_cls.build_from_config(
-                config, enable_multi_devices=True, devices=devices,
+                target_workflow_config, enable_multi_devices=True, devices=devices,
             )
         else:
             target_workflow = target_workflow_cls.build_from_config(
-                config,
+                target_workflow_config,
                 enable_jit=True
             )
 
@@ -113,7 +130,7 @@ class PBTWorkflow(RLWorkflow):
                                   maxval=self.config.search_space.lr.high)
         )
 
-        pop_workflow_state = jax.vmap(apply_lr_to_workflow_state)(
+        pop_workflow_state = jax.vmap(apply_hyperparams_to_workflow_state)(
             pop, pop_workflow_state
         )
 
@@ -132,7 +149,7 @@ class PBTWorkflow(RLWorkflow):
 
         # ===== step ======
         def _train_steps(wf_state):
-            def _one_step(wf_state):
+            def _one_step(wf_state, _):
                 train_metrics, wf_state = self.workflow.step(wf_state)
                 return wf_state, train_metrics
 
@@ -164,58 +181,31 @@ class PBTWorkflow(RLWorkflow):
             )
         pop_discount_returns = pop_eval_metrics.discount_returns
 
-        # ===== exploit & explore ======
-        bottoms_num = round(self.config.pop_size * self.config.bottom_ratio)
-        tops_num = round(self.config.pop_size * self.config.top_ratio)
-        indices = jnp.argsort(pop_discount_returns)
-        bottoms_indices = indices[:bottoms_num]
-        tops_indices = indices[-tops_num:]
+        # ===== warmup or exploit & explore ======
+        key, exploit_and_explore_key = jax.random.split(state.key)
 
-        key, exploit_key, explore_key = jax.random.split(state.key, 3)
+        def _dummy_fn(key, pop_discount_returns, pop, pop_workflow_state):
+            return pop, pop_workflow_state
+        
+        _exploit_and_explore = partial(exploit_and_explore, self.config)
 
-        def _exploit_and_explore(key, top, top_wf_state):
-            new = PyTreeDict()
-            for hp_name in top.keys():
-                new[hp_name] = top[hp_name] * (
-                    1+jax.random.uniform(
-                        key,
-                        minval=-self.config.perturb_factor[hp_name],
-                        maxval=self.config.perturb_factor[key])
-                )
-            #TODO: check deepcopy is necessary (does not change the original state)
-
-            new_wf_state = apply_lr_to_workflow_state(new, copy.deepcopy(top_wf_state))
-            return new, new_wf_state
-
-        # replace bottoms with random tops
-        tops_choice_indices = jax.random.choice(
-            exploit_key, tops_indices, (len(bottoms_indices),))
-
-        def _read(indices, pop):
-            return jtu.tree_map(lambda x: x[indices], pop)
-
-        def _write(indices, pop, new):
-            return jtu.tree_multimap(lambda x, y: x.at[indices].set(y), pop, new)
-
-        new_bottoms, new_bottoms_wf_state = jax.vmap(_exploit_and_explore)(
-            jax.random.split(explore_key, len(bottoms_indices)),
-            _read(tops_choice_indices, pop),
-            _read(tops_choice_indices, pop_workflow_state)
+        pop, pop_workflow_state = jax.lax.cond(
+            state.metrics.iterations+1 <= math.ceil(self.config.warmup_steps /
+                                                 self.config.per_iter_workflow_steps),
+            _dummy_fn,
+            _exploit_and_explore,
+            exploit_and_explore_key, pop_discount_returns, pop, pop_workflow_state
         )
-        pop = _write(bottoms_indices, pop, new_bottoms)
-        pop_workflow_state = _write(
-            bottoms_indices, pop_workflow_state, new_bottoms_wf_state)
 
         # ===== record metrics ======
-        pop_wf_metrics = [wf_state.metrics for wf_state in pop_workflow_state]
         workflow_metrics = state.metrics.replace(
-            sampled_timesteps=sum(
-                [m.sampled_timesteps for m in pop_wf_metrics]),
+            sampled_timesteps=jnp.sum(pop_workflow_state.metrics.sampled_timesteps),
             iterations=state.metrics.iterations + 1
         )
 
         train_metrics = TrainMetric(
-            pop_discount_returns=pop_discount_returns
+            pop_discount_returns=pop_eval_metrics.discount_returns,
+            pop_episode_lengths=pop_eval_metrics.episode_lengths
         )
 
         return train_metrics, state.update(
@@ -226,14 +216,99 @@ class PBTWorkflow(RLWorkflow):
         )
 
     def learn(self, state: State) -> State:
-        for _ in range(self.config.num_steps):
-            metrics, state = self.step(state)
-            self.recorder.record(metrics)
+        for i in range(self.config.num_iters):
+            train_metrics, state = self.step(state)
+            workflow_metrics = state.metrics
+            self.recorder.write(workflow_metrics.to_local_dict(), i)
+            self.recorder.write(train_metrics.to_local_dict(), i)
+
+            self.checkpoint_manager.save(
+                i,
+                args=ocp.args.StandardSave(state)
+            )
 
         return state
 
+    def evaluate(self, state: State) -> State:
+        # Tips: evaluation consumes every workflow_state's internal key
+        if self.config.parallel_eval:
+            pop_eval_metrics, pop_workflow_state = jax.vmap(
+                self.workflow.evaluate)(pop_workflow_state)
+        else:
+            pop_eval_metrics, pop_workflow_state = jax.lax.map(
+                self.workflow.evaluate, pop_workflow_state
+            )
 
-def apply_lr_to_workflow_state(lr, workflow_state):
-    opt_state = copy.deepcopy(workflow_state.opt_state)
-    opt_state.hyperparams['learning_rate'] = lr
+        eval_metrics = EvalMetric(
+            pop_discount_returns=pop_eval_metrics.discount_returns,
+            pop_episode_lengths=pop_eval_metrics.episode_lengths
+        )
+
+        return eval_metrics, state.update(pop_workflow_state=pop_workflow_state)
+
+
+def exploit_and_explore(config, key, pop_discount_returns, pop, pop_workflow_state):
+    bottoms_num = round(config.pop_size * config.bottom_ratio)
+    tops_num = round(config.pop_size * config.top_ratio)
+    indices = jnp.argsort(pop_discount_returns)
+    bottoms_indices = indices[:bottoms_num]
+    tops_indices = indices[-tops_num:]
+
+    key, exploit_key, explore_key = jax.random.split(key, 3)
+
+    def _exploit_and_explore_fn(key, top, top_wf_state):
+        new = PyTreeDict()
+        for hp_name in top.keys():
+            new[hp_name] = top[hp_name] * (
+                1+jax.random.uniform(
+                    key,
+                    minval=-config.perturb_factor[hp_name],
+                    maxval=config.perturb_factor[hp_name])
+            )
+        # TODO: check deepcopy is necessary (does not change the original state)
+
+        new_wf_state = apply_hyperparams_to_workflow_state(new, top_wf_state)
+        return new, new_wf_state
+
+    # replace bottoms with random tops
+    tops_choice_indices = jax.random.choice(
+        exploit_key, tops_indices, (len(bottoms_indices),))
+
+    def _read(indices, pop):
+        return jtu.tree_map(lambda x: x[indices], pop)
+
+    def _write(indices, pop, new):
+        return jtu.tree_map(lambda x, y: x.at[indices].set(y), pop, new)
+
+    new_bottoms, new_bottoms_wf_state = jax.vmap(_exploit_and_explore_fn)(
+        jax.random.split(explore_key, len(bottoms_indices)),
+        _read(tops_choice_indices, pop),
+        _read(tops_choice_indices, pop_workflow_state)
+    )
+    pop = _write(bottoms_indices, pop, new_bottoms)
+    pop_workflow_state = _write(
+        bottoms_indices, pop_workflow_state, new_bottoms_wf_state)
+
+    return pop, pop_workflow_state
+
+
+def apply_hyperparams_to_workflow_state(hyperparams: PyTreeDict[str, chex.Numeric], workflow_state: State):
+    """
+        Note1: InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
+        Note2: try to avoid deepcopy unnessary state
+    """
+    opt_state = workflow_state.opt_state
+    assert isinstance(opt_state, InjectStatefulHyperparamsState)
+
+    opt_state = deepcopy_InjectStatefulHyperparamsState(opt_state)
+    opt_state.hyperparams['learning_rate'] = hyperparams.lr
     return workflow_state.update(opt_state=opt_state)
+
+
+def deepcopy_InjectStatefulHyperparamsState(state: InjectStatefulHyperparamsState):
+    return InjectStatefulHyperparamsState(
+        count=state.count,
+        hyperparams=copy.deepcopy(state.hyperparams),
+        hyperparams_states=state.hyperparams_states,
+        inner_state=state.inner_state
+    )
