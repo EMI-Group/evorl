@@ -396,7 +396,12 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 rewards=dummy_reward,
                 next_obs=dummy_nest_obs,
                 dones=dummy_done,
-                extras=PyTreeDict(policy_extras=PyTreeDict(), env_extras=PyTreeDict()),
+                extras=PyTreeDict(
+                    policy_extras=PyTreeDict(),
+                    env_extras=PyTreeDict(
+                        {"last_obs": dummy_obs, "truncation": dummy_done}
+                    ),
+                ),
             )
             replay_buffer_state = replay_buffer.init(dummy_sample_batch)
 
@@ -489,7 +494,15 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 rewards=env_nstate.reward,
                 next_obs=env_nstate.obs,
                 dones=env_nstate.done,
-                extras=PyTreeDict(policy_extras=PyTreeDict(), env_extras=PyTreeDict()),
+                extras=PyTreeDict(
+                    policy_extras=PyTreeDict(),
+                    env_extras=PyTreeDict(
+                        {
+                            "last_obs": env_nstate.info.last_obs,
+                            "truncation": env_nstate.info.truncation,
+                        }
+                    ),
+                ),
             )
             # transition = jax.tree_util.tree_map(lambda x: jax.lax.collapse(x,0,2), transition)
             replay_buffer_state = self.replay_buffer.add(
@@ -522,11 +535,19 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 agent_state=state.agent_state,
                 key=rollout_key,
                 rollout_length=self.config.rollout_length,
-                env_extra_fields=("episode_return"),
+                env_extra_fields=(
+                    "last_obs",
+                    "truncation",
+                ),
             )
             trajectory = jax.tree_util.tree_map(
                 lambda x: jax.lax.collapse(x, 0, 2), trajectory
             )
+            mask = trajectory.extras.env_extras.truncation.astype(bool)
+            next_obs = jnp.where(
+                mask[:, None], trajectory.extras.env_extras.last_obs, trajectory.next_obs
+            )
+            trajectory = trajectory.replace(next_obs=next_obs)
             replay_buffer_state = self.replay_buffer.add(
                 state.replay_buffer_state, trajectory
             )
