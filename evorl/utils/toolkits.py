@@ -46,6 +46,7 @@ def compute_discount_return(
 
     return discount_return  # [B]
 
+
 def compute_discount_return_mod(
         rewards: chex.Array,  # [T, B]
         dones: chex.Array,  # [T, B]
@@ -172,16 +173,16 @@ def average_episode_discount_return(
     episode_discount_return: jax.Array,  # [T,B]
     dones: jax.Array,  # [T,B]
     pmap_axis_name: Optional[str] = None
-)-> jax.Array:
-    
+) -> jax.Array:
+
     cnt = dones.sum()
     episode_discount_return_sum = (episode_discount_return * dones).sum()
-    
+
     if pmap_axis_name is not None:
         episode_discount_return_sum = jax.lax.psum(
             episode_discount_return_sum, pmap_axis_name)
         cnt = jax.lax.psum(cnt, pmap_axis_name)
-    
+
     return jnp.where(
         jnp.isclose(cnt, 0),
         jnp.full_like(episode_discount_return_sum, MISSING_REWARD),

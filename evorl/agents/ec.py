@@ -1,10 +1,6 @@
 import jax
 import jax.numpy as jnp
 from flax import struct
-import math
-
-from omegaconf import DictConfig
-
 
 from evorl.sample_batch import SampleBatch
 from evorl.networks.linear import ActivationFn, MLP
@@ -14,16 +10,12 @@ from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.agents import AgentState
 from .agent import Agent, AgentState
 
-from evox import State
-# from evorl.types import State
-
 
 import chex
 from evorl.types import (
     LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field,
-    MISSING_REWARD
 )
-from evorl.metrics import TrainMetric, WorkflowMetric
+
 from typing import Tuple, Sequence, Optional, Any
 import logging
 import flax.linen as nn
@@ -50,7 +42,7 @@ def make_policy_network(
         kernel_init=jax.nn.initializers.lecun_uniform(),
         norm_layer=nn.LayerNorm)
 
-    def init_fn(rng): return policy_model.init(rng, jnp.ones((1, obs_size,)))
+    def init_fn(rng): return policy_model.init(rng, jnp.zeros((1, obs_size)))
 
     return policy_model, init_fn
 

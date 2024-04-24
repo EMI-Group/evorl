@@ -29,7 +29,7 @@ dependencies:
     - optax
     - distrax
     - orbax-checkpoint
-    - evox == 0.7.1
+    - evox == 0.8.1
     - jumanji
     - pgx
     - jaxmarl

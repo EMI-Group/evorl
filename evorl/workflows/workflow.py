@@ -2,13 +2,11 @@ import jax
 import chex
 from evox import Stateful, State
 
-from evox.core.module import MetaStatefulModule
-
 from typing import Any, Tuple, Union
 
 from abc import ABC, abstractmethod
 
-
+# TODO: remove it when evox is updated
 class Workflow(ABC):
     """
         A duck-type of evox.Workflow

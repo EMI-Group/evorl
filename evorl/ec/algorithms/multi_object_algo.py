@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from evox import Algorithm
+from evox import Algorithm, State
 from evorl.agents import Agent
 from evorl.utils.ec_utils import ParamVectorSpec
 
@@ -16,6 +16,7 @@ class MOAlgorithmWrapper(Algorithm):
         self.param_vec_spec = param_vec_spec
 
     def setup(self, key):
+        #TODO: fix duplicate state in here and in child 'algo'
         state = self.algo.setup(key)
         return state
 

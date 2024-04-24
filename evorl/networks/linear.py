@@ -46,13 +46,12 @@ class MLP(nn.Module):
                 hidden_size,
                 name=f'hidden_{i}',
                 kernel_init=self.kernel_init,
-                use_bias=self.bias)(
-                    hidden)
+                use_bias=self.bias)(hidden)
 
             if i != len(self.layer_sizes) - 1 or self.activate_final:
                 if self.norm_layer is not None:
                     hidden = self.norm_layer()(hidden)
-                    
+
                 hidden = self.activation(hidden)
         return hidden
 
@@ -73,8 +72,8 @@ class SNMLP(nn.Module):
                 hidden_size,
                 name=f'hidden_{i}',
                 kernel_init=self.kernel_init,
-                use_bias=self.bias)(
-                    hidden)
+                use_bias=self.bias)(hidden)
+            
             if i != len(self.layer_sizes) - 1 or self.activate_final:
                 hidden = self.activation(hidden)
         return hidden
@@ -112,7 +111,7 @@ def make_policy_network(
         activation=activation,
         kernel_init=jax.nn.initializers.lecun_uniform())
 
-    def init_fn(rng): return policy_model.init(rng, jnp.ones((1, obs_size,)))
+    def init_fn(rng): return policy_model.init(rng, jnp.zeros((1, obs_size)))
 
     return policy_model, init_fn
 
@@ -127,7 +126,7 @@ def make_value_network(
         activation=activation,
         kernel_init=jax.nn.initializers.lecun_uniform())
 
-    def init_fn(rng): return value_model.init(rng, jnp.ones((1, obs_size,)))
+    def init_fn(rng): return value_model.init(rng, jnp.zeros((1, obs_size)))
 
     return value_model, init_fn
 

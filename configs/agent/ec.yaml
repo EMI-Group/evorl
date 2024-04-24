@@ -1,0 +1,14 @@
+# @package _global_
+
+pop_size: 1000
+num_iters: 1000
+
+parallel_envs: 5
+eval_episodes: 5
+
+metric_names: ['reward_forward', 'reward_ctrl']
+
+agent_network:
+  actor_hidden_layer_sizes: [] # linear network
+  lb: -10
+  ub: 10

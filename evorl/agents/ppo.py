@@ -427,7 +427,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             raw_loss_dict=loss_dict
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        return train_metrics, state.update(
+        return train_metrics, state.replace(
             key=key,
             metrics=workflow_metrics,
             agent_state=agent_state,

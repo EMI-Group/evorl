@@ -5,7 +5,6 @@ from omegaconf import DictConfig, OmegaConf
 import chex
 import copy
 
-from .workflow import Workflow
 from evorl.recorders import Recorder, ChainRecorder, WandbRecorder, LogRecorder
 from evorl.agents import Agent
 from evorl.envs import Env
@@ -17,12 +16,13 @@ from typing import Any, Callable, Sequence, Optional, Tuple
 from typing_extensions import (
     Self  # pytype: disable=not-supported-yet
 )
+
 from evox import State
+from .workflow import Workflow
 # from evorl.types import State
 
 import orbax.checkpoint as ocp
 
-from pathlib import Path
 
 import logging
 

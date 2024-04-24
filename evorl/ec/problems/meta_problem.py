@@ -86,7 +86,7 @@ class MetaProblem(AbstractMetaProblem):
         num_evaluated_workflows = state.num_evaluated_workflows + \
             pop_size*self.num_meta_evals
         
-        state = state.update(
+        state = state.replace(
             key=key, num_evaluated_workflows=num_evaluated_workflows)
 
         # Note: we drop the workflow_state.
@@ -138,7 +138,7 @@ class MetaProblem(AbstractMetaProblem):
             # report the last train_metrics
             train_metrics = jtu.tree_map(lambda x: x[-1], train_metrics)
 
-            eval_metrics = self.workflow.evaluate(wf_state)
+            eval_metrics, wf_state = self.workflow.evaluate(wf_state)
 
             return wf_state, (train_metrics, eval_metrics)
 

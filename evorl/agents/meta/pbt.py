@@ -208,7 +208,7 @@ class PBTWorkflow(RLWorkflow):
             pop_episode_lengths=pop_eval_metrics.episode_lengths
         )
 
-        return train_metrics, state.update(
+        return train_metrics, state.replace(
             key=key,
             metrics=workflow_metrics,
             pop=pop,
@@ -244,7 +244,7 @@ class PBTWorkflow(RLWorkflow):
             pop_episode_lengths=pop_eval_metrics.episode_lengths
         )
 
-        return eval_metrics, state.update(pop_workflow_state=pop_workflow_state)
+        return eval_metrics, state.replace(pop_workflow_state=pop_workflow_state)
 
 
 def exploit_and_explore(config, key, pop_discount_returns, pop, pop_workflow_state):
@@ -302,7 +302,7 @@ def apply_hyperparams_to_workflow_state(hyperparams: PyTreeDict[str, chex.Numeri
 
     opt_state = deepcopy_InjectStatefulHyperparamsState(opt_state)
     opt_state.hyperparams['learning_rate'] = hyperparams.lr
-    return workflow_state.update(opt_state=opt_state)
+    return workflow_state.replace(opt_state=opt_state)
 
 
 def deepcopy_InjectStatefulHyperparamsState(state: InjectStatefulHyperparamsState):

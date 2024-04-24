@@ -5,7 +5,6 @@ from jax.tree_util import tree_map
 from flax import struct
 import chex
 
-from collections import OrderedDict
 from typing import (
     Any, Mapping, Union, Dict, Optional, Sequence,
     Protocol
@@ -231,6 +230,7 @@ jax.tree_util.register_pytree_node(
     lambda keys, values: PyTreeDict(dict(safe_zip(keys, values)))
 )
 
+State = PyTreeDict
 
 class EnvLike(Protocol):
     def reset(self, *args, **kwargs) -> Any:
