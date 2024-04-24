@@ -215,7 +215,7 @@ class TD3Agent(Agent):
 
         # in DDPG, we use the target network to compute the target value and in cleanrl, the lose is MSE loss
         # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
-        q_loss = ((qs - target_qs) ** 2).mean(axis=1).sum()
+        q_loss = ((qs - target_qs) ** 2).mean(axis=-1).sum()
 
         return dict(critic_loss=q_loss)
 
