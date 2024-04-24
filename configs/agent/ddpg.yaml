@@ -2,12 +2,12 @@
 
 workflow_cls: evorl.agents.ddpg.DDPGWorkflow
 
-num_envs: 1
+num_envs: 10
 normalize_obs: false
 rollout_length: 1
 discount: 0.99
 exploration_epsilon: 0.1
-total_timesteps: 97800 #97800
+total_timesteps: 1000000 
 
 num_eval_envs: 10
 eval_interval: 101
@@ -16,7 +16,7 @@ eval_episodes: 20 # should be divided by num_eval_envs
 critor_update_interval: 1
 actor_update_interval: 2
 tau: 0.005
-learning_starts: 25 # steps before training starts 25000
+learning_starts: 25000 # steps before training starts 25000
 load: false
 load_path: ./outputs/train/2024-04-12_09-27-58
 
@@ -25,7 +25,7 @@ optimizer:
   grad_clip_norm: 10.0 # set 0 or none to turn-off
 
 replay_buffer:
-  capacity: 2000000
+  capacity: 1000000
   min_size: 300
   sample_batch_size: 256
 
