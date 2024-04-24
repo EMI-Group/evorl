@@ -506,7 +506,14 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                     ),
                 ),
             )
-            # transition = jax.tree_util.tree_map(lambda x: jax.lax.collapse(x,0,2), transition)
+            mask = trajectory.extras.env_extras.truncation.astype(bool)
+            next_obs = jnp.where(
+                mask[:, None],
+                trajectory.extras.env_extras.last_obs,
+                trajectory.next_obs,
+            )
+            trajectory = trajectory.replace(next_obs=next_obs)
+            
             replay_buffer_state = self.replay_buffer.add(
                 replay_buffer_state, trajectory
             )

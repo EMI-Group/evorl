@@ -179,26 +179,25 @@ class TD3Agent(Agent):
                 next_obs, agent_state.obs_preprocessor_state
             )
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
-            jax.debug.print("into normalize")
 
-        next_action = self.actor_network.apply(
+        next_actions = self.actor_network.apply(
             agent_state.params.target_actor_params, next_obs
         )
 
         # random noise
         noise = jnp.clip(
-            jax.random.normal(key, next_action.shape) * self.policy_noise,
+            jax.random.normal(key, next_actions.shape) * self.policy_noise,
             -self.policy_noise_clip,
             self.policy_noise_clip,
         ) * (self.action_space.high - self.action_space.low)
 
-        next_action = jnp.clip(
-            next_action + noise, self.action_space.low, self.action_space.high
+        next_actions = jnp.clip(
+            next_actions + noise, self.action_space.low, self.action_space.high
         )
 
-        input_data = jnp.concatenate([obs, next_action], axis=-1)
+        next_data = jnp.concatenate([next_obs, next_actions], axis=-1)
         q_net_batch_apply = jax.vmap(
-            lambda x: self.critic_network.apply(x, input_data), in_axes=0
+            lambda x: self.critic_network.apply(x, next_data), in_axes=0
         )
         next_qs = q_net_batch_apply(agent_state.params.target_critic_params).squeeze(-1)
 
@@ -251,7 +250,7 @@ class TD3Agent(Agent):
         actor_loss = -jnp.mean(
             self.critic_network.apply(
                 q0_params, jnp.concatenate([obs, gen_actions], axis=-1)
-            )
+            ).squeeze(-1)
         )
         return dict(actor_loss=actor_loss)
 
@@ -504,7 +503,14 @@ class TD3Workflow(OffPolicyRLWorkflow):
                     ),
                 ),
             )
-            # transition = jax.tree_util.tree_map(lambda x: jax.lax.collapse(x,0,2), transition)
+            mask = trajectory.extras.env_extras.truncation.astype(bool)
+            next_obs = jnp.where(
+                mask[:, None],
+                trajectory.extras.env_extras.last_obs,
+                trajectory.next_obs,
+            )
+            trajectory = trajectory.replace(next_obs=next_obs)
+            
             replay_buffer_state = self.replay_buffer.add(
                 replay_buffer_state, trajectory
             )
