@@ -1,10 +1,11 @@
 import chex
 from ..space import Box
 from ..env import Env, EnvState
+from .wrapper import Wrapper
 from evorl.types import Action
 
 
-class ActionSquashWrapper(Env):
+class ActionSquashWrapper(Wrapper):
     """
         Convert continuous action space from [-1, 1] to [low, high]
     """

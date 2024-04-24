@@ -1,0 +1,23 @@
+# @package _global_
+
+defaults:
+  - /agent/ppo
+  - _self_
+
+num_envs: 16
+rollout_length: 32
+
+minibatch_size: 128
+
+total_timesteps: 150000
+
+eval_interval: 10
+
+optimizer:
+  lr: 0.0005
+  grad_clip_norm: 0.5
+
+agent_network:
+  continuous_action: false
+  actor_hidden_layer_sizes: [64, 64]
+  critic_hidden_layer_sizes: [64, 64]

@@ -49,10 +49,11 @@ def test_rollout():
 
 
 def test_rollout_episode():
-    env = create_brax_env(
+    env = create_env(
         'ant',
+        'brax',
         parallel=6,
-        autoreset=False
+        autoreset=True
     )
 
     agent= RandomAgent(

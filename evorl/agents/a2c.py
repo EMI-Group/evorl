@@ -314,6 +314,12 @@ class A2CWorkflow(OnPolicyRLWorkflow):
                 )
             )
 
+        train_episode_return = average_episode_discount_return(
+            trajectory.extras.env_extras.episode_return,
+            trajectory.dones,
+            pmap_axis_name=self.pmap_axis_name
+        )
+
         # ======== compute GAE =======
         last_obs = trajectory.extras.env_extras.last_obs
         v_obs = jnp.concatenate(
@@ -364,12 +370,6 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
         sampled_timesteps = psum(self.config.rollout_length * self.config.num_envs,
                                   axis_name=self.pmap_axis_name)
-                             
-        train_episode_return = average_episode_discount_return(
-            trajectory.extras.env_extras.episode_return,
-            trajectory.dones,
-            pmap_axis_name=self.pmap_axis_name
-        )
 
         workflow_metrics = WorkflowMetric(
             sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,

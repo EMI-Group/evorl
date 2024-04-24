@@ -25,6 +25,8 @@
             "args": [
                 "agent=ppo",
                 "env=brax/ant",
+                // "agent=exp/ppo/acrobat",
+                // "env=gymnax/Acrobot-v1",
                 "debug=true",
                 "checkpoint.enable=false"
                 // "hydra.verbose=true",
