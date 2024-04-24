@@ -177,11 +177,12 @@ class DDPGAgent(Agent):
             )
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        # ======= critic =======
-        actor = self.actor_network.apply(agent_state.params.target_actor_params, obs)
+        next_action = self.actor_network.apply(
+            agent_state.params.target_actor_params, next_obs
+        )
 
         next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, actor
+            agent_state.params.target_critic_params, next_obs, next_action
         ).squeeze(-1)
 
         target_qs = (
@@ -255,11 +256,12 @@ class DDPGAgent(Agent):
             )
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        # ======= critic =======
-        actor = self.actor_network.apply(agent_state.params.target_actor_params, obs)
+        next_action = self.actor_network.apply(
+            agent_state.params.target_actor_params, next_obs
+        )
 
         next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, actor
+            agent_state.params.target_critic_params, next_obs, next_action
         ).squeeze(-1)
 
         target_qs = (
@@ -611,12 +613,13 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 )
 
             def update_both(agent_state):
+                learn_key1, learn_key2 = jax.random.split(learn_key, num=2)
                 (critic_loss, critic_loss_dict), critic_opt_state, agent_state = (
                     critic_gradient_update(
                         state.critic_opt_state,
                         agent_state,
                         sampled_batch.experience,
-                        learn_key,
+                        learn_key1,
                     )
                 )
 
@@ -625,7 +628,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                         state.actor_opt_state,
                         agent_state,
                         sampled_batch.experience,
-                        learn_key,
+                        learn_key2,
                     )
                 )
 

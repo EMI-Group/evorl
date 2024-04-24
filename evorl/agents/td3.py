@@ -179,20 +179,22 @@ class TD3Agent(Agent):
                 next_obs, agent_state.obs_preprocessor_state
             )
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
+            jax.debug.print("into normalize")
 
-        # ======= critic =======
-        next_action = self.actor_network.apply(
-            agent_state.params.target_actor_params, obs
-        )
-        # add random noise
+        # random noise
         noise = jnp.clip(
             jax.random.normal(key, next_action.shape) * self.policy_noise,
             -self.policy_noise_clip,
             self.policy_noise_clip,
         ) * (self.action_space.high - self.action_space.low)
+
+        next_action = self.actor_network.apply(
+            agent_state.params.target_actor_params, next_obs
+        )
         next_action = jnp.clip(
             next_action + noise, self.action_space.low, self.action_space.high
         )
+
         input_data = jnp.concatenate([obs, next_action], axis=-1)
         q_net_batch_apply = jax.vmap(
             lambda x: self.critic_network.apply(x, input_data), in_axes=0
@@ -276,11 +278,12 @@ class TD3Agent(Agent):
             )
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        # ======= critic =======
-        actor = self.actor_network.apply(agent_state.params.target_actor_params, obs)
+        next_action = self.actor_network.apply(
+            agent_state.params.target_actor_params, next_obs
+        )
 
         next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, actor
+            agent_state.params.target_critic_params, next_obs, next_action
         )
         min_next_q = jnp.min(next_qs, axis=0)
 
@@ -630,12 +633,13 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 )
 
             def update_both(agent_state):
+                learn_key1, learn_key2 = jax.random.split(learn_key, num=2)
                 (critic_loss, critic_loss_dict), critic_opt_state, agent_state = (
                     critic_gradient_update(
                         state.critic_opt_state,
                         agent_state,
                         sampled_batch.experience,
-                        learn_key,
+                        learn_key1,
                     )
                 )
 
@@ -644,7 +648,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
                         state.actor_opt_state,
                         agent_state,
                         sampled_batch.experience,
-                        learn_key,
+                        learn_key2,
                     )
                 )
 
@@ -846,7 +850,7 @@ def make_critic_networks(
     action_size: int,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
-    n_critics: int = 2,
+    n_critics: int = 2, # abandon
 ) -> nn.Module:
     network = MLP(
         layer_sizes=list(hidden_layer_sizes) + [1],
