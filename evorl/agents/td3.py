@@ -181,6 +181,10 @@ class TD3Agent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
             jax.debug.print("into normalize")
 
+        next_action = self.actor_network.apply(
+            agent_state.params.target_actor_params, next_obs
+        )
+
         # random noise
         noise = jnp.clip(
             jax.random.normal(key, next_action.shape) * self.policy_noise,
@@ -188,9 +192,6 @@ class TD3Agent(Agent):
             self.policy_noise_clip,
         ) * (self.action_space.high - self.action_space.low)
 
-        next_action = self.actor_network.apply(
-            agent_state.params.target_actor_params, next_obs
-        )
         next_action = jnp.clip(
             next_action + noise, self.action_space.low, self.action_space.high
         )
@@ -272,33 +273,7 @@ class TD3Agent(Agent):
         obs = sample_batch.obs
         actions = sample_batch.actions
 
-        if self.normalize_obs:
-            next_obs = self.obs_preprocessor(
-                next_obs, agent_state.obs_preprocessor_state
-            )
-            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
-
-        next_action = self.actor_network.apply(
-            agent_state.params.target_actor_params, next_obs
-        )
-
-        next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, next_action
-        )
-        min_next_q = jnp.min(next_qs, axis=0)
-
-        target_qs = (
-            sample_batch.rewards + self.discount * (1 - sample_batch.dones) * min_next_q
-        )
-        target_qs = jax.lax.stop_gradient(target_qs)
-
-        qs = self.critic_network.apply(
-            agent_state.params.critic_params, obs, actions
-        ).squeeze(-1)
-
-        # in DDPG, we use the target network to compute the target value and in cleanrl, the lose is MSE loss
-        # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
-        q_loss = ((qs - target_qs) ** 2).mean()
+        q_loss = self.cirtic_loss(agent_state, sample_batch, key)["critic_loss"]
 
         # ====== actor =======
 
