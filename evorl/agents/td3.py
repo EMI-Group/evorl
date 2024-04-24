@@ -378,7 +378,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
         optimizer = optax.adam(learning_rate=config.optimizer.lr)
 
         replay_buffer = flashbax.make_item_buffer(
-            max_length=config.replay_buffer.capacity//jax.device_count(),
+            max_length=config.replay_buffer.capacity // jax.device_count(),
             min_length=config.replay_buffer.min_size,
             sample_batch_size=config.replay_buffer.sample_batch_size,
             add_batches=True,
@@ -399,7 +399,12 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 rewards=dummy_reward,
                 next_obs=dummy_nest_obs,
                 dones=dummy_done,
-                extras=PyTreeDict(policy_extras=PyTreeDict(), env_extras=PyTreeDict({"last_obs":dummy_last_obs,  "truncation":dummy_done})),
+                extras=PyTreeDict(
+                    policy_extras=PyTreeDict(),
+                    env_extras=PyTreeDict(
+                        {"last_obs": dummy_last_obs, "truncation": dummy_done}
+                    ),
+                ),
             )
             replay_buffer_state = replay_buffer.init(dummy_sample_batch)
 
@@ -441,7 +446,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 workflow_metrics,
                 agent_state,
                 critic_opt_state,
-                actor_opt_state, 
+                actor_opt_state,
             ) = jax.device_put_replicated(
                 (
                     workflow_metrics,
@@ -510,7 +515,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 trajectory.next_obs,
             )
             trajectory = trajectory.replace(next_obs=next_obs)
-            
+
             replay_buffer_state = self.replay_buffer.add(
                 replay_buffer_state, trajectory
             )
@@ -553,14 +558,19 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 agent_state=state.agent_state,
                 key=rollout_key,
                 rollout_length=self.config.rollout_length,
-                env_extra_fields=("last_obs", "truncation",),
+                env_extra_fields=(
+                    "last_obs",
+                    "truncation",
+                ),
             )
             trajectory = jax.tree_util.tree_map(
                 lambda x: jax.lax.collapse(x, 0, 2), trajectory
             )
             mask = trajectory.extras.env_extras.truncation.astype(bool)
             next_obs = jnp.where(
-                mask[:, None], trajectory.extras.env_extras.last_obs, trajectory.next_obs
+                mask[:, None],
+                trajectory.extras.env_extras.last_obs,
+                trajectory.next_obs,
             )
             trajectory = trajectory.replace(next_obs=next_obs)
             replay_buffer_state = self.replay_buffer.add(
@@ -840,7 +850,7 @@ def make_critic_networks(
     action_size: int,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
-    n_critics: int = 2, # abandon
+    n_critics: int = 2,  # abandon
 ) -> nn.Module:
     network = MLP(
         layer_sizes=list(hidden_layer_sizes) + [1],

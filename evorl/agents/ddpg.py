@@ -513,7 +513,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 trajectory.next_obs,
             )
             trajectory = trajectory.replace(next_obs=next_obs)
-            
+
             replay_buffer_state = self.replay_buffer.add(
                 replay_buffer_state, trajectory
             )
@@ -566,7 +566,9 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             )
             mask = trajectory.extras.env_extras.truncation.astype(bool)
             next_obs = jnp.where(
-                mask[:, None], trajectory.extras.env_extras.last_obs, trajectory.next_obs
+                mask[:, None],
+                trajectory.extras.env_extras.last_obs,
+                trajectory.next_obs,
             )
             trajectory = trajectory.replace(next_obs=next_obs)
             replay_buffer_state = self.replay_buffer.add(
@@ -750,10 +752,10 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                     args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
                 )
         # not completed
-        else:  
+        else:
             ckpt_path = self.config.load_path + "/checkpoints"
             logger.info(f"Set loadiong checkpoint path: {ckpt_path}")
-            state = load(path=ckpt_path, state=state)        
+            state = load(path=ckpt_path, state=state)
 
         logger.info("finish!")
         return state
