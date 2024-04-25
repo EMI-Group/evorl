@@ -4,7 +4,9 @@ from flax import struct
 from .space import Space
 from evorl.types import PyTreeDict, EnvLike, EnvInternalState, Action, Observation, Reward, Done, pytree_field
 from typing import Tuple
-
+from typing_extensions import (
+    Self  # pytype: disable=not-supported-yet
+)
 from abc import ABC, abstractmethod
 
 
@@ -12,14 +14,16 @@ from abc import ABC, abstractmethod
 class EnvState:
     """
     Include all the information needed to represent the state of the environment.
-    
+
     """
     env_state: EnvInternalState
     obs: Observation
     reward: Reward
     done: Done
-    info: PyTreeDict = pytree_field(default_factory=PyTreeDict) # info from env
-    extra: PyTreeDict = pytree_field(default_factory=PyTreeDict) # extra info for interal use
+    info: PyTreeDict = pytree_field(
+        default_factory=PyTreeDict)  # info from env
+    extra: PyTreeDict = pytree_field(
+        default_factory=PyTreeDict)  # extra info for interal use
 
 
 class Env(ABC):
@@ -56,3 +60,7 @@ class EnvAdapter(Env):
 
     def __init__(self, env: EnvLike):
         self.env = env
+
+    @property
+    def unwrapped(self) -> EnvLike:
+        return self.env

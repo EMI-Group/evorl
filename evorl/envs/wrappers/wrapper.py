@@ -29,7 +29,10 @@ class Wrapper(Env):
 
     @property
     def unwrapped(self) -> Env:
-        return self.env.unwrapped
+        if hasattr(self.env, 'unwrapped'):
+            return self.env.unwrapped
+        else:
+            return self.env
 
     def __getattr__(self, name):
         if name == '__setstate__':

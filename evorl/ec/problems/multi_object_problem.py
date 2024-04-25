@@ -42,6 +42,7 @@ class MultiObjectiveBraxProblem(Problem):
                 metric_names: names of the metrics to record as objectives.
                     By default, only original reward is recorded.
                 flatten_objectives: whether to flatten the objectives.
+                reduce_fn: function or function list to reduce each objective over episodes.
         """
         self.agent = agent
         self.env = env
@@ -96,6 +97,7 @@ class MultiObjectiveBraxProblem(Problem):
             objectives = PyTreeDict()
             for name in self.metric_names:
                 if 'reward' in name:
+                    # For metrics like 'reward_forward' and 'reward_ctrl'
                     objectives[name] = compute_discount_return(
                         episode_trajectory.rewards[name],
                         episode_trajectory.dones,
@@ -130,7 +132,7 @@ class MultiObjectiveBraxProblem(Problem):
             # by default, we use the mean value over different episodes.
             objectives = jnp.stack(list(objectives.values()), axis=-1)
 
-        return objectives, state.update(key=key)
+        return objectives, state.replace(key=key)
 
 
 def eval_env_step(

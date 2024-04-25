@@ -1,0 +1,24 @@
+# @package _global_
+
+defaults:
+  - /agent/ppo
+  - _self_
+
+num_envs: 64
+rollout_length: 128
+discount: 0.999
+
+minibatch_size: 1024
+
+total_timesteps: 10000000
+
+num_eval_envs: 32
+eval_episodes: 32
+eval_interval: 50
+
+optimizer:
+  lr: 0.0005
+  grad_clip_norm: 0.5
+
+agent_network:
+  continuous_action: false

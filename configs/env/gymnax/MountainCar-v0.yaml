@@ -1,0 +1,3 @@
+env_name: MountainCar-v0
+env_type: gymnax
+max_episode_steps: 200

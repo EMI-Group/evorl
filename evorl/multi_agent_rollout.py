@@ -1,22 +1,24 @@
 import jax
 import chex
 from typing import (
-    Tuple, Sequence, Mapping
+    Tuple, Sequence, Mapping, Callable, Optional
 )
 from evorl.agents import Agent, AgentState
 from evorl.types import (
     PyTreeDict, AgentID
 )
 from evorl.sample_batch import SampleBatch, Episode
-from evorl.envs import Env, EnvState
-from evorl.utils.ma_utils import batchify, unbatchify, multi_agent_episode_done
+from evorl.envs import MultiAgentEnv, EnvState
+from evorl.utils.ma_utils import unbatchify, batchify
 from functools import partial
 
 # TODO: add RNN Policy support
 
 # Decentralized Execution
+
+
 def decentralized_env_step(
-    env: Env,
+    env: MultiAgentEnv,
     agents: Mapping[AgentID, Agent],
     env_state: EnvState,
     agent_states: Mapping[AgentID, AgentState],  # readonly
@@ -37,11 +39,10 @@ def decentralized_env_step(
     # assume agents have different models, non-parallel
     for (agent_id, agent), env_key in zip(agents.items(), env_keys):
         agent_sample_batch = SampleBatch(
-            obs = sample_batch.obs[agent_id]
+            obs=sample_batch.obs[agent_id]
         )
         actions[agent_id], policy_extras[agent_id] = agent.compute_actions(
             agent_states[agent_id], agent_sample_batch, env_key)
-        
 
     env_nstate = env.step(env_state, actions)
 
@@ -64,7 +65,7 @@ def decentralized_env_step(
 
 
 def decentralized_rollout(
-    env: Env,
+    env: MultiAgentEnv,
     agents: Mapping[AgentID, Agent],
     env_state: EnvState,
     agent_states: Mapping[AgentID, AgentState],  # readonly
@@ -115,33 +116,29 @@ def decentralized_rollout(
     return env_state, trajectory
 
 
-def centralized_env_step(
-    env: Env,
-    agent: Mapping[AgentID, Agent],
+def decentralized_env_step_with_shared_model(
+    env: MultiAgentEnv,
+    agent: Agent,
     env_state: EnvState,
-    agent_state: Mapping[AgentID, AgentState],  # readonly
+    agent_state: AgentState,  # readonly
     sample_batch: SampleBatch,
     key: chex.PRNGKey,
+    obs_batchify_fn: Callable[[jax.Array], Mapping[AgentID, jax.Array]],
+    action_unbatchify_fn: Callable[[jax.Array], Mapping[AgentID, jax.Array]],
     env_extra_fields: Sequence[str] = (),
 ) -> Tuple[EnvState, SampleBatch]:
     """
         Collect one-step data.
     """
+    obs = obs_batchify_fn(sample_batch.obs)
 
-    num_agents = len(agents)
-    env_keys = jax.random.split(key, num_agents)
+    batched_actions, policy_extras = agent.compute_actions(
+        agent_state, SampleBatch(obs=obs), key)
+    actions = action_unbatchify_fn(batched_actions)
 
-    actions = {}
-    policy_extras = {}
+    env_nstate = env.step(env_state, actions)
 
-    # assume agents have different models, non-parallel
-    for (agent_id, agent), env_key in zip(agents.items(), env_keys):
-        agent_sample_batch = SampleBatch(
-            obs = sample_batch.obs[agent_id]
-        )
-        actions[agent_id], policy_extras[agent_id] = agent.compute_actions(
-            agent_states[agent_id], agent_sample_batch, env_key)
-        
+    # policy_extras = unbatchify(policy_extras, env.agents)
 
     env_nstate = env.step(env_state, actions)
 
@@ -163,19 +160,21 @@ def centralized_env_step(
     return env_nstate, transition
 
 
-def centralized_rollout(
-    env: Env,
-    agents: Mapping[AgentID, Agent],
+def decentralized_rollout_with_shared_model(
+    env: MultiAgentEnv,
+    agent: Agent,
     env_state: EnvState,
-    agent_states: Mapping[AgentID, AgentState],  # readonly
+    agent_state: AgentState,  # readonly
     key: chex.PRNGKey,
     rollout_length: int,
-    padding: bool = False,
+    obs_batchify_fn: Optional[Callable[[jax.Array],
+                                       Mapping[AgentID, jax.Array]]] = None,
+    action_unbatchify_fn: Optional[Callable[[jax.Array],
+                                            Mapping[AgentID, jax.Array]]] = None,
     env_extra_fields: Sequence[str] = ()
 ) -> Tuple[EnvState, SampleBatch]:
     """
-        Collect given rollout_length trajectory.
-        Tips: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
+        Centrialized Execution: Collect given rollout_length trajectory.
 
         Args:
             env: vmapped env w/ autoreset
@@ -184,6 +183,11 @@ def centralized_rollout(
             env_state: last env_state after rollout
             trajectory: SampleBatch [T, B, ...], T=rollout_length, B=#envs
     """
+    if obs_batchify_fn is None:
+        obs_batchify_fn = partial(batchify, agent_list=env.agents)
+
+    if action_unbatchify_fn is None:
+        action_unbatchify_fn = partial(unbatchify, agent_list=env.agents)
 
     def _one_step_rollout(carry, unused_t):
         """
@@ -199,10 +203,12 @@ def centralized_rollout(
         )
 
         # transition: [#envs, ...]
-        env_nstate, transition = decentralized_env_step(
-            env, agents,
-            env_state, agent_states,
-            sample_batch, current_key, env_extra_fields
+        env_nstate, transition = decentralized_env_step_with_shared_model(
+            env, agent,
+            env_state, agent_state,
+            sample_batch, current_key,
+            obs_batchify_fn, action_unbatchify_fn,
+            env_extra_fields
         )
 
         return (env_nstate, next_key), transition

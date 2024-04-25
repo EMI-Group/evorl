@@ -2,13 +2,12 @@
 
 import jax
 from jax import numpy as jnp
-from flax import struct
 
 from evorl.utils.jax_utils import vmap_rng_split
 from ..env import Env, EnvState
 from .wrapper import Wrapper
 import chex
-from typing import Tuple
+
 
 class EpisodeWrapper(Wrapper):
     """Maintains episode step count and sets done at episode end.
@@ -47,13 +46,15 @@ class EpisodeWrapper(Wrapper):
         return self._step(state, action)
 
     def _step(self, state: EnvState, action: jax.Array) -> EnvState:
-        state = self.env.step(state, action)
+        prev_done = state.done
+        steps = state.info.steps * (1-prev_done).astype(jnp.int32) +1
 
         if self.record_episode_return:
             # reset the episode_return when the episode is done
-            episode_return = state.info.episode_return * (1-state.done)
+            episode_return = state.info.episode_return * (1-prev_done)
 
-        steps = state.info.steps * (1-state.done).astype(jnp.int32) + 1
+        state = self.env.step(state, action)
+
         done = jnp.where(
             steps >= self.episode_length,
             jnp.ones_like(state.done),
@@ -72,8 +73,10 @@ class EpisodeWrapper(Wrapper):
         state.info.last_obs = state.obs
 
         if self.record_episode_return:
-            # only change the episode_return when the episode is done
-            episode_return += jnp.power(self.discount, steps-1)*state.reward
+            if self.discount == 1.0: # a shortcut for discount=1.0
+                episode_return += state.reward
+            else:
+                episode_return += jnp.power(self.discount, steps-1)*state.reward
             state.info.episode_return = episode_return
 
         return state.replace(done=done)

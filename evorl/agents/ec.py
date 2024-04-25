@@ -1,39 +1,21 @@
 import jax
 import jax.numpy as jnp
 from flax import struct
-import math
-
-from omegaconf import DictConfig
-
 
 from evorl.sample_batch import SampleBatch
-from evorl.networks import make_policy_network, make_value_network
+from evorl.networks.linear import ActivationFn, MLP
 from evorl.utils import running_statistics
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.utils.jax_utils import tree_stop_gradient
-from evorl.utils.toolkits import (
-    compute_gae, flatten_rollout_trajectory,
-    average_episode_discount_return
-)
-from evorl.workflows import OnPolicyRLWorkflow
+
 from evorl.agents import AgentState
-from evorl.distributed import agent_gradient_update, tree_unpmap, psum
-from evorl.envs import create_env, Env, EnvState
-from evorl.evaluator import Evaluator
 from .agent import Agent, AgentState
 
-from evox import State
-# from evorl.types import State
 
-
-import orbax.checkpoint as ocp
 import chex
-import optax
 from evorl.types import (
     LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field,
-    MISSING_REWARD
 )
-from evorl.metrics import TrainMetric, WorkflowMetric
+
 from typing import Tuple, Sequence, Optional, Any
 import logging
 import flax.linen as nn
@@ -46,6 +28,23 @@ logger = logging.getLogger(__name__)
 class ECNetworkParams:
     """Contains training state for the learner."""
     policy_params: Params
+
+
+def make_policy_network(
+        action_size: int,
+        obs_size: int,
+        hidden_layer_sizes: Sequence[int] = (256, 256),
+        activation: ActivationFn = nn.relu) -> nn.Module:
+    """Creates a policy network w/ LayerNorm."""
+    policy_model = MLP(
+        layer_sizes=list(hidden_layer_sizes) + [action_size],
+        activation=activation,
+        kernel_init=jax.nn.initializers.lecun_uniform(),
+        norm_layer=nn.LayerNorm)
+
+    def init_fn(rng): return policy_model.init(rng, jnp.zeros((1, obs_size)))
+
+    return policy_model, init_fn
 
 
 class StochasticECAgent(Agent):

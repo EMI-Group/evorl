@@ -62,7 +62,7 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        key, step_key = jax.random.split(state.info.step_key)
+        key, step_key = jax.random.split(state.extra.step_key)
 
         # call step_env() instead of step() to disable autoreset
         # we handle the autoreset at AutoResetWrapper
@@ -139,6 +139,23 @@ ma_brax_env_list = (
     "walker2d_2x3",
 )
 
+class MABraxAdapter(JaxMARLAdapter):
+    def reset(self, key: chex.PRNGKey) -> EnvState:
+        state = super().reset(key)
+        # setup global info
+        state.info.global_obs = state.env_state.obs
+
+        return state
+
+    def step(self, state: EnvState, action: Action) -> EnvState:
+        if not isinstance(action, dict):
+            action = self.unwrapped.map_agents_to_global_action(action)
+
+        state = super().step(state, action)
+        # update global info
+        state.info.global_obs = state.env_state.obs
+        return state
+
 
 def create_mabrax_env(env_name: str,
                       **kwargs) -> JaxMARLAdapter:
@@ -148,7 +165,7 @@ def create_mabrax_env(env_name: str,
     env = make_mabrax_env(env_name, **kwargs)
 
     # Note: mabrax internally use brax's traning wrapper (EpisodeWrapper)
-    env = JaxMARLAdapter(env)
+    env = MABraxAdapter(env)
 
     return env
 

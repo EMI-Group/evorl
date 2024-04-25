@@ -280,7 +280,8 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             normalize_obs=config.normalize_obs,
-            continuous_action=config.agent_network.continuous_action
+            continuous_action=config.agent_network.continuous_action,
+            clipping_epsilon=config.clipping_epsilon
         )
 
         if (config.optimizer.grad_clip_norm is not None and
@@ -335,6 +336,12 @@ class PPOWorkflow(OnPolicyRLWorkflow):
                     pmap_axis_name=self.pmap_axis_name
                 )
             )
+
+        train_episode_return = average_episode_discount_return(
+            trajectory.extras.env_extras.episode_return,
+            trajectory.dones,
+            pmap_axis_name=self.pmap_axis_name
+        )
 
         # ======== compute GAE =======
         last_obs = trajectory.extras.env_extras.last_obs
@@ -410,12 +417,6 @@ class PPOWorkflow(OnPolicyRLWorkflow):
         sampled_timesteps = psum(self.config.rollout_length * self.config.num_envs,
                                  axis_name=self.pmap_axis_name)
 
-        train_episode_return = average_episode_discount_return(
-            trajectory.extras.env_extras.episode_return,
-            trajectory.dones,
-            pmap_axis_name=self.pmap_axis_name
-        )
-
         workflow_metrics = WorkflowMetric(
             sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
             iterations=state.metrics.iterations + 1,
@@ -427,7 +428,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             raw_loss_dict=loss_dict
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        return train_metrics, state.update(
+        return train_metrics, state.replace(
             key=key,
             metrics=workflow_metrics,
             agent_state=agent_state,

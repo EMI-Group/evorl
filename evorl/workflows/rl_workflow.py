@@ -5,7 +5,6 @@ from omegaconf import DictConfig, OmegaConf
 import chex
 import copy
 
-from .workflow import Workflow
 from evorl.recorders import Recorder, ChainRecorder, WandbRecorder, LogRecorder
 from evorl.agents import Agent
 from evorl.envs import Env
@@ -17,31 +16,58 @@ from typing import Any, Callable, Sequence, Optional, Tuple
 from typing_extensions import (
     Self  # pytype: disable=not-supported-yet
 )
+
 from evox import State
+from .workflow import Workflow
 # from evorl.types import State
 
 import orbax.checkpoint as ocp
 
-from pathlib import Path
 
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+class DummyCheckpointManager:
+    def save(self,
+             step: int,
+             items=None,
+             save_kwargs=None,
+             metrics=None,
+             force=False,
+             args=None,
+             ) -> bool:
+        return True
+    
+    def restore(
+        self,
+        step,
+        items = None,
+        restore_kwargs= None,
+        directory = None,
+        args = None,
+    ):
+        raise NotImplementedError('UwU')
+
+
 def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
-    output_dir = get_output_dir()
-    ckpt_options = ocp.CheckpointManagerOptions(
-        save_interval_steps=config.checkpoint.save_interval_steps,
-        max_to_keep=config.checkpoint.max_to_keep
-    )
-    ckpt_path = output_dir/'checkpoints'
-    logger.info(f'set checkpoint path: {ckpt_path}')
-    checkpoint_manager = ocp.CheckpointManager(
-        ckpt_path,
-        options=ckpt_options,
-        metadata=OmegaConf.to_container(config)  # rescaled real config
-    )
+    if config.checkpoint.enable:
+        output_dir = get_output_dir()
+        ckpt_options = ocp.CheckpointManagerOptions(
+            save_interval_steps=config.checkpoint.save_interval_steps,
+            max_to_keep=config.checkpoint.max_to_keep
+        )
+        ckpt_path = output_dir/'checkpoints'
+        logger.info(f'set checkpoint path: {ckpt_path}')
+        checkpoint_manager = ocp.CheckpointManager(
+            ckpt_path,
+            options=ckpt_options,
+            metadata=OmegaConf.to_container(config)  # rescaled real config
+        )
+    else:
+        checkpoint_manager = DummyCheckpointManager()
+        
     return checkpoint_manager
 
 
@@ -122,7 +148,7 @@ class RLWorkflow(Workflow):
         raise NotImplementedError
 
     @classmethod
-    def enable_jit(cls) -> None:
+    def enable_jit(cls, device: jax.Device = None) -> None:
         # donate_argnums = (1,) if donate_buffer else None
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls.step = jax.jit(cls.step, static_argnums=(0,))
@@ -191,7 +217,7 @@ class OnPolicyRLWorkflow(RLWorkflow):
         )
 
         eval_metrics = EvaluateMetric(
-            discount_returns=raw_eval_metrics.discount_returns.mean(),
+            episode_returns=raw_eval_metrics.episode_returns.mean(),
             episode_lengths=raw_eval_metrics.episode_lengths.mean()
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
@@ -269,7 +295,7 @@ class OffPolicyRLWorkflow(RLWorkflow):
         )
 
         eval_metrics = EvaluateMetric(
-            discount_returns=raw_eval_metrics.discount_returns.mean(),
+            episode_returns=raw_eval_metrics.episode_returns.mean(),
             episode_lengths=raw_eval_metrics.episode_lengths.mean()
         )
 

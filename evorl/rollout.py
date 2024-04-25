@@ -235,7 +235,7 @@ def eval_rollout(
 
         Returns:
             env_state: last env_state after rollout
-            discount_return: shape: [#envs]
+            trajectory: shape: [T, #envs, ...]
     """
 
     def _one_step_rollout(carry, unused_t):

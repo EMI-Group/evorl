@@ -1,12 +1,14 @@
 defaults:
-  - agent: null
-  - env: brax/ant
-  - logging
   - _self_
+  - env: brax/ant
+  - agent: null
+  - logging
+
 
 
 seed: 42
 debug: false
 checkpoint:
+  enable: true
   save_interval_steps: 100
   max_to_keep: null

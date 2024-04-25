@@ -1,4 +1,5 @@
 from .env import Env, EnvState
+from .multi_agent_env import MultiAgentEnv
 from .space import Discrete, Box
 
 

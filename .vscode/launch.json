@@ -23,9 +23,12 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=td3",
-                "env=brax/hopper",
+                "agent=ppo",
+                "env=brax/ant",
+                // "agent=exp/ppo/acrobat",
+                // "env=gymnax/Acrobot-v1",
                 "debug=true",
+                "checkpoint.enable=false"
                 // "hydra.verbose=true",
             ],
             "env": {
@@ -36,10 +39,29 @@
             "justMyCode": false
         },
         {
+            "name": "PBT Train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "evorl.train",
+            "args": [
+                "agent=pbt",
+                "env=brax/ant",
+                "debug=true",
+                // "checkpoint.enable=false"
+                // "hydra.verbose=true",
+            ],
+            "env": {
+                // "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                // "CUDA_VISIBLE_DEVICES": "4,5,6",
+                // "JAX_DISABLE_JIT": "true"
+            },
+            "justMyCode": false
+        },
+        {
             "name": "EC Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.ec.ec_train",
+            "module": "evorl.ec.mo_train",
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",
