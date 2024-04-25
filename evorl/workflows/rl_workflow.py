@@ -49,6 +49,9 @@ class DummyCheckpointManager:
         args = None,
     ):
         raise NotImplementedError('UwU')
+    
+    def close(self):
+        pass
 
 
 def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
