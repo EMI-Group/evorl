@@ -88,7 +88,7 @@ def train():
         jax.block_until_ready(state)
         print(f"iteration: {state.generation}")
         # fitness = monitor.get_latest_fitness()
-        fitness = state.get_child_state('algorithm').fitness
+        fitness = state.get_child_state('algorithm').get_child_state('algo').fitness
 
         rank = non_dominated_sort(-fitness)
         pf = rank == 0

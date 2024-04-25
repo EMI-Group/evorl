@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from evox import Algorithm, State
+from evox import Algorithm, State, use_state
 from evorl.agents import Agent
 from evorl.utils.ec_utils import ParamVectorSpec
 
@@ -15,26 +15,26 @@ class MOAlgorithmWrapper(Algorithm):
         self.algo = algo
         self.param_vec_spec = param_vec_spec
 
-    def setup(self, key):
-        #TODO: fix duplicate state in here and in child 'algo'
-        state = self.algo.setup(key)
-        return state
+    # def setup(self, key):
+    #     #TODO: fix duplicate state in here and in child 'algo'
+    #     state = self.algo.setup(key)
+    #     return state
 
     def init_ask(self, state):
-        flat_pop, state = self.algo.init_ask(state)
+        flat_pop, state = use_state(self.algo.init_ask)(state)
         return self._postprocess_pop(flat_pop), state
 
     def init_tell(self, state, fitness):
         # fitness = self._preprocess_fitness(fitness)
-        return self.algo.init_tell(state, fitness)
+        return use_state(self.algo.init_tell)(state, fitness)
     
     def ask(self, state):
-        flat_pop, state = self.algo.ask(state)
+        flat_pop, state = use_state(self.algo.ask)(state)
         return self._postprocess_pop(flat_pop), state
     
     def tell(self, state, fitness):
         # fitness = self._preprocess_fitness(fitness)
-        return self.algo.tell(state, fitness)
+        return use_state(self.algo.tell)(state, fitness)
     
     def _postprocess_pop(self, flat_pop):
         return self.param_vec_spec.to_tree(flat_pop)
