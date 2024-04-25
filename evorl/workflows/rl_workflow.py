@@ -12,6 +12,7 @@ from evorl.evaluator import Evaluator
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
 from evorl.metrics import TrainMetric, EvaluateMetric, WorkflowMetric
 from evorl.utils.cfg_utils import get_output_dir
+from evorl.utils.orbax_utils import DummyCheckpointManager
 from typing import Any, Callable, Sequence, Optional, Tuple
 from typing_extensions import (
     Self  # pytype: disable=not-supported-yet
@@ -22,37 +23,9 @@ from .workflow import Workflow
 # from evorl.types import State
 
 import orbax.checkpoint as ocp
-
-
 import logging
 
 logger = logging.getLogger(__name__)
-
-
-class DummyCheckpointManager:
-    def save(self,
-             step: int,
-             items=None,
-             save_kwargs=None,
-             metrics=None,
-             force=False,
-             args=None,
-             ) -> bool:
-        return True
-    
-    def restore(
-        self,
-        step,
-        items = None,
-        restore_kwargs= None,
-        directory = None,
-        args = None,
-    ):
-        raise NotImplementedError('UwU')
-    
-    def close(self):
-        pass
-
 
 def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
     if config.checkpoint.enable:
