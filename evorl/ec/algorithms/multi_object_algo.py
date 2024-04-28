@@ -4,9 +4,9 @@ from evox import Algorithm, State, use_state
 from evorl.agents import Agent
 from evorl.utils.ec_utils import ParamVectorSpec
 
-class MOAlgorithmWrapper(Algorithm):
+class EvoXAlgorithmWrapper(Algorithm):
     """
-        Wrapper for EvoX basic MO Algorithms:
+        Wrapper for EvoX basic Algorithms:
             - Use flattten params
             - Use flatten objectives
     """
@@ -37,7 +37,10 @@ class MOAlgorithmWrapper(Algorithm):
         return use_state(self.algo.tell)(state, fitness)
     
     def _postprocess_pop(self, flat_pop):
-        return self.param_vec_spec.to_tree(flat_pop)
+        if flat_pop is None:
+            return None
+        else:
+            return self.param_vec_spec.to_tree(flat_pop)
     
     # def _preprocess_fitness(self, fitness):
     #     # flatten pytree fitness: -> [pop_size, #obj]

@@ -15,6 +15,7 @@ from typing_extensions import (
 import dataclasses
 
 from jax._src.util import safe_zip
+from jax.typing import ArrayLike, DTypeLike
 
 Metrics = Mapping[str, chex.ArrayTree]
 Observation = Union[chex.Array, Mapping[str, chex.Array]]
@@ -40,7 +41,11 @@ ReplayBufferState = chex.ArrayTree
 
 MISSING_REWARD = -1e10
 
+Axis = Union[int, Sequence[int], None]
 
+class ReductionFn(Protocol):
+    def __call__(self, a: ArrayLike, axis: Axis = None, dtype: DTypeLike | None = None, out: None = None, keepdims: bool = False):
+        pass
 
 class ObsPreprocessorFn(Protocol):
     def __call__(self, obs: chex.Array, *args: Any, **kwds: Any) -> chex.Array:
@@ -230,7 +235,7 @@ jax.tree_util.register_pytree_node(
     lambda keys, values: PyTreeDict(dict(safe_zip(keys, values)))
 )
 
-State = PyTreeDict
+# State = PyTreeDict
 
 class EnvLike(Protocol):
     def reset(self, *args, **kwargs) -> Any:
@@ -272,3 +277,6 @@ class PyTreeNode:
 
         raise ValueError(
             f"field {name} not found in {self.__class__.__name__}")
+
+
+
