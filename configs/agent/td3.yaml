@@ -36,3 +36,8 @@ agent_network:
   continuous_action: true
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
+
+checkpoint:
+  enable: true
+  save_interval_steps: 100000
+  max_to_keep: 10
