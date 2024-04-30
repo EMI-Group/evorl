@@ -1,7 +1,7 @@
 # @package _global_
 
-pop_size: 1000
-num_iters: 1000
+pop_size: 7
+num_iters: 100
 
 parallel_envs: 5
 eval_episodes: 5

@@ -4,21 +4,20 @@ import jax.numpy as jnp
 from hydra import compose, initialize
 from omegaconf import DictConfig, OmegaConf
 
-from evorl.ec import EvoXAlgorithmWrapper, MultiObjectiveBraxProblem
+from . import GeneralRLProblem, EvoXAlgorithmWrapper
 
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.workflows import ECWorkflow
 from evorl.envs import create_wrapped_brax_env
 from evorl.agents.ec import DeterministicECAgent
-from evox import algorithms, monitors
-from evox.operators import non_dominated_sort
+from evox import algorithms
 
 
 
 
 def train():
     with initialize(config_path="../../configs", version_base=None):
-        config = compose(config_name="config", overrides=["agent=ec-mo", "env=brax/hopper"])
+        config = compose(config_name="config", overrides=["agent=ec-so", "env=brax/hopper"])
     print(OmegaConf.to_yaml(config))
 
     key = jax.random.PRNGKey(config.seed)
@@ -39,30 +38,27 @@ def train():
         normalize_obs=False
     )
 
-    problem = MultiObjectiveBraxProblem(
+    problem = GeneralRLProblem(
         agent=agent,
         env=env,
         num_episodes=config.eval_episodes,
         max_episode_steps=config.env.max_episode_steps,
         discount=1.0,
-        metric_names=config.metric_names,
-        flatten_objectives=True
     )
 
     # dummy_agent
     agent_state = agent.init(agent_key)
     param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
-    nsga2 = algorithms.NSGA2(
-        lb=jnp.full(shape=(param_vec_spec.vec_size,), fill_value=config.agent_network.lb),
-        ub=jnp.full(shape=(param_vec_spec.vec_size,), fill_value=config.agent_network.ub),
-        n_objs=len(config.metric_names),
+    cmaes = algorithms.CMAES(
+        center_init=param_vec_spec.to_vector(agent_state.params.policy_params), 
+        init_stdev=config.init_stdev,
         pop_size=config.pop_size,
     )
 
     # TODO: add op for MLP
-    nsga2_rl = EvoXAlgorithmWrapper(
-        algo=nsga2,
+    cmaes_rl = EvoXAlgorithmWrapper(
+        algo=cmaes,
         param_vec_spec=param_vec_spec
     )
 
@@ -70,10 +66,11 @@ def train():
         params = agent_state.params.replace(policy_params=cand)
         return agent_state.replace(params=params)
 
+
     workflow = ECWorkflow(
-        algorithm=nsga2_rl,
+        algorithm=cmaes_rl,
         problem=problem,
-        opt_direction=['max', 'max'],
+        opt_direction='max',
         sol_transforms=[jax.vmap(_sol_transform)],
     )
 
@@ -84,16 +81,9 @@ def train():
         train_metrics, state = workflow.step(state)
         jax.block_until_ready(train_metrics)
         print(f"iteration: {i}")
-        # fitness = monitor.get_latest_fitness()
-        # fitness = state.get_child_state('algorithm').get_child_state('algo').fitness
         objective = train_metrics.objective
 
-        rank = non_dominated_sort(-objective)
-        pf = rank == 0
-        pf_fitness = objective[pf]
-        pf_fitness = pf_fitness[pf_fitness[:, 0].argsort()]
-        print(f"#pf={pf_fitness.shape[0]}")
-        print(pf_fitness)
+        print(jax.lax.top_k(objective, k=5)[0].tolist())
 
 
 if __name__ == "__main__":
