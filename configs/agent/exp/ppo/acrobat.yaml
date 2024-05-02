@@ -8,6 +8,7 @@ num_envs: 16
 rollout_length: 32
 
 minibatch_size: 128
+reuse_rollout_epochs: 4
 
 total_timesteps: 500000
 

@@ -61,6 +61,10 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
         """
         raise NotImplementedError()
     
-    @abstractmethod
+    # @abstractmethod
     def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
+        """
+            Optional loss function for the model.
+            In some case, a single loss function is not enough. For example, DDPG has two loss functions: actor_loss and critic_loss.
+        """
         raise NotImplementedError()
