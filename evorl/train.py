@@ -4,12 +4,13 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 import logging
 
-from evorl.utils.cfg_utils import get_output_dir
+from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
 from evorl.recorders import WandbRecorder, LogRecorder, ChainRecorder
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+set_omegaconf_resolvers()
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train(config: DictConfig) -> None:

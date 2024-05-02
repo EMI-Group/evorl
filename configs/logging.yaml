@@ -1,7 +1,3 @@
-# defaults:
-#   - override hydra/hydra_logging: none
-#   - override hydra/job_logging: none
-
 hydra:
   # hydra_logging:
   #   disable_existing_loggers: true
@@ -9,7 +5,7 @@ hydra:
     dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
   sweep:
     dir: multirun/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
-    subdir: ${hydra.job.override_dirname}
+    subdir: ${sanitize_dirname:${hydra.job.override_dirname}}
   verbose: false
 
 wandb:
