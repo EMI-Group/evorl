@@ -1,5 +1,7 @@
 evox == 0.8.1
 hydra-core
+wandb
+pyyaml
 flashbax
 gymnax
 jumanji
