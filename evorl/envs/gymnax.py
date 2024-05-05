@@ -19,6 +19,7 @@ from gymnax.environments.spaces import (
 )
 from typing import Any, Dict, Optional
 
+from .wrappers.obs_wrapper import ObsFlattenWrapper
 from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAutoResetWrapper, VmapWrapper, FastVmapAutoResetWrapper
 
 
@@ -81,13 +82,17 @@ class GymnaxAdapter(EnvAdapter):
     def obs_space(self) -> Space:
         return self._obs_space
 
+
 def _inf_to_num(x, num=1e10):
     return jnp.nan_to_num(x, posinf=num, neginf=-num)
 
+
 def gymnax_space_to_evorl_space(space: GymnaxSpace):
     if isinstance(space, GymnaxBox):
-        low = _inf_to_num(jnp.broadcast_to(space.low, space.shape).astype(space.dtype))
-        high = _inf_to_num(jnp.broadcast_to(space.high, space.shape).astype(space.dtype))
+        low = _inf_to_num(jnp.broadcast_to(
+            space.low, space.shape).astype(space.dtype))
+        high = _inf_to_num(jnp.broadcast_to(
+            space.high, space.shape).astype(space.dtype))
         return Box(low=low, high=high)
     elif isinstance(space, GymnaxDiscrete):
         return Discrete(n=space.n)
@@ -95,7 +100,18 @@ def gymnax_space_to_evorl_space(space: GymnaxSpace):
         raise NotImplementedError(f"Unsupported space type: {type(space)}")
 
 
-def create_gymnax_env(env_name: str, **kwargs) -> GymnaxAdapter:
+# image_env_list = [
+#     "Asterix-MinAtar",
+#     "Breakout-MinAtar",
+#     "Freeway-MinAtar",
+#     # "Seaquest-MinAtar",
+#     "SpaceInvaders-MinAtar",
+#     "MNISTBandit-bsuite",
+#     "Pong-misc",
+# ]
+
+
+def create_gymnax_env(env_name: str, flatten_obs: bool = True, **kwargs) -> GymnaxAdapter:
     env, env_params = gymnax.make(env_name)
 
     update_env_params = {
@@ -113,17 +129,21 @@ def create_gymnax_env(env_name: str, **kwargs) -> GymnaxAdapter:
         ):
             env = ActionSquashWrapper(env)
 
+    if flatten_obs and len(env.obs_space.shape) > 1:
+        env = ObsFlattenWrapper(env)
+
     return env
 
 
 def create_wrapped_gymnax_env(env_name: str,
+                              flatten_obs: bool = True,
                               episode_length: int = 1000,
                               parallel: int = 1,
                               autoreset: bool = True,
                               fast_reset: bool = False,
                               discount: float = 1.0,
                               **kwargs) -> Env:
-    env = create_gymnax_env(env_name, **kwargs)
+    env = create_gymnax_env(env_name, flatten_obs, **kwargs)
 
     if autoreset:
         env = EpisodeWrapper(env, episode_length,
