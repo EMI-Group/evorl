@@ -1,5 +1,6 @@
 import chex
-from ..space import Box
+import jax.numpy as jnp
+from ..space import Box, Space
 from ..env import Env, EnvState
 from .wrapper import Wrapper
 from evorl.types import Action
@@ -23,3 +24,10 @@ class ActionSquashWrapper(Wrapper):
     def step(self, state: EnvState, action: Action) -> EnvState:
         squashed_action = self.scale*action + self.bias
         return self.env.step(state, squashed_action)
+
+    @property
+    def action_space(self) -> Space:
+        return Box(
+            low=-jnp.ones_like(self.scale),
+            high=jnp.ones_like(self.scale)
+        )

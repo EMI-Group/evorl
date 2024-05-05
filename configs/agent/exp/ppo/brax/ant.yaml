@@ -1,0 +1,17 @@
+# @package _global_
+
+defaults:
+  - /agent/ppo
+  - _self_
+
+normalize_obs: true
+num_envs: 4096
+minibatch_size: 2048 # num_minibatches = batch_size / num_minibatches = 32
+rollout_length: 160 # 5*32
+discount: 0.97
+
+total_timesteps: 50000000
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 5

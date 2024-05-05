@@ -5,7 +5,7 @@ from flax import struct
 import math
 
 from omegaconf import DictConfig
-
+from functools import partial
 
 from evorl.sample_batch import SampleBatch
 from evorl.networks import make_policy_network, make_value_network
@@ -313,8 +313,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
 
     def step(self, state: State) -> Tuple[TrainMetric, State]:
 
-        key, rollout_key, perm_key, learn_key = jax.random.split(
-            state.key, num=4)
+        key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # trajectory: [T, #envs, ...]
         env_state, trajectory = rollout(
@@ -384,7 +383,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
         num_minibatches = self.config.rollout_length * \
             self.config.num_envs // self.config.minibatch_size
 
-        def _get_shuffled_minibatch(x):
+        def _get_shuffled_minibatch(perm_key, x):
             x = jax.random.permutation(perm_key, x)[
                 :num_minibatches*self.config.minibatch_size]
             return x.reshape(num_minibatches, -1, *x.shape[1:])
@@ -402,11 +401,26 @@ class PPOWorkflow(OnPolicyRLWorkflow):
 
             return (opt_state, agent_state, key), (loss, loss_dict)
 
+        def epoch_step(carray, _):
+            opt_state, agent_state, key = carray
+            key, perm_key, learn_key = jax.random.split(key, num=3)
+
+            (opt_state, agent_state, _), (loss_list, loss_dict_list) = jax.lax.scan(
+                minibatch_step,
+                (opt_state, agent_state, learn_key),
+                jtu.tree_map(
+                    partial(_get_shuffled_minibatch, perm_key), trajectory),
+                length=num_minibatches
+            )
+
+            return (opt_state, agent_state, key), (loss_list, loss_dict_list)
+
+        # loss_list: [reuse_rollout_epochs, num_minibatches]
         (opt_state, agent_state, _), (loss_list, loss_dict_list) = jax.lax.scan(
-            minibatch_step,
+            epoch_step,
             (state.opt_state, agent_state, learn_key),
-            jtu.tree_map(_get_shuffled_minibatch, trajectory),
-            length=num_minibatches
+            None,
+            length=self.config.reuse_rollout_epochs
         )
 
         loss = loss_list.mean()

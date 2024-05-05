@@ -1,7 +1,7 @@
 from flax import struct
 import chex
 from evorl.types import ExtraInfo, PyTreeDict, Action
-from ..env import Env, EnvState
+from ..env import Env, EnvState, Space
 
 from typing import Tuple, Union
 
@@ -20,11 +20,11 @@ class Wrapper(Env):
         return self.env.step(state.env_state, action)
 
     @property
-    def obs_space(self) -> int:
+    def obs_space(self) -> Space:
         return self.env.obs_space
 
     @property
-    def action_space(self) -> int:
+    def action_space(self) -> Space:
         return self.env.action_space
 
     @property

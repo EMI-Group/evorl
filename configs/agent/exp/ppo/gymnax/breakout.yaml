@@ -9,6 +9,7 @@ rollout_length: 128
 discount: 0.999
 
 minibatch_size: 1024
+reuse_rollout_epochs: 4
 
 total_timesteps: 10000000
 

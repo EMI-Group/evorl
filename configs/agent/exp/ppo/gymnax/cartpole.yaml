@@ -8,14 +8,15 @@ num_envs: 16
 rollout_length: 32
 
 minibatch_size: 128
+reuse_rollout_epochs: 4
 
-total_timesteps: 500000
+total_timesteps: 150000
 
-eval_interval: 1
+eval_interval: 10
 
 optimizer:
   lr: 0.0005
-  grad_clip_norm: 1.0
+  grad_clip_norm: 0.5
 
 agent_network:
   continuous_action: false
