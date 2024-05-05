@@ -10,7 +10,7 @@ gae_lambda: 0.95
 discount: 0.99
 clipping_epsilon: 0.2
 
-minibatch_size: 256 # num_minibatches = batch_size / num_minibatches = 8
+minibatch_size: 256 # num_minibatches = batch_size / minibatch_size = 8
 reuse_rollout_epochs: 4 # apply multiple epochs (one epoch contains multiple minibatches) on the same rollout data
 
 total_timesteps: 1000000
