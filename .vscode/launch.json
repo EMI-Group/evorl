@@ -39,6 +39,26 @@
             "justMyCode": false
         },
         {
+            "name": "Train multirun",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "evorl.train",
+            "args": [
+                "-m",
+                "agent=ppo",
+                "env=brax/ant",
+                "seed=0,1",
+                "debug=true",
+                "checkpoint.enable=false"
+            ],
+            "env": {
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                // "CUDA_VISIBLE_DEVICES": "4,5,6",
+                // "JAX_DISABLE_JIT": "true"
+            },
+            "justMyCode": false
+        },
+        {
             "name": "PBT Train",
             "type": "debugpy",
             "request": "launch",

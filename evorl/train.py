@@ -8,7 +8,7 @@ from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
 from evorl.recorders import WandbRecorder, LogRecorder, ChainRecorder
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('train')
 
 set_omegaconf_resolvers()
 
@@ -52,9 +52,9 @@ def train(config: DictConfig) -> None:
         path=output_dir,
         mode=wandb_mode
     )
-    log_recorder = LogRecorder(log_path=output_dir/f'{wandb_name}.log')
+    log_recorder = LogRecorder(log_path=output_dir/f'{wandb_name}.log', console=True)
     workflow.add_recorders([wandb_recorder, log_recorder])
-    
+
     try:
         state = workflow.init(jax.random.PRNGKey(config.seed))
         state = workflow.learn(state)
