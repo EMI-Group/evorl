@@ -14,9 +14,13 @@ class LogRecorder(Recorder):
     """Log file recorder"""
 
     def __init__(self, log_path: str, console: bool = True):
+        self.log_path = log_path
+        self.console = console
+
+    def init(self) -> None:
         self.logger = logging.getLogger('LogRecorder')
 
-        self.file_handler = logging.FileHandler(log_path)
+        self.file_handler = logging.FileHandler(self.log_path)
         # use hydra logger formatter
         self.file_handler.setFormatter(
             logging.getLogger().handlers[0].formatter
@@ -25,9 +29,8 @@ class LogRecorder(Recorder):
         #     SubLoggerFilter('LogRecorder'))
         self.logger.addHandler(self.file_handler)
 
-        if not console:
+        if not self.console:
             self.logger.propagate = False
-
         
 
     def write(self, data: Mapping[str, Any], step: Optional[int] = None) -> None:
