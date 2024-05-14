@@ -16,22 +16,12 @@ from omegaconf import DictConfig, open_dict, read_write
 
 from functools import partial
 
-from evorl.sample_batch import SampleBatch
-from evorl.networks import make_policy_network, make_value_network
-from evorl.utils import running_statistics
-from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.utils.jax_utils import tree_stop_gradient
-from evorl.utils.toolkits import (
-    compute_gae, flatten_rollout_trajectory,
-    average_episode_discount_return
-)
+
 from evorl.workflows import OnPolicyRLWorkflow, RLWorkflow
 from evorl.agents import AgentState
-from evorl.distributed import split_key_to_devices, POP_AXIS_NAME
-from evorl.envs import create_env, Env, EnvState
-from evorl.evaluator import Evaluator
+from evorl.distributed import tree_device_put, tree_device_get, POP_AXIS_NAME
 from evorl.metrics import MetricBase
-from ..agent import Agent, AgentState
+
 
 from evox import State
 # from evorl.types import State
@@ -55,9 +45,11 @@ from functools import partial
 
 logger = logging.getLogger(__name__)
 
+
 class TrainMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
+    pop_train_metrics: MetricBase
 
 
 class EvalMetric(MetricBase):
@@ -87,7 +79,7 @@ class PBTWorkflow(RLWorkflow):
     def _rescale_config(config, devices) -> None:
         num_devices = len(devices)
 
-        if  config.pop_size % num_devices != 0:
+        if config.pop_size % num_devices != 0:
             logger.warning(
                 f"pop_size({config.pop_size}) cannot be divided by num_devices({num_devices}), "
                 f"rescale pop_size to {config.pop_size // num_devices * num_devices}"
@@ -96,7 +88,7 @@ class PBTWorkflow(RLWorkflow):
         config.pop_size = (config.pop_size // num_devices) * num_devices
 
     @classmethod
-    def build_from_config(cls, config: DictConfig, devices: Optional[Sequence[jax.Device]] = None, enable_jit: bool = True):
+    def build_from_config(cls, config: DictConfig, enable_multi_devices=True, devices: Optional[Sequence[jax.Device]] = None, enable_jit: bool = True):
         config = copy.deepcopy(config)  # avoid in-place modification
         if devices is None:
             devices = jax.local_devices()
@@ -111,7 +103,7 @@ class PBTWorkflow(RLWorkflow):
 
         workflow = cls._build_from_config(config)
 
-        workflow.pmap_axis_name = None # we use shmap instead.
+        workflow.pmap_axis_name = None  # we use shmap instead.
         workflow.devices = devices
 
         mesh = Mesh(devices, axis_names=(POP_AXIS_NAME,))
@@ -127,8 +119,6 @@ class PBTWorkflow(RLWorkflow):
             target_workflow_config.workflow_cls)
 
         devices = jax.local_devices()
-
-        # OmegaConf.set_struct(target_workflow_config, True)
 
         with read_write(target_workflow_config):
             with open_dict(target_workflow_config):
@@ -148,6 +138,8 @@ class PBTWorkflow(RLWorkflow):
         return cls(target_workflow, config)
 
     def setup(self, key: chex.PRNGKey):
+        self.recorder.init()
+
         pop_size = self.config.pop_size
 
         key, workflow_key, pop_key = jax.random.split(key, num=3)
@@ -155,36 +147,40 @@ class PBTWorkflow(RLWorkflow):
             optax.adam, static_args=('b1', 'b2', 'eps', 'eps_root')
         )(learning_rate=self.config.search_space.lr.low)
 
-        # save pop&metric on GPU0
-        pop_local = PyTreeDict(
+        pop = PyTreeDict(
             lr=jax.random.uniform(
                 pop_key, (pop_size,),
                 minval=self.config.search_space.lr.low,
                 maxval=self.config.search_space.lr.high
             )
         )
+        pop = tree_device_put(pop, self.sharding)
+
+        # save metric on GPU0
         workflow_metrics = self._setup_workflow_metrics()
-
-
-        num_devices = len(self.devices)
 
         workflow_keys = jax.random.split(workflow_key, pop_size)
         workflow_keys = jax.device_put(workflow_keys, self.sharding)
 
-        pop_workflow_state = jax.vmap(self.workflow.setup)(
-            workflow_keys
-        )
+        pop_workflow_state = jax.jit(
+            jax.vmap(self.workflow.setup),
+            in_shardings=self.sharding,
+            out_shardings=self.sharding
+        )(workflow_keys)
 
-        pop = jtu.tree_map(lambda x: jax.device_put(x, self.sharding), pop_local)
-        pop_workflow_state = jax.vmap(apply_hyperparams_to_workflow_state)(
-            pop, pop_workflow_state
-        )
+
+        
+        pop_workflow_state = jax.jit(
+            jax.vmap(apply_hyperparams_to_workflow_state),
+            in_shardings=self.sharding,
+            out_shardings=self.sharding
+        )(pop, pop_workflow_state)
 
         return State(
             key=key,
             metrics=workflow_metrics,
             pop_workflow_state=pop_workflow_state,
-            pop=pop_local,
+            pop=pop,
         )
 
     def step(self, state: State) -> Tuple[TrainMetric, State]:
@@ -211,12 +207,11 @@ class PBTWorkflow(RLWorkflow):
         else:
             train_steps_fn = partial(jax.lax.map, _train_steps)
 
-        if self.enable_multi_devices:
-            train_steps_fn = jax.pmap(train_steps_fn, axis_name=PMAP_AXIS_NAME)
-
-        pop_train_metrics, pop_workflow_state = train_steps_fn(
-            _train_steps, pop_workflow_state
-        )
+        pop_train_metrics, pop_workflow_state = jax.jit(
+            train_steps_fn,
+            in_shardings=self.sharding,
+            out_shardings=self.sharding
+        )(pop_workflow_state)
 
         # ===== eval ======
         if self.config.parallel_eval:
@@ -224,10 +219,12 @@ class PBTWorkflow(RLWorkflow):
         else:
             eval_fn = partial(jax.lax.map, self.workflow.evaluate)
 
-        if self.enable_multi_devices:
-            eval_fn = jax.pmap(eval_fn, axis_name=PMAP_AXIS_NAME)
+        pop_eval_metrics, pop_workflow_state = jax.jit(
+            eval_fn,
+            in_shardings=self.sharding,
+            out_shardings=self.sharding
+        )(pop_workflow_state)
 
-        pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)
         pop_episode_returns = pop_eval_metrics.episode_returns
 
         # ===== warmup or exploit & explore ======
@@ -255,8 +252,11 @@ class PBTWorkflow(RLWorkflow):
 
         train_metrics = TrainMetric(
             pop_episode_returns=pop_eval_metrics.episode_returns,
-            pop_episode_lengths=pop_eval_metrics.episode_lengths
+            pop_episode_lengths=pop_eval_metrics.episode_lengths,
+            pop_train_metrics=pop_train_metrics
         )
+
+        train_metrics = tree_device_get(train_metrics, self.devices[0])
 
         return train_metrics, state.replace(
             key=key,

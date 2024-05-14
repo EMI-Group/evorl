@@ -10,6 +10,7 @@ from pathlib import Path
 
 logger = logging.getLogger('train')
 
+jax.config.update('jax_threefry_partitionable', True)
 set_omegaconf_resolvers()
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
