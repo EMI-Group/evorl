@@ -4,3 +4,5 @@ from .gradients import agent_gradient_update
 
 
 PMAP_AXIS_NAME = "P"
+
+POP_AXIS_NAME = "POP"
