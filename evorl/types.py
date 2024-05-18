@@ -254,7 +254,11 @@ def pytree_field(*, lazy_init=False, pytree_node=True, **kwargs):
     """
     if lazy_init:
         kwargs.update(dict(init=False, repr=False))
-    return dataclasses.field(metadata={'pytree_node': pytree_node, 'lazy_init': lazy_init}, **kwargs)
+
+    metadata = {'pytree_node': pytree_node, 'lazy_init': lazy_init}
+    kwargs.setdefault('metadata', {}).update(metadata)
+
+    return dataclasses.field(**kwargs)
 
 
 @dataclass_transform(field_specifiers=(pytree_field,), kw_only_default=True)
