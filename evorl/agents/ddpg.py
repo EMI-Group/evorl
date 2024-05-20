@@ -478,6 +478,52 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             critic_opt_state=critic_opt_state,
         )
 
+    @classmethod
+    def enable_jit(cls, device: jax.Device = None) -> None:
+        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
+        cls.fill_replay_buffer = jax.jit(cls.fill_replay_buffer, static_argnums=(0,))
+        cls.step = jax.jit(cls.step, static_argnums=(0,))
+        return super().enable_jit(device)
+
+    def fill_replay_buffer(self, state: State, length) -> State:
+        key, rollout_key = jax.random.split(state.key)
+        replay_buffer_state = state.replay_buffer_state
+        env_state = state.env_state
+        sample_batch = SampleBatch(obs=env_state.obs)
+        actions, _ = self.agent.compute_random_actions(rollout_key, sample_batch)
+        env_nstate = self.env.step(env_state, actions)
+        trajectory = SampleBatch(
+            obs=env_state.obs,
+            actions=actions,
+            rewards=env_nstate.reward,
+            next_obs=env_nstate.obs,
+            dones=env_nstate.done,
+            extras=PyTreeDict(
+                policy_extras=PyTreeDict(),
+                env_extras=PyTreeDict(
+                    {
+                        "last_obs": env_nstate.info.last_obs,
+                        "truncation": env_nstate.info.truncation,
+                    }
+                ),
+            ),
+        )
+        mask = trajectory.extras.env_extras.truncation.astype(bool)
+        next_obs = jnp.where(
+            mask[:, None],
+            trajectory.extras.env_extras.last_obs,
+            trajectory.next_obs,
+        )
+        trajectory = trajectory.replace(next_obs=next_obs)
+
+        replay_buffer_state = self.replay_buffer.add(
+            replay_buffer_state, trajectory
+        )
+        env_state = env_nstate
+        state.update(env_state=env_state, replay_buffer_state=replay_buffer_state, key=key)
+
+        return state
+
     def step(self, state: State) -> Tuple[TrainMetric, State]:
         """
         the basic step function for the workflow to update agent
