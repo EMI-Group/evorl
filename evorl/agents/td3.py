@@ -218,7 +218,7 @@ class TD3Agent(Agent):
         # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
         q_loss = ((qs - target_qs) ** 2).mean(axis=-1).sum()
 
-        return dict(critic_loss=q_loss)
+        return PyTreeDict(critic_loss=q_loss)
 
     def actor_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
@@ -253,7 +253,7 @@ class TD3Agent(Agent):
                 q0_params, jnp.concatenate([obs, gen_actions], axis=-1)
             ).squeeze(-1)
         )
-        return dict(actor_loss=actor_loss)
+        return PyTreeDict(actor_loss=actor_loss)
 
     def loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
@@ -286,7 +286,7 @@ class TD3Agent(Agent):
             ).squeeze(-1)
         )
 
-        return dict(
+        return PyTreeDict(
             actor_loss=actor_loss,
             critic_loss=q_loss,
         )

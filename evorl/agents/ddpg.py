@@ -197,7 +197,7 @@ class DDPGAgent(Agent):
         # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
         q_loss = ((qs - target_qs) ** 2).mean()
 
-        return dict(critic_loss=q_loss)
+        return PyTreeDict(critic_loss=q_loss)
 
     def actor_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
@@ -229,7 +229,7 @@ class DDPGAgent(Agent):
                 agent_state.params.critic_params, obs, gen_actions
             ).squeeze(-1)
         )
-        return dict(actor_loss=actor_loss)
+        return PyTreeDict(actor_loss=actor_loss)
 
     def loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
@@ -287,7 +287,7 @@ class DDPGAgent(Agent):
             ).squeeze(-1)
         )
 
-        return dict(
+        return PyTreeDict(
             actor_loss=actor_loss,
             critic_loss=q_loss,
         )
@@ -701,6 +701,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             start_iteration = tree_unpmap(last_step, self.pmap_axis_name)
         else:
             state = self.fill_replay_buffer(state)
+            
         for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
