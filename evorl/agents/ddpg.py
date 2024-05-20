@@ -683,7 +683,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         # one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = self.config.total_timesteps
         start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
-        
+
         ckpt_path = self.config.load_path + "/checkpoints"
         if self.config.check_load and os.path.isdir(ckpt_path):
             ckpt_options = ocp.CheckpointManagerOptions(
@@ -724,14 +724,27 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
             )
 
-        # not completed
-        if self.config.load:
-            ckpt_path = self.config.load_path + "/checkpoints"
-            logger.info(f"Set loadiong checkpoint path: {ckpt_path}")
-            state = load(path=ckpt_path, state=state)
-
         logger.info("finish!")
         return state
+
+    def load(self, state: State):
+        ckpt_options = ocp.CheckpointManagerOptions(
+            save_interval_steps=self.config.checkpoint.save_interval_steps,
+            max_to_keep=self.config.checkpoint.max_to_keep,
+        )
+        ckpt_path = self.config.load_path + "/checkpoints"
+        logger.info(f"Set loadiong checkpoint path: {ckpt_path}")
+        checkpoint_manager = ocp.CheckpointManager(
+            ckpt_path,
+            options=ckpt_options,
+            metadata=OmegaConf.to_container(self.config),  # Rescaled real config
+        )
+        last_step = checkpoint_manager.latest_step()
+        reload_state = checkpoint_manager.restore(
+            last_step,
+            args=ocp.args.StandardRestore(tree_unpmap(state, self.pmap_axis_name)),
+        )
+        logger.info(f"Reloaded from step {last_step}")
 
 
 class Actor(nn.Module):
