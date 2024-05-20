@@ -151,6 +151,8 @@ class OnPolicyRLWorkflow(RLWorkflow):
         self.evaluator = evaluator
 
     def setup(self, key: chex.PRNGKey) -> State:
+        self.recorder.init()
+
         key, agent_key, env_key = jax.random.split(key, 3)
 
         agent_state = self.agent.init(agent_key)
@@ -223,6 +225,7 @@ class OffPolicyRLWorkflow(RLWorkflow):
         self._init_replay_buffer = replay_buffer_init_fn
 
     def setup(self, key: chex.PRNGKey) -> State:
+        self.recorder.init()
         key, agent_key, env_key, buffer_key = jax.random.split(key, 4)
 
         agent_state = self.agent.init(agent_key)

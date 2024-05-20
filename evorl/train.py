@@ -12,8 +12,9 @@ from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
 from evorl.recorders import WandbRecorder, LogRecorder, ChainRecorder
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('train')
 
+jax.config.update('jax_threefry_partitionable', True)
 set_omegaconf_resolvers()
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
@@ -53,16 +54,20 @@ def train(config: DictConfig) -> None:
         name=wandb_name,
         config=OmegaConf.to_container(config),  # save the unrescaled config
         tags=wandb_tags,
-        dir=output_dir,
+        path=output_dir,
         mode=wandb_mode
     )
-    log_recorder = LogRecorder(log_path=output_dir/f'{wandb_name}.log')
+    log_recorder = LogRecorder(log_path=output_dir/f'{wandb_name}.log', console=True)
     workflow.add_recorders([wandb_recorder, log_recorder])
 
-    state = workflow.init(jax.random.PRNGKey(config.seed))
-    state = workflow.learn(state)
-
-    workflow.close()
+    try:
+        state = workflow.init(jax.random.PRNGKey(config.seed))
+        state = workflow.learn(state)
+    except Exception as e:
+        logger.error(f"Exception: {e}")
+        raise e
+    finally:
+        workflow.close()
 
 
 if __name__ == "__main__":
