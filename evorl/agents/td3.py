@@ -8,6 +8,7 @@ import math
 
 from .agent import Agent, AgentState
 from evorl.workflows import OffPolicyRLWorkflow
+from evorl.agents.random_agent import RandomAgent
 from evorl.envs import create_env, Box, Env, EnvState
 from evorl.sample_batch import SampleBatch
 from evorl.evaluator import Evaluator
@@ -309,21 +310,6 @@ class TD3Agent(Agent):
             axis=0,
         )
 
-    def compute_random_actions(
-        self, key: chex.PRNGKey, sample_batch: SampleBatch
-    ) -> Tuple[Action, PolicyExtraInfo]:
-        """
-        get random actions for exploration used before "learning_starts" condition is met.
-        """
-        action = jax.random.uniform(
-            key,
-            shape=(sample_batch.obs.shape[0],) + self.action_space.shape,
-            minval=self.action_space.low,
-            maxval=self.action_space.high,
-        )
-        policy_extras = PyTreeDict()
-        return jax.lax.stop_gradient(action), policy_extras
-
 
 class TD3Workflow(OffPolicyRLWorkflow):
 
@@ -431,6 +417,50 @@ class TD3Workflow(OffPolicyRLWorkflow):
             config,
         )
 
+    @classmethod
+    def enable_jit(cls, device: jax.Device = None) -> None:
+        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
+        cls.fill_replay_buffer = jax.jit(cls.fill_replay_buffer, static_argnums=(0,))
+        cls.step = jax.jit(cls.step, static_argnums=(0,))
+        return super().enable_jit(device)
+
+    def fill_replay_buffer(self, state: State) -> State:
+        key, rollout_key, agent_key = jax.random.split(state.key, num=3)
+        random_agent = RandomAgent(
+            action_space=self.env.action_space, obs_space=self.env.obs_space
+        )
+        random_state = random_agent.init(agent_key)
+
+        env_state, trajectory = rollout(
+            env=self.env,
+            agent=random_agent,
+            env_state=state.env_state,
+            agent_state=random_state,
+            key=rollout_key,
+            rollout_length=self.config.learning_starts,
+            env_extra_fields=(
+                "last_obs",
+                "truncation",
+            ),
+        )
+        trajectory = jax.tree_util.tree_map(
+            lambda x: jax.lax.collapse(x, 0, 2), trajectory
+        )
+
+        mask = trajectory.extras.env_extras.truncation.astype(bool)
+        next_obs = jnp.where(
+            mask[:, None],
+            trajectory.extras.env_extras.last_obs,
+            trajectory.next_obs,
+        )
+        trajectory = trajectory.replace(next_obs=next_obs)
+
+        replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
+
+        return state.update(
+            env_state=env_state, replay_buffer_state=replay_buffer_state, key=key
+        )
+
     def setup(self, key: chex.PRNGKey) -> State:
         key, agent_key, env_key, buffer_key = jax.random.split(key, 4)
 
@@ -486,240 +516,167 @@ class TD3Workflow(OffPolicyRLWorkflow):
         """
         key, rollout_key, learn_key, buffer_key = jax.random.split(state.key, num=4)
 
-        def fill_replay_buffer(state: State):
-            replay_buffer_state = state.replay_buffer_state
-            env_state = state.env_state
-            sample_batch = SampleBatch(obs=env_state.obs)
-            actions, _ = self.agent.compute_random_actions(rollout_key, sample_batch)
-            env_nstate = self.env.step(env_state, actions)
-            trajectory = SampleBatch(
-                obs=env_state.obs,
-                actions=actions,
-                rewards=env_nstate.reward,
-                next_obs=env_nstate.obs,
-                dones=env_nstate.done,
-                extras=PyTreeDict(
-                    policy_extras=PyTreeDict(),
-                    env_extras=PyTreeDict(
-                        {
-                            "last_obs": env_nstate.info.last_obs,
-                            "truncation": env_nstate.info.truncation,
-                        }
-                    ),
-                ),
-            )
-            mask = trajectory.extras.env_extras.truncation.astype(bool)
-            next_obs = jnp.where(
-                mask[:, None],
-                trajectory.extras.env_extras.last_obs,
-                trajectory.next_obs,
-            )
-            trajectory = trajectory.replace(next_obs=next_obs)
+        # the trajectory (T*B*variable dim), dim T = 1 (default) and B = num_envs
+        env_state, trajectory = rollout(
+            env=self.env,
+            agent=self.agent,
+            env_state=state.env_state,
+            agent_state=state.agent_state,
+            key=rollout_key,
+            rollout_length=self.config.rollout_length,
+            env_extra_fields=(
+                "last_obs",
+                "truncation",
+            ),
+        )
+        trajectory = jax.tree_util.tree_map(
+            lambda x: jax.lax.collapse(x, 0, 2), trajectory
+        )
+        mask = trajectory.extras.env_extras.truncation.astype(bool)
+        next_obs = jnp.where(
+            mask[:, None],
+            trajectory.extras.env_extras.last_obs,
+            trajectory.next_obs,
+        )
+        trajectory = trajectory.replace(next_obs=next_obs)
+        replay_buffer_state = self.replay_buffer.add(
+            state.replay_buffer_state, trajectory
+        )
 
-            replay_buffer_state = self.replay_buffer.add(
-                replay_buffer_state, trajectory
-            )
-            env_state = env_nstate
-            state.update(env_state=env_state, replay_buffer_state=replay_buffer_state)
+        agent_state = state.agent_state
+        sampled_batch = self.replay_buffer.sample(replay_buffer_state, buffer_key)
 
-            # get episode return, in DDPG the return is the rewards
-            train_episode_return = env_state.info.episode_return.mean()
-            loss = jnp.zeros(())
-            loss_dict = dict(
-                actor_loss=loss,
-                critic_loss=loss,
-            )
-            train_metrics = TrainMetric(
-                train_episode_return=train_episode_return,
-                loss=loss,
-                raw_loss_dict=loss_dict,
-            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-            # calculate the numbner of timestep
-            sampled_timesteps = (
-                state.metrics.sampled_timesteps
-                + self.config.rollout_length * self.config.num_envs
-            )
-
-            # iterations is the number of updates of the agent
-            workflow_metrics = WorkflowMetric(
-                sampled_timesteps=sampled_timesteps,
-                iterations=state.metrics.iterations + self.config.num_envs,
-            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-            return state, train_metrics, workflow_metrics
-
-        def normal_step(state: State):
-            # the trajectory (T*B*variable dim), dim T = 1 (default) and B = num_envs
-            env_state, trajectory = rollout(
-                env=self.env,
-                agent=self.agent,
-                env_state=state.env_state,
-                agent_state=state.agent_state,
-                key=rollout_key,
-                rollout_length=self.config.rollout_length,
-                env_extra_fields=(
-                    "last_obs",
-                    "truncation",
-                ),
-            )
-            trajectory = jax.tree_util.tree_map(
-                lambda x: jax.lax.collapse(x, 0, 2), trajectory
-            )
-            mask = trajectory.extras.env_extras.truncation.astype(bool)
-            next_obs = jnp.where(
-                mask[:, None],
-                trajectory.extras.env_extras.last_obs,
-                trajectory.next_obs,
-            )
-            trajectory = trajectory.replace(next_obs=next_obs)
-            replay_buffer_state = self.replay_buffer.add(
-                state.replay_buffer_state, trajectory
-            )
-
-            agent_state = state.agent_state
-            sampled_batch = self.replay_buffer.sample(replay_buffer_state, buffer_key)
-
-            if agent_state.obs_preprocessor_state is not None:
-                agent_state = agent_state.replace(
-                    obs_preprocessor_state=running_statistics.update(
-                        agent_state.obs_preprocessor_state,
-                        trajectory.obs,
-                        pmap_axis_name=self.pmap_axis_name,
-                    )
+        if agent_state.obs_preprocessor_state is not None:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    trajectory.obs,
+                    pmap_axis_name=self.pmap_axis_name,
                 )
-
-            update_condition = (
-                state.metrics.iterations % self.config.actor_update_interval
-            ) == 0
-
-            def critic_loss_fn(agent_state, sample_batch, key):
-                loss_dict = self.agent.cirtic_loss(agent_state, sample_batch, key)
-                loss = loss_dict["critic_loss"]
-                return loss, loss_dict
-
-            def actor_loss_fn(agent_state, sample_batch, key):
-                loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
-                loss = loss_dict["actor_loss"]
-                return loss, loss_dict
-
-            critic_gradient_update = critic_agent_gradient_update(
-                critic_loss_fn,
-                self.optimizer,
-                pmap_axis_name=self.pmap_axis_name,
-                has_aux=True,
             )
 
-            actor_gradient_update = actor_agent_gradient_update(
-                actor_loss_fn,
-                self.optimizer,
-                pmap_axis_name=self.pmap_axis_name,
-                has_aux=True,
-            )
+        update_condition = (
+            state.metrics.iterations % self.config.actor_update_interval
+        ) == 0
 
-            def update_critic(agent_state):
-                (critic_loss, critic_loss_dict), critic_opt_state, agent_state = (
-                    critic_gradient_update(
-                        state.critic_opt_state,
-                        agent_state,
-                        sampled_batch.experience,
-                        learn_key,
-                    )
+        def critic_loss_fn(agent_state, sample_batch, key):
+            loss_dict = self.agent.cirtic_loss(agent_state, sample_batch, key)
+            loss = loss_dict["critic_loss"]
+            return loss, loss_dict
+
+        def actor_loss_fn(agent_state, sample_batch, key):
+            loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
+            loss = loss_dict["actor_loss"]
+            return loss, loss_dict
+
+        critic_gradient_update = critic_agent_gradient_update(
+            critic_loss_fn,
+            self.optimizer,
+            pmap_axis_name=self.pmap_axis_name,
+            has_aux=True,
+        )
+
+        actor_gradient_update = actor_agent_gradient_update(
+            actor_loss_fn,
+            self.optimizer,
+            pmap_axis_name=self.pmap_axis_name,
+            has_aux=True,
+        )
+
+        def update_critic(agent_state):
+            (critic_loss, critic_loss_dict), critic_opt_state, agent_state = (
+                critic_gradient_update(
+                    state.critic_opt_state,
+                    agent_state,
+                    sampled_batch.experience,
+                    learn_key,
                 )
-                actor_loss_dict = dict(actor_loss=jnp.zeros(()))
-                return (
-                    critic_loss,
-                    {**critic_loss_dict, **actor_loss_dict},
-                    critic_opt_state,
+            )
+            actor_loss_dict = dict(actor_loss=jnp.zeros(()))
+            return (
+                critic_loss,
+                {**critic_loss_dict, **actor_loss_dict},
+                critic_opt_state,
+                state.actor_opt_state,
+                agent_state,
+            )
+
+        def update_both(agent_state):
+            learn_key1, learn_key2 = jax.random.split(learn_key, num=2)
+            (critic_loss, critic_loss_dict), critic_opt_state, agent_state = (
+                critic_gradient_update(
+                    state.critic_opt_state,
+                    agent_state,
+                    sampled_batch.experience,
+                    learn_key1,
+                )
+            )
+
+            (actor_loss, actor_loss_dict), actor_opt_state, agent_state = (
+                actor_gradient_update(
                     state.actor_opt_state,
                     agent_state,
+                    sampled_batch.experience,
+                    learn_key2,
                 )
-
-            def update_both(agent_state):
-                learn_key1, learn_key2 = jax.random.split(learn_key, num=2)
-                (critic_loss, critic_loss_dict), critic_opt_state, agent_state = (
-                    critic_gradient_update(
-                        state.critic_opt_state,
-                        agent_state,
-                        sampled_batch.experience,
-                        learn_key1,
-                    )
-                )
-
-                (actor_loss, actor_loss_dict), actor_opt_state, agent_state = (
-                    actor_gradient_update(
-                        state.actor_opt_state,
-                        agent_state,
-                        sampled_batch.experience,
-                        learn_key2,
-                    )
-                )
-
-                target_critic_params = soft_target_update(
-                    agent_state.params.target_critic_params,
-                    agent_state.params.critic_params,
-                    self.config.tau,
-                )
-                target_actor_params = soft_target_update(
-                    agent_state.params.target_actor_params,
-                    agent_state.params.actor_params,
-                    self.config.tau,
-                )
-                params = agent_state.params.replace(
-                    target_critic_params=target_critic_params,
-                    target_actor_params=target_actor_params,
-                )
-                agent_state = agent_state.replace(params=params)
-
-                return (
-                    critic_loss + actor_loss,
-                    {**critic_loss_dict, **actor_loss_dict},
-                    critic_opt_state,
-                    actor_opt_state,
-                    agent_state,
-                )
-
-            loss, loss_dict, critic_opt_state, actor_opt_state, agent_state = (
-                jax.lax.cond(update_condition, update_both, update_critic, agent_state)
             )
 
-            state = state.update(
-                env_state=env_state,
-                replay_buffer_state=replay_buffer_state,
-                agent_state=agent_state,
-                critic_opt_state=critic_opt_state,
-                actor_opt_state=actor_opt_state,
+            target_critic_params = soft_target_update(
+                agent_state.params.target_critic_params,
+                agent_state.params.critic_params,
+                self.config.tau,
+            )
+            target_actor_params = soft_target_update(
+                agent_state.params.target_actor_params,
+                agent_state.params.actor_params,
+                self.config.tau,
+            )
+            params = agent_state.params.replace(
+                target_critic_params=target_critic_params,
+                target_actor_params=target_actor_params,
+            )
+            agent_state = agent_state.replace(params=params)
+
+            return (
+                critic_loss + actor_loss,
+                {**critic_loss_dict, **actor_loss_dict},
+                critic_opt_state,
+                actor_opt_state,
+                agent_state,
             )
 
-            # get episode return, in DDPG the return is the rewards
-            train_episode_return = env_state.info.episode_return.mean()
-
-            train_metrics = TrainMetric(
-                train_episode_return=train_episode_return,
-                loss=loss,
-                raw_loss_dict=loss_dict,
-            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-            # calculate the numbner of timestep
-            sampled_timesteps = (
-                state.metrics.sampled_timesteps
-                + self.config.rollout_length * self.config.num_envs
-            )
-
-            # iterations is the number of updates of the agent
-            workflow_metrics = WorkflowMetric(
-                sampled_timesteps=sampled_timesteps,
-                iterations=state.metrics.iterations + 1,
-            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-            return state, train_metrics, workflow_metrics
-
-        start_condition = jax.lax.lt(
-            state.metrics.iterations, self.config.learning_starts
+        loss, loss_dict, critic_opt_state, actor_opt_state, agent_state = (
+            jax.lax.cond(update_condition, update_both, update_critic, agent_state)
         )
-        state, train_metrics, workflow_metrics = jax.lax.cond(
-            start_condition, fill_replay_buffer, normal_step, state
+
+        state = state.update(
+            env_state=env_state,
+            replay_buffer_state=replay_buffer_state,
+            agent_state=agent_state,
+            critic_opt_state=critic_opt_state,
+            actor_opt_state=actor_opt_state,
         )
+
+        # get episode return, in DDPG the return is the rewards
+        train_episode_return = env_state.info.episode_return.mean()
+
+        train_metrics = TrainMetric(
+            train_episode_return=train_episode_return,
+            loss=loss,
+            raw_loss_dict=loss_dict,
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+        # calculate the numbner of timestep
+        sampled_timesteps = (
+            state.metrics.sampled_timesteps
+            + self.config.rollout_length * self.config.num_envs
+        )
+
+        # iterations is the number of updates of the agent
+        workflow_metrics = WorkflowMetric(
+            sampled_timesteps=sampled_timesteps,
+            iterations=state.metrics.iterations + 1,
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         return train_metrics, state.update(
             key=key,
@@ -746,32 +703,33 @@ class TD3Workflow(OffPolicyRLWorkflow):
             last_step = checkpoint_manager.latest_step()
             state = load(path=ckpt_path, state=state)
             start_iteration = tree_unpmap(last_step, self.pmap_axis_name)
-
-        if not self.config.load:
-            for i in range(start_iteration, num_iters):
-                train_metrics, state = self.step(state)
-                workflow_metrics = state.metrics
-
-                # the log_interval should be odd due to the frequency of updating actor is even
-                if (i + 1) % self.config.log_interval == 0:
-                    train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-                    self.recorder.write(train_metrics.to_local_dict(), i)
-                    workflow_metrics = tree_unpmap(
-                        workflow_metrics, self.pmap_axis_name
-                    )
-                    self.recorder.write(workflow_metrics.to_local_dict(), i)
-
-                if (i + 1) % self.config.eval_interval == 0:
-                    eval_metrics, state = self.evaluate(state)
-                    eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                    self.recorder.write({"eval": eval_metrics.to_local_dict()}, i)
-
-                self.checkpoint_manager.save(
-                    i,
-                    args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
-                )
-        # not completed
         else:
+            state = self.fill_replay_buffer(state)
+
+        for i in range(start_iteration, num_iters):
+            train_metrics, state = self.step(state)
+            workflow_metrics = state.metrics
+
+            # the log_interval should be odd due to the frequency of updating actor is even
+            if (i + 1) % self.config.log_interval == 0:
+                train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+                self.recorder.write(train_metrics.to_local_dict(), i)
+                workflow_metrics = tree_unpmap(
+                    workflow_metrics, self.pmap_axis_name
+                )
+                self.recorder.write(workflow_metrics.to_local_dict(), i)
+
+            if (i + 1) % self.config.eval_interval == 0:
+                eval_metrics, state = self.evaluate(state)
+                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                self.recorder.write({"eval": eval_metrics.to_local_dict()}, i)
+
+            self.checkpoint_manager.save(
+                i,
+                args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
+            )
+        # not completed
+        if self.config.load:
             ckpt_options = ocp.CheckpointManagerOptions(
                 save_interval_steps=self.config.checkpoint.save_interval_steps,
                 max_to_keep=self.config.checkpoint.max_to_keep,

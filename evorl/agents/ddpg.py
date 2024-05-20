@@ -5,7 +5,7 @@ from flax import struct
 from flax.training import checkpoints
 import orbax.checkpoint as ocp
 import math
-
+import os
 from .agent import Agent, AgentState
 from evorl.networks import make_q_network, make_policy_network
 from evorl.workflows import OffPolicyRLWorkflow
@@ -473,7 +473,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         key, rollout_key, agent_key = jax.random.split(state.key, num=3)
         random_agent = RandomAgent(action_space=self.env.action_space, obs_space=self.env.obs_space)
         random_state = random_agent.init(agent_key)
-        
+
         env_state, trajectory = rollout(
             env=self.env,
             agent=random_agent,
@@ -683,7 +683,24 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         # one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = self.config.total_timesteps
         start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
-        state = self.fill_replay_buffer(state)
+        
+        ckpt_path = self.config.load_path + "/checkpoints"
+        if self.config.check_load and os.path.isdir(ckpt_path):
+            ckpt_options = ocp.CheckpointManagerOptions(
+                save_interval_steps=self.config.checkpoint.save_interval_steps,
+                max_to_keep=self.config.checkpoint.max_to_keep,
+            )
+            logger.info(f"Set loadiong checkpoint path: {ckpt_path}")
+            checkpoint_manager = ocp.CheckpointManager(
+                ckpt_path,
+                options=ckpt_options,
+                metadata=OmegaConf.to_container(self.config),  # Rescaled real config
+            )
+            last_step = checkpoint_manager.latest_step()
+            state = load(path=ckpt_path, state=state)
+            start_iteration = tree_unpmap(last_step, self.pmap_axis_name)
+        else:
+            state = self.fill_replay_buffer(state)
         for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
@@ -706,7 +723,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 i,
                 args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
             )
-            
+
         # not completed
         if self.config.load:
             ckpt_path = self.config.load_path + "/checkpoints"
@@ -843,69 +860,3 @@ def critic_agent_gradient_update(
         return value, opt_state, agent_state
 
     return f
-
-"""
-def fill_replay_buffer(state: State):
-            replay_buffer_state = state.replay_buffer_state
-            env_state = state.env_state
-            sample_batch = SampleBatch(obs=env_state.obs)
-            actions, _ = self.agent.compute_random_actions(rollout_key, sample_batch)
-            env_nstate = self.env.step(env_state, actions)
-            trajectory = SampleBatch(
-                obs=env_state.obs,
-                actions=actions,
-                rewards=env_nstate.reward,
-                next_obs=env_nstate.obs,
-                dones=env_nstate.done,
-                extras=PyTreeDict(
-                    policy_extras=PyTreeDict(),
-                    env_extras=PyTreeDict(
-                        {
-                            "last_obs": env_nstate.info.last_obs,
-                            "truncation": env_nstate.info.truncation,
-                        }
-                    ),
-                ),
-            )
-            mask = trajectory.extras.env_extras.truncation.astype(bool)
-            next_obs = jnp.where(
-                mask[:, None],
-                trajectory.extras.env_extras.last_obs,
-                trajectory.next_obs,
-            )
-            trajectory = trajectory.replace(next_obs=next_obs)
-
-            replay_buffer_state = self.replay_buffer.add(
-                replay_buffer_state, trajectory
-            )
-            env_state = env_nstate
-            state.update(env_state=env_state, replay_buffer_state=replay_buffer_state)
-
-            # get episode return, in DDPG the return is the rewards
-            train_episode_return = env_state.info.episode_return.mean()
-            loss = jnp.zeros(())
-            loss_dict = dict(
-                actor_loss=loss,
-                critic_loss=loss,
-            )
-            train_metrics = TrainMetric(
-                train_episode_return=train_episode_return,
-                loss=loss,
-                raw_loss_dict=loss_dict,
-            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-            # calculate the numbner of timestep
-            sampled_timesteps = (
-                state.metrics.sampled_timesteps
-                + self.config.rollout_length * self.config.num_envs
-            )
-
-            # iterations is the number of updates of the agent
-            workflow_metrics = WorkflowMetric(
-                sampled_timesteps=sampled_timesteps,
-                iterations=state.metrics.iterations + self.config.num_envs,
-            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-            return state, train_metrics, workflow_metrics
-
-"""
