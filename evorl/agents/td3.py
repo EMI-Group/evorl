@@ -185,7 +185,7 @@ class TD3Agent(Agent):
             agent_state.params.target_actor_params, next_obs
         )
 
-        # random noise
+        # random noise    self.action_space next_actions.shape
         noise = jnp.clip(
             jax.random.normal(key, next_actions.shape) * self.policy_noise,
             -self.policy_noise_clip,
@@ -214,7 +214,7 @@ class TD3Agent(Agent):
         )
         qs = q_net_batch_apply(agent_state.params.critic_params).squeeze(-1)
 
-        # in DDPG, we use the target network to compute the target value and in cleanrl, the lose is MSE loss
+        # another way to compute the lose
         # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
         q_loss = ((qs - target_qs) ** 2).mean(axis=-1).sum()
 
@@ -269,22 +269,12 @@ class TD3Agent(Agent):
         ]
         """
 
-        next_obs = sample_batch.next_obs
-        obs = sample_batch.obs
-        actions = sample_batch.actions
-
-        q_loss = self.cirtic_loss(agent_state, sample_batch, key)["critic_loss"]
+        q_loss = self.cirtic_loss(agent_state, sample_batch, key).critic_loss
 
         # ====== actor =======
 
         # [T*B, A]
-        gen_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
-
-        actor_loss = -jnp.mean(
-            self.critic_network.apply(
-                agent_state.params.critic_params[0], obs, gen_actions
-            ).squeeze(-1)
-        )
+        actor_loss = self.actor_loss(agent_state, sample_batch, key).actor_loss
 
         return PyTreeDict(
             actor_loss=actor_loss,
@@ -305,9 +295,9 @@ class TD3Agent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
+        input_data = jnp.concatenate([obs, actions], axis=-1)
         return jnp.min(
-            self.critic_network.apply(agent_state.params.value_params, obs, actions),
-            axis=0,
+            self.critic_network.apply(agent_state.params.value_params, input_data), axis=0
         )
 
 
