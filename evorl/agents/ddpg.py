@@ -414,7 +414,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
     def enable_jit(cls, device: jax.Device = None) -> None:
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls.fill_replay_buffer = jax.jit(cls.fill_replay_buffer, static_argnums=(0,))
-        cls.step = jax.jit(cls.step, static_argnums=(0,))
+        cls._step = jax.jit(cls._step, static_argnums=(0,))
         return super().enable_jit(device)
 
     def setup(self, key: chex.PRNGKey) -> State:
@@ -471,7 +471,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         key, rollout_key, agent_key = jax.random.split(state.key, num=3)
         random_agent = RandomAgent(action_space=self.env.action_space, obs_space=self.env.obs_space)
         random_state = random_agent.init(agent_key)
-        replay_buffer_state = state.replay_buffer_state
 
         env_state, trajectory = rollout(
             env=self.env,
@@ -479,7 +478,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             env_state=state.env_state,
             agent_state=random_state,
             key=rollout_key,
-            rollout_length=self.config.learning_starts,
+            rollout_length=self.config.rollout_length,
             env_extra_fields=(
                 "last_obs",
                 "truncation",
@@ -498,14 +497,42 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         trajectory = trajectory.replace(next_obs=next_obs)
 
         replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, trajectory
+            state.replay_buffer_state, trajectory
         )
 
-        return state.update(
-            env_state=env_state, replay_buffer_state=replay_buffer_state, key=key
+        # get episode return
+        train_episode_return = env_state.info.episode_return.mean()
+        loss = jnp.zeros(())
+        loss_dict = dict(
+            actor_loss=loss,
+            critic_loss=loss,
+        )
+        train_metrics = TrainMetric(
+            train_episode_return=train_episode_return,
+            loss=loss,
+            raw_loss_dict=loss_dict,
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+        # calculate the numbner of timestep
+        sampled_timesteps = (
+            state.metrics.sampled_timesteps
+            + self.config.rollout_length * self.config.num_envs
         )
 
-    def step(self, state: State) -> Tuple[TrainMetric, State]:
+        # iterations is the number of updates of the agent
+        workflow_metrics = WorkflowMetric(
+            sampled_timesteps=sampled_timesteps,
+            iterations=state.metrics.iterations + self.config.num_envs,
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+        return train_metrics, state.update(
+            env_state=env_state,
+            replay_buffer_state=replay_buffer_state,
+            key=key,
+            metrics=workflow_metrics,
+        )
+
+    def _step(self, state: State) -> Tuple[TrainMetric, State]:
         """
         the basic step function for the workflow to update agent
         """
@@ -669,6 +696,14 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             key=key,
             metrics=workflow_metrics,
         )
+        
+    def step(self, state: State) -> Tuple[TrainMetric, State]:
+        if state.metrics.iterations < self.config.learning_starts:
+            train_metrics, state = self.fill_replay_buffer(state)
+        else:
+            train_metrics, state = self._step(state)
+            
+        return train_metrics, state
 
     def learn(self, state: State) -> State:
         # one_step_timesteps = self.config.rollout_length * self.config.num_envs
@@ -690,8 +725,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             last_step = checkpoint_manager.latest_step()
             state = load(path=ckpt_path, state=state)
             start_iteration = tree_unpmap(last_step, self.pmap_axis_name)
-        else:
-            state = self.fill_replay_buffer(state)
 
         for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
