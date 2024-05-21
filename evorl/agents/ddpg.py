@@ -43,14 +43,6 @@ ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
 
-# @struct.dataclass
-# class DDPGNetworkParams:
-#     """Contains training state for the learner."""
-
-#     critic_params: Params
-#     target_critic_params: Params
-#     actor_params: Params
-#     target_actor_params: Params
 @struct.dataclass
 class DDPGNetworkParams:
     """Contains training state for the learner."""
@@ -106,21 +98,9 @@ class DDPGAgent(Agent):
         self.set_frozen_attr("critic_network", critic_network)
         self.set_frozen_attr("actor_network", actor_network)
 
-        # params_state = DDPGNetworkParams(
-        #     critic_params=critic_params,
-        #     target_critic_params=target_critic_params,
-        #     actor_params=actor_params,
-        #     target_actor_params=target_actor_params,
-        # )
         params_state = DDPGNetworkParams(
-            params={
-                "critic_params": critic_params,
-                "actor_params": actor_params,
-            },
-            target_params={
-                "critic_params": target_critic_params,
-                "actor_params": target_actor_params,
-            }
+            params=PyTreeDict(critic_params=critic_params, actor_params=actor_params),
+            target_params=PyTreeDict(critic_params=target_critic_params, actor_params=target_actor_params),
         )
         # obs_preprocessor
         if self.normalize_obs:
@@ -430,18 +410,24 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             config,
         )
 
+    @classmethod
+    def enable_jit(cls, device: jax.Device = None) -> None:
+        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
+        cls.fill_replay_buffer = jax.jit(cls.fill_replay_buffer, static_argnums=(0,))
+        cls.step = jax.jit(cls.step, static_argnums=(0,))
+        return super().enable_jit(device)
+
     def setup(self, key: chex.PRNGKey) -> State:
         self.recorder.init()
-        
+
         key, agent_key, env_key, buffer_key = jax.random.split(key, 4)
 
         agent_state = self.agent.init(agent_key)
 
         workflow_metrics = self._setup_workflow_metrics()
 
-        # critic_opt_state = self.optimizer.init(agent_state.params.critic_params)
-        # actor_opt_state = self.optimizer.init(agent_state.params.actor_params)
         opt_state = self.optimizer.init(agent_state.params)
+
         replay_buffer_state = self._init_replay_buffer(self.replay_buffer, buffer_key)
 
         if self.enable_multi_devices:
@@ -465,6 +451,10 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 
             env_key = split_key_to_devices(env_key, self.devices)
             env_state = jax.pmap(self.env.reset, axis_name=self.pmap_axis_name)(env_key)
+            buffer_key = split_key_to_devices(buffer_key, self.devices)
+            replay_buffer_state = jax.pmap(
+                self._init_replay_buffer, axis_name=self.pmap_axis_name
+            )(buffer_key)
         else:
             env_state = self.env.reset(env_key)
 
@@ -476,13 +466,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             env_state=env_state,
             opt_state=opt_state,
         )
-
-    @classmethod
-    def enable_jit(cls, device: jax.Device = None) -> None:
-        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
-        cls.fill_replay_buffer = jax.jit(cls.fill_replay_buffer, static_argnums=(0,))
-        cls.step = jax.jit(cls.step, static_argnums=(0,))
-        return super().enable_jit(device)
 
     def fill_replay_buffer(self, state: State) -> State:
         key, rollout_key, agent_key = jax.random.split(state.key, num=3)
@@ -573,8 +556,13 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             return loss, loss_dict
 
         def both_loss_fn(agent_state, sample_batch, key):
-            actor_loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
-            critic_loss_dict = self.agent.cirtic_loss(agent_state, sample_batch, key)
+            actor_key, critic_key = jax.random.split(key)
+            actor_loss_dict = self.agent.actor_loss(
+                agent_state, sample_batch, actor_key
+            )
+            critic_loss_dict = self.agent.cirtic_loss(
+                agent_state, sample_batch, critic_key
+            )
             loss_dict = PyTreeDict(
                 actor_loss=actor_loss_dict["actor_loss"],
                 critic_loss=critic_loss_dict["critic_loss"],
@@ -605,9 +593,8 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                     learn_key,
                 )
             )
-            actor_loss_dict = {"actor_loss": jnp.zeros(())}
             loss_dict = PyTreeDict(
-                actor_loss=actor_loss_dict["actor_loss"],
+                actor_loss=jnp.zeros(()),
                 critic_loss=critic_loss_dict["critic_loss"],
             )
             return (
@@ -801,80 +788,3 @@ def make_actor_network(
     init_fn = lambda rng: actor.init(rng, jnp.ones((1, obs_size)))
 
     return actor, init_fn
-
-
-# get the loss and the gradient
-def loss_and_pgrad(
-    loss_fn: Callable[..., float], pmap_axis_name: Optional[str], has_aux: bool = False
-):
-    g = jax.value_and_grad(loss_fn, has_aux=has_aux)
-
-    def h(*args, **kwargs):
-        value, grads = g(*args, **kwargs)
-        return value, jax.lax.pmean(grads, axis_name=pmap_axis_name)
-
-    return g if pmap_axis_name is None else h
-
-
-# update the gradient for the actor (agent_state.params.actor_params)
-def actor_agent_gradient_update(
-    loss_fn: Callable[..., float],
-    optimizer: optax.GradientTransformation,
-    pmap_axis_name: Optional[str],
-    has_aux: bool = False,
-):
-    def _loss_fn(actor_params, agent_state, sample_batch, key):
-        p = agent_state.params.replace(actor_params=actor_params)
-        return loss_fn(agent_state.replace(params=p), sample_batch, key)
-
-    loss_and_pgrad_fn = loss_and_pgrad(
-        _loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux
-    )
-
-    def f(opt_state, agent_state, *args, **kwargs):
-        value, grads = loss_and_pgrad_fn(
-            agent_state.params.actor_params, agent_state, *args, **kwargs
-        )
-
-        actor_params_update, opt_state = optimizer.update(grads, opt_state)
-        updated_actor_params = optax.apply_updates(
-            agent_state.params.params['actor_params'], actor_params_update
-        )
-        updated_params = agent_state.params.replace(actor_params=updated_actor_params)
-        agent_state = agent_state.replace(params=updated_params)
-
-        return value, opt_state, agent_state
-
-    return f
-
-
-# update the gradient for the critic (agent_state.params.critic_params)
-def critic_agent_gradient_update(
-    loss_fn: Callable[..., float],
-    optimizer: optax.GradientTransformation,
-    pmap_axis_name: Optional[str],
-    has_aux: bool = False,
-):
-    def _loss_fn(critic_params, agent_state, sample_batch, key):
-        p = agent_state.params.replace(critic_params=critic_params)
-        return loss_fn(agent_state.replace(params=p), sample_batch, key)
-
-    loss_and_pgrad_fn = loss_and_pgrad(
-        _loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux
-    )
-
-    def f(opt_state, agent_state, *args, **kwargs):
-        value, grads = loss_and_pgrad_fn(
-            agent_state.params.critic_params, agent_state, *args, **kwargs
-        )
-
-        critic_params_update, opt_state = optimizer.update(grads, opt_state)
-        updated_critic_params = optax.apply_updates(
-            agent_state.params.params['critic_params'], critic_params_update
-        )
-        updated_params = agent_state.params.replace(critic_params=updated_critic_params)
-        agent_state = agent_state.replace(params=updated_params)
-
-        return value, opt_state, agent_state
-
-    return f
