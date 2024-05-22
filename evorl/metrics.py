@@ -12,7 +12,10 @@ import dataclasses
 
 
 def metricfield(*, reduce_fn: Callable[[chex.Array, Optional[str]], chex.Array] = None, pytree_node=True, **kwargs):
-    return dataclasses.field(metadata={'pytree_node': pytree_node, 'reduce_fn': reduce_fn}, **kwargs)
+    metadata={'pytree_node': pytree_node, 'reduce_fn': reduce_fn}
+    kwargs.setdefault('metadata', {}).update(metadata)
+
+    return dataclasses.field(**kwargs)
 
 
 class MetricBase(PyTreeNode, kw_only=True):
