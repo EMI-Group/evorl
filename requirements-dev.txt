@@ -1,4 +1,4 @@
-jax[cuda12] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+jax[cuda12]
 flax
 optax
 distrax
