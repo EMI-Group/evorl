@@ -6,8 +6,8 @@ defaults:
 
 normalize_obs: true
 num_envs: 4096
-minibatch_size: 2048 # num_minibatches = batch_size / num_minibatches = 32
-rollout_length: 160 # 5*32
+minibatch_size: 10240 # batch_size*unroll_length / num_minibatches = 4096*80/32
+rollout_length: 80  # 5*16, equal to unroll_length*(batch_size * num_minibatches // num_envs) in brax
 discount: 0.97
 
 total_timesteps: 50000000
