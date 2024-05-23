@@ -23,5 +23,5 @@ dependencies:
   - wandb
   - hydra-core
   # jax
-  - pip:
-    - -r requirements-dev.txt
+  # - pip:
+  #   - -r requirements-dev.txt

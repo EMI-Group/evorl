@@ -5,6 +5,10 @@ EvoRL is an efficient Evolutionary Reinforcement Learning Framework based on [Ev
 # Setup
 ```
 conda|mamba env create -f xuanwu.yaml
+# install jax (in various way)
+pip install "jax[cuda12]"
+# install pip packages
+pip install -r requirements-dev.txt
 conda activate xuanwu
 ```
 

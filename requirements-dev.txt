@@ -1,9 +1,9 @@
-jax[cuda12]
+# jax[cuda12]
 flax
 optax
 distrax
 orbax-checkpoint
-evox == 0.8.1
+evox==0.8.1
 jumanji
 pgx
 jaxmarl
