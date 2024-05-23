@@ -7,6 +7,7 @@ from jax.sharding import Mesh
 from jax.sharding import PartitionSpec as P
 from jax.sharding import NamedSharding
 from jax.experimental import mesh_utils
+from jax.experimental.shard_map import shard_map
 
 from flax import struct
 import math
@@ -163,15 +164,14 @@ class PBTWorkflow(RLWorkflow):
         workflow_keys = jax.device_put(workflow_keys, self.sharding)
 
         pop_workflow_state = jax.jit(
-            jax.vmap(self.workflow.setup),
+            jax.vmap(self.workflow.setup, spmd_axis_name=POP_AXIS_NAME),
             in_shardings=self.sharding,
             out_shardings=self.sharding
         )(workflow_keys)
 
-
-        
         pop_workflow_state = jax.jit(
-            jax.vmap(apply_hyperparams_to_workflow_state),
+            jax.vmap(apply_hyperparams_to_workflow_state,
+                     spmd_axis_name=POP_AXIS_NAME),
             in_shardings=self.sharding,
             out_shardings=self.sharding
         )(pop, pop_workflow_state)
@@ -197,15 +197,20 @@ class PBTWorkflow(RLWorkflow):
                 _one_step, wf_state, None, length=self.config.per_iter_workflow_steps
             )
 
+            # jax.debug.print("{x}", x=train_metrics_trajectory.train_episode_return)
+
             train_metrics = jtu.tree_map(
                 lambda x: x[-1], train_metrics_trajectory)
 
             return train_metrics, wf_state
 
         if self.config.parallel_train:
-            train_steps_fn = jax.vmap(_train_steps)
+            train_steps_fn = jax.vmap(
+                _train_steps, spmd_axis_name=POP_AXIS_NAME)
         else:
-            train_steps_fn = partial(jax.lax.map, _train_steps)
+            # TODO: fix potential unneccesary gpu-comm: eg: all-gather in ppo #line=387
+            # train_steps_fn = partial(jax.lax.map, _train_steps)
+            train_steps_fn = parallel_map(_train_steps, self.sharding)
 
         pop_train_metrics, pop_workflow_state = jax.jit(
             train_steps_fn,
@@ -215,9 +220,10 @@ class PBTWorkflow(RLWorkflow):
 
         # ===== eval ======
         if self.config.parallel_eval:
-            eval_fn = jax.vmap(self.workflow.evaluate)
+            eval_fn = jax.vmap(self.workflow.evaluate,
+                               spmd_axis_name=POP_AXIS_NAME)
         else:
-            eval_fn = partial(jax.lax.map, self.workflow.evaluate)
+            eval_fn = parallel_map(self.workflow.evaluate, self.sharding)
 
         pop_eval_metrics, pop_workflow_state = jax.jit(
             eval_fn,
@@ -233,13 +239,13 @@ class PBTWorkflow(RLWorkflow):
         def _dummy_fn(key, pop_episode_returns, pop, pop_workflow_state):
             return pop, pop_workflow_state
 
-        _exploit_and_explore = partial(exploit_and_explore, self.config)
+        _exploit_and_explore_fn = partial(exploit_and_explore, self.config)
 
         pop, pop_workflow_state = jax.lax.cond(
             state.metrics.iterations+1 <= math.ceil(self.config.warmup_steps /
                                                     self.config.per_iter_workflow_steps),
             _dummy_fn,
-            _exploit_and_explore,
+            _exploit_and_explore_fn,
             exploit_and_explore_key, pop_episode_returns, pop, pop_workflow_state
         )
 
@@ -364,8 +370,14 @@ def deepcopy_InjectStatefulHyperparamsState(state: InjectStatefulHyperparamsStat
     )
 
 
-def loop_over_pmap(pmap_fn, devices, num: int, *args):
-    assert num % len(
-        devices) == 0, "num should be divisible by the number of devices"
+def parallel_map(fn, sharding):
+    """
+        sequential on the same gpu, parrallel on different gpu.
+    """
 
-    pmap_fn()
+    def shmap_f(state):
+        # state: sharded state on single device
+        # jax.debug.print("{}", state.env_state.obs.shape)
+        return jax.lax.map(fn, state)
+
+    return shard_map(shmap_f, mesh=sharding.mesh, in_specs=sharding.spec, out_specs=sharding.spec, check_rep=False)
