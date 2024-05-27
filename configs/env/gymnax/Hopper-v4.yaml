@@ -1,3 +1,0 @@
-env_name: Hopper-v4
-env_type: gymnax
-max_episode_steps: 200
