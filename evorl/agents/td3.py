@@ -55,7 +55,7 @@ class TD3NetworkParams:
 
 class TD3Agent(Agent):
     """
-    DDPG
+    TD3
     """
 
     critic_hidden_layer_sizes: Tuple[int] = (256, 256)
