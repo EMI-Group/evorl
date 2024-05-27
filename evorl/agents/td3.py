@@ -612,7 +612,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
         def update_critic(agent_state):
             (loss, loss_dict), opt_state, agent_state = (
                 critic_gradient_update(
-                    state.critic_opt_state,
+                    state.opt_state,
                     agent_state,
                     sampled_batch.experience,
                     learn_key,
