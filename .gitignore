@@ -230,3 +230,4 @@ pyrightconfig.json
 /debug
 /test*
 /*.sh
+/wandb
