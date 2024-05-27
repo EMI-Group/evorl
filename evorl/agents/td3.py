@@ -411,7 +411,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls.fill_replay_buffer = jax.jit(cls.fill_replay_buffer, static_argnums=(0,))
         cls._step = jax.jit(cls._step, static_argnums=(0,))
-        return super().enable_jit(device)
+        # return super().enable_jit(device)
 
     def fill_replay_buffer(self, state: State) -> State:
         key, rollout_key, agent_key = jax.random.split(state.key, num=3)
