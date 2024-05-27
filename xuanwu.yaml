@@ -2,7 +2,7 @@ name: xuanwu
 channels:
   - conda-forge
 dependencies:
-  - python=3.10
+  - python=3.10 # >=3.11 have dataclass issue related to cpython #99401
   - pip
   - jupyterlab
   - tqdm
@@ -23,5 +23,5 @@ dependencies:
   - wandb
   - hydra-core
   # jax
-  - pip:
-    - -r requirements-dev.txt
+  # - pip:
+  #   - -r requirements-dev.txt

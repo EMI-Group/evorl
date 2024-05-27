@@ -14,6 +14,26 @@ def disable_gpu_preallocation():
     os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 
 
+def optimize_gpu_utilization():
+    xla_flags = os.getenv("XLA_FLAGS", "")
+    # print(f"current XLA_FLAGS: {xla_flags}")
+    if len(xla_flags)>0:
+        xla_flags = xla_flags+" " 
+    # os.environ['XLA_FLAGS'] = xla_flags + (
+    #     '--xla_gpu_enable_triton_softmax_fusion=true '
+    #     '--xla_gpu_triton_gemm_any=True '
+    #     # '--xla_gpu_enable_async_collectives=true '
+    #     # '--xla_gpu_enable_latency_hiding_scheduler=true '
+    #     # '--xla_gpu_enable_highest_priority_async_stream=true '
+    # )
+
+    # used for single-host multi-device computations on Nvidia GPUs
+    os.environ.update({
+        "NCCL_LL128_BUFFSIZE": "-2",
+        "NCCL_LL_BUFFSIZE": "-2",
+        "NCCL_PROTO": "SIMPLE,LL,LL128",
+    })
+
 # use chex.set_n_cpu_devices(n) instead
 # def set_host_device_count(n):
 #     """

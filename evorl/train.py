@@ -8,12 +8,15 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 import logging
 
+from evorl.utils.jax_utils import optimize_gpu_utilization
 from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
 from evorl.recorders import WandbRecorder, LogRecorder, ChainRecorder
 from pathlib import Path
 
 logger = logging.getLogger('train')
 
+optimize_gpu_utilization()
+jax.config.update("jax_compilation_cache_dir", "../jax-cache")
 jax.config.update('jax_threefry_partitionable', True)
 set_omegaconf_resolvers()
 
@@ -24,6 +27,7 @@ def train(config: DictConfig) -> None:
     if config.debug:
         from jax import config as jax_config
         jax_config.update("jax_debug_nans", True)
+        # jax.config.update("jax_transfer_guard", "log")
         # jax_config.update("jax_debug_infs", True)
 
     workflow_cls = hydra.utils.get_class(config.workflow_cls)
