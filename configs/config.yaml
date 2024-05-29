@@ -9,6 +9,6 @@ defaults:
 seed: 42
 debug: false
 checkpoint:
-  enable: true
+  enable: false
   save_interval_steps: 100
   max_to_keep: null
