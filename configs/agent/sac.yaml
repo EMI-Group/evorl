@@ -1,0 +1,36 @@
+# @package _global_
+
+workflow_cls: evorl.agents.sac.SACWorkflow
+
+num_envs: 8
+
+normalize_obs: false
+rollout_length: 1
+discount: 0.99
+reward_scale: 10.0
+tau: 0.005
+
+adaptive_alpha: true
+alpha: 0.2 # will be used if adaptive_alpha is false
+
+random_rollout_step: 0 # before this step, a random policy is used
+
+total_timesteps: 5000000
+
+num_eval_envs: 8
+eval_interval: 6250 # eval_interval should be divided by ceil(total_timesteps / num_envs)
+eval_episodes: 16 # should be divided by num_eval_envs
+
+optimizer:
+  lr: 0.0003
+  grad_clip_norm: 10.0 # set 0 or null to turn-off
+
+replay_buffer:
+  capacity: 1000000
+  min_size: 100
+  sample_batch_size: 256
+
+agent_network:
+  continuous_action: true
+  critic_hidden_layer_sizes: [256, 256]
+  actor_hidden_layer_sizes: [256, 256]
