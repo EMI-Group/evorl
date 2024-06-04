@@ -11,7 +11,7 @@ reward_scale: 10.0
 tau: 0.005
 
 adaptive_alpha: true
-alpha: 0.2 # will be used if adaptive_alpha is false
+alpha: 0.2 # will only be used if adaptive_alpha is false
 
 random_rollout_step: 0 # before this step, a random policy is used
 

@@ -331,17 +331,20 @@ class SACWorkflow(OffPolicyRLWorkflow):
         )
     
     def setup(self, key: chex.PRNGKey) -> State:
+        self.recorder.init()
         key, agent_key, env_key, buffer_key = jax.random.split(key, 4)
 
         agent_state = self.agent.init(agent_key)
 
         workflow_metrics = self._setup_workflow_metrics()
-
+        
         critic_opt_state = self.optimizer.init(agent_state.params.critic_params)
         actor_opt_state = self.optimizer.init(agent_state.params.actor_params)
         alpha_opt_state = self.optimizer.init(agent_state.params.alpha_params)
 
-        replay_buffer_state = self._init_replay_buffer(self.replay_buffer, buffer_key)
+
+        replay_buffer_state = self._init_replay_buffer(
+            self.replay_buffer, buffer_key)
 
         if self.enable_multi_devices:
             (
@@ -381,6 +384,58 @@ class SACWorkflow(OffPolicyRLWorkflow):
             critic_opt_state=critic_opt_state,
             alpha_opt_state=alpha_opt_state,
         )
+
+    # def setup(self, key: chex.PRNGKey) -> State:
+    #     key, agent_key, env_key, buffer_key = jax.random.split(key, 4)
+
+    #     agent_state = self.agent.init(agent_key)
+
+    #     workflow_metrics = self._setup_workflow_metrics()
+
+    #     critic_opt_state = self.optimizer.init(agent_state.params.critic_params)
+    #     actor_opt_state = self.optimizer.init(agent_state.params.actor_params)
+    #     alpha_opt_state = self.optimizer.init(agent_state.params.alpha_params)
+
+    #     replay_buffer_state = self._init_replay_buffer(self.replay_buffer, buffer_key)
+
+    #     if self.enable_multi_devices:
+    #         (
+    #             workflow_metrics,
+    #             agent_state,
+    #             critic_opt_state,
+    #             actor_opt_state,
+    #             alpha_opt_state,
+    #             replay_buffer_state,
+    #         ) = jax.device_put_replicated(
+    #             (
+    #                 workflow_metrics,
+    #                 agent_state,
+    #                 critic_opt_state,
+    #                 actor_opt_state,
+    #                 alpha_opt_state,
+    #                 replay_buffer_state,
+    #             ),
+    #             self.devices,
+    #         )
+
+    #         # key and env_state should be different over devices
+    #         key = split_key_to_devices(key, self.devices)
+
+    #         env_key = split_key_to_devices(env_key, self.devices)
+    #         env_state = jax.pmap(self.env.reset, axis_name=self.pmap_axis_name)(env_key)
+    #     else:
+    #         env_state = self.env.reset(env_key)
+
+    #     return State(
+    #         key=key,
+    #         metrics=workflow_metrics,
+    #         replay_buffer_state=replay_buffer_state,
+    #         agent_state=agent_state,
+    #         env_state=env_state,
+    #         actor_opt_state=actor_opt_state,
+    #         critic_opt_state=critic_opt_state,
+    #         alpha_opt_state=alpha_opt_state,
+    #     )
 
     def step(self, state: State) -> Tuple[TrainMetric, State]:
 
