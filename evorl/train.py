@@ -47,8 +47,8 @@ def train(config: DictConfig) -> None:
     wandb_name = '-'.join(
         [workflow_cls.name(), config.env.env_name, config.env.env_type]
     )
-    wandb_mode = None if config.wandb.enable and not config.debug else 'disabled'
-
+    # wandb_mode = None if config.wandb.enable and not config.debug else 'disabled'
+    wandb_mode = 'offline'
     wandb_recorder = WandbRecorder(
         project=wandb_project,
         name=wandb_name,

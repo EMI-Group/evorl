@@ -2,7 +2,7 @@
 
 workflow_cls: evorl.agents.sac.SACWorkflow
 
-num_envs: 8
+num_envs: 1
 
 normalize_obs: false
 rollout_length: 1
