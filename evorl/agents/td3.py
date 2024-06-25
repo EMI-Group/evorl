@@ -39,6 +39,8 @@ from evorl.types import (
 )
 import logging
 import flax.linen as nn
+from tensorboardX import SummaryWriter
+from jax.profiler import trace, TraceAnnotation
 
 logger = logging.getLogger(__name__)
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
@@ -656,10 +658,10 @@ class TD3Workflow(OffPolicyRLWorkflow):
         update_condition = (
             state.metrics.iterations % self.config.actor_update_interval
         ) == 0
-
-        loss, loss_dict, opt_state, agent_state = (
-            jax.lax.cond(update_condition, update_both, update_critic, agent_state)
-        )
+        with TraceAnnotation("update_gradient"):
+            loss, loss_dict, opt_state, agent_state = (
+                jax.lax.cond(update_condition, update_both, update_critic, agent_state)
+            )
 
         state = state.update(
             env_state=env_state,
@@ -699,14 +701,15 @@ class TD3Workflow(OffPolicyRLWorkflow):
             train_metrics, state = self.fill_replay_buffer(state)
         else:
             train_metrics, state = self._step(state)
-            
+
         return train_metrics, state
 
     def learn(self, state: State) -> State:
         # one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = self.config.total_timesteps
         start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
-
+        jax.profiler.start_server(9999)
+        jax.profiler.start_trace("/tensorboard")
         ckpt_path = self.config.load_path + "/checkpoints"
         if self.config.check_load and os.path.isdir(ckpt_path):
             ckpt_options = ocp.CheckpointManagerOptions(
@@ -747,6 +750,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
             )       
 
         logger.info("finish!")
+        jax.profiler.stop_trace()
         return state
 
     def load(self, state: State):
