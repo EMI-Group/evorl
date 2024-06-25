@@ -658,10 +658,10 @@ class TD3Workflow(OffPolicyRLWorkflow):
         update_condition = (
             state.metrics.iterations % self.config.actor_update_interval
         ) == 0
-        with TraceAnnotation("update_gradient"):
-            loss, loss_dict, opt_state, agent_state = (
-                jax.lax.cond(update_condition, update_both, update_critic, agent_state)
-            )
+       
+        loss, loss_dict, opt_state, agent_state = (
+            jax.lax.cond(update_condition, update_both, update_critic, agent_state)
+        )
 
         state = state.update(
             env_state=env_state,
@@ -708,8 +708,8 @@ class TD3Workflow(OffPolicyRLWorkflow):
         # one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = self.config.total_timesteps
         start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
-        jax.profiler.start_server(9999)
-        jax.profiler.start_trace("/tensorboard")
+        # jax.profiler.start_server(9999)
+        # jax.profiler.start_trace("/tensorboard", create_perfetto_link=True)
         ckpt_path = self.config.load_path + "/checkpoints"
         if self.config.check_load and os.path.isdir(ckpt_path):
             ckpt_options = ocp.CheckpointManagerOptions(
@@ -726,31 +726,31 @@ class TD3Workflow(OffPolicyRLWorkflow):
             state = load(path=ckpt_path, state=state)
             start_iteration = tree_unpmap(last_step, self.pmap_axis_name)
 
-        for i in range(start_iteration, num_iters):
-            train_metrics, state = self.step(state)
-            workflow_metrics = state.metrics
+        with jax.profiler.trace("/tmp/jax-trace", create_perfetto_link=True):
+            for i in range(start_iteration, num_iters):
+                train_metrics, state = self.step(state)
+                workflow_metrics = state.metrics
 
-            # the log_interval should be odd due to the frequency of updating actor is even
-            if (i + 1) % self.config.log_interval == 0:
-                train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-                self.recorder.write(train_metrics.to_local_dict(), i)
-                workflow_metrics = tree_unpmap(
-                    workflow_metrics, self.pmap_axis_name
-                )
-                self.recorder.write(workflow_metrics.to_local_dict(), i)
+                # the log_interval should be odd due to the frequency of updating actor is even
+                if (i + 1) % self.config.log_interval == 0:
+                    train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+                    self.recorder.write(train_metrics.to_local_dict(), i)
+                    workflow_metrics = tree_unpmap(
+                        workflow_metrics, self.pmap_axis_name
+                    )
+                    self.recorder.write(workflow_metrics.to_local_dict(), i)
 
-            if (i + 1) % self.config.eval_interval == 0:
-                eval_metrics, state = self.evaluate(state)
-                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write({"eval": eval_metrics.to_local_dict()}, i)
+                if (i + 1) % self.config.eval_interval == 0:
+                    eval_metrics, state = self.evaluate(state)
+                    eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                    self.recorder.write({"eval": eval_metrics.to_local_dict()}, i)
 
-            self.checkpoint_manager.save(
-                i,
-                args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
-            )       
+                self.checkpoint_manager.save(
+                    i,
+                    args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
+                )       
 
         logger.info("finish!")
-        jax.profiler.stop_trace()
         return state
 
     def load(self, state: State):
