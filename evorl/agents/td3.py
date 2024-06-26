@@ -39,8 +39,8 @@ from evorl.types import (
 )
 import logging
 import flax.linen as nn
-from tensorboardX import SummaryWriter
-from jax.profiler import trace, TraceAnnotation
+# from tensorboardX import SummaryWriter
+# from jax.profiler import trace, TraceAnnotation
 
 logger = logging.getLogger(__name__)
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
@@ -450,9 +450,6 @@ class TD3Workflow(OffPolicyRLWorkflow):
             state.replay_buffer_state, trajectory
         )
 
-        state = state.update(
-            env_state=env_state, replay_buffer_state=replay_buffer_state, key=key
-        )
         # get episode return
         train_episode_return = env_state.info.episode_return.mean()
         loss = jnp.zeros(())
@@ -466,19 +463,24 @@ class TD3Workflow(OffPolicyRLWorkflow):
             raw_loss_dict=loss_dict,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        # calculate the numbner of timestep
+        # calculate the number of timestep
         sampled_timesteps = (
             state.metrics.sampled_timesteps
-            + self.config.rollout_length * self.config.num_envs
+            + self.config.learning_starts * self.config.num_envs
         )
 
         # iterations is the number of updates of the agent
         workflow_metrics = WorkflowMetric(
             sampled_timesteps=sampled_timesteps,
-            iterations=state.metrics.iterations + self.config.num_envs,
+            iterations=state.metrics.iterations +  self.config.learning_starts,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        return train_metrics, state.update(metrics=workflow_metrics)
+        return train_metrics, state.update(
+            env_state=env_state,
+            replay_buffer_state=replay_buffer_state,
+            key=key,
+            metrics=workflow_metrics,
+        )
 
     def setup(self, key: chex.PRNGKey) -> State:
         self.recorder.init()
@@ -700,16 +702,20 @@ class TD3Workflow(OffPolicyRLWorkflow):
         if state.metrics.iterations < self.config.learning_starts:
             train_metrics, state = self.fill_replay_buffer(state)
         else:
-            train_metrics, state = self._step(state)
-
+            def scan_step(state, _):
+                train_metrics, new_state = self._step(state)
+                return new_state, train_metrics 
+            if self.config.eval_interval is None or self.config.eval_interval == 0:
+                state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=(self.config.total_timesteps - self.config.learning_starts))
+            else:
+                state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=self.config.eval_interval)
+        
         return train_metrics, state
 
     def learn(self, state: State) -> State:
         # one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = self.config.total_timesteps
-        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
-        # jax.profiler.start_server(9999)
-        # jax.profiler.start_trace("/tensorboard", create_perfetto_link=True)
+
         ckpt_path = self.config.load_path + "/checkpoints"
         if self.config.check_load and os.path.isdir(ckpt_path):
             ckpt_options = ocp.CheckpointManagerOptions(
@@ -725,30 +731,34 @@ class TD3Workflow(OffPolicyRLWorkflow):
             last_step = checkpoint_manager.latest_step()
             state = load(path=ckpt_path, state=state)
             start_iteration = tree_unpmap(last_step, self.pmap_axis_name)
+            workflow_metrics = WorkflowMetric(
+                sampled_timesteps=0,
+                iterations=start_iteration,
+            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+            state = state.update(metrics = workflow_metrics)
+       
+        while state.metrics.iterations < num_iters:
+            train_metrics, state = self.step(state)
+            workflow_metrics = state.metrics
 
-        with jax.profiler.trace("/tmp/jax-trace", create_perfetto_link=True):
-            for i in range(start_iteration, num_iters):
-                train_metrics, state = self.step(state)
-                workflow_metrics = state.metrics
+            # the log_interval should be odd due to the frequency of updating actor is even
+            if state.metrics.iterations % self.config.log_interval == 0:
+                train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+                self.recorder.write(train_metrics.to_local_dict(), state.metrics.iterations)
+                workflow_metrics = tree_unpmap(
+                    workflow_metrics, self.pmap_axis_name
+                )
+                self.recorder.write(workflow_metrics.to_local_dict(), state.metrics.iterations)
 
-                # the log_interval should be odd due to the frequency of updating actor is even
-                if (i + 1) % self.config.log_interval == 0:
-                    train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-                    self.recorder.write(train_metrics.to_local_dict(), i)
-                    workflow_metrics = tree_unpmap(
-                        workflow_metrics, self.pmap_axis_name
-                    )
-                    self.recorder.write(workflow_metrics.to_local_dict(), i)
+            if state.metrics.iterations % self.config.eval_interval == 0:
+                eval_metrics, state = self.evaluate(state)
+                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                self.recorder.write({"eval": eval_metrics.to_local_dict()}, state.metrics.iterations)
 
-                if (i + 1) % self.config.eval_interval == 0:
-                    eval_metrics, state = self.evaluate(state)
-                    eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                    self.recorder.write({"eval": eval_metrics.to_local_dict()}, i)
-
-                self.checkpoint_manager.save(
-                    i,
-                    args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
-                )       
+            self.checkpoint_manager.save(
+                state.metrics.iterations,
+                args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
+            )       
 
         logger.info("finish!")
         return state

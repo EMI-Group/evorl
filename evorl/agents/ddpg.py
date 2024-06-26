@@ -478,7 +478,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             env_state=state.env_state,
             agent_state=random_state,
             key=rollout_key,
-            rollout_length=self.config.rollout_length,
+            rollout_length=self.config.learning_starts,
             env_extra_fields=(
                 "last_obs",
                 "truncation",
@@ -513,16 +513,16 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             raw_loss_dict=loss_dict,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        # calculate the numbner of timestep
+        # calculate the number of timestep
         sampled_timesteps = (
             state.metrics.sampled_timesteps
-            + self.config.rollout_length * self.config.num_envs
+            + self.config.learning_starts * self.config.num_envs
         )
 
         # iterations is the number of updates of the agent
         workflow_metrics = WorkflowMetric(
             sampled_timesteps=sampled_timesteps,
-            iterations=state.metrics.iterations + self.config.num_envs,
+            iterations=state.metrics.iterations + self.config.learning_starts,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         return train_metrics, state.update(
@@ -708,7 +708,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
     def learn(self, state: State) -> State:
         # one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = self.config.total_timesteps
-        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
 
         ckpt_path = self.config.load_path + "/checkpoints"
         if self.config.check_load and os.path.isdir(ckpt_path):
@@ -725,27 +724,32 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             last_step = checkpoint_manager.latest_step()
             state = load(path=ckpt_path, state=state)
             start_iteration = tree_unpmap(last_step, self.pmap_axis_name)
+            workflow_metrics = WorkflowMetric(
+                sampled_timesteps=0,
+                iterations=start_iteration,
+            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+            state = state.update(metrics = workflow_metrics)
 
-        for i in range(start_iteration, num_iters):
+        while state.metrics.iterations < num_iters:
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
             # the log_interval should be odd due to the frequency of updating actor is even
-            if (i + 1) % self.config.log_interval == 0:
+            if (state.metrics.iterations + 1) % self.config.log_interval == 0:
                 train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-                self.recorder.write(train_metrics.to_local_dict(), i)
+                self.recorder.write(train_metrics.to_local_dict(), state.metrics.iterations)
                 workflow_metrics = tree_unpmap(
                     workflow_metrics, self.pmap_axis_name
                 )
-                self.recorder.write(workflow_metrics.to_local_dict(), i)
+                self.recorder.write(workflow_metrics.to_local_dict(), state.metrics.iterations)
 
-            if (i + 1) % self.config.eval_interval == 0:
+            if (state.metrics.iterations + 1) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write({"eval": eval_metrics.to_local_dict()}, i)
+                self.recorder.write({"eval": eval_metrics.to_local_dict()}, state.metrics.iterations)
 
             self.checkpoint_manager.save(
-                i,
+                state.metrics.iterations,
                 args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
             )
 
