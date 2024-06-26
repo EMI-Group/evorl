@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 # TODO: remove it when evox is updated
 class Workflow(ABC):
     """
-        A duck-type of evox.Workflow
+        A duck-type of evox.Workflow without auto recursive setup mechanism.
     """
 
     @abstractmethod
@@ -21,7 +21,7 @@ class Workflow(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def step(self, state: State) -> Union[State, Tuple[State, Any]]:
+    def step(self, state: State) -> Tuple[Any, State]:
         raise NotImplementedError
 
     def learn(self, state: State) -> State:

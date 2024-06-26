@@ -8,7 +8,7 @@ from evorl.utils import running_statistics
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 
 from evorl.agents import AgentState
-from .agent import Agent, AgentState
+from ..agent import Agent, AgentState
 
 
 import chex
@@ -206,9 +206,3 @@ class DeterministicECAgent(Agent):
 
     def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         return self.compute_actions(agent_state, sample_batch, key)
-
-    def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
-        """
-            Users can define custom loss here as an objetive for EC agents.
-        """
-        raise NotImplementedError()

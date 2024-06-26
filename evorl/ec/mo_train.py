@@ -4,12 +4,12 @@ import jax.numpy as jnp
 from hydra import compose, initialize
 from omegaconf import DictConfig, OmegaConf
 
-from evorl.ec import EvoXAlgorithmWrapper, MultiObjectiveBraxProblem
+from evorl.ec import MultiObjectiveBraxProblem
 
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.workflows import ECWorkflow
 from evorl.envs import create_wrapped_brax_env
-from evorl.agents.ec import DeterministicECAgent
+from evorl.agents.ec.ec import DeterministicECAgent
 from evox import algorithms, monitors
 from evox.operators import non_dominated_sort
 
@@ -49,7 +49,7 @@ def train():
         flatten_objectives=True
     )
 
-    # dummy_agent
+    # dummy agent_state
     agent_state = agent.init(agent_key)
     param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
@@ -60,21 +60,16 @@ def train():
         pop_size=config.pop_size,
     )
 
-    # TODO: add op for MLP
-    nsga2_rl = EvoXAlgorithmWrapper(
-        algo=nsga2,
-        param_vec_spec=param_vec_spec
-    )
-
-    def _sol_transform(cand):
+    def _candidate_transform(flat_cand):
+        cand = param_vec_spec.to_tree(flat_cand)
         params = agent_state.params.replace(policy_params=cand)
         return agent_state.replace(params=params)
 
     workflow = ECWorkflow(
-        algorithm=nsga2_rl,
+        algorithm=nsga2,
         problem=problem,
         opt_direction=['max', 'max'],
-        sol_transforms=[jax.vmap(_sol_transform)],
+        candidate_transforms=[jax.vmap(_candidate_transform)],
     )
 
     jnp.set_printoptions(precision=4, suppress=True)
@@ -86,7 +81,7 @@ def train():
         print(f"iteration: {i}")
         # fitness = monitor.get_latest_fitness()
         # fitness = state.get_child_state('algorithm').get_child_state('algo').fitness
-        objective = train_metrics.objective
+        objective = train_metrics.objectives
 
         rank = non_dominated_sort(-objective)
         pf = rank == 0

@@ -44,3 +44,4 @@ class Episode:
     @property
     def valid_mask(self) -> chex.Array:
         return 1-right_shift(self.trajectory.dones, 1)
+    

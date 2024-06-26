@@ -1,10 +1,12 @@
 import jax
+import jax.numpy as jnp
+import jax.tree_util as jtu
 import chex
 
 from evorl.envs import Env
 from evorl.agents import Agent
 from evorl.metrics import EvaluateMetric
-from evorl.rollout import eval_rollout_episode
+from evorl.rollout import eval_rollout_episode, fast_eval_rollout_episode
 from evorl.utils.toolkits import compute_discount_return, compute_episode_length
 
 import dataclasses
@@ -21,25 +23,28 @@ class Evaluator:
     agent: Agent
     max_episode_steps: int
     discount: float = 1.0
-    # pmap_axis_name: Optional[str] = None
-
-    # def enable_multi_devices(self, pmap_axis_name: Optional[str] = None):
-    #     self.pmap_axis_name = pmap_axis_name
 
     def evaluate(self, agent_state, num_episodes: int, key: chex.PRNGKey) -> EvaluateMetric:
+        if self.discount == 1.0:
+            return self._fast_evaluate(agent_state, num_episodes, key)
+        else:
+            return self._evaluate(agent_state, num_episodes, key)
+
+    def _evaluate(self, agent_state, num_episodes: int, key: chex.PRNGKey) -> EvaluateMetric:
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
         if num_episodes % num_envs != 0:
             logger.warn(f"num_episode ({num_episodes}) cannot be divided by parallel_envs ({num_envs}),"
-                        f"set new num_episodes={self.num_iters*num_envs}"
-                        )
+                        f"set new num_episodes={self.num_iters*num_envs}")
+
         def _evaluate_fn(key, unused_t):
 
             next_key, init_env_key = jax.random.split(key, 2)
             env_state = self.env.reset(init_env_key)
 
             env_state, episode_trajectory = eval_rollout_episode(
-                self.env, self.agent, env_state, agent_state,
+                self.env.step, self.agent.evaluate_actions,
+                env_state, agent_state,
                 key, self.max_episode_steps
             )
 
@@ -59,4 +64,36 @@ class Evaluator:
         return EvaluateMetric(
             episode_returns=discount_returns.flatten(),  # [#iters * #envs]
             episode_lengths=episode_lengths.flatten()
+        )
+
+    def _fast_evaluate(self, agent_state, num_episodes: int, key: chex.PRNGKey) -> EvaluateMetric:
+        # TODO
+        num_envs = self.env.num_envs
+        num_iters = math.ceil(num_episodes / num_envs)
+        if num_episodes % num_envs != 0:
+            logger.warn(f"num_episode ({num_episodes}) cannot be divided by parallel_envs ({num_envs}),"
+                        f"set new num_episodes={self.num_iters*num_envs}")
+
+        def _evaluate_fn(key, unused_t):
+
+            next_key, init_env_key = jax.random.split(key, 2)
+            env_state = self.env.reset(init_env_key)
+
+            env_state, episode_metrics = fast_eval_rollout_episode(
+                self.env.step, self.agent.evaluate_actions, 
+                env_state, agent_state,
+                key, self.max_episode_steps
+            )
+
+            return next_key, episode_metrics  # [#envs]
+
+        # [#iters, #envs]
+        _, episode_metrics = jax.lax.scan(
+            _evaluate_fn,
+            key, (),
+            length=num_iters)
+
+        return EvaluateMetric(
+            episode_returns=episode_metrics.episode_returns.flatten(),  # [#iters * #envs]
+            episode_lengths=episode_metrics.episode_lengths.flatten()
         )

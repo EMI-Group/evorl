@@ -2,11 +2,11 @@ import jax
 import jax.numpy as jnp
 from evox import Problem, State
 import chex
-from typing import Tuple, Union, Callable, Sequence, Protocol
+from typing import Tuple, Callable
 
 from evorl.agents import Agent, AgentState
 from evorl.envs import EnvState, Env
-from evorl.rollout import SampleBatch
+from evorl.rollout import SampleBatch, eval_rollout_episode, fast_eval_rollout_episode
 from evorl.types import Action, PolicyExtraInfo, ReductionFn
 from evorl.utils.toolkits import compute_discount_return, compute_episode_length
 from evorl.utils.jax_utils import rng_split
@@ -75,18 +75,29 @@ class GeneralRLProblem(Problem):
             env_state = self.env_reset(
                 jax.random.split(init_env_key, num=pop_size))
 
-            env_state, episode_trajectory = eval_rollout_episode(
-                self.env_step, self.agent_eval_actions,
-                env_state, pop_agent_state,
-                jax.random.split(rollout_key, num=pop_size),
-                self.max_episode_steps
-            )
+            if self.discount == 1.0:
+                # use fast undiscount evaluation
+                env_state, episode_metrics = fast_eval_rollout_episode(
+                    self.env_step, self.agent_eval_actions,
+                    env_state, pop_agent_state,
+                    jax.random.split(rollout_key, num=pop_size),
+                    self.max_episode_steps
+                )
 
-            objectives = compute_discount_return(
-                episode_trajectory.rewards,
-                episode_trajectory.dones,
-                self.discount
-            )
+                objectives = episode_metrics.episode_returns
+            else:
+                env_state, episode_trajectory = eval_rollout_episode(
+                    self.env_step, self.agent_eval_actions,
+                    env_state, pop_agent_state,
+                    jax.random.split(rollout_key, num=pop_size),
+                    self.max_episode_steps
+                )
+
+                objectives = compute_discount_return(
+                    episode_trajectory.rewards,
+                    episode_trajectory.dones,
+                    self.discount
+                )
 
             return next_key, objectives  # [#envs]
 
@@ -100,88 +111,9 @@ class GeneralRLProblem(Problem):
             jnp.swapaxes(objectives, 0, 1),
             1, 3
         )  # [#pop, num_episodes]
+        # by default, we use the mean value over different episodes.
         objectives = self.reduce_fn(objectives, axis=-1)
 
-        return objectives, state.replace(key=key, objectives=objectives)
+        return objectives, state.replace(key=key)
 
 
-def eval_env_step(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[[AgentState, SampleBatch, chex.PRNGKey], Tuple[Action, PolicyExtraInfo]],
-    env_state: EnvState,
-    agent_state: AgentState,  # readonly
-    sample_batch: SampleBatch,
-    key: chex.PRNGKey,
-    # env_extra_fields: Tuple[str] = (),
-) -> Tuple[EnvState, SampleBatch]:
-
-    actions, policy_extras = action_fn(agent_state, sample_batch, key)
-    env_nstate = env_fn(env_state, actions)
-
-    # info = env_nstate.info
-    # env_extras = {x: info[x] for x in env_extra_fields if x in info}
-
-    transition = SampleBatch(
-        rewards=env_nstate.reward,
-        dones=env_nstate.done,
-        # extras=
-    )
-
-    return env_nstate, transition
-
-
-def eval_rollout_episode(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[[AgentState, SampleBatch, chex.PRNGKey], Tuple[Action, PolicyExtraInfo]],
-    env_state: EnvState,
-    agent_state: AgentState,
-    key: chex.PRNGKey,
-    rollout_length: int,
-    # env_extra_fields: Tuple[str] = (),
-) -> Tuple[EnvState, SampleBatch]:
-    """
-        Collect given rollout_length trajectory.
-        Avoid unnecessary env_step()
-        Args:
-            env: vmapped env w/o autoreset
-    """
-
-    _eval_env_step = partial(eval_env_step, env_fn, action_fn)
-
-    def _one_step_rollout(carry, unused_t):
-        """
-            sample_batch: one-step obs
-            transition: one-step full info
-        """
-        env_state, current_key, prev_transition = carry
-        # next_key, current_key = jax.random.split(current_key, 2)
-        next_key, current_key = rng_split(current_key, 2)
-
-        sample_batch = SampleBatch(
-            obs=env_state.obs,
-        )
-
-        env_nstate, transition = jax.lax.cond(
-            env_state.done.all(),
-            lambda *x: (env_state.replace(), prev_transition.replace()),
-            _eval_env_step,
-            env_state, agent_state,
-            sample_batch, current_key
-        )
-
-        return (env_nstate, next_key, transition), transition
-
-    # run one-step rollout first to get bootstrap transition
-    # it will not include in the trajectory when env_state is from env.reset()
-    # this is manually controlled by user.
-    _, transition = _eval_env_step(
-        env_state, agent_state,
-        SampleBatch(obs=env_state.obs), key
-    )
-
-    (env_state, _, _), trajectory = jax.lax.scan(
-        _one_step_rollout, (env_state, key, transition),
-        (), length=rollout_length
-    )
-
-    return env_state, trajectory

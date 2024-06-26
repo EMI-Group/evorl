@@ -5,7 +5,7 @@ from omegaconf import DictConfig, OmegaConf
 import chex
 import copy
 
-from evorl.recorders import Recorder, ChainRecorder, WandbRecorder, LogRecorder
+from evorl.recorders import Recorder, ChainRecorder
 from evorl.agents import Agent
 from evorl.envs import Env
 from evorl.evaluator import Evaluator
@@ -113,10 +113,6 @@ class RLWorkflow(Workflow):
         """
         return WorkflowMetric()
 
-    def add_recorders(self, recorders: Recorder) -> None:
-        for recorder in recorders:
-            self.recorder.add_recorder(recorder)
-
     def step(self, key: chex.PRNGKey) -> Tuple[TrainMetric, State]:
         raise NotImplementedError
 
@@ -199,7 +195,7 @@ class OnPolicyRLWorkflow(RLWorkflow):
             episode_lengths=raw_eval_metrics.episode_lengths.mean()
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        state = state.update(key=key)
+        state = state.replace(key=key)
         return eval_metrics, state
 
 
@@ -281,5 +277,5 @@ class OffPolicyRLWorkflow(RLWorkflow):
         eval_metrics = eval_metrics.all_reduce(
             pmap_axis_name=self.pmap_axis_name)
 
-        state = state.update(key=key)
+        state = state.replace(key=key)
         return eval_metrics, state
