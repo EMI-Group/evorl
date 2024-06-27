@@ -415,73 +415,6 @@ class TD3Workflow(OffPolicyRLWorkflow):
         cls._step = jax.jit(cls._step, static_argnums=(0,))
         # return super().enable_jit(device)
 
-    def fill_replay_buffer(self, state: State) -> State:
-        key, rollout_key, agent_key = jax.random.split(state.key, num=3)
-        random_agent = RandomAgent(
-            action_space=self.env.action_space, obs_space=self.env.obs_space
-        )
-        random_state = random_agent.init(agent_key)
-
-        env_state, trajectory = rollout(
-            env=self.env,
-            agent=random_agent,
-            env_state=state.env_state,
-            agent_state=random_state,
-            key=rollout_key,
-            rollout_length=self.config.learning_starts,
-            env_extra_fields=(
-                "last_obs",
-                "truncation",
-            ),
-        )
-        trajectory = jax.tree_util.tree_map(
-            lambda x: jax.lax.collapse(x, 0, 2), trajectory
-        )
-
-        mask = trajectory.extras.env_extras.truncation.astype(bool)
-        next_obs = jnp.where(
-            mask[:, None],
-            trajectory.extras.env_extras.last_obs,
-            trajectory.next_obs,
-        )
-        trajectory = trajectory.replace(next_obs=next_obs)
-
-        replay_buffer_state = self.replay_buffer.add(
-            state.replay_buffer_state, trajectory
-        )
-
-        # get episode return
-        train_episode_return = env_state.info.episode_return.mean()
-        loss = jnp.zeros(())
-        loss_dict = dict(
-            actor_loss=loss,
-            critic_loss=loss,
-        )
-        train_metrics = TrainMetric(
-            train_episode_return=train_episode_return,
-            loss=loss,
-            raw_loss_dict=loss_dict,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-        # calculate the number of timestep
-        sampled_timesteps = (
-            state.metrics.sampled_timesteps
-            + self.config.learning_starts * self.config.num_envs
-        )
-
-        # iterations is the number of updates of the agent
-        workflow_metrics = WorkflowMetric(
-            sampled_timesteps=sampled_timesteps,
-            iterations=state.metrics.iterations +  self.config.learning_starts,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-        return train_metrics, state.update(
-            env_state=env_state,
-            replay_buffer_state=replay_buffer_state,
-            key=key,
-            metrics=workflow_metrics,
-        )
-
     def setup(self, key: chex.PRNGKey) -> State:
         self.recorder.init()
 
@@ -493,20 +426,18 @@ class TD3Workflow(OffPolicyRLWorkflow):
 
         opt_state = self.optimizer.init(agent_state.params)
 
-        replay_buffer_state = self._init_replay_buffer(buffer_key)
-       
+        # replay_buffer_state = self._init_replay_buffer(buffer_key)
+        # rb_state is split to devices
         if self.enable_multi_devices:
             (
                 workflow_metrics,
                 agent_state,
                 opt_state,
-                replay_buffer_state,
             ) = jax.device_put_replicated(
                 (
                     workflow_metrics,
                     agent_state,
                     opt_state,
-                    replay_buffer_state,
                 ),
                 self.devices,
             )
@@ -517,12 +448,12 @@ class TD3Workflow(OffPolicyRLWorkflow):
             env_key = split_key_to_devices(env_key, self.devices)
             env_state = jax.pmap(self.env.reset, axis_name=self.pmap_axis_name)(env_key)
             buffer_key = split_key_to_devices(buffer_key, self.devices)
-            # replay_buffer_state = jax.pmap(
-            #     self._init_replay_buffer, axis_name=self.pmap_axis_name
-            # )(buffer_key)
+            replay_buffer_state = jax.pmap(
+                self._init_replay_buffer, axis_name=self.pmap_axis_name
+            )(buffer_key)
         else:
             env_state = self.env.reset(env_key)
-            # replay_buffer_state = self._init_replay_buffer(buffer_key)
+            replay_buffer_state = self._init_replay_buffer(buffer_key)
 
         return State(
             key=key,
@@ -532,6 +463,73 @@ class TD3Workflow(OffPolicyRLWorkflow):
             env_state=env_state,
             opt_state=opt_state,
         )
+
+    def fill_replay_buffer(self, state: State) -> State:
+            key, rollout_key, agent_key = jax.random.split(state.key, num=3)
+            random_agent = RandomAgent(
+                action_space=self.env.action_space, obs_space=self.env.obs_space
+            )
+            random_state = random_agent.init(agent_key)
+
+            env_state, trajectory = rollout(
+                env=self.env,
+                agent=random_agent,
+                env_state=state.env_state,
+                agent_state=random_state,
+                key=rollout_key,
+                rollout_length=self.config.rollout_length,
+                env_extra_fields=(
+                    "last_obs",
+                    "truncation",
+                ),
+            )
+            trajectory = jax.tree_util.tree_map(
+                lambda x: jax.lax.collapse(x, 0, 2), trajectory
+            )
+
+            mask = trajectory.extras.env_extras.truncation.astype(bool)
+            next_obs = jnp.where(
+                mask[:, None],
+                trajectory.extras.env_extras.last_obs,
+                trajectory.next_obs,
+            )
+            trajectory = trajectory.replace(next_obs=next_obs)
+
+            replay_buffer_state = self.replay_buffer.add(
+                state.replay_buffer_state, trajectory
+            )
+
+            # get episode return
+            train_episode_return = env_state.info.episode_return.mean()
+            loss = jnp.zeros(())
+            loss_dict = PyTreeDict(
+                actor_loss=loss,
+                critic_loss=loss,
+            )
+            train_metrics = TrainMetric(
+                train_episode_return=train_episode_return,
+                loss=loss,
+                raw_loss_dict=loss_dict,
+            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+            # calculate the number of timestep
+            sampled_timesteps = (
+                state.metrics.sampled_timesteps
+                + self.config.num_envs
+            )
+
+            # iterations is the number of updates of the agent
+            workflow_metrics = WorkflowMetric(
+                sampled_timesteps=sampled_timesteps,
+                iterations=state.metrics.iterations +  1,
+            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+            return train_metrics, state.update(
+                env_state=env_state,
+                replay_buffer_state=replay_buffer_state,
+                key=key,
+                metrics=workflow_metrics,
+            )
 
     def _step(self, state: State) -> Tuple[TrainMetric, State]:
         """
@@ -701,23 +699,21 @@ class TD3Workflow(OffPolicyRLWorkflow):
         )
 
     def step(self, state: State) -> Tuple[TrainMetric, State]:
-       
-        jax.debug.print("state.metrics {}",state.metrics)
-        jax.debug.print("learning_starts {}",self.config.learning_starts)
-        iteration = tree_unpmap(
-            state.metrics.iterations, self.pmap_axis_name)
-        if iteration < self.config.learning_starts:
-            train_metrics, state = self.fill_replay_buffer(state)
-        else:
+        def fill_replay_buffer(state):
+            def scan_step(state, _):
+                train_metrics, new_state = self.fill_replay_buffer(state)
+                return new_state, train_metrics
+            state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=self.config.learning_starts)
+            train_metrics = jax.tree_util.tree_map(lambda x: x[-1], train_metrics)
+            return train_metrics, state
+        def train_step(state):
             def scan_step(state, _):
                 train_metrics, new_state = self._step(state)
-                return new_state, train_metrics 
-            if self.config.log_interval is None or self.config.log_interval == 0:
-                state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=(self.config.total_timesteps - self.config.learning_starts))
-            else:
-                state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=self.config.log_interval)
-            train_metrics = jax.tree_util.tree_map(lambda x: x[-1], train_metrics)
-        
+                return new_state, train_metrics
+            state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=self.config.log_interval)
+            train_metrics = jax.tree_util.tree_map(lambda x: x[-1], train_metrics) 
+            return train_metrics, state
+        train_metrics, state = jax.lax.cond(state.metrics.iterations < self.config.learning_starts, fill_replay_buffer, train_step, state)
         return train_metrics, state
 
     def learn(self, state: State) -> State:
@@ -741,7 +737,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 iterations=start_iteration,
             ).all_reduce(pmap_axis_name=self.pmap_axis_name)
             state = state.update(metrics = workflow_metrics)
-        one_step_timesteps = self.config.rollout_length * self.config.num_envs * self.config.log_interval
+        one_step_timesteps = self.config.rollout_length * self.config.log_interval
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
         start_iteration = tree_unpmap(
@@ -750,9 +746,9 @@ class TD3Workflow(OffPolicyRLWorkflow):
         for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
-
+            iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
             # the log_interval should be odd due to the frequency of updating actor is even
-            if (state.metrics.iterations - self.config.learning_starts) % self.config.log_interval == 0:
+            if (iteration - self.config.learning_starts) % self.config.log_interval == 0:
                 train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
                 self.recorder.write(train_metrics.to_local_dict(), state.metrics.iterations)
                 workflow_metrics = tree_unpmap(
@@ -760,7 +756,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 )
                 self.recorder.write(workflow_metrics.to_local_dict(), state.metrics.iterations)
 
-            if (state.metrics.iterations -  self.config.learning_starts) % self.config.eval_interval == 0:
+            if (iteration -  self.config.learning_starts) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write({"eval": eval_metrics.to_local_dict()}, state.metrics.iterations)

@@ -428,20 +428,18 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 
         opt_state = self.optimizer.init(agent_state.params)
 
-        replay_buffer_state = self._init_replay_buffer(self.replay_buffer, buffer_key)
+        
 
         if self.enable_multi_devices:
             (
                 workflow_metrics,
                 agent_state,
                 opt_state,
-                replay_buffer_state,
             ) = jax.device_put_replicated(
                 (
                     workflow_metrics,
                     agent_state,
                     opt_state,
-                    replay_buffer_state,
                 ),
                 self.devices,
             )
@@ -457,6 +455,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             )(buffer_key)
         else:
             env_state = self.env.reset(env_key)
+            replay_buffer_state = self._init_replay_buffer(self.replay_buffer, buffer_key)
 
         return State(
             key=key,
@@ -522,7 +521,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         # iterations is the number of updates of the agent
         workflow_metrics = WorkflowMetric(
             sampled_timesteps=sampled_timesteps,
-            iterations=state.metrics.iterations + self.config.learning_starts,
+            iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         return train_metrics, state.update(
@@ -698,17 +697,24 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         )
         
     def step(self, state: State) -> Tuple[TrainMetric, State]:
-        if state.metrics.iterations < self.config.learning_starts:
-            train_metrics, state = self.fill_replay_buffer(state)
-        else:
-            train_metrics, state = self._step(state)
-            
+        def fill_replay_buffer(state):
+            def scan_step(state, _):
+                train_metrics, new_state = self.fill_replay_buffer(state)
+                return new_state, train_metrics
+            state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=self.config.learning_starts)
+            train_metrics = jax.tree_util.tree_map(lambda x: x[-1], train_metrics)
+            return train_metrics, state
+        def train_step(state):
+            def scan_step(state, _):
+                train_metrics, new_state = self._step(state)
+                return new_state, train_metrics
+            state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=self.config.log_interval)
+            train_metrics = jax.tree_util.tree_map(lambda x: x[-1], train_metrics) 
+            return train_metrics, state
+        train_metrics, state = jax.lax.cond(state.metrics.iterations < self.config.learning_starts, fill_replay_buffer, train_step, state)
         return train_metrics, state
 
     def learn(self, state: State) -> State:
-        # one_step_timesteps = self.config.rollout_length * self.config.num_envs
-        num_iters = self.config.total_timesteps
-
         ckpt_path = self.config.load_path + "/checkpoints"
         if self.config.check_load and os.path.isdir(ckpt_path):
             ckpt_options = ocp.CheckpointManagerOptions(
@@ -729,13 +735,19 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 iterations=start_iteration,
             ).all_reduce(pmap_axis_name=self.pmap_axis_name)
             state = state.update(metrics = workflow_metrics)
+        one_step_timesteps = self.config.rollout_length * self.config.log_interval
+        num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        while state.metrics.iterations < num_iters:
+        start_iteration = tree_unpmap(
+            state.metrics.iterations, self.pmap_axis_name)
+        
+        for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
-
+            iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
             # the log_interval should be odd due to the frequency of updating actor is even
-            if (state.metrics.iterations + 1) % self.config.log_interval == 0:
+
+            if (iteration -  self.config.learning_starts)  % self.config.log_interval == 0:
                 train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
                 self.recorder.write(train_metrics.to_local_dict(), state.metrics.iterations)
                 workflow_metrics = tree_unpmap(
@@ -743,7 +755,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 )
                 self.recorder.write(workflow_metrics.to_local_dict(), state.metrics.iterations)
 
-            if (state.metrics.iterations + 1) % self.config.eval_interval == 0:
+            if (iteration -  self.config.learning_starts)  % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write({"eval": eval_metrics.to_local_dict()}, state.metrics.iterations)
