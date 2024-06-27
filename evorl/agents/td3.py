@@ -216,10 +216,10 @@ class TD3Agent(Agent):
         qs = q_net_batch_apply(agent_state.params.params.critic_params).squeeze(-1)
 
         # another way to compute the lose
-        # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
-        q_loss = ((qs - target_qs) ** 2).mean(axis=-1).sum()
+        # critic_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
+        critic_loss = ((qs - target_qs) ** 2).mean(axis=-1).sum()
 
-        return PyTreeDict(critic_loss=q_loss)
+        return PyTreeDict(critic_loss=critic_loss)
 
     def actor_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
@@ -270,7 +270,7 @@ class TD3Agent(Agent):
         ]
         """
 
-        q_loss = self.cirtic_loss(agent_state, sample_batch, key).critic_loss
+        critic_loss = self.cirtic_loss(agent_state, sample_batch, key).critic_loss
 
         # ====== actor =======
 
@@ -279,7 +279,7 @@ class TD3Agent(Agent):
 
         return PyTreeDict(
             actor_loss=actor_loss,
-            critic_loss=q_loss,
+            critic_loss=critic_loss,
         )
 
     def compute_values(
@@ -493,6 +493,8 @@ class TD3Workflow(OffPolicyRLWorkflow):
 
         opt_state = self.optimizer.init(agent_state.params)
 
+        replay_buffer_state = self._init_replay_buffer(buffer_key)
+       
         if self.enable_multi_devices:
             (
                 workflow_metrics,
@@ -509,18 +511,18 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 self.devices,
             )
 
-            # key and env_state should be different over devices
+            # key and env_state should be different over devicesW
             key = split_key_to_devices(key, self.devices)
 
             env_key = split_key_to_devices(env_key, self.devices)
             env_state = jax.pmap(self.env.reset, axis_name=self.pmap_axis_name)(env_key)
             buffer_key = split_key_to_devices(buffer_key, self.devices)
-            replay_buffer_state = jax.pmap(
-                self._init_replay_buffer, axis_name=self.pmap_axis_name
-            )(buffer_key)
+            # replay_buffer_state = jax.pmap(
+            #     self._init_replay_buffer, axis_name=self.pmap_axis_name
+            # )(buffer_key)
         else:
             env_state = self.env.reset(env_key)
-            replay_buffer_state = self._init_replay_buffer(buffer_key)
+            # replay_buffer_state = self._init_replay_buffer(buffer_key)
 
         return State(
             key=key,
@@ -699,23 +701,26 @@ class TD3Workflow(OffPolicyRLWorkflow):
         )
 
     def step(self, state: State) -> Tuple[TrainMetric, State]:
-        if state.metrics.iterations < self.config.learning_starts:
+       
+        jax.debug.print("state.metrics {}",state.metrics)
+        jax.debug.print("learning_starts {}",self.config.learning_starts)
+        iteration = tree_unpmap(
+            state.metrics.iterations, self.pmap_axis_name)
+        if iteration < self.config.learning_starts:
             train_metrics, state = self.fill_replay_buffer(state)
         else:
             def scan_step(state, _):
                 train_metrics, new_state = self._step(state)
                 return new_state, train_metrics 
-            if self.config.eval_interval is None or self.config.eval_interval == 0:
+            if self.config.log_interval is None or self.config.log_interval == 0:
                 state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=(self.config.total_timesteps - self.config.learning_starts))
             else:
-                state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=self.config.eval_interval)
+                state, train_metrics = jax.lax.scan(scan_step, state, xs=None, length=self.config.log_interval)
+            train_metrics = jax.tree_util.tree_map(lambda x: x[-1], train_metrics)
         
         return train_metrics, state
 
     def learn(self, state: State) -> State:
-        # one_step_timesteps = self.config.rollout_length * self.config.num_envs
-        num_iters = self.config.total_timesteps
-
         ckpt_path = self.config.load_path + "/checkpoints"
         if self.config.check_load and os.path.isdir(ckpt_path):
             ckpt_options = ocp.CheckpointManagerOptions(
@@ -736,13 +741,18 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 iterations=start_iteration,
             ).all_reduce(pmap_axis_name=self.pmap_axis_name)
             state = state.update(metrics = workflow_metrics)
-       
-        while state.metrics.iterations < num_iters:
+        one_step_timesteps = self.config.rollout_length * self.config.num_envs * self.config.log_interval
+        num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
+
+        start_iteration = tree_unpmap(
+            state.metrics.iterations, self.pmap_axis_name)
+        
+        for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
             # the log_interval should be odd due to the frequency of updating actor is even
-            if state.metrics.iterations % self.config.log_interval == 0:
+            if (state.metrics.iterations - self.config.learning_starts) % self.config.log_interval == 0:
                 train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
                 self.recorder.write(train_metrics.to_local_dict(), state.metrics.iterations)
                 workflow_metrics = tree_unpmap(
@@ -750,7 +760,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 )
                 self.recorder.write(workflow_metrics.to_local_dict(), state.metrics.iterations)
 
-            if state.metrics.iterations % self.config.eval_interval == 0:
+            if (state.metrics.iterations -  self.config.learning_starts) % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write({"eval": eval_metrics.to_local_dict()}, state.metrics.iterations)
