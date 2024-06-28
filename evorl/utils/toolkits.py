@@ -15,8 +15,7 @@ def compute_episode_length(
         dones: should be collected from episodic trajectory
     """
     # [B]
-    episode_lengths = (1-dones).sum(axis=0)+1
-    return episode_lengths.astype(jnp.int32)
+    return (1-dones).sum(axis=0).astype(jnp.int32)+1
 
 
 def compute_discount_return(

@@ -5,12 +5,12 @@ from omegaconf import DictConfig, OmegaConf
 import chex
 import copy
 
-from evorl.recorders import Recorder, ChainRecorder
+
 from evorl.agents import Agent
 from evorl.envs import Env
 from evorl.evaluator import Evaluator
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
-from evorl.metrics import TrainMetric, EvaluateMetric, WorkflowMetric
+from evorl.metrics import TrainMetric, EvaluateMetric, WorkflowMetric, MetricBase
 from evorl.utils.cfg_utils import get_output_dir
 from evorl.utils.orbax_utils import DummyCheckpointManager
 from typing import Any, Callable, Sequence, Optional, Tuple
@@ -18,7 +18,7 @@ from typing_extensions import (
     Self  # pytype: disable=not-supported-yet
 )
 
-from evox import State
+from evorl.types import State
 from .workflow import Workflow
 # from evorl.types import State
 
@@ -26,6 +26,7 @@ import orbax.checkpoint as ocp
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
     if config.checkpoint.enable:
@@ -43,7 +44,7 @@ def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
         )
     else:
         checkpoint_manager = DummyCheckpointManager()
-        
+
     return checkpoint_manager
 
 
@@ -56,12 +57,11 @@ class RLWorkflow(Workflow):
             config:
             devices: a single device or a list of devices.
         """
-        super(RLWorkflow, self).__init__()
-        self.config = config
+        super(RLWorkflow, self).__init__(config)
+
         self.pmap_axis_name = None
         self.devices = jax.local_devices()[:1]
         self.checkpoint_manager = setup_checkpoint_manager(config)
-        self.recorder = ChainRecorder([])  # dummy recorder
 
     @property
     def enable_multi_devices(self) -> bool:
@@ -107,7 +107,7 @@ class RLWorkflow(Workflow):
         """
         raise NotImplementedError
 
-    def _setup_workflow_metrics(self) -> TrainMetric:
+    def _setup_workflow_metrics(self) -> MetricBase:
         """
             Customize the workflow metrics.
         """
@@ -126,8 +126,8 @@ class RLWorkflow(Workflow):
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
     def close(self) -> None:
+        super().close()
         self.checkpoint_manager.close()
-        self.recorder.close()
 
 
 class OnPolicyRLWorkflow(RLWorkflow):
@@ -147,8 +147,6 @@ class OnPolicyRLWorkflow(RLWorkflow):
         self.evaluator = evaluator
 
     def setup(self, key: chex.PRNGKey) -> State:
-        self.recorder.init()
-
         key, agent_key, env_key = jax.random.split(key, 3)
 
         agent_state = self.agent.init(agent_key)
@@ -221,7 +219,7 @@ class OffPolicyRLWorkflow(RLWorkflow):
         self._init_replay_buffer = replay_buffer_init_fn
 
     def setup(self, key: chex.PRNGKey) -> State:
-        self.recorder.init()
+        super().setup(key)
         key, agent_key, env_key, buffer_key = jax.random.split(key, 4)
 
         agent_state = self.agent.init(agent_key)
@@ -275,7 +273,8 @@ class OffPolicyRLWorkflow(RLWorkflow):
         )
 
         eval_metrics = eval_metrics.all_reduce(
-            pmap_axis_name=self.pmap_axis_name)
+            pmap_axis_name=self.pmap_axis_name
+        )
 
         state = state.replace(key=key)
         return eval_metrics, state

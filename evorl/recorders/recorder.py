@@ -18,7 +18,7 @@ class Recorder(ABC):
 
 
 class ChainRecorder(Recorder):
-    def __init__(self, recorders: Sequence[Recorder]):
+    def __init__(self, recorders: Sequence[Recorder] = []):
         self.recorders = recorders
 
     def add_recorder(self, recorder: Recorder) -> None:

@@ -6,7 +6,7 @@ from flax import struct
 from typing import Optional, Callable
 
 
-from .types import LossDict, PyTreeDict, PyTreeNode
+from .types import LossDict, PyTreeDict, PyTreeData
 from .distributed import pmean, psum, tree_pmean
 import dataclasses
 
@@ -18,7 +18,7 @@ def metricfield(*, reduce_fn: Callable[[chex.Array, Optional[str]], chex.Array] 
     return dataclasses.field(**kwargs)
 
 
-class MetricBase(PyTreeNode, kw_only=True):
+class MetricBase(PyTreeData, kw_only=True):
     def all_reduce(self, pmap_axis_name: Optional[str] = None):
         field_dict = {}
         for field in dataclasses.fields(self):
@@ -42,8 +42,8 @@ class MetricBase(PyTreeNode, kw_only=True):
 
 
 class WorkflowMetric(MetricBase):
-    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.int32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.int32)
+    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class TrainMetric(MetricBase):
@@ -51,7 +51,7 @@ class TrainMetric(MetricBase):
     train_episode_return: Optional[chex.Array] = None
 
     # no need reduce_fn since it's already reduced in the step()
-    loss: chex.Array = jnp.zeros((), dtype=jnp.float32)
+    loss: chex.Array = jnp.zeros(())
     raw_loss_dict: LossDict = metricfield(
         default_factory=PyTreeDict, reduce_fn=tree_pmean)
 

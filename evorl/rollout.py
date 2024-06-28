@@ -33,7 +33,8 @@ def env_step(
     env_nstate = env_fn(env_state, actions)
 
     info = env_nstate.info
-    env_extras = {x: info[x] for x in env_extra_fields if x in info}
+    env_extras = PyTreeDict(
+        {x: info[x] for x in env_extra_fields if x in info})
 
     transition = SampleBatch(
         obs=env_state.obs,
@@ -307,13 +308,13 @@ def eval_rollout_episode(
     # run one-step rollout first to get bootstrap transition
     # it will not include in the trajectory when env_state is from env.reset()
     # this is manually controlled by user.
-    _, transition = _eval_env_step(
+    _, bootstrap_transition = _eval_env_step(
         env_state, agent_state,
         SampleBatch(obs=env_state.obs), key
     )
 
     (env_state, _, _), trajectory = jax.lax.scan(
-        _one_step_rollout, (env_state, key, transition),
+        _one_step_rollout, (env_state, key, bootstrap_transition),
         (), length=rollout_length
     )
 

@@ -1,9 +1,10 @@
 import jax
 import jax.numpy as jnp
-from evox import Problem, State
+from evox import Problem
 import chex
 from typing import Tuple, Callable
 
+from evox import State
 from evorl.agents import Agent, AgentState
 from evorl.envs import EnvState, Env
 from evorl.rollout import SampleBatch, eval_rollout_episode, fast_eval_rollout_episode
@@ -15,10 +16,11 @@ from functools import partial
 import logging
 
 
-
 logger = logging.getLogger(__name__)
 
 # TODO: use dataclass after evox update
+
+
 class GeneralRLProblem(Problem):
     def __init__(
         self,
@@ -31,7 +33,7 @@ class GeneralRLProblem(Problem):
     ):
         """
             RL Problem wrapper for general RL problems. The objective is the discounted return.
-        
+
             Args:
                 agent: agent model that defined the weights
                 env_name: name of the environment
@@ -56,14 +58,16 @@ class GeneralRLProblem(Problem):
                            )
 
         self.agent_eval_actions = jax.vmap(
-            self.agent.evaluate_actions, axis_name='pop')
+            self.agent.evaluate_actions)
         # Note: there are two vmap: [#pop, #envs, ...]
-        self.env_reset = jax.vmap(self.env.reset, axis_name='pop')
-        self.env_step = jax.vmap(self.env.step, axis_name='pop')
+        self.env_reset = jax.vmap(self.env.reset)
+        self.env_step = jax.vmap(self.env.step)
 
     def setup(self, key: chex.PRNGKey):
         return State(
             key=key,
+            sampled_timesteps=jnp.zeros((), dtype=jnp.uint32),
+            sampled_episodes=jnp.zeros((), dtype=jnp.uint32),
         )
 
     def evaluate(self, state: State, pop_agent_state: chex.ArrayTree) -> Tuple[chex.ArrayTree, State]:
@@ -85,6 +89,7 @@ class GeneralRLProblem(Problem):
                 )
 
                 objectives = episode_metrics.episode_returns
+                sampled_timesteps = episode_metrics.episode_lengths
             else:
                 env_state, episode_trajectory = eval_rollout_episode(
                     self.env_step, self.agent_eval_actions,
@@ -98,11 +103,13 @@ class GeneralRLProblem(Problem):
                     episode_trajectory.dones,
                     self.discount
                 )
+                sampled_timesteps = compute_episode_length(
+                    episode_trajectory.dones)
 
-            return next_key, objectives  # [#envs]
+            return next_key, (objectives, sampled_timesteps)  # [#envs]
 
         # [#iters, #pop, #envs]
-        key, objectives = jax.lax.scan(
+        key, (objectives, sampled_timesteps) = jax.lax.scan(
             _evaluate_fn,
             state.key, (),
             length=self.num_iters)
@@ -114,6 +121,13 @@ class GeneralRLProblem(Problem):
         # by default, we use the mean value over different episodes.
         objectives = self.reduce_fn(objectives, axis=-1)
 
-        return objectives, state.replace(key=key)
+        sampled_episodes = pop_size * self.num_episodes * self.env.num_envs
+        sampled_timesteps = sampled_timesteps.sum()
 
+        state = state.replace(
+            key=key,
+            sampled_timesteps=sampled_timesteps,
+            sampled_episodes=sampled_episodes
+        )
 
+        return objectives, state

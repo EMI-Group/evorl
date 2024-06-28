@@ -24,7 +24,7 @@ from evorl.distributed import tree_device_put, tree_device_get, POP_AXIS_NAME
 from evorl.metrics import MetricBase
 
 
-from evox import State
+from evorl.types import State
 # from evorl.types import State
 
 
@@ -32,13 +32,12 @@ import orbax.checkpoint as ocp
 import chex
 import optax
 from evorl.types import (
-    PyTreeNode, PyTreeDict
+    PyTreeData, PyTreeDict
 )
 from evorl.metrics import TrainMetric, WorkflowMetric
 from typing import Tuple, Sequence, Optional, Any
 import logging
-import flax.linen as nn
-from flax import struct
+
 import copy
 from omegaconf import OmegaConf
 
@@ -58,7 +57,7 @@ class EvalMetric(MetricBase):
     pop_episode_lengths: chex.Array
 
 
-class HyperParams(PyTreeNode):
+class HyperParams(PyTreeData):
     lr: chex.Array
 
 

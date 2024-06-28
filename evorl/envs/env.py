@@ -1,8 +1,8 @@
 import chex
-from flax import struct
+
 
 from .space import Space
-from evorl.types import PyTreeDict, EnvLike, EnvInternalState, Action, Observation, Reward, Done, pytree_field
+from evorl.types import PyTreeDict, EnvLike, EnvInternalState, Action, Observation, Reward, Done, pytree_field, PyTreeData
 from typing import Tuple
 from typing_extensions import (
     Self  # pytype: disable=not-supported-yet
@@ -10,8 +10,7 @@ from typing_extensions import (
 from abc import ABC, abstractmethod
 
 
-@struct.dataclass
-class EnvState:
+class EnvState(PyTreeData):
     """
     Include all the information needed to represent the state of the environment.
 

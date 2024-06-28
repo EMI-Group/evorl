@@ -5,6 +5,7 @@ import chex
 
 from evorl.envs import Env
 from evorl.agents import Agent
+from evorl.types import pytree_field, PyTreeNode
 from evorl.metrics import EvaluateMetric
 from evorl.rollout import eval_rollout_episode, fast_eval_rollout_episode
 from evorl.utils.toolkits import compute_discount_return, compute_episode_length
@@ -17,12 +18,12 @@ import math
 logger = logging.getLogger(__name__)
 
 
-@dataclasses.dataclass
-class Evaluator:
+
+class Evaluator(PyTreeNode):
     env: Env
     agent: Agent
-    max_episode_steps: int
-    discount: float = 1.0
+    max_episode_steps: int = pytree_field(pytree_node=False)
+    discount: float = pytree_field(default=1.0, pytree_node=False)
 
     def evaluate(self, agent_state, num_episodes: int, key: chex.PRNGKey) -> EvaluateMetric:
         if self.discount == 1.0:

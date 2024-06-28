@@ -6,7 +6,7 @@ import optax
 import chex
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
-    Action, Params, PolicyExtraInfo, LossDict, PyTreeNode
+    Action, Params, PolicyExtraInfo, LossDict, PyTreeNode, PyTreeData
 )
 from evorl.envs.space import Space
 from evorl.utils import running_statistics
@@ -16,7 +16,7 @@ from flax import struct
 AgentParams = Mapping[str, Params]
 
 
-class AgentState(PyTreeNode):
+class AgentState(PyTreeData):
     params: AgentParams
     obs_preprocessor_state: Optional[running_statistics.RunningStatisticsState] = None
     # TODO: define the action_postprocessor_state

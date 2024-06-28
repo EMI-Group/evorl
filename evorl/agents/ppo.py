@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from flax import struct
 import math
 
 from omegaconf import DictConfig
@@ -23,7 +22,7 @@ from evorl.envs import create_env, Env, EnvState
 from evorl.evaluator import Evaluator
 from .agent import Agent, AgentState
 
-from evox import State
+from evorl.types import State
 # from evorl.types import State
 
 
@@ -32,7 +31,7 @@ import chex
 import optax
 from evorl.types import (
     LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field,
-    MISSING_REWARD
+    MISSING_REWARD, PyTreeData
 )
 from evorl.metrics import TrainMetric, WorkflowMetric
 from typing import Tuple, Sequence, Optional, Any
@@ -43,8 +42,7 @@ from flax import struct
 logger = logging.getLogger(__name__)
 
 
-@struct.dataclass
-class PPONetworkParams:
+class PPONetworkParams(PyTreeData):
     """Contains training state for the learner."""
     policy_params: Params
     value_params: Params
@@ -271,7 +269,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             episode_length=max_episode_steps,
             parallel=config.num_envs,
             autoreset=True,
-            fast_reset=True
+            # fast_reset=True
         )
 
         agent = PPOAgent(
