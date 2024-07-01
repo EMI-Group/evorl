@@ -11,8 +11,6 @@ from evorl.envs import Env
 from evorl.evaluator import Evaluator
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
 from evorl.metrics import TrainMetric, EvaluateMetric, WorkflowMetric, MetricBase
-from evorl.utils.cfg_utils import get_output_dir
-from evorl.utils.orbax_utils import DummyCheckpointManager
 from typing import Any, Callable, Sequence, Optional, Tuple
 from typing_extensions import (
     Self  # pytype: disable=not-supported-yet
@@ -28,26 +26,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
-    if config.checkpoint.enable:
-        output_dir = get_output_dir()
-        ckpt_options = ocp.CheckpointManagerOptions(
-            save_interval_steps=config.checkpoint.save_interval_steps,
-            max_to_keep=config.checkpoint.max_to_keep
-        )
-        ckpt_path = output_dir/'checkpoints'
-        logger.info(f'set checkpoint path: {ckpt_path}')
-        checkpoint_manager = ocp.CheckpointManager(
-            ckpt_path,
-            options=ckpt_options,
-            metadata=OmegaConf.to_container(config)  # rescaled real config
-        )
-    else:
-        checkpoint_manager = DummyCheckpointManager()
-
-    return checkpoint_manager
-
-
 class RLWorkflow(Workflow):
     def __init__(
         self,
@@ -61,17 +39,17 @@ class RLWorkflow(Workflow):
 
         self.pmap_axis_name = None
         self.devices = jax.local_devices()[:1]
-        self.checkpoint_manager = setup_checkpoint_manager(config)
 
     @property
     def enable_multi_devices(self) -> bool:
         return self.pmap_axis_name is not None
 
     @classmethod
-    def build_from_config(cls, config: DictConfig, enable_multi_devices: bool = False, devices: Optional[Sequence[jax.Device]] = None, enable_jit: bool = True):
+    def build_from_config(cls, config: DictConfig, enable_multi_devices: bool = False, enable_jit: bool = True):
         config = copy.deepcopy(config)  # avoid in-place modification
-        if devices is None:
-            devices = jax.local_devices()
+
+        global_device_count = jax.device_count()
+        devices = jax.local_devices()
 
         if enable_multi_devices:
             cls.step = jax.pmap(
@@ -83,7 +61,7 @@ class RLWorkflow(Workflow):
                 static_broadcasted_argnums=(0,)
             )
             OmegaConf.set_readonly(config, False)
-            cls._rescale_config(config, devices)
+            cls._rescale_config(config, global_device_count)
         elif enable_jit:
             cls.enable_jit()
 
@@ -101,9 +79,9 @@ class RLWorkflow(Workflow):
         raise NotImplementedError
 
     @staticmethod
-    def _rescale_config(config: DictConfig, devices) -> None:
+    def _rescale_config(config: DictConfig, num_devices: int) -> None:
         """
-            When enable_multi_devices=True, rescale config settings to match multi-devices
+            When enable_multi_devices=True, rescale config settings in-place to match multi-devices
         """
         raise NotImplementedError
 
@@ -125,9 +103,7 @@ class RLWorkflow(Workflow):
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
-    def close(self) -> None:
-        super().close()
-        self.checkpoint_manager.close()
+        
 
 
 class OnPolicyRLWorkflow(RLWorkflow):

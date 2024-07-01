@@ -13,6 +13,7 @@ from evox.workflows import StdWorkflow as EvoXWorkflow
 
 from evorl.types import State
 from evorl.metrics import MetricBase, WorkflowMetric
+from evorl.distributed import POP_AXIS_NAME, tree_unpmap, psum, split_key_to_devices
 from evorl.utils.cfg_utils import get_output_dir
 from .workflow import Workflow
 
@@ -52,23 +53,7 @@ class ECWorkflow(Workflow):
 
     @property
     def enable_multi_devices(self) -> bool:
-        return self._workflow.pmap_axis_name is not None
-
-    def setup_multiple_device(self, state: State, devices: Optional[Sequence[jax.Device]] = None) -> State:
-        evox_state = self._workflow.enable_multi_devices(
-            state.evox_state, devices)
-        
-        if devices is None:
-            devices = jax.local_devices()
-
-        self.devices = devices
-        num_devices = jax.device_count()
-        num_local_devices = len(devices)
-        
-        key = jax.device_put_sharded([*jax.random.split(state.key, len(devices))], devices)
-
-        self.pmap_axis_name = self._workflow.pmap_axis_name
-        return state.replace(evox_state=evox_state)
+        return self.pmap_axis_name is not None
 
     def setup(self, key: chex.PRNGKey) -> State:
         key, evox_key = jax.random.split(key)
@@ -86,21 +71,36 @@ class ECWorkflow(Workflow):
         """
         return WorkflowMetric()
 
+    def setup_multiple_device(self, state: State) -> State:
+        self.pmap_axis_name = POP_AXIS_NAME
+        self.devices = jax.local_devices()
+
+        evox_state = self._workflow.enable_multi_devices(
+            state.evox_state, self.pmap_axis_name)
+
+        key = split_key_to_devices(state.key, self.devices)
+        workflow_metrics = jax.device_put_replicated(
+            state.metrics, self.devices)
+
+        return state.replace(
+            evox_state=evox_state,
+            key=key,
+            metrics=workflow_metrics
+        )
+
     def step(self, state: State) -> Tuple[TrainMetric, State]:
         train_info, evox_state = self._workflow.step(state.evox_state)
 
-        # TODO: multi-device
+        train_info = tree_unpmap(train_info, axis_name=self.pmap_axis_name)
+        problem_state = state.evox_state.get_child_state('problem')
 
         # turn back to the original objectives
         train_metrics = TrainMetric(
             objectives=train_info['fitness'] * self._workflow.opt_direction
         )
-
-        problem_state = state.evox_state.get_child_state('problem')
-
         workflow_metrics = WorkflowMetric(
             sampled_episodes=state.metrics.sampled_episodes+problem_state.sampled_episodes,
-            sampled_timesteps=state.metrics.sampled_episodes+problem_state.sampled_timesteps,
+            sampled_timesteps=state.metrics.sampled_timesteps+problem_state.sampled_timesteps,
             iterations=state.metrics.iterations + 1,
         )
 

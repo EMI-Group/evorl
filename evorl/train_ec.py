@@ -4,6 +4,7 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 import logging
 
+from evorl.workflows import ECWorkflow
 from evorl.utils.jax_utils import optimize_gpu_utilization
 from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
 from evorl.recorders import WandbRecorder, LogRecorder, ChainRecorder
@@ -28,7 +29,7 @@ def train(config: DictConfig) -> None:
         # jax_config.update("jax_debug_infs", True)
 
     workflow_cls = hydra.utils.get_class(config.workflow_cls)
-    workflow = workflow_cls(config)
+    workflow: ECWorkflow = workflow_cls(config)
 
     output_dir = get_output_dir()
     wandb_project = config.wandb.project
@@ -55,7 +56,8 @@ def train(config: DictConfig) -> None:
         state = workflow.init(jax.random.PRNGKey(config.seed))
         devices = jax.local_devices()
         if len(devices) > 1:
-            state = workflow.setup_multiple_device(state, devices=devices)
+            logger.info(f"Enable Multiple Devices: {devices}")
+            state = workflow.setup_multiple_device(state)
 
         state = workflow.learn(state)
     except Exception as e:

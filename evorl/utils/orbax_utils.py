@@ -1,9 +1,13 @@
 from typing import Any, Mapping, Sequence, Optional
+import logging
 import jax.tree_util as jtu
 import orbax.checkpoint as ocp
 import chex
+from omegaconf import DictConfig, OmegaConf
 from orbax.checkpoint.composite_checkpoint_handler import CompositeArgs as Composite
+from evorl.utils.cfg_utils import get_output_dir
 
+logger = logging.getLogger(__name__)
 
 def save(path, state: chex.ArrayTree):
     ckpt = ocp.StandardCheckpointer()
@@ -83,3 +87,22 @@ class DummyCheckpointManager(ocp.AbstractCheckpointManager):
     
     def close(self):
         pass
+
+def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
+    if config.checkpoint.enable:
+        output_dir = get_output_dir()
+        ckpt_options = ocp.CheckpointManagerOptions(
+            save_interval_steps=config.checkpoint.save_interval_steps,
+            max_to_keep=config.checkpoint.max_to_keep
+        )
+        ckpt_path = output_dir/'checkpoints'
+        logger.info(f'set checkpoint path: {ckpt_path}')
+        checkpoint_manager = ocp.CheckpointManager(
+            ckpt_path,
+            options=ckpt_options,
+            metadata=OmegaConf.to_container(config)  # rescaled real config
+        )
+    else:
+        checkpoint_manager = DummyCheckpointManager()
+
+    return checkpoint_manager

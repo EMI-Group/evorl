@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 
 from evorl.types import State
 from evorl.recorders import Recorder, ChainRecorder
-
+from evorl.utils.orbax_utils import setup_checkpoint_manager
 # TODO: remove it when evox is updated
 
 
@@ -63,6 +63,7 @@ class Workflow(AbstractWorkflow):
     ):
         self.config = config
         self.recorder = ChainRecorder()
+        self.checkpoint_manager = setup_checkpoint_manager(config)
 
     @classmethod
     def build_from_config(cls, config: DictConfig, *args, **kwargs) -> Self:
@@ -80,6 +81,7 @@ class Workflow(AbstractWorkflow):
             Close the workflow's components.
         """
         self.recorder.close()
+        self.checkpoint_manager.close()
 
     def learn(self, state: State) -> State:
         """

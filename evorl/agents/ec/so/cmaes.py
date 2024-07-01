@@ -1,10 +1,11 @@
 import jax
 import jax.numpy as jnp
-
+import chex
 from typing import Tuple
 from hydra import compose, initialize
 from omegaconf import DictConfig, OmegaConf
 import evox.algorithms
+import evox
 
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.utils.jax_utils import jit_method
@@ -22,7 +23,7 @@ class CMAESWorkflow(ECWorkflow):
     @classmethod
     def name(cls):
         return "CMAES"
-    
+
     def __init__(self, config: DictConfig):
         env = create_wrapped_brax_env(
             config.env.env_name,
@@ -79,14 +80,12 @@ class CMAESWorkflow(ECWorkflow):
             parallel=config.num_eval_envs,
             autoreset=False,
         )
-        self.evaluator = Evaluator(
+        evaluator = Evaluator(
             env=eval_env,
             agent=agent,
             max_episode_steps=config.env.max_episode_steps
         )
 
-
-    @jit_method(static_argnums=(0,))
     def evaluate(self, state: State) -> Tuple[EvaluateMetric, State]:
         """Evaluate the policy with the mean of CMAES
         """
@@ -105,10 +104,18 @@ class CMAESWorkflow(ECWorkflow):
         eval_metrics = EvaluateMetric(
             episode_returns=raw_eval_metrics.episode_returns.mean(),
             episode_lengths=raw_eval_metrics.episode_lengths.mean()
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(self.pmap_axis_name)
 
         state = state.replace(key=key)
+
         return eval_metrics, state
+
+    def setup_multiple_device(self, state: State) -> State:
+        state = super().setup_multiple_device(state)
+
+        self._evaluate = jax.pmap(self._evaluate,)
+
+        return state
 
     def learn(self, state: State) -> State:
         start_iteration = tree_unpmap(

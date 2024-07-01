@@ -227,8 +227,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         return "A2C"
 
     @staticmethod
-    def _rescale_config(config, devices) -> None:
-        num_devices = len(devices)
+    def _rescale_config(config: DictConfig, num_devices: int) -> None:
         if config.num_envs % num_devices != 0:
             logger.warning(
                 f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
