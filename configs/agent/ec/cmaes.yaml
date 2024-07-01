@@ -1,0 +1,20 @@
+# @package _global_
+
+workflow_cls: evorl.agents.ec.so.cmaes.CMAESWorkflow
+
+pop_size: 128
+num_iters: 1000
+
+init_stdev: 1.0
+
+num_envs: 16
+episodes: 16 # episodes per individual for fitness
+
+num_eval_envs: 128
+eval_episodes: 128
+
+discount: 1.0
+
+agent_network:
+  # actor_hidden_layer_sizes: [] # linear network
+  actor_hidden_layer_sizes: [16, 16]

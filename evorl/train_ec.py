@@ -23,7 +23,7 @@ def train(config: DictConfig) -> None:
 
     if config.debug:
         from jax import config as jax_config
-        jax_config.update("jax_debug_nans", True)
+        # jax_config.update("jax_debug_nans", True)
         # jax.config.update("jax_transfer_guard", "log")
         # jax_config.update("jax_debug_infs", True)
 

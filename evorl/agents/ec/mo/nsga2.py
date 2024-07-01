@@ -19,11 +19,11 @@ from evorl.types import State
 from ..ec import DeterministicECAgent
 
 
-class RVEAWorkflow(ECWorkflow):
+class NSGA2Workflow(ECWorkflow):
     @classmethod
     def name(cls):
-        return "RVEA"
-    
+        return "NSGA2"
+
     def __init__(self, config: DictConfig):
         env = create_wrapped_brax_env(
             config.env.env_name,
@@ -54,16 +54,13 @@ class RVEAWorkflow(ECWorkflow):
         agent_state = agent.init(agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
-        algorithm = evox.algorithms.RVEA(
+        algorithm = evox.algorithms.NSGA2(
             lb=jnp.full((param_vec_spec.vec_size,),
                         fill_value=config.agent_network.lb),
             ub=jnp.full((param_vec_spec.vec_size,),
                         fill_value=config.agent_network.ub),
             n_objs=len(config.obj_names),
             pop_size=config.pop_size,
-            alpha=config.alpha,
-            fr=config.fr,
-            max_gen=config.num_iters,
         )
 
         def _candidate_transform(flat_cand):

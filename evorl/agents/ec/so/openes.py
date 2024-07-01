@@ -1,17 +1,16 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
+
 from typing import Tuple
 from hydra import compose, initialize
 from omegaconf import DictConfig, OmegaConf
 import evox.algorithms
-from evox.operators import non_dominated_sort
 
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.utils.jax_utils import jit_method
 from evorl.workflows import ECWorkflow
 from evorl.envs import create_wrapped_brax_env
-from evorl.ec import MultiObjectiveBraxProblem
+from evorl.ec import GeneralRLProblem
 from evorl.metrics import EvaluateMetric
 from evorl.distributed import tree_unpmap
 from evorl.evaluator import Evaluator
@@ -19,10 +18,10 @@ from evorl.types import State
 from ..ec import DeterministicECAgent
 
 
-class RVEAWorkflow(ECWorkflow):
+class OpenESWorkflow(ECWorkflow):
     @classmethod
     def name(cls):
-        return "RVEA"
+        return "OpenES"
     
     def __init__(self, config: DictConfig):
         env = create_wrapped_brax_env(
@@ -39,14 +38,12 @@ class RVEAWorkflow(ECWorkflow):
             normalize_obs=False
         )
 
-        problem = MultiObjectiveBraxProblem(
+        problem = GeneralRLProblem(
             agent=agent,
             env=env,
             num_episodes=config.episodes,
             max_episode_steps=config.env.max_episode_steps,
             discount=config.discount,
-            metric_names=config.obj_names,
-            flatten_objectives=True
         )
 
         # dummy agent_state
@@ -54,16 +51,16 @@ class RVEAWorkflow(ECWorkflow):
         agent_state = agent.init(agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
-        algorithm = evox.algorithms.RVEA(
-            lb=jnp.full((param_vec_spec.vec_size,),
-                        fill_value=config.agent_network.lb),
-            ub=jnp.full((param_vec_spec.vec_size,),
-                        fill_value=config.agent_network.ub),
-            n_objs=len(config.obj_names),
+
+        # TODO: impl complete version of OpenES
+        algorithm = evox.algorithms.OpenES(
+            center_init=param_vec_spec.to_vector(
+                agent_state.params.policy_params),
             pop_size=config.pop_size,
-            alpha=config.alpha,
-            fr=config.fr,
-            max_gen=config.num_iters,
+            learning_rate=config.optimizer.lr,
+            noise_stdev=config.noise_stdev,
+            optimizer='adam',
+            mirrored_sampling=True
         )
 
         def _candidate_transform(flat_cand):
@@ -75,9 +72,47 @@ class RVEAWorkflow(ECWorkflow):
             config=config,
             algorithm=algorithm,
             problem=problem,
-            opt_direction=config.opt_directions,
+            opt_direction='max',
             candidate_transforms=[jax.vmap(_candidate_transform)],
         )
+
+        self._candidate_transform = _candidate_transform
+
+        eval_env = create_wrapped_brax_env(
+            config.env.env_name,
+            episode_length=config.env.max_episode_steps,
+            parallel=config.num_eval_envs,
+            autoreset=False,
+        )
+        self.evaluator = Evaluator(
+            env=eval_env,
+            agent=agent,
+            max_episode_steps=config.env.max_episode_steps
+        )
+
+    @jit_method(static_argnums=(0,))
+    def evaluate(self, state: State) -> Tuple[EvaluateMetric, State]:
+        """Evaluate the policy with the mean of CMAES
+        """
+        key, eval_key = jax.random.split(state.key, num=2)
+
+        flat_pop_mean = state.evox_state.query_state('algorithm').center
+        agent_state = self._candidate_transform(flat_pop_mean)
+
+        # [#episodes]
+        raw_eval_metrics = self.evaluator.evaluate(
+            agent_state,
+            num_episodes=self.config.eval_episodes,
+            key=eval_key
+        )
+
+        eval_metrics = EvaluateMetric(
+            episode_returns=raw_eval_metrics.episode_returns.mean(),
+            episode_lengths=raw_eval_metrics.episode_lengths.mean()
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+        state = state.replace(key=key)
+        return eval_metrics, state
 
     def learn(self, state: State) -> State:
         start_iteration = tree_unpmap(
@@ -91,15 +126,11 @@ class RVEAWorkflow(ECWorkflow):
                 train_metrics, axis_name=self.pmap_axis_name)
             workflow_metrics = tree_unpmap(
                 workflow_metrics, self.pmap_axis_name)
+
             self.recorder.write(workflow_metrics.to_local_dict(), i)
+            self.recorder.write(train_metrics.to_local_dict(), i)
 
-            cpu_device = jax.devices('cpu')[0]
-            with jax.default_device(cpu_device):
-                fitnesses = train_metrics.objectives*self._workflow.opt_direction
-                pf_rank = non_dominated_sort(fitnesses, 'scan')
-                pf_objectives = train_metrics.objectives[pf_rank == 0]
-                _train_metrics = train_metrics.to_local_dict()
-                _train_metrics['pf_objectives'] = pf_objectives.tolist()
-                _train_metrics['num_pf'] = pf_objectives.shape[0]
-
-            self.recorder.write(_train_metrics, i)
+            eval_metrics, state = self.evaluate(state)
+            eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+            self.recorder.write(
+                {'eval_pop_mean': eval_metrics.to_local_dict()}, i)

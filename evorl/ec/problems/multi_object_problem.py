@@ -30,7 +30,7 @@ class MultiObjectiveBraxProblem(Problem):
         discount: float = 1.0,
         metric_names: Tuple[str] = ('reward',),
         flatten_objectives: bool = True,
-        reduce_fn: Union[ReductionFn, Dict[ReductionFn]] = jnp.mean,
+        reduce_fn: Union[ReductionFn, Dict[str,ReductionFn]] = jnp.mean,
     ):
         """
             Args:
@@ -42,7 +42,7 @@ class MultiObjectiveBraxProblem(Problem):
                 metric_names: names of the metrics to record as objectives.
                     By default, only original reward is recorded.
                 flatten_objectives: whether flatten the objectives or keep the dict structure.
-                reduce_fn: function or function list to reduce each objective over episodes.
+                reduce_fn: function or function dict to reduce each objective over episodes.
         """
         self.agent = agent
         self.env = env
@@ -279,7 +279,7 @@ def fast_eval_rollout_episode(
 
     def _terminate_cond(carry):
         env_state, current_key, prev_metrics = carry
-        return (prev_metrics._episode_lengths < rollout_length).all() & (~env_state.done.all())
+        return (prev_metrics.episode_length < rollout_length).all() & (~env_state.done.all())
 
     def _one_step_rollout(carry):
         """

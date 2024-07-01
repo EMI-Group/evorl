@@ -57,11 +57,22 @@ class ECWorkflow(Workflow):
     def setup_multiple_device(self, state: State, devices: Optional[Sequence[jax.Device]] = None) -> State:
         evox_state = self._workflow.enable_multi_devices(
             state.evox_state, devices)
+        
+        if devices is None:
+            devices = jax.local_devices()
+
+        self.devices = devices
+        num_devices = jax.device_count()
+        num_local_devices = len(devices)
+        
+        key = jax.device_put_sharded([*jax.random.split(state.key, len(devices))], devices)
+
         self.pmap_axis_name = self._workflow.pmap_axis_name
         return state.replace(evox_state=evox_state)
 
     def setup(self, key: chex.PRNGKey) -> State:
-        evox_state = self._workflow.init(key)
+        key, evox_key = jax.random.split(key)
+        evox_state = self._workflow.init(evox_key)
         workflow_metrics = self._setup_workflow_metrics()
         return State(
             key=key,
@@ -77,6 +88,8 @@ class ECWorkflow(Workflow):
 
     def step(self, state: State) -> Tuple[TrainMetric, State]:
         train_info, evox_state = self._workflow.step(state.evox_state)
+
+        # TODO: multi-device
 
         # turn back to the original objectives
         train_metrics = TrainMetric(

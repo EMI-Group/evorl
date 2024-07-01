@@ -19,6 +19,10 @@ from ..ec import DeterministicECAgent
 
 
 class CMAESWorkflow(ECWorkflow):
+    @classmethod
+    def name(cls):
+        return "CMAES"
+    
     def __init__(self, config: DictConfig):
         env = create_wrapped_brax_env(
             config.env.env_name,
