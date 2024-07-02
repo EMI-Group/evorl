@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
-
+# the old AgentState is replaced by the Extended_AgentState, because the TD3 has two params, normal params and target params, 
 class Extended_AgentState(PyTreeNode):
     params: AgentParams
     target_params: AgentParams
@@ -593,8 +593,10 @@ class TD3Workflow(OffPolicyRLWorkflow):
                     pmap_axis_name=self.pmap_axis_name,
                 )
             )
-
+        # the zero_state is used to update the params,
+        # one time update one part of the params, actor or critic, the other part is zero
         zero_state = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), agent_state.params)
+        # the args is used to pass the zero_state and key ("actor" or "critic)
         def critic_loss_fn(critic_params, agent_state, sample_batch, key, *args):
             params = agent_state.params.replace(critic_params=critic_params)
             agent_state = agent_state.replace(params=params)
