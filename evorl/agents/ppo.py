@@ -239,7 +239,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
     @staticmethod
     def _rescale_config(config: DictConfig) -> None:
         num_devices = jax.device_count()
-        
+
         if config.num_envs % num_devices != 0:
             logger.warning(
                 f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
@@ -377,7 +377,8 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             loss_fn,
             self.optimizer,
             pmap_axis_name=self.pmap_axis_name,
-            has_aux=True)
+            has_aux=True
+        )
 
         num_minibatches = self.config.rollout_length * \
             self.config.num_envs // self.config.minibatch_size

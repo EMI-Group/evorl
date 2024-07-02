@@ -4,6 +4,7 @@ from typing import Callable, Optional
 
 import jax
 import optax
+import chex
 
 
 def loss_and_pgrad(loss_fn: Callable[..., float],
@@ -40,35 +41,48 @@ def gradient_update(loss_fn: Callable[..., float],
         loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux)
 
     def f(optimizer_state, params, *args, **kwargs):
-        value, grads = loss_and_pgrad_fn(*args, **kwargs)
+        value, grads = loss_and_pgrad_fn(params, *args, **kwargs)
         params_update, optimizer_state = optimizer.update(
             grads, optimizer_state)
-        params = optax.apply_updates(args[0], params_update)
+        params = optax.apply_updates(params, params_update)
         return value, params, optimizer_state
 
     return f
 
 
+def _attach_params_to_agent_state(agent_state, params):
+    return agent_state.replace(params=params)
+
+
+def _detach_params_to_agent_state(agent_state):
+    return agent_state.params
+
+
 def agent_gradient_update(loss_fn: Callable[..., float],
                           optimizer: optax.GradientTransformation,
                           pmap_axis_name: Optional[str],
-                          has_aux: bool = False):
-    def _loss_fn(params, agent_state, sample_batch, key):
-        return loss_fn(agent_state.replace(params=params),
-                       sample_batch, key)
+                          has_aux: bool = False,
+                          attach_fn: Callable[[
+                              chex.ArrayTree, chex.ArrayTree], chex.ArrayTree] =
+                          _attach_params_to_agent_state,
+                          detach_fn: Callable[[chex.ArrayTree, chex.ArrayTree], chex.ArrayTree] =
+                          _detach_params_to_agent_state
+                          ):
 
-    loss_and_pgrad_fn = loss_and_pgrad(
-        _loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux)
+    def _loss_fn(params, agent_state, sample_batch, key):
+        agent_state = attach_fn(agent_state, params)
+        return loss_fn(agent_state, sample_batch, key)
+
+    _gradient_update_fn = gradient_update(
+        _loss_fn, optimizer, pmap_axis_name=pmap_axis_name, has_aux=has_aux
+    )
 
     def f(opt_state, agent_state, *args, **kwargs):
-        value, grads = loss_and_pgrad_fn(
-            agent_state.params, agent_state, *args, **kwargs)
+        params = detach_fn(agent_state)
+        value, opt_state, params = _gradient_update_fn(
+            opt_state, params, agent_state, *args, **kwargs)
+        agent_state = attach_fn(agent_state, params)
 
-        params_update, opt_state = optimizer.update(
-            grads, opt_state)
-        params = optax.apply_updates(agent_state.params, params_update)
-
-        agent_state = agent_state.replace(params=params)
         return value, opt_state, agent_state
 
     return f

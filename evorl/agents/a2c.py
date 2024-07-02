@@ -356,7 +356,8 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             loss_fn,
             self.optimizer,
             pmap_axis_name=self.pmap_axis_name,
-            has_aux=True)
+            has_aux=True
+        )
 
         (loss, loss_dict), opt_state, agent_state = update_fn(
             state.opt_state,
@@ -368,7 +369,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         # ======== update metrics ========
 
         sampled_timesteps = psum(self.config.rollout_length * self.config.num_envs,
-                                  axis_name=self.pmap_axis_name)
+                                 axis_name=self.pmap_axis_name)
 
         workflow_metrics = WorkflowMetric(
             sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
@@ -406,7 +407,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
             self.recorder.write(workflow_metrics.to_local_dict(), i)
             train_metric_data = train_metrics.to_local_dict()
-            if train_metrics.train_episode_return==MISSING_REWARD:
+            if train_metrics.train_episode_return == MISSING_REWARD:
                 del train_metric_data['train_episode_return']
             self.recorder.write(train_metric_data, i)
 
