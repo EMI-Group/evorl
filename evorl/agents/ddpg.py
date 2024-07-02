@@ -364,7 +364,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             add_batches=True,
         )
 
-        def _replay_buffer_init_fn(replay_buffer, key):
+        def _replay_buffer_init_fn(key):
             # create dummy data to initialize the replay buffer
             dummy_action = jnp.zeros(env.action_space.shape)
             dummy_obs = jnp.zeros(env.obs_space.shape)
