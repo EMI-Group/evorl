@@ -6,7 +6,7 @@ from flax.training import checkpoints
 import orbax.checkpoint as ocp
 import math
 
-from .agent import Agent, AgentState
+from .agent import Agent, AgentState, AgentParams
 from evorl.workflows import OffPolicyRLWorkflow
 from evorl.agents.random_agent import RandomAgent
 from evorl.envs import create_env, Box, Env, EnvState
@@ -21,7 +21,7 @@ from evorl.utils.toolkits import average_episode_discount_return, soft_target_up
 from omegaconf import DictConfig, OmegaConf
 from typing import Tuple, Any, Sequence, Callable, Optional
 from evorl.utils.orbax_utils import load
-from evorl.distributed.gradients import agent_gradient_update
+from evorl.distributed.gradients import loss_and_pgrad 
 import optax
 import chex
 import distrax
@@ -36,6 +36,7 @@ from evorl.types import (
     PolicyExtraInfo,
     PyTreeDict,
     pytree_field,
+    PyTreeNode
 )
 import logging
 import flax.linen as nn
@@ -47,13 +48,25 @@ ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
 
+class Extended_AgentState(PyTreeNode):
+    params: AgentParams
+    target_params: AgentParams
+    obs_preprocessor_state: Optional[running_statistics.RunningStatisticsState] = None
+    action_postprocessor_state: Any = None
+
+# @struct.dataclass
+# class TD3NetworkParams:
+#     """Contains training state for the learner."""
+
+#     params: Params
+#     target_params: Params
+
 @struct.dataclass
 class TD3NetworkParams:
     """Contains training state for the learner."""
 
-    params: Params
-    target_params: Params
-
+    critic_params: Params
+    actor_params: Params
 
 class TD3Agent(Agent):
     """
@@ -72,7 +85,7 @@ class TD3Agent(Agent):
     policy_noise: float = 0.2
     policy_noise_clip: float = 0.5
 
-    def init(self, key: chex.PRNGKey) -> AgentState:
+    def init(self, key: chex.PRNGKey) -> Extended_AgentState:
         obs_size = self.obs_space.shape[0]
         action_size = self.action_space.shape[0]
 
@@ -106,11 +119,17 @@ class TD3Agent(Agent):
         self.set_frozen_attr("critic_network", critic_network)
         self.set_frozen_attr("actor_network", actor_network)
 
+        # params_state = TD3NetworkParams(
+        #     params=PyTreeDict(critic_params=critic_params, actor_params=actor_params),
+        #     target_params=PyTreeDict(
+        #         critic_params=target_critic_params, actor_params=target_actor_params
+        #     ),
+        # )
         params_state = TD3NetworkParams(
-            params=PyTreeDict(critic_params=critic_params, actor_params=actor_params),
-            target_params=PyTreeDict(
-                critic_params=target_critic_params, actor_params=target_actor_params
-            ),
+            critic_params=critic_params, actor_params=actor_params
+        )   
+        target_params_state = TD3NetworkParams(
+            critic_params=target_critic_params, actor_params=target_actor_params
         )
         # obs_preprocessor
         if self.normalize_obs:
@@ -121,12 +140,12 @@ class TD3Agent(Agent):
         else:
             obs_preprocessor_state = None
 
-        return AgentState(
-            params=params_state, obs_preprocessor_state=obs_preprocessor_state
+        return Extended_AgentState(
+            params=params_state, target_params=target_params_state, obs_preprocessor_state=obs_preprocessor_state
         )
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: Extended_AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> Tuple[Action, PolicyExtraInfo]:
         """
         Args:
@@ -134,7 +153,7 @@ class TD3Agent(Agent):
         used in sample action during rollout
         """
         action = self.actor_network.apply(
-            agent_state.params.params.actor_params, sample_batch.obs
+            agent_state.params.actor_params, sample_batch.obs
         )
         # add random noise
         noise_stddev = (
@@ -147,21 +166,20 @@ class TD3Agent(Agent):
         return jax.lax.stop_gradient(action), PyTreeDict()
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: Extended_AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> Tuple[Action, PolicyExtraInfo]:
         """
         Args:
             sample_barch: [#env, ...]
         """
         action = self.actor_network.apply(
-            agent_state.params.target_params.actor_params, sample_batch.obs
+            agent_state.target_params.actor_params, sample_batch.obs
         )
 
         return jax.lax.stop_gradient(action), PyTreeDict()
 
     def cirtic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
-    ) -> LossDict:
+        self, agent_state: Extended_AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
         Args:
             sample_barch: [B, ...]
@@ -183,7 +201,7 @@ class TD3Agent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         next_actions = self.actor_network.apply(
-            agent_state.params.target_params.actor_params, next_obs
+            agent_state.target_params.actor_params, next_obs
         )
 
         # random noise    self.action_space next_actions.shape
@@ -201,7 +219,7 @@ class TD3Agent(Agent):
         q_net_batch_apply = jax.vmap(
             lambda x: self.critic_network.apply(x, next_data), in_axes=0
         )
-        next_qs = q_net_batch_apply(agent_state.params.target_params.critic_params).squeeze(-1)
+        next_qs = q_net_batch_apply(agent_state.target_params.critic_params).squeeze(-1)
 
         min_next_q = jnp.min(next_qs, axis=0)
         target_qs = (
@@ -213,7 +231,7 @@ class TD3Agent(Agent):
         q_net_batch_apply = jax.vmap(
             lambda x: self.critic_network.apply(x, input_data), in_axes=0
         )
-        qs = q_net_batch_apply(agent_state.params.params.critic_params).squeeze(-1)
+        qs = q_net_batch_apply(agent_state.params.critic_params).squeeze(-1)
 
         # another way to compute the lose
         # critic_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
@@ -222,8 +240,7 @@ class TD3Agent(Agent):
         return PyTreeDict(critic_loss=critic_loss)
 
     def actor_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
-    ) -> LossDict:
+        self, agent_state: Extended_AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
         Args:
             sample_barch: [B, ...]
@@ -244,20 +261,21 @@ class TD3Agent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # [T*B, A]
-        gen_actions = self.actor_network.apply(agent_state.params.params.actor_params, obs)
+        gen_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
 
         q0_params = jax.tree_util.tree_map(
-            lambda x: x[0], agent_state.params.params.critic_params
+            lambda x: x[0], agent_state.params.critic_params
         )
         actor_loss = -jnp.mean(
             self.critic_network.apply(
                 q0_params, jnp.concatenate([obs, gen_actions], axis=-1)
             ).squeeze(-1)
         )
+
         return PyTreeDict(actor_loss=actor_loss)
 
     def loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: Extended_AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
         """
         Args:
@@ -283,7 +301,7 @@ class TD3Agent(Agent):
         )
 
     def compute_values(
-        self, agent_state: AgentState, sample_batch: SampleBatch
+        self, agent_state: Extended_AgentState, sample_batch: SampleBatch
     ) -> chex.Array:
         """
         Args:
@@ -535,7 +553,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
         """
         the basic step function for the workflow to update agent
         """
-        key, rollout_key, learn_key, buffer_key = jax.random.split(state.key, num=4)
+        key, rollout_key, critic_key, actor_key, buffer_key = jax.random.split(state.key, num=5)
 
         # the trajectory (T*B*variable dim), dim T = 1 (default) and B = num_envs
         env_state, trajectory = rollout(
@@ -576,7 +594,10 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 )
             )
 
-        def critic_loss_fn(agent_state, sample_batch, key):
+        zero_state = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), agent_state.params)
+        def critic_loss_fn(critic_params, agent_state, sample_batch, key, *args):
+            params = agent_state.params.replace(critic_params=critic_params)
+            agent_state = agent_state.replace(params=params)
             loss_dict = PyTreeDict(
                 actor_loss=jnp.zeros(()),
                 critic_loss=self.agent.cirtic_loss(agent_state, sample_batch, key)["critic_loss"],
@@ -584,44 +605,67 @@ class TD3Workflow(OffPolicyRLWorkflow):
             loss = loss_dict["critic_loss"]
             return loss, loss_dict
 
-        def both_loss_fn(agent_state, sample_batch, key):
-            actor_key, critic_key = jax.random.split(key)
-            actor_loss_dict = self.agent.actor_loss(
-                agent_state, sample_batch, actor_key
-            )
-            critic_loss_dict = self.agent.cirtic_loss(
-                agent_state, sample_batch, critic_key
-            )
+        def actor_loss_fn(actor_params, agent_state, sample_batch, key, *args):
+            params = agent_state.params.replace(actor_params=actor_params)
+            agent_state = agent_state.replace(params=params)
             loss_dict = PyTreeDict(
-                actor_loss=actor_loss_dict["actor_loss"],
-                critic_loss=critic_loss_dict["critic_loss"],
+                actor_loss=self.agent.actor_loss(agent_state, sample_batch, key)["actor_loss"],
+                critic_loss=jnp.zeros(()),
             )
-            loss = loss_dict["actor_loss"] + loss_dict["critic_loss"]
+            loss = loss_dict["actor_loss"]
             return loss, loss_dict
 
-        critic_gradient_update = agent_gradient_update(
+        critic_gradient_update = gradient_update(
             critic_loss_fn,
             self.optimizer,
             pmap_axis_name=self.pmap_axis_name,
             has_aux=True,
         )
 
-        both_gradient_update = agent_gradient_update(
-            both_loss_fn,
+        actor_gradient_update = gradient_update(
+            actor_loss_fn,
             self.optimizer,
             pmap_axis_name=self.pmap_axis_name,
             has_aux=True,
         )
 
         def update_critic(agent_state):
-            (loss, loss_dict), opt_state, agent_state = (
+            replace_key = "critic_params"
+            (loss, loss_dict), params, opt_state = (
                 critic_gradient_update(
                     state.opt_state,
+                    agent_state.params.critic_params,  
                     agent_state,
                     sampled_batch.experience,
-                    learn_key,
+                    critic_key,
+                    zero_state,
+                    replace_key
                 )
             )
+            # params = agent_state.params.replace(critic_params=params)
+            agent_state = agent_state.replace(params=params)
+            return (
+                loss,
+                loss_dict,
+                opt_state,
+                agent_state,
+            )
+        
+        def update_actor(agent_state):
+            replace_key = "actor_params"
+            (loss, loss_dict), params, opt_state = (
+                actor_gradient_update(
+                    state.opt_state,
+                    agent_state.params.actor_params,
+                    agent_state,
+                    sampled_batch.experience,
+                    actor_key,
+                    zero_state,
+                    replace_key
+                )
+            )
+            # params = agent_state.params.replace(actor_params=actor_params)
+            agent_state = agent_state.replace(params=params)
             return (
                 loss,
                 loss_dict,
@@ -630,25 +674,22 @@ class TD3Workflow(OffPolicyRLWorkflow):
             )
 
         def update_both(agent_state):
-            (loss, loss_dict), opt_state, agent_state = (
-                both_gradient_update(
-                    state.opt_state,
-                    agent_state,
-                    sampled_batch.experience,
-                    learn_key,
-                )
+            critic_loss, critic_loss_dict, opt_state, agent_state = update_critic(agent_state)
+            actor_loss, actor_loss_dict, opt_state, agent_state = update_actor(agent_state)
+
+            loss = critic_loss + actor_loss
+            loss_dict = PyTreeDict(
+                actor_loss=actor_loss_dict["actor_loss"],
+                critic_loss=critic_loss_dict["critic_loss"],
             )
 
             target_params = soft_target_update(
-                agent_state.params.target_params,
-                agent_state.params.params,
+                agent_state.target_params,
+                agent_state.params,
                 self.config.tau,
             )
 
-            params = agent_state.params.replace(
-                target_params=target_params,
-            )
-            agent_state = agent_state.replace(params=params)
+            agent_state = agent_state.replace(target_params=target_params)
 
             return (
                 loss,
@@ -788,6 +829,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
         )
         logger.info(f"Reloaded from step {last_step}")
 
+
 class Actor(nn.Module):
     """
     the network for actor
@@ -857,3 +899,42 @@ def make_critic_networks(
     )
 
     return network, init_fn
+
+
+def gradient_update(loss_fn: Callable[..., float],
+                    optimizer: optax.GradientTransformation,
+                    pmap_axis_name: Optional[str],
+                    has_aux: bool = False):
+    """Wrapper of the loss function that apply gradient updates.
+
+    Args:
+      loss_fn: The loss function. (params, ...) -> loss
+      optimizer: The optimizer to apply gradients.
+      pmap_axis_name: If relevant, the name of the pmap axis to synchronize
+        gradients.
+      has_aux: Whether the loss_fn has auxiliary data.
+
+    Returns:
+      A function that takes the same argument as the loss function plus the
+      optimizer state. The output of this function is the loss, the new parameter,
+      and the new optimizer state.
+    """
+    loss_and_pgrad_fn = loss_and_pgrad(
+        loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux)
+
+    def f(optimizer_state, *args, **kwargs):
+        value, grads = loss_and_pgrad_fn(*args, **kwargs)
+        _grads = args[-2]
+        _key = args[-1]
+        if _key == "critic_params":
+            grads = _grads.replace(critic_params=grads)
+        elif _key == "actor_params":
+            grads = _grads.replace(actor_params=grads)
+        # _grads = _grads.replace(_key=grads)
+        params_update, optimizer_state = optimizer.update(
+            grads, optimizer_state)
+        agent_state = args[1]
+        params = optax.apply_updates(agent_state.params, params_update)
+        return value, params, optimizer_state
+
+    return f
