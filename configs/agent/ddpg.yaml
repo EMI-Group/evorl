@@ -2,7 +2,7 @@
 
 workflow_cls: evorl.agents.ddpg.DDPGWorkflow
 
-num_envs: 1
+num_envs: 10
 normalize_obs: false
 rollout_length: 1
 discount: 0.99
@@ -12,7 +12,7 @@ total_timesteps: 1000000
 num_eval_envs: 10
 eval_interval: 101
 log_interval: 101
-eval_episodes: 20 # should be divided by num_eval_envs
+eval_episodes: 10 # should be divided by num_eval_envs
 critor_update_interval: 1
 actor_update_interval: 2
 tau: 0.005
