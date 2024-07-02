@@ -512,7 +512,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
             # calculate the number of timestep
             sampled_timesteps = (
                 state.metrics.sampled_timesteps
-                + self.config.num_envs
+                + self.config.rollout_length * self.config.num_envs
             )
 
             # iterations is the number of updates of the agent

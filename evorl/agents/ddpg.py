@@ -22,11 +22,12 @@ from evorl.utils.toolkits import average_episode_discount_return, soft_target_up
 from omegaconf import DictConfig, OmegaConf
 from typing import Tuple, Any, Sequence, Callable, Optional
 from evorl.utils.orbax_utils import load
-from evorl.distributed.gradients import agent_gradient_update
+from evorl.distributed.gradients import loss_and_pgrad 
 import optax
 import chex
 from evorl.metrics import TrainMetric, WorkflowMetric
 import flashbax
+
 from evorl.types import (
     LossDict,
     Action,
@@ -426,8 +427,9 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 
         workflow_metrics = self._setup_workflow_metrics()
 
-        opt_state = self.optimizer.init(agent_state.params)
-
+        actor_opt_state = self.optimizer.init(agent_state.params.params.actor_params)
+        critic_opt_state = self.optimizer.init(agent_state.params.params.critic_params)
+        opt_state = PyTreeDict(actor=actor_opt_state, critic=critic_opt_state)
         
 
         if self.enable_multi_devices:
@@ -477,7 +479,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             env_state=state.env_state,
             agent_state=random_state,
             key=rollout_key,
-            rollout_length=self.config.learning_starts,
+            rollout_length=self.config.rollout_length,
             env_extra_fields=(
                 "last_obs",
                 "truncation",
@@ -502,7 +504,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         # get episode return
         train_episode_return = env_state.info.episode_return.mean()
         loss = jnp.zeros(())
-        loss_dict = dict(
+        loss_dict = PyTreeDict(
             actor_loss=loss,
             critic_loss=loss,
         )
@@ -515,7 +517,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         # calculate the number of timestep
         sampled_timesteps = (
             state.metrics.sampled_timesteps
-            + self.config.learning_starts * self.config.num_envs
+            + self.config.rollout_length * self.config.num_envs
         )
 
         # iterations is the number of updates of the agent
@@ -535,7 +537,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         """
         the basic step function for the workflow to update agent
         """
-        key, rollout_key, learn_key, buffer_key = jax.random.split(state.key, num=4)
+        key, rollout_key, critic_key, actor_key, buffer_key = jax.random.split(state.key, num=5)
 
         # the trajectory (T*B*variable dim), dim T = 1 (default) and B = num_envs
         env_state, trajectory = rollout(
@@ -576,66 +578,97 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 )
             )
 
-        def critic_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.cirtic_loss(agent_state, sample_batch, key)
+        def critic_loss_fn(critic_params, agent_state, sample_batch, key):
+            _params = agent_state.params.params.replace(critic_params=critic_params)
+            params = agent_state.params.replace(params=_params)
+            agent_state = agent_state.replace(params=params)
+            loss_dict = PyTreeDict(
+                actor_loss=jnp.zeros(()),
+                critic_loss=self.agent.cirtic_loss(agent_state, sample_batch, key)["critic_loss"],
+            )
             loss = loss_dict["critic_loss"]
             return loss, loss_dict
 
-        def both_loss_fn(agent_state, sample_batch, key):
-            actor_key, critic_key = jax.random.split(key)
-            actor_loss_dict = self.agent.actor_loss(
-                agent_state, sample_batch, actor_key
-            )
-            critic_loss_dict = self.agent.cirtic_loss(
-                agent_state, sample_batch, critic_key
-            )
+        def actor_loss_fn(actor_params, agent_state, sample_batch, key):
+            _params = agent_state.params.params.replace(actor_params=actor_params)
+            params = agent_state.params.replace(params=_params)
+            agent_state = agent_state.replace(params=params)
             loss_dict = PyTreeDict(
-                actor_loss=actor_loss_dict["actor_loss"],
-                critic_loss=critic_loss_dict["critic_loss"],
+                actor_loss=self.agent.actor_loss(agent_state, sample_batch, key)["actor_loss"],
+                critic_loss=jnp.zeros(()),
             )
-            loss = loss_dict["actor_loss"] + loss_dict["critic_loss"]
+            loss = loss_dict["actor_loss"]
             return loss, loss_dict
 
-        critic_gradient_update = agent_gradient_update(
+        critic_gradient_update = gradient_update(
             critic_loss_fn,
             self.optimizer,
             pmap_axis_name=self.pmap_axis_name,
             has_aux=True,
         ) 
 
-        both_gradient_update = agent_gradient_update(
-            both_loss_fn,
+        actor_gradient_update = gradient_update(
+            actor_loss_fn,
             self.optimizer,
             pmap_axis_name=self.pmap_axis_name,
             has_aux=True,
         )
 
-        def update_critic(agent_state):
-            (critic_loss, critic_loss_dict), opt_state, agent_state = (
+        def update_critic(agent_state, opt_state):
+            (loss, loss_dict), critic_params, critic_opt_state = (
                 critic_gradient_update(
-                    state.opt_state,
+                    opt_state.critic,
+                    agent_state.params.params.critic_params,  
                     agent_state,
                     sampled_batch.experience,
-                    learn_key,
+                    critic_key,
                 )
             )
-            loss_dict = PyTreeDict(
-                actor_loss=jnp.zeros(()),
-                critic_loss=critic_loss_dict["critic_loss"],
-            )
+            opt_state = opt_state.replace(critic=critic_opt_state)
+
+            _params = agent_state.params.params.replace(critic_params=critic_params)
+            params = agent_state.params.replace(params=_params)
+            agent_state = agent_state.replace(params=params)
+
             return (
-                critic_loss,
+                loss,
                 loss_dict,
                 opt_state,
                 agent_state,
             )
 
-        def update_both(agent_state):
-            (loss, loss_dict), opt_state, agent_state = both_gradient_update(
-                state.opt_state,
+        def update_actor(agent_state, opt_state):
+            (loss, loss_dict), actor_params, actor_opt_state = (
+                actor_gradient_update(
+                    opt_state.actor,
+                    agent_state.params.params.actor_params,
+                    agent_state,
+                    sampled_batch.experience,
+                    actor_key,
+                )
+            )
+
+            opt_state = opt_state.replace(actor=actor_opt_state)
+
+            _params = agent_state.params.params.replace(actor_params=actor_params)
+            params = agent_state.params.replace(params=_params)
+            agent_state = agent_state.replace(params=params)
+
+            return (
+                loss,
+                loss_dict,
+                opt_state,
                 agent_state,
-                sampled_batch.experience,
-                learn_key,
+            )
+        
+        def update_both(agent_state, opt_state):
+            critic_loss, critic_loss_dict, opt_state, agent_state = update_critic(agent_state, opt_state)
+            actor_loss, actor_loss_dict, opt_state, agent_state = update_actor(agent_state, opt_state)
+
+            loss = critic_loss + actor_loss
+            loss_dict = PyTreeDict(
+                actor_loss=actor_loss_dict["actor_loss"],
+                critic_loss=critic_loss_dict["critic_loss"],
             )
 
             target_params = soft_target_update(
@@ -643,9 +676,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 agent_state.params.params,
                 self.config.tau,
             )
-            params = agent_state.params.replace(
-                target_params=target_params,
-            )
+            params = agent_state.params.replace(target_params=target_params)
             agent_state = agent_state.replace(params=params)
 
             return (
@@ -660,7 +691,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         ) == 0
 
         loss, loss_dict, opt_state, agent_state = (
-            jax.lax.cond(update_condition, update_both, update_critic, agent_state)
+            jax.lax.cond(update_condition, update_both, update_critic, agent_state, state.opt_state)
         )
 
         state = state.update(
@@ -837,3 +868,33 @@ def make_actor_network(
     init_fn = lambda rng: actor.init(rng, jnp.ones((1, obs_size)))
 
     return actor, init_fn
+
+
+def gradient_update(loss_fn: Callable[..., float],
+                    optimizer: optax.GradientTransformation,
+                    pmap_axis_name: Optional[str],
+                    has_aux: bool = False):
+    """Wrapper of the loss function that apply gradient updates.
+
+    Args:
+      loss_fn: The loss function. (params, ...) -> loss
+      optimizer: The optimizer to apply gradients.
+      pmap_axis_name: If relevant, the name of the pmap axis to synchronize
+        gradients.
+      has_aux: Whether the loss_fn has auxiliary data.
+
+    Returns:
+      A function that takes the same argument as the loss function plus the
+      optimizer state. The output of this function is the loss, the new parameter,
+      and the new optimizer state.
+    """
+    loss_and_pgrad_fn = loss_and_pgrad(
+        loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux)
+
+    def f(optimizer_state, *args, **kwargs):
+        value, grads = loss_and_pgrad_fn(*args, **kwargs)
+        params_update, optimizer_state = optimizer.update(grads, optimizer_state)
+        params = optax.apply_updates(args[0], params_update)
+        return value, params, optimizer_state
+
+    return f
