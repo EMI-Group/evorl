@@ -21,31 +21,12 @@ class AbstractWorkflow(ABC):
     """
 
     @abstractmethod
-    def setup(self, key: jax.Array) -> State:
-        """
-            Custom setup.
-            When call public API init(), setup() would be recursively called.
-        """
+    def init(self, key: chex.PRNGKey) -> State:
         raise NotImplementedError
 
     @abstractmethod
     def step(self, state: State) -> Tuple[Any, State]:
         raise NotImplementedError
-
-    def learn(self, state: State) -> State:
-        """
-            run the complete learning process.
-            Note: this is designed for the non pure function. Don't wrap it with jit.
-        """
-        raise NotImplementedError
-
-    def init(self, key: jax.Array) -> State:
-        """
-            Initialize the state of the module.
-            This is the public API to call for instance state initialization.
-        """
-        self.recorder.init()
-        return self.setup(key)
 
     @classmethod
     def name(cls) -> str:
@@ -70,6 +51,18 @@ class Workflow(AbstractWorkflow):
         """
             Build the workflow from the config.
         """
+        raise NotImplementedError
+
+    def init(self, key: chex.PRNGKey) -> State:
+        """
+            Initialize the state of the module.
+            This is the public API to call for instance state initialization.
+        """
+        self.recorder.init()
+        state = self.setup(key)
+        return state
+    
+    def setup(self, key: chex.PRNGKey) -> State:
         raise NotImplementedError
 
     def add_recorders(self, recorders: Recorder) -> None:

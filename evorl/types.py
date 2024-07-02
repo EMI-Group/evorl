@@ -5,8 +5,10 @@ import jax.tree_util as jtu
 from flax import struct
 import chex
 
+import logging
+
 from typing import (
-    Any, Mapping, Union, Dict, Optional, Sequence,
+    Any, Mapping, Union, Sequence,
     Protocol
 )
 from typing_extensions import (
@@ -14,7 +16,7 @@ from typing_extensions import (
 )
 import dataclasses
 
-from jax._src.util import safe_zip
+
 from jax.typing import ArrayLike, DTypeLike
 
 Metrics = Mapping[str, chex.ArrayTree]
@@ -72,12 +74,19 @@ class PyTreeDict(dict):
         #     if not (k.startswith('__') and k.endswith('__')) and not k in ('update', 'pop'):
         #         setattr(self, k, getattr(self, k))
 
+    def _nested_convert(self, obj):
+        # currently only support dict, list, tuple (but not support their children class)
+        if type(obj) is dict:
+            return self.__class__(obj)
+        elif type(obj) is list:
+            return list(self._nested_convert(item) for item in obj)
+        elif type(obj) is tuple:
+            return tuple(self._nested_convert(item) for item in obj)
+        else:
+            return obj
+
     def __setattr__(self, name, value):
-        if isinstance(value, (list, tuple)):
-            value = [self.__class__(x)
-                     if isinstance(x, dict) else x for x in value]
-        elif isinstance(value, dict) and not isinstance(value, self.__class__):
-            value = self.__class__(value)
+        value = self._nested_convert(value)
         super(PyTreeDict, self).__setattr__(name, value)
         super(PyTreeDict, self).__setitem__(name, value)
 
@@ -107,7 +116,7 @@ class PyTreeDict(dict):
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        return cls(dict(safe_zip(aux_data, children)))
+        return cls(dict(zip(aux_data, children)))
 
 
 @jtu.register_pytree_node_class

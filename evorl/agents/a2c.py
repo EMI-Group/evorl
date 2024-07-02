@@ -359,7 +359,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             has_aux=True
         )
 
-        (loss, loss_dict), opt_state, agent_state = update_fn(
+        (loss, loss_dict), agent_state, opt_state = update_fn(
             state.opt_state,
             agent_state,
             trajectory,

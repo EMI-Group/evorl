@@ -40,12 +40,12 @@ def gradient_update(loss_fn: Callable[..., float],
     loss_and_pgrad_fn = loss_and_pgrad(
         loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux)
 
-    def f(optimizer_state, params, *args, **kwargs):
+    def f(opt_state, params, *args, **kwargs):
         value, grads = loss_and_pgrad_fn(params, *args, **kwargs)
-        params_update, optimizer_state = optimizer.update(
-            grads, optimizer_state)
+        params_update, opt_state = optimizer.update(
+            grads, opt_state)
         params = optax.apply_updates(params, params_update)
-        return value, params, optimizer_state
+        return value, params, opt_state, 
 
     return f
 
@@ -79,10 +79,10 @@ def agent_gradient_update(loss_fn: Callable[..., float],
 
     def f(opt_state, agent_state, *args, **kwargs):
         params = detach_fn(agent_state)
-        value, opt_state, params = _gradient_update_fn(
+        value, params, opt_state = _gradient_update_fn(
             opt_state, params, agent_state, *args, **kwargs)
         agent_state = attach_fn(agent_state, params)
 
-        return value, opt_state, agent_state
+        return value, agent_state, opt_state
 
     return f

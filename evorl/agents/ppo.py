@@ -392,7 +392,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             opt_state, agent_state, key = carray
             key, learn_key = jax.random.split(key)
 
-            (loss, loss_dict), opt_state, agent_state = update_fn(
+            (loss, loss_dict), agent_state, opt_state = update_fn(
                 opt_state,
                 agent_state,
                 trajectory,
@@ -403,9 +403,9 @@ class PPOWorkflow(OnPolicyRLWorkflow):
 
         def epoch_step(carray, _):
             opt_state, agent_state, key = carray
-            key, perm_key, learn_key = jax.random.split(key, num=3)
+            perm_key, learn_key = jax.random.split(key, num=2)
 
-            (opt_state, agent_state, _), (loss_list, loss_dict_list) = jax.lax.scan(
+            (opt_state, agent_state, key), (loss_list, loss_dict_list) = jax.lax.scan(
                 minibatch_step,
                 (opt_state, agent_state, learn_key),
                 jtu.tree_map(
