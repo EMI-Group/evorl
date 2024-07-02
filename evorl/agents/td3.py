@@ -36,7 +36,6 @@ from evorl.types import (
     PolicyExtraInfo,
     PyTreeDict,
     pytree_field,
-    PyTreeNode
 )
 import logging
 import flax.linen as nn
@@ -47,32 +46,19 @@ logger = logging.getLogger(__name__)
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
-# the old AgentState is replaced by the Extended_AgentState, because the TD3 has two params, normal params and target params, 
-class Extended_AgentState(PyTreeNode):
-    params: AgentParams
-    target_params: AgentParams
-    obs_preprocessor_state: Optional[running_statistics.RunningStatisticsState] = None
-    action_postprocessor_state: Any = None
-
-# @struct.dataclass
-# class TD3NetworkParams:
-#     """Contains training state for the learner."""
-
-#     params: Params
-#     target_params: Params
 
 @struct.dataclass
 class TD3NetworkParams:
     """Contains training state for the learner."""
 
-    critic_params: Params
-    actor_params: Params
+    params: Params
+    target_params: Params
+
 
 class TD3Agent(Agent):
     """
     TD3
     """
-
     critic_hidden_layer_sizes: Tuple[int] = (256, 256)
     actor_hidden_layer_sizes: Tuple[int] = (256, 256)
     discount: float = 1
@@ -85,7 +71,7 @@ class TD3Agent(Agent):
     policy_noise: float = 0.2
     policy_noise_clip: float = 0.5
 
-    def init(self, key: chex.PRNGKey) -> Extended_AgentState:
+    def init(self, key: chex.PRNGKey) -> AgentState:
         obs_size = self.obs_space.shape[0]
         action_size = self.action_space.shape[0]
 
@@ -119,18 +105,11 @@ class TD3Agent(Agent):
         self.set_frozen_attr("critic_network", critic_network)
         self.set_frozen_attr("actor_network", actor_network)
 
-        # params_state = TD3NetworkParams(
-        #     params=PyTreeDict(critic_params=critic_params, actor_params=actor_params),
-        #     target_params=PyTreeDict(
-        #         critic_params=target_critic_params, actor_params=target_actor_params
-        #     ),
-        # )
         params_state = TD3NetworkParams(
-            critic_params=critic_params, actor_params=actor_params
-        )   
-        target_params_state = TD3NetworkParams(
-            critic_params=target_critic_params, actor_params=target_actor_params
+            params=PyTreeDict(critic_params=critic_params, actor_params=actor_params),
+            target_params=PyTreeDict(critic_params=target_critic_params, actor_params=target_actor_params),
         )
+
         # obs_preprocessor
         if self.normalize_obs:
             self.obs_preprocessor = running_statistics.normalize
@@ -140,12 +119,12 @@ class TD3Agent(Agent):
         else:
             obs_preprocessor_state = None
 
-        return Extended_AgentState(
-            params=params_state, target_params=target_params_state, obs_preprocessor_state=obs_preprocessor_state
+        return AgentState(
+            params=params_state, obs_preprocessor_state=obs_preprocessor_state
         )
 
     def compute_actions(
-        self, agent_state: Extended_AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> Tuple[Action, PolicyExtraInfo]:
         """
         Args:
@@ -153,7 +132,7 @@ class TD3Agent(Agent):
         used in sample action during rollout
         """
         action = self.actor_network.apply(
-            agent_state.params.actor_params, sample_batch.obs
+            agent_state.params.params.actor_params, sample_batch.obs
         )
         # add random noise
         noise_stddev = (
@@ -166,20 +145,20 @@ class TD3Agent(Agent):
         return jax.lax.stop_gradient(action), PyTreeDict()
 
     def evaluate_actions(
-        self, agent_state: Extended_AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> Tuple[Action, PolicyExtraInfo]:
         """
         Args:
             sample_barch: [#env, ...]
         """
         action = self.actor_network.apply(
-            agent_state.target_params.actor_params, sample_batch.obs
+            agent_state.params.target_params.actor_params, sample_batch.obs
         )
 
         return jax.lax.stop_gradient(action), PyTreeDict()
 
     def cirtic_loss(
-        self, agent_state: Extended_AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
         Args:
             sample_barch: [B, ...]
@@ -201,7 +180,7 @@ class TD3Agent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         next_actions = self.actor_network.apply(
-            agent_state.target_params.actor_params, next_obs
+            agent_state.params.target_params.actor_params, next_obs
         )
 
         # random noise    self.action_space next_actions.shape
@@ -219,7 +198,7 @@ class TD3Agent(Agent):
         q_net_batch_apply = jax.vmap(
             lambda x: self.critic_network.apply(x, next_data), in_axes=0
         )
-        next_qs = q_net_batch_apply(agent_state.target_params.critic_params).squeeze(-1)
+        next_qs = q_net_batch_apply(agent_state.params.target_params.critic_params).squeeze(-1)
 
         min_next_q = jnp.min(next_qs, axis=0)
         target_qs = (
@@ -231,7 +210,7 @@ class TD3Agent(Agent):
         q_net_batch_apply = jax.vmap(
             lambda x: self.critic_network.apply(x, input_data), in_axes=0
         )
-        qs = q_net_batch_apply(agent_state.params.critic_params).squeeze(-1)
+        qs = q_net_batch_apply(agent_state.params.params.critic_params).squeeze(-1)
 
         # another way to compute the lose
         # critic_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
@@ -240,7 +219,7 @@ class TD3Agent(Agent):
         return PyTreeDict(critic_loss=critic_loss)
 
     def actor_loss(
-        self, agent_state: Extended_AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
         Args:
             sample_barch: [B, ...]
@@ -261,10 +240,10 @@ class TD3Agent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # [T*B, A]
-        gen_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        gen_actions = self.actor_network.apply(agent_state.params.params.actor_params, obs)
 
         q0_params = jax.tree_util.tree_map(
-            lambda x: x[0], agent_state.params.critic_params
+            lambda x: x[0], agent_state.params.params.critic_params
         )
         actor_loss = -jnp.mean(
             self.critic_network.apply(
@@ -275,7 +254,7 @@ class TD3Agent(Agent):
         return PyTreeDict(actor_loss=actor_loss)
 
     def loss(
-        self, agent_state: Extended_AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
         """
         Args:
@@ -290,8 +269,6 @@ class TD3Agent(Agent):
 
         critic_loss = self.cirtic_loss(agent_state, sample_batch, key).critic_loss
 
-        # ====== actor =======
-
         # [T*B, A]
         actor_loss = self.actor_loss(agent_state, sample_batch, key).actor_loss
 
@@ -301,7 +278,7 @@ class TD3Agent(Agent):
         )
 
     def compute_values(
-        self, agent_state: Extended_AgentState, sample_batch: SampleBatch
+        self, agent_state: AgentState, sample_batch: SampleBatch
     ) -> chex.Array:
         """
         Args:
@@ -442,7 +419,9 @@ class TD3Workflow(OffPolicyRLWorkflow):
 
         workflow_metrics = self._setup_workflow_metrics()
 
-        opt_state = self.optimizer.init(agent_state.params)
+        actor_opt_state = self.optimizer.init(agent_state.params.params.actor_params)
+        critic_opt_state = self.optimizer.init(agent_state.params.params.critic_params)
+        opt_state = PyTreeDict(actor=actor_opt_state, critic=critic_opt_state)
 
         # replay_buffer_state = self._init_replay_buffer(buffer_key)
         # rb_state is split to devices
@@ -593,12 +572,12 @@ class TD3Workflow(OffPolicyRLWorkflow):
                     pmap_axis_name=self.pmap_axis_name,
                 )
             )
-        # the zero_state is used to update the params,
-        # one time update one part of the params, actor or critic, the other part is zero
-        zero_state = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), agent_state.params)
-        # the args is used to pass the zero_state and key ("actor" or "critic)
-        def critic_loss_fn(critic_params, agent_state, sample_batch, key, *args):
-            params = agent_state.params.replace(critic_params=critic_params)
+        
+       
+        # the first param "critic_params" is the params for calculate gradient
+        def critic_loss_fn(critic_params, agent_state, sample_batch, key):
+            _params = agent_state.params.params.replace(critic_params=critic_params)
+            params = agent_state.params.replace(params=_params)
             agent_state = agent_state.replace(params=params)
             loss_dict = PyTreeDict(
                 actor_loss=jnp.zeros(()),
@@ -607,8 +586,9 @@ class TD3Workflow(OffPolicyRLWorkflow):
             loss = loss_dict["critic_loss"]
             return loss, loss_dict
 
-        def actor_loss_fn(actor_params, agent_state, sample_batch, key, *args):
-            params = agent_state.params.replace(actor_params=actor_params)
+        def actor_loss_fn(actor_params, agent_state, sample_batch, key):
+            _params = agent_state.params.params.replace(actor_params=actor_params)
+            params = agent_state.params.replace(params=_params)
             agent_state = agent_state.replace(params=params)
             loss_dict = PyTreeDict(
                 actor_loss=self.agent.actor_loss(agent_state, sample_batch, key)["actor_loss"],
@@ -631,21 +611,23 @@ class TD3Workflow(OffPolicyRLWorkflow):
             has_aux=True,
         )
 
-        def update_critic(agent_state):
-            replace_key = "critic_params"
-            (loss, loss_dict), params, opt_state = (
+        def update_critic(agent_state, opt_state):
+            (loss, loss_dict), critic_params, critic_opt_state = (
                 critic_gradient_update(
-                    state.opt_state,
-                    agent_state.params.critic_params,  
+                    opt_state.critic,
+                    agent_state.params.params.critic_params,  
                     agent_state,
                     sampled_batch.experience,
                     critic_key,
-                    zero_state,
-                    replace_key
                 )
             )
-            # params = agent_state.params.replace(critic_params=params)
+
+            opt_state = opt_state.replace(critic=critic_opt_state)
+
+            _params = agent_state.params.params.replace(critic_params=critic_params)
+            params = agent_state.params.replace(params=_params)
             agent_state = agent_state.replace(params=params)
+
             return (
                 loss,
                 loss_dict,
@@ -653,21 +635,23 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 agent_state,
             )
         
-        def update_actor(agent_state):
-            replace_key = "actor_params"
-            (loss, loss_dict), params, opt_state = (
+        def update_actor(agent_state, opt_state):
+            (loss, loss_dict), actor_params, actor_opt_state = (
                 actor_gradient_update(
-                    state.opt_state,
-                    agent_state.params.actor_params,
+                    opt_state.actor,
+                    agent_state.params.params.actor_params,
                     agent_state,
                     sampled_batch.experience,
                     actor_key,
-                    zero_state,
-                    replace_key
                 )
             )
-            # params = agent_state.params.replace(actor_params=actor_params)
+
+            opt_state = opt_state.replace(actor=actor_opt_state)
+
+            _params = agent_state.params.params.replace(actor_params=actor_params)
+            params = agent_state.params.replace(params=_params)
             agent_state = agent_state.replace(params=params)
+
             return (
                 loss,
                 loss_dict,
@@ -675,9 +659,9 @@ class TD3Workflow(OffPolicyRLWorkflow):
                 agent_state,
             )
 
-        def update_both(agent_state):
-            critic_loss, critic_loss_dict, opt_state, agent_state = update_critic(agent_state)
-            actor_loss, actor_loss_dict, opt_state, agent_state = update_actor(agent_state)
+        def update_both(agent_state, opt_state):
+            critic_loss, critic_loss_dict, opt_state, agent_state = update_critic(agent_state, opt_state)
+            actor_loss, actor_loss_dict, opt_state, agent_state = update_actor(agent_state, opt_state)
 
             loss = critic_loss + actor_loss
             loss_dict = PyTreeDict(
@@ -686,12 +670,13 @@ class TD3Workflow(OffPolicyRLWorkflow):
             )
 
             target_params = soft_target_update(
-                agent_state.target_params,
-                agent_state.params,
+                agent_state.params.target_params,
+                agent_state.params.params,
                 self.config.tau,
             )
-
-            agent_state = agent_state.replace(target_params=target_params)
+            
+            params = agent_state.params.replace(target_params=target_params)
+            agent_state = agent_state.replace(params=params)
 
             return (
                 loss,
@@ -705,7 +690,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
         ) == 0
        
         loss, loss_dict, opt_state, agent_state = (
-            jax.lax.cond(update_condition, update_both, update_critic, agent_state)
+            jax.lax.cond(update_condition, update_both, update_critic, agent_state, state.opt_state)
         )
 
         state = state.update(
@@ -926,17 +911,8 @@ def gradient_update(loss_fn: Callable[..., float],
 
     def f(optimizer_state, *args, **kwargs):
         value, grads = loss_and_pgrad_fn(*args, **kwargs)
-        _grads = args[-2]
-        _key = args[-1]
-        if _key == "critic_params":
-            grads = _grads.replace(critic_params=grads)
-        elif _key == "actor_params":
-            grads = _grads.replace(actor_params=grads)
-        # _grads = _grads.replace(_key=grads)
-        params_update, optimizer_state = optimizer.update(
-            grads, optimizer_state)
-        agent_state = args[1]
-        params = optax.apply_updates(agent_state.params, params_update)
+        params_update, optimizer_state = optimizer.update(grads, optimizer_state)
+        params = optax.apply_updates(args[0], params_update)
         return value, params, optimizer_state
 
     return f
