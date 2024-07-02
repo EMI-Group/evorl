@@ -114,7 +114,7 @@ class DQNAgent(Agent):
 
 class DQNWorkflow(OffPolicyRLWorkflow):
     @staticmethod
-    def _rescale_config(config: DictConfig, num_devices: int) -> None:
+    def _rescale_config(config: DictConfig) -> None:
         pass
 
         #TODO: impl it

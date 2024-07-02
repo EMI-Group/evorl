@@ -4,7 +4,7 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 import logging
 
-from evorl.workflows import RLWorkflow
+from evorl.workflows import Workflow
 from evorl.utils.jax_utils import optimize_gpu_utilization
 from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
 from evorl.recorders import WandbRecorder, LogRecorder, ChainRecorder
@@ -33,11 +33,11 @@ def train(config: DictConfig) -> None:
     devices = jax.local_devices()
     if len(devices) > 1:
         logger.info(f"Enable Multiple Devices: {devices}")
-        workflow: RLWorkflow = workflow_cls.build_from_config(
+        workflow: Workflow = workflow_cls.build_from_config(
             config, enable_multi_devices=True
         )
     else:
-        workflow: RLWorkflow = workflow_cls.build_from_config(
+        workflow: Workflow = workflow_cls.build_from_config(
             config, enable_jit=True
         )
 

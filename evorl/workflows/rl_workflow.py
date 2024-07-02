@@ -45,23 +45,15 @@ class RLWorkflow(Workflow):
         return self.pmap_axis_name is not None
 
     @classmethod
-    def build_from_config(cls, config: DictConfig, enable_multi_devices: bool = False, enable_jit: bool = True):
+    def build_from_config(cls, config: DictConfig, enable_multi_devices: bool = False, enable_jit: bool = True) -> Self:
         config = copy.deepcopy(config)  # avoid in-place modification
 
-        global_device_count = jax.device_count()
         devices = jax.local_devices()
 
         if enable_multi_devices:
-            cls.step = jax.pmap(
-                cls.step, axis_name=PMAP_AXIS_NAME,
-                static_broadcasted_argnums=(0,)
-            )
-            cls.evaluate = jax.pmap(
-                cls.evaluate, axis_name=PMAP_AXIS_NAME,
-                static_broadcasted_argnums=(0,)
-            )
+            cls.enable_pmap(PMAP_AXIS_NAME)
             OmegaConf.set_readonly(config, False)
-            cls._rescale_config(config, global_device_count)
+            cls._rescale_config(config)
         elif enable_jit:
             cls.enable_jit()
 
@@ -79,11 +71,11 @@ class RLWorkflow(Workflow):
         raise NotImplementedError
 
     @staticmethod
-    def _rescale_config(config: DictConfig, num_devices: int) -> None:
+    def _rescale_config(config: DictConfig) -> None:
         """
             When enable_multi_devices=True, rescale config settings in-place to match multi-devices
         """
-        raise NotImplementedError
+        pass
 
     def _setup_workflow_metrics(self) -> MetricBase:
         """
@@ -98,12 +90,19 @@ class RLWorkflow(Workflow):
         raise NotImplementedError
 
     @classmethod
-    def enable_jit(cls, device: jax.Device = None) -> None:
+    def enable_jit(cls) -> None:
         # donate_argnums = (1,) if donate_buffer else None
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
-        
+    @classmethod
+    def enable_pmap(cls, axis_name) -> None:
+        cls.step = jax.pmap(
+            cls.step, axis_name, static_broadcasted_argnums=(0,)
+        )
+        cls.evaluate = jax.pmap(
+            cls.evaluate, axis_name, static_broadcasted_argnums=(0,)
+        )
 
 
 class OnPolicyRLWorkflow(RLWorkflow):

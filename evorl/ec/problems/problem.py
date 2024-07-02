@@ -66,7 +66,8 @@ class GeneralRLProblem(Problem):
     def setup(self, key: chex.PRNGKey):
         return State(
             key=key,
-            sampled_timesteps=jnp.zeros((), dtype=jnp.uint32),
+            # sampled timesteps at each iteration
+            sampled_timesteps=jnp.zeros((), dtype=jnp.uint32), 
             sampled_episodes=jnp.zeros((), dtype=jnp.uint32),
         )
 

@@ -100,7 +100,7 @@
             "name": "EC-SO Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train_ec",
+            "module": "evorl.train",
             "args": [
                 "agent=ec/cmaes",
                 "env=brax/hopper",
@@ -118,9 +118,9 @@
             "name": "EC-MO Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train_ec",
+            "module": "evorl.train",
             "args": [
-                "agent=ec/rvea",
+                "agent=ec/nsga2",
                 "env=brax/hopper",
                 "debug=true",
                 "checkpoint.enable=false"

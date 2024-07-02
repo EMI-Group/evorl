@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 import chex
-from typing import Tuple
 from hydra import compose, initialize
 from omegaconf import DictConfig, OmegaConf
 import evox.algorithms
@@ -17,14 +16,16 @@ from evorl.distributed import tree_unpmap
 from evorl.evaluator import Evaluator
 from evorl.types import State
 from ..ec import DeterministicECAgent
+from .es_base import ESBaseWorkflow
 
 
-class CMAESWorkflow(ECWorkflow):
+class CMAESWorkflow(ESBaseWorkflow):
     @classmethod
     def name(cls):
         return "CMAES"
 
-    def __init__(self, config: DictConfig):
+    @classmethod
+    def _build_from_config(cls, config: DictConfig):
         env = create_wrapped_brax_env(
             config.env.env_name,
             episode_length=config.env.max_episode_steps,
@@ -64,16 +65,6 @@ class CMAESWorkflow(ECWorkflow):
             params = agent_state.params.replace(policy_params=cand)
             return agent_state.replace(params=params)
 
-        super().__init__(
-            config=config,
-            algorithm=algorithm,
-            problem=problem,
-            opt_direction='max',
-            candidate_transforms=[jax.vmap(_candidate_transform)],
-        )
-
-        self._candidate_transform = _candidate_transform
-
         eval_env = create_wrapped_brax_env(
             config.env.env_name,
             episode_length=config.env.max_episode_steps,
@@ -86,13 +77,26 @@ class CMAESWorkflow(ECWorkflow):
             max_episode_steps=config.env.max_episode_steps
         )
 
-    def evaluate(self, state: State) -> Tuple[EvaluateMetric, State]:
+        workflow = cls(
+            config=config,
+            agent=agent,
+            evaluator=evaluator,
+            algorithm=algorithm,
+            problem=problem,
+            opt_direction='max',
+            candidate_transforms=(jax.vmap(_candidate_transform),)
+        )
+        workflow._candidate_transform = _candidate_transform
+
+        return workflow
+
+    def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
         """Evaluate the policy with the mean of CMAES
         """
         key, eval_key = jax.random.split(state.key, num=2)
 
-        flat_pop_mean = state.evox_state.query_state('algorithm').mean
-        agent_state = self._candidate_transform(flat_pop_mean)
+        flat_pop_center = state.evox_state.query_state('algorithm').mean
+        agent_state = self._candidate_transform(flat_pop_center)
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(
@@ -106,16 +110,7 @@ class CMAESWorkflow(ECWorkflow):
             episode_lengths=raw_eval_metrics.episode_lengths.mean()
         ).all_reduce(self.pmap_axis_name)
 
-        state = state.replace(key=key)
-
-        return eval_metrics, state
-
-    def setup_multiple_device(self, state: State) -> State:
-        state = super().setup_multiple_device(state)
-
-        self._evaluate = jax.pmap(self._evaluate,)
-
-        return state
+        return eval_metrics, state.replace(key=key)
 
     def learn(self, state: State) -> State:
         start_iteration = tree_unpmap(
@@ -136,4 +131,4 @@ class CMAESWorkflow(ECWorkflow):
             eval_metrics, state = self.evaluate(state)
             eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
             self.recorder.write(
-                {'eval_pop_mean': eval_metrics.to_local_dict()}, i)
+                {'eval_pop_center': eval_metrics.to_local_dict()}, i)

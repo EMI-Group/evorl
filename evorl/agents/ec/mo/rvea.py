@@ -24,7 +24,8 @@ class RVEAWorkflow(ECWorkflow):
     def name(cls):
         return "RVEA"
     
-    def __init__(self, config: DictConfig):
+    @classmethod
+    def _build_from_config(cls, config: DictConfig):
         env = create_wrapped_brax_env(
             config.env.env_name,
             episode_length=config.env.max_episode_steps,
@@ -71,12 +72,13 @@ class RVEAWorkflow(ECWorkflow):
             params = agent_state.params.replace(policy_params=cand)
             return agent_state.replace(params=params)
 
-        super().__init__(
+        return cls(
             config=config,
+            agent=agent,
             algorithm=algorithm,
             problem=problem,
             opt_direction=config.opt_directions,
-            candidate_transforms=[jax.vmap(_candidate_transform)],
+            candidate_transforms=(jax.vmap(_candidate_transform),),
         )
 
     def learn(self, state: State) -> State:

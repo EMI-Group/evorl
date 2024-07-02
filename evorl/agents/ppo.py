@@ -237,7 +237,9 @@ class PPOWorkflow(OnPolicyRLWorkflow):
         return "PPO"
 
     @staticmethod
-    def _rescale_config(config: DictConfig, num_devices: int) -> None:
+    def _rescale_config(config: DictConfig) -> None:
+        num_devices = jax.device_count()
+        
         if config.num_envs % num_devices != 0:
             logger.warning(
                 f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
