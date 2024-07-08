@@ -100,7 +100,7 @@ class OpenESWorkflow(ESBaseWorkflow):
         if config.num_envs % num_devices != 0:
             logging.warning(
                 f"num_envs ({config.num_envs}) must be divisible by the number of devices ({num_devices}), "
-                f"rescale eval_episodes to {config.num_envs // num_devices * num_devices}")
+                f"rescale eval_episodes to {config.eval_episodes // num_devices}")
 
         config.eval_episodes = config.eval_episodes // num_devices
 
