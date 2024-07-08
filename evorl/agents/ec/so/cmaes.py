@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from omegaconf import DictConfig
+import logging
 import evox.algorithms
 
 from evorl.utils.ec_utils import ParamVectorSpec
@@ -13,6 +14,8 @@ from evorl.evaluator import Evaluator
 from evorl.types import State
 from ..ec import DeterministicECAgent
 from .es_base import ESBaseWorkflow
+
+logger = logging.getLogger(__name__)
 
 
 class CMAESWorkflow(ESBaseWorkflow):
@@ -85,6 +88,17 @@ class CMAESWorkflow(ESBaseWorkflow):
         workflow._candidate_transform = _candidate_transform
 
         return workflow
+
+    @staticmethod
+    def _rescale_config(config: DictConfig) -> None:
+        num_devices = jax.device_count()
+
+        if config.num_envs % num_devices != 0:
+            logging.warning(
+                f"num_envs ({config.num_envs}) must be divisible by the number of devices ({num_devices}), "
+                f"rescale eval_episodes to {config.num_envs // num_devices * num_devices}")
+
+        config.eval_episodes = config.eval_episodes // num_devices
 
     def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
         """Evaluate the policy with the mean of CMAES

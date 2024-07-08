@@ -87,11 +87,18 @@ class ECWorkflow(Workflow):
         raise NotImplementedError
 
     @staticmethod
-    def _rescale_config(config: DictConfig, num_devices: int) -> None:
+    def _rescale_config(config: DictConfig) -> None:
         """
-            When enable_multi_devices=True, rescale config settings in-place to match multi-devices
+            When enable_multi_devices=True, rescale config settings in-place to match multi-devices.
+            Note: not need for EvoX part, as it's already handled by EvoX.
         """
         pass
+
+    def _setup_workflow_metrics(self) -> MetricBase:
+        """
+            Customize the workflow metrics.
+        """
+        return WorkflowMetric()
 
     def setup(self, key: chex.PRNGKey) -> State:
         key, evox_key = jax.random.split(key, 2)
@@ -119,11 +126,6 @@ class ECWorkflow(Workflow):
             metrics=workflow_metrics
         )
 
-    def _setup_workflow_metrics(self) -> MetricBase:
-        """
-            Customize the workflow metrics.
-        """
-        return WorkflowMetric()
 
     def step(self, state: State) -> tuple[TrainMetric, State]:
         train_info, evox_state = self._workflow.step(state.evox_state)
