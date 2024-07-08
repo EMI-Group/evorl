@@ -1,10 +1,13 @@
 import jax
 import jax.numpy as jnp
 
-from omegaconf import DictConfig
+from hydra import compose, initialize
+from omegaconf import DictConfig, OmegaConf
 import evox.algorithms
 
 from evorl.utils.ec_utils import ParamVectorSpec
+from evorl.utils.jax_utils import jit_method
+from evorl.workflows import ECWorkflow
 from evorl.envs import create_wrapped_brax_env
 from evorl.ec import GeneralRLProblem
 from evorl.metrics import EvaluateMetric
@@ -12,12 +15,12 @@ from evorl.distributed import tree_unpmap
 from evorl.evaluator import Evaluator
 from evorl.types import State
 from ..ec import DeterministicECAgent
-from .es_base import ESBaseWorkflow
 
-class OpenESWorkflow(ESBaseWorkflow):
+
+class CSOWorkflow(ECWorkflow):
     @classmethod
     def name(cls):
-        return "OpenES"
+        return "CSO"
     
     @classmethod
     def _build_from_config(cls, config: DictConfig):
@@ -50,14 +53,13 @@ class OpenESWorkflow(ESBaseWorkflow):
 
 
         # TODO: impl complete version of OpenES
-        algorithm = evox.algorithms.OpenES(
-            center_init=param_vec_spec.to_vector(
-                agent_state.params.policy_params),
+        algorithm = evox.algorithms.CSO(
+            lb=jnp.full((param_vec_spec.vec_size,),
+                        fill_value=config.agent_network.lb),
+            ub=jnp.full((param_vec_spec.vec_size,),
+                        fill_value=config.agent_network.ub),
             pop_size=config.pop_size,
-            learning_rate=config.optimizer.lr,
-            noise_stdev=config.noise_stdev,
-            optimizer='adam',
-            mirrored_sampling=True
+            phi=config.phi
         )
 
         def _candidate_transform(flat_cand):
@@ -127,8 +129,3 @@ class OpenESWorkflow(ESBaseWorkflow):
 
             self.recorder.write(workflow_metrics.to_local_dict(), i)
             self.recorder.write(train_metrics.to_local_dict(), i)
-
-            eval_metrics, state = self.evaluate(state)
-            eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-            self.recorder.write(
-                {'eval_pop_center': eval_metrics.to_local_dict()}, i)

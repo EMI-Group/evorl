@@ -1,14 +1,10 @@
 import jax
 import jax.numpy as jnp
-import chex
-from hydra import compose, initialize
-from omegaconf import DictConfig, OmegaConf
+
+from omegaconf import DictConfig
 import evox.algorithms
-import evox
 
 from evorl.utils.ec_utils import ParamVectorSpec
-from evorl.utils.jax_utils import jit_method
-from evorl.workflows import ECWorkflow
 from evorl.envs import create_wrapped_brax_env
 from evorl.ec import GeneralRLProblem
 from evorl.metrics import EvaluateMetric
