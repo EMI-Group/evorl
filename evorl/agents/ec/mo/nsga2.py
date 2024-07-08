@@ -1,20 +1,16 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
-from typing import Tuple
-from hydra import compose, initialize
-from omegaconf import DictConfig, OmegaConf
+
+import orbax.checkpoint as ocp
+from omegaconf import DictConfig
 import evox.algorithms
 from evox.operators import non_dominated_sort
 
 from evorl.utils.ec_utils import ParamVectorSpec
-from evorl.utils.jax_utils import jit_method
 from evorl.workflows import ECWorkflow
 from evorl.envs import create_wrapped_brax_env
 from evorl.ec import MultiObjectiveBraxProblem
-from evorl.metrics import EvaluateMetric
 from evorl.distributed import tree_unpmap
-from evorl.evaluator import Evaluator
 from evorl.types import State
 from ..ec import DeterministicECAgent
 
@@ -102,3 +98,10 @@ class NSGA2Workflow(ECWorkflow):
                 _train_metrics['num_pf'] = pf_objectives.shape[0]
 
             self.recorder.write(_train_metrics, i)
+
+            self.checkpoint_manager.save(
+                i,
+                args=ocp.args.StandardSave(
+                    tree_unpmap(state, self.pmap_axis_name),
+                )
+            )

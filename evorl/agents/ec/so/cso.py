@@ -1,8 +1,8 @@
 import jax
 import jax.numpy as jnp
 
-from hydra import compose, initialize
-from omegaconf import DictConfig, OmegaConf
+import orbax.checkpoint as ocp
+from omegaconf import DictConfig
 import evox.algorithms
 
 from evorl.utils.ec_utils import ParamVectorSpec
@@ -129,3 +129,10 @@ class CSOWorkflow(ECWorkflow):
 
             self.recorder.write(workflow_metrics.to_local_dict(), i)
             self.recorder.write(train_metrics.to_local_dict(), i)
+            
+            self.checkpoint_manager.save(
+                i,
+                args=ocp.args.StandardSave(
+                    tree_unpmap(state, self.pmap_axis_name),
+                )
+            )

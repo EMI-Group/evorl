@@ -3,6 +3,7 @@ import jax.numpy as jnp
 
 from omegaconf import DictConfig
 import logging
+import orbax.checkpoint as ocp
 import evox.algorithms
 
 from evorl.utils.ec_utils import ParamVectorSpec
@@ -142,3 +143,10 @@ class CMAESWorkflow(ESBaseWorkflow):
             eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
             self.recorder.write(
                 {'eval_pop_center': eval_metrics.to_local_dict()}, i)
+            
+            self.checkpoint_manager.save(
+                i,
+                args=ocp.args.StandardSave(
+                    tree_unpmap(state, self.pmap_axis_name),
+                )
+            )
