@@ -47,14 +47,13 @@ Axis = Union[int, Sequence[int], None]
 
 
 class ReductionFn(Protocol):
-    def __call__(self, a: ArrayLike, axis: Axis = None, dtype: DTypeLike | None = None, out: None = None, keepdims: bool = False):
+    def __call__(self, x: ArrayLike, axis: Axis = None, dtype: DTypeLike | None = None, out: None = None, keepdims: bool = False):
         pass
 
 
 class ObsPreprocessorFn(Protocol):
     def __call__(self, obs: chex.Array, *args: Any, **kwds: Any) -> chex.Array:
         return obs
-
 
 @jtu.register_pytree_node_class
 class PyTreeDict(dict):

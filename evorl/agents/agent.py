@@ -10,7 +10,7 @@ from evorl.types import (
 )
 from evorl.envs.space import Space
 from evorl.utils import running_statistics
-from typing import Mapping, Tuple, Union, Any, Optional
+from typing import Mapping, Tuple, Union, Any, Optional, Protocol
 from flax import struct
 
 AgentParams = Mapping[str, Params]
@@ -60,11 +60,11 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
             get the best action from the action distribution.
         """
         raise NotImplementedError()
-    
-    # @abstractmethod
-    def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
+
+class LossFn(Protocol):
+    def __call__(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
-            Optional loss function for the model.
+            The type for the loss function for the model.
             In some case, a single loss function is not enough. For example, DDPG has two loss functions: actor_loss and critic_loss.
         """
-        raise NotImplementedError()
+        pass

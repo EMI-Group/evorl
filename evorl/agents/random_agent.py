@@ -20,7 +20,8 @@ class DebugRandomAgent(Agent):
         An agent that takes random actions.
         Used for testing and debugging.
     """
-    def init(self, key:chex.PRNGKey) -> AgentState:
+
+    def init(self, key: chex.PRNGKey) -> AgentState:
         return AgentState(
             params={}
         )
@@ -28,22 +29,19 @@ class DebugRandomAgent(Agent):
     def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         batch_shapes = sample_batch.obs.shape[:-len(self.obs_space.shape)]
         actions = self.action_space.sample(key)
-        actions =  jnp.broadcast_to(actions, batch_shapes+actions.shape)
+        actions = jnp.broadcast_to(actions, batch_shapes+actions.shape)
         return actions, PyTreeDict()
-    
+
     def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         return self.compute_actions(agent_state, sample_batch, key)
-    
-    def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
-        return PyTreeDict(
-            loss=jnp.zeros(())
-        )
-    
+
+
 class RandomAgent(Agent):
     """
         An agent that takes random actions.
     """
-    def init(self, key:chex.PRNGKey) -> AgentState:
+
+    def init(self, key: chex.PRNGKey) -> AgentState:
         return AgentState(
             params={}
         )
@@ -55,15 +53,11 @@ class RandomAgent(Agent):
         for _ in range(len(batch_shapes)):
             action_sample_fn = jax.vmap(action_sample_fn)
 
-        action_keys = jax.random.split(key, np.prod(batch_shapes)).reshape(*batch_shapes, 2)
+        action_keys = jax.random.split(key, np.prod(
+            batch_shapes)).reshape(*batch_shapes, 2)
 
         actions = action_sample_fn(action_keys)
         return actions, PyTreeDict()
-    
+
     def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         return self.compute_actions(agent_state, sample_batch, key)
-    
-    def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
-        raise NotImplementedError("RandomAgent does not have a loss function")
-        
-        
