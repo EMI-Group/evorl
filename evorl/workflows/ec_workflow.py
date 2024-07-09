@@ -1,5 +1,5 @@
 from typing import Union
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing_extensions import Self
 from omegaconf import DictConfig, OmegaConf
 import copy
@@ -15,12 +15,11 @@ from evox.workflows import StdWorkflow as EvoXWorkflow
 from evorl.agents import Agent
 from evorl.types import State
 from evorl.metrics import MetricBase, WorkflowMetric
-from evorl.distributed import POP_AXIS_NAME, psum, split_key_to_devices, get_global_rank
+from evorl.distributed import POP_AXIS_NAME, psum, split_key_to_devices, get_global_ranks
 from .workflow import Workflow
 
 
 class WorkflowMetric(MetricBase):
-    # note: we use float32, as overflow may easily happens with int32 in EC
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
@@ -36,10 +35,10 @@ class ECWorkflow(Workflow):
         config: DictConfig,
         agent: Agent,
         algorithm: Algorithm,
-        problem: Union[Problem, list[Problem]],
-        opt_direction: Union[str, list[str]] = 'max',
-        candidate_transforms: list[Callable] = [],
-        fitness_transforms: list[Callable] = [],
+        problem: Problem,
+        opt_direction: Union[str, Sequence[str]] = 'max',
+        candidate_transforms: Sequence[Callable] = (),
+        fitness_transforms: Sequence[Callable] = (),
     ):
         super(ECWorkflow, self).__init__(config)
 
@@ -116,7 +115,7 @@ class ECWorkflow(Workflow):
             )
             key = split_key_to_devices(key, self.devices)
             evox_state = evox_state.replace(
-                rank=get_global_rank(),
+                rank=get_global_ranks(),
                 world_size=jax.device_count()
             )
 
@@ -133,7 +132,6 @@ class ECWorkflow(Workflow):
         problem_state = state.evox_state.get_child_state('problem')
         sampled_episodes = psum(problem_state.sampled_episodes, self.pmap_axis_name)
         sampled_timesteps = psum(problem_state.sampled_timesteps, self.pmap_axis_name)
-
         # turn back to the original objectives
         # Note: train_info['fitness'] is already all-gathered in evox
         train_metrics = TrainMetric(

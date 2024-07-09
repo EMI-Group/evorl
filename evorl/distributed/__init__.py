@@ -1,7 +1,7 @@
 from .comm import (
     psum, pmean, pmin, pmax, unpmap, tree_unpmap, tree_pmean,
     split_key_to_devices,
-    is_dist_initialized, get_process_id, get_global_rank
+    is_dist_initialized, get_process_id, get_global_ranks
 )
 
 from .gradients import agent_gradient_update

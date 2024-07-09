@@ -74,7 +74,7 @@ def get_process_id():
         return 0
 
 
-def get_global_rank():
+def get_global_ranks():
     """
         Return the global rank for each device.
         Note: the return rank is already sharded.

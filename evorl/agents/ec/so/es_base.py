@@ -2,23 +2,15 @@ import jax
 import jax.numpy as jnp
 import chex
 from typing import Union
-from collections.abc import Callable
-from hydra import compose, initialize
+from collections.abc import Callable, Sequence
 from omegaconf import DictConfig, OmegaConf
-import copy
 
 from evox import Algorithm, Problem
-import evox.algorithms
 
 from evorl.agents import Agent
 from evorl.evaluator import Evaluator
-from evorl.utils.ec_utils import ParamVectorSpec
-from evorl.utils.jax_utils import jit_method
 from evorl.workflows import ECWorkflow
-from evorl.envs import create_wrapped_brax_env
-from evorl.ec import GeneralRLProblem
 from evorl.metrics import EvaluateMetric
-from evorl.distributed import tree_unpmap, POP_AXIS_NAME
 from evorl.evaluator import Evaluator
 from evorl.types import State
 
@@ -30,11 +22,10 @@ class ESBaseWorkflow(ECWorkflow):
         agent: Agent,
         evaluator: Evaluator,
         algorithm: Algorithm,
-        problem: Union[Problem, list[Problem]],
-        opt_direction: Union[str, list[str]] = 'max',
-        candidate_transforms: list[Callable] = [],
-        fitness_transforms: list[Callable] = [],
-
+        problem: Problem,
+        opt_direction: Union[str, Sequence[str]] = 'max',
+        candidate_transforms: Sequence[Callable] = (),
+        fitness_transforms: Sequence[Callable] = (),
     ):
         super(ESBaseWorkflow, self).__init__(
             config=config, 

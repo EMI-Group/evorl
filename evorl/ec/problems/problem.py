@@ -122,8 +122,8 @@ class GeneralRLProblem(Problem):
         # by default, we use the mean value over different episodes.
         objectives = self.reduce_fn(objectives, axis=-1)
 
-        sampled_episodes = pop_size * self.num_episodes * self.env.num_envs
-        sampled_timesteps = sampled_timesteps.sum()
+        sampled_episodes = jnp.array(pop_size * self.num_episodes * self.env.num_envs, dtype=jnp.uint32)
+        sampled_timesteps = sampled_timesteps.sum().astype(jnp.uint32)
 
         state = state.replace(
             key=key,

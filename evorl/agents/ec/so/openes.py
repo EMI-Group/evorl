@@ -136,7 +136,7 @@ class OpenESWorkflow(ESBaseWorkflow):
             workflow_metrics = state.metrics
 
             train_metrics = tree_unpmap(
-                train_metrics, axis_name=self.pmap_axis_name)
+                train_metrics,self.pmap_axis_name)
             workflow_metrics = tree_unpmap(
                 workflow_metrics, self.pmap_axis_name)
 

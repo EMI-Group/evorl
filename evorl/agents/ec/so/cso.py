@@ -21,7 +21,7 @@ class CSOWorkflow(ECWorkflow):
     @classmethod
     def name(cls):
         return "CSO"
-    
+
     @classmethod
     def _build_from_config(cls, config: DictConfig):
         env = create_wrapped_brax_env(
@@ -51,7 +51,6 @@ class CSOWorkflow(ECWorkflow):
         agent_state = agent.init(agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
-
         # TODO: impl complete version of OpenES
         algorithm = evox.algorithms.CSO(
             lb=jnp.full((param_vec_spec.vec_size,),
@@ -67,52 +66,14 @@ class CSOWorkflow(ECWorkflow):
             params = agent_state.params.replace(policy_params=cand)
             return agent_state.replace(params=params)
 
-        eval_env = create_wrapped_brax_env(
-            config.env.env_name,
-            episode_length=config.env.max_episode_steps,
-            parallel=config.num_eval_envs,
-            autoreset=False,
-        )
-        evaluator = Evaluator(
-            env=eval_env,
-            agent=agent,
-            max_episode_steps=config.env.max_episode_steps
-        )
-
-        workflow= cls(
+        return cls(
             config=config,
             agent=agent,
-            evaluator=evaluator,
             algorithm=algorithm,
             problem=problem,
             opt_direction='max',
             candidate_transforms=(jax.vmap(_candidate_transform),)
         )
-        workflow._candidate_transform = _candidate_transform
-
-        return workflow
-
-    def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
-        """Evaluate the policy with the mean of CMAES
-        """
-        key, eval_key = jax.random.split(state.key, num=2)
-
-        flat_pop_center = state.evox_state.query_state('algorithm').center
-        agent_state = self._candidate_transform(flat_pop_center)
-
-        # [#episodes]
-        raw_eval_metrics = self.evaluator.evaluate(
-            agent_state,
-            num_episodes=self.config.eval_episodes,
-            key=eval_key
-        )
-
-        eval_metrics = EvaluateMetric(
-            episode_returns=raw_eval_metrics.episode_returns.mean(),
-            episode_lengths=raw_eval_metrics.episode_lengths.mean()
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-        return eval_metrics, state.replace(key=key)
 
     def learn(self, state: State) -> State:
         start_iteration = tree_unpmap(
@@ -123,13 +84,13 @@ class CSOWorkflow(ECWorkflow):
             workflow_metrics = state.metrics
 
             train_metrics = tree_unpmap(
-                train_metrics, axis_name=self.pmap_axis_name)
+                train_metrics, self.pmap_axis_name)
             workflow_metrics = tree_unpmap(
                 workflow_metrics, self.pmap_axis_name)
 
             self.recorder.write(workflow_metrics.to_local_dict(), i)
             self.recorder.write(train_metrics.to_local_dict(), i)
-            
+
             self.checkpoint_manager.save(
                 i,
                 args=ocp.args.StandardSave(
