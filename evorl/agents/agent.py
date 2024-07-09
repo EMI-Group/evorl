@@ -1,7 +1,5 @@
-from flax import struct
-
 from abc import ABCMeta, abstractmethod
-import optax
+from collections.abc import Callable
 
 import chex
 from evorl.sample_batch import SampleBatch
@@ -11,7 +9,6 @@ from evorl.types import (
 from evorl.envs.space import Space
 from evorl.utils import running_statistics
 from typing import Mapping, Tuple, Union, Any, Optional, Protocol
-from flax import struct
 
 AgentParams = Mapping[str, Params]
 
@@ -22,6 +19,7 @@ class AgentState(PyTreeData):
     # TODO: define the action_postprocessor_state
     action_postprocessor_state: Any = None
 
+AgentActionFn = Callable[[AgentState, SampleBatch, chex.PRNGKey], Tuple[Action, PolicyExtraInfo]]
 
 class Agent(PyTreeNode, metaclass=ABCMeta):
     """

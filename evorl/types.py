@@ -55,11 +55,11 @@ class ObsPreprocessorFn(Protocol):
     def __call__(self, obs: chex.Array, *args: Any, **kwds: Any) -> chex.Array:
         return obs
 
+
 @jtu.register_pytree_node_class
 class PyTreeDict(dict):
     """
         An easydict with pytree support
-        Adapted from src: https://github.com/makinacorpus/easydict
     """
 
     def __init__(self, *args, **kwargs):
@@ -68,19 +68,15 @@ class PyTreeDict(dict):
         for k, v in d.items():
             setattr(self, k, v)
 
-        # # Class attributes
-        # for k in self.__class__.__dict__.keys():
-        #     if not (k.startswith('__') and k.endswith('__')) and not k in ('update', 'pop'):
-        #         setattr(self, k, getattr(self, k))
-
-    def _nested_convert(self, obj):
+    @classmethod
+    def _nested_convert(cls, obj):
         # currently only support dict, list, tuple (but not support their children class)
         if type(obj) is dict:
-            return self.__class__(obj)
+            return cls(obj)
         elif type(obj) is list:
-            return list(self._nested_convert(item) for item in obj)
+            return list(cls._nested_convert(item) for item in obj)
         elif type(obj) is tuple:
-            return tuple(self._nested_convert(item) for item in obj)
+            return tuple(cls._nested_convert(item) for item in obj)
         else:
             return obj
 
@@ -170,6 +166,7 @@ class PyTreeNode:
         raise ValueError(
             f"field {name} not found in {self.__class__.__name__}")
 
+
 @dataclass_transform(field_specifiers=(pytree_field,), kw_only_default=True)
 class PyTreeData:
     """
@@ -178,4 +175,3 @@ class PyTreeData:
     """
     def __init_subclass__(cls, **kwargs):
         struct.dataclass(cls, **kwargs)
-

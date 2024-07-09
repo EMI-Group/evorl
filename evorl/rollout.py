@@ -2,14 +2,14 @@ import jax
 import jax.numpy as jnp
 import chex
 from typing import (
-    Union, Tuple, Sequence, Callable
+    Union, Tuple, Sequence
 )
-from .agents import Agent, AgentState
+from .agents import Agent, AgentState, AgentActionFn
 from .types import (
     Reward, RewardDict, Action, PolicyExtraInfo, PyTreeDict
 )
 from .sample_batch import SampleBatch, Episode
-from .envs import Env, EnvState
+from .envs import Env, EnvState, EnvStepFn
 from .utils.jax_utils import rng_split
 from functools import partial
 
@@ -17,8 +17,8 @@ from functools import partial
 
 
 def env_step(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[[AgentState, SampleBatch, chex.PRNGKey], Tuple[Action, PolicyExtraInfo]],
+    env_fn: EnvStepFn,
+    action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
     sample_batch: SampleBatch,
@@ -50,9 +50,10 @@ def env_step(
 
     return env_nstate, transition
 
+
 def eval_env_step(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[[AgentState, SampleBatch, chex.PRNGKey], Tuple[Action, PolicyExtraInfo]],
+    env_fn: EnvStepFn,
+    action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
     sample_batch: SampleBatch,
@@ -74,8 +75,8 @@ def eval_env_step(
 
 
 def rollout(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[[AgentState, SampleBatch, chex.PRNGKey], Tuple[Action, PolicyExtraInfo]],
+    env_fn: EnvStepFn,
+    action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,
     key: chex.PRNGKey,
@@ -212,11 +213,9 @@ def rollout(
 #     return env_state, episodes
 
 
-
-
 def eval_rollout(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[[AgentState, SampleBatch, chex.PRNGKey], Tuple[Action, PolicyExtraInfo]],
+    env_fn: EnvStepFn,
+    action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,
     key: chex.PRNGKey,
@@ -267,8 +266,8 @@ def eval_rollout(
 
 
 def eval_rollout_episode(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[[AgentState, SampleBatch, chex.PRNGKey], Tuple[Action, PolicyExtraInfo]],
+    env_fn: EnvStepFn,
+    action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,
     key: chex.PRNGKey,
@@ -322,8 +321,8 @@ def eval_rollout_episode(
 
 
 def fast_eval_rollout_episode(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[[AgentState, SampleBatch, chex.PRNGKey], Tuple[Action, PolicyExtraInfo]],
+    env_fn: EnvStepFn,
+    action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,
     key: chex.PRNGKey,

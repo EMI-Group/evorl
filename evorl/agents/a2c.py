@@ -1,15 +1,17 @@
 import jax
 import jax.numpy as jnp
+import orbax.checkpoint as ocp
+import chex
+import optax
 import math
-
 from omegaconf import DictConfig
-
+import flax.linen as nn
 
 from evorl.sample_batch import SampleBatch
 from evorl.networks import make_policy_network, make_value_network
 from evorl.utils import running_statistics
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient, rng_split
 from evorl.utils.toolkits import (
     compute_gae, flatten_rollout_trajectory,
     average_episode_discount_return
@@ -19,24 +21,19 @@ from evorl.agents import AgentState
 from evorl.distributed import agent_gradient_update, tree_unpmap, psum
 from evorl.envs import create_env, Env, EnvState
 from evorl.evaluator import Evaluator
-from .agent import Agent, AgentState
-
-from evorl.types import State
-# from evorl.types import State
-
-
-import orbax.checkpoint as ocp
-import chex
-import optax
+from evorl.rollout import env_step
 from evorl.types import (
     LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field,
-    MISSING_REWARD, PyTreeData
+    MISSING_REWARD, PyTreeData, State
 )
 from evorl.metrics import TrainMetric, WorkflowMetric
-from typing import Tuple, Sequence, Optional, Any
+from .agent import Agent, AgentState
+
+
+from typing import Tuple, Sequence, Any
 import logging
-import flax.linen as nn
-from flax import struct
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -368,8 +365,10 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
         # ======== update metrics ========
 
-        sampled_timesteps = psum(self.config.rollout_length * self.config.num_envs,
-                                 axis_name=self.pmap_axis_name)
+        sampled_timesteps = psum(
+            jnp.array(self.config.rollout_length *
+                      self.config.num_envs, dtype=jnp.uint32),
+            axis_name=self.pmap_axis_name)
 
         workflow_metrics = WorkflowMetric(
             sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
@@ -408,7 +407,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             self.recorder.write(workflow_metrics.to_local_dict(), i)
             train_metric_data = train_metrics.to_local_dict()
             if train_metrics.train_episode_return == MISSING_REWARD:
-                del train_metric_data['train_episode_return']
+                train_metric_data['train_episode_return'] = None
             self.recorder.write(train_metric_data, i)
 
             if (i+1) % self.config.eval_interval == 0:
@@ -424,41 +423,6 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             )
 
         return state
-
-
-def env_step(
-    env: Env,
-    agent: Agent,
-    env_state: EnvState,
-    agent_state: AgentState,  # readonly
-    sample_batch: SampleBatch,
-    key: chex.PRNGKey,
-    env_extra_fields: Sequence[str] = (),
-) -> Tuple[EnvState, SampleBatch]:
-    """
-        Collect data.
-    """
-
-    actions, policy_extras = agent.compute_actions(
-        agent_state, sample_batch, key)
-    env_nstate = env.step(env_state, actions)
-
-    info = env_nstate.info
-    env_extras = {x: info[x] for x in env_extra_fields if x in info}
-
-    transition = SampleBatch(
-        obs=env_state.obs,
-        actions=actions,
-        rewards=env_nstate.reward,
-        dones=env_nstate.done,
-        # next_obs=env_nstate.info["last_obs"],
-        next_obs=env_nstate.obs,
-        extras=PyTreeDict(
-            policy_extras=policy_extras,
-            env_extras=env_extras
-        ))
-
-    return env_nstate, transition
 
 
 def rollout(
@@ -487,7 +451,7 @@ def rollout(
             transition: one-step full info
         """
         env_state, current_key = carry
-        next_key, current_key = jax.random.split(current_key, 2)
+        next_key, current_key = rng_split(current_key, 2)
 
         # sample_batch: [#envs, ...]
         sample_batch = SampleBatch(
@@ -496,7 +460,8 @@ def rollout(
 
         # transition: [#envs, ...]
         env_nstate, transition = env_step(
-            env, agent, env_state, agent_state,
+            env.step, agent.compute_actions,
+            env_state, agent_state,
             sample_batch, current_key, env_extra_fields
         )
 

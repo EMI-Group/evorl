@@ -141,3 +141,9 @@ def rng_split(key: jax.Array, num: int = 2) -> jax.Array:
         return jax.random.split(key, num)
     else:
         return vmap_rng_split(key, num)
+
+def is_jitted(func):
+    """
+        Detect if a function is wrapped by jit or pmap.
+    """
+    return hasattr(func, 'lower')
