@@ -1,0 +1,36 @@
+# @package _global_
+
+workflow_cls: evorl.agents.ddpg.DDPGWorkflow
+
+num_envs: 10
+normalize_obs: false
+rollout_length: 1
+discount: 0.99
+exploration_epsilon: 0.1
+total_timesteps: 1000000 
+
+num_eval_envs: 10
+eval_interval: 101
+log_interval: 101
+eval_episodes: 10 # should be divided by num_eval_envs
+critor_update_interval: 1
+actor_update_interval: 2
+tau: 0.005
+learning_starts: 25000 # steps before training starts 25000
+load: false
+load_path: ./outputs/train/
+check_load: false
+
+optimizer:
+  lr: 3e-4
+  grad_clip_norm: 10.0 # set 0 or none to turn-off
+
+replay_buffer:
+  capacity: 1000000
+  min_size: 300
+  sample_batch_size: 256
+
+agent_network:
+  continuous_action: true
+  critic_hidden_layer_sizes: [256, 256]
+  actor_hidden_layer_sizes: [256, 256]
