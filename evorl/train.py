@@ -8,6 +8,7 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 import logging
 
+from evorl.workflows import Workflow
 from evorl.utils.jax_utils import optimize_gpu_utilization
 from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
 from evorl.recorders import WandbRecorder, LogRecorder, ChainRecorder
@@ -19,6 +20,7 @@ optimize_gpu_utilization()
 jax.config.update("jax_compilation_cache_dir", "../jax-cache")
 jax.config.update('jax_threefry_partitionable', True)
 set_omegaconf_resolvers()
+
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train(config: DictConfig) -> None:
@@ -34,14 +36,13 @@ def train(config: DictConfig) -> None:
 
     devices = jax.local_devices()
     if len(devices) > 1:
-        logger.info(f"Enable Multi Devices: {devices}")
-        workflow = workflow_cls.build_from_config(
-            config, enable_multi_devices=True, devices=devices,
+        logger.info(f"Enable Multiple Devices: {devices}")
+        workflow: Workflow = workflow_cls.build_from_config(
+            config, enable_multi_devices=True
         )
     else:
-        workflow = workflow_cls.build_from_config(
-            config,
-            enable_jit=True
+        workflow: Workflow = workflow_cls.build_from_config(
+            config, enable_jit=True
         )
 
     output_dir = get_output_dir()
@@ -61,7 +62,8 @@ def train(config: DictConfig) -> None:
         path=output_dir,
         mode=wandb_mode
     )
-    log_recorder = LogRecorder(log_path=output_dir/f'{wandb_name}.log', console=True)
+    log_recorder = LogRecorder(
+        log_path=output_dir/f'{wandb_name}.log', console=True)
     workflow.add_recorders([wandb_recorder, log_recorder])
 
     try:

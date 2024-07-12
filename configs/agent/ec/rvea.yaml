@@ -1,0 +1,22 @@
+# @package _global_
+
+workflow_cls: evorl.agents.ec.mo.rvea.RVEAWorkflow
+
+pop_size: 128
+num_iters: 1000
+
+alpha: 2
+fr: 0.1
+
+num_envs: 16
+episodes: 16 # episodes per individual for fitness
+
+discount: 1.0
+obj_names: ['reward', 'episode_length']
+opt_directions: ['max', 'max']
+
+agent_network:
+  # actor_hidden_layer_sizes: [] # linear network
+  lb: -10.0
+  ub: 10.0
+  actor_hidden_layer_sizes: [16, 16]

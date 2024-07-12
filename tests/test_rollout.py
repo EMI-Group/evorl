@@ -1,7 +1,7 @@
 import jax
 import chex
 
-from evorl.rollout import rollout, rollout_episode, rollout_episode_mod, eval_rollout, eval_rollout_episode
+from evorl.rollout import rollout, rollout_episode, fast_rollout_episode, eval_rollout, eval_rollout_episode
 
 from evorl.agents.random_agent import RandomAgent
 from evorl.envs import create_env
@@ -69,7 +69,7 @@ def test_rollout_episode():
 
     agent_state = agent.init(agent_key)
 
-    env_nstate, episode = rollout_episode_mod(
+    env_nstate, episode = fast_rollout_episode(
         env,
         agent,
         env_state,

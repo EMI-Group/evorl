@@ -1,0 +1,16 @@
+# @package _global_
+
+defaults:
+  - /agent/a2c
+  - _self_
+
+normalize_obs: true
+num_envs: 4096
+rollout_length: 80
+discount: 0.97
+
+total_timesteps: 500000000
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 20

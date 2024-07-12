@@ -24,7 +24,7 @@ from evorl.distributed import tree_device_put, tree_device_get, POP_AXIS_NAME
 from evorl.metrics import MetricBase
 
 
-from evox import State
+from evorl.types import State
 # from evorl.types import State
 
 
@@ -32,13 +32,12 @@ import orbax.checkpoint as ocp
 import chex
 import optax
 from evorl.types import (
-    PyTreeNode, PyTreeDict
+    PyTreeData, PyTreeDict
 )
 from evorl.metrics import TrainMetric, WorkflowMetric
 from typing import Tuple, Sequence, Optional, Any
 import logging
-import flax.linen as nn
-from flax import struct
+
 import copy
 from omegaconf import OmegaConf
 
@@ -58,7 +57,7 @@ class EvalMetric(MetricBase):
     pop_episode_lengths: chex.Array
 
 
-class HyperParams(PyTreeNode):
+class HyperParams(PyTreeData):
     lr: chex.Array
 
 
@@ -66,7 +65,7 @@ class PBTWorkflow(RLWorkflow):
     def __init__(self,
                  workflow: RLWorkflow,
                  config: DictConfig):
-        super(PBTWorkflow, self).__init__(config)
+        super().__init__(config)
 
         self.workflow = workflow
 
@@ -89,10 +88,10 @@ class PBTWorkflow(RLWorkflow):
         config.pop_size = (config.pop_size // num_devices) * num_devices
 
     @classmethod
-    def build_from_config(cls, config: DictConfig, enable_multi_devices=True, devices: Optional[Sequence[jax.Device]] = None, enable_jit: bool = True):
+    def build_from_config(cls, config: DictConfig, enable_multi_devices=True, enable_jit: bool = True):
         config = copy.deepcopy(config)  # avoid in-place modification
-        if devices is None:
-            devices = jax.local_devices()
+
+        devices = jax.local_devices()
 
         OmegaConf.set_readonly(config, False)
         cls._rescale_config(config, devices)

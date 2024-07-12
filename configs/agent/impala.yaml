@@ -1,0 +1,30 @@
+# @package _global_
+
+workflow_cls: evorl.agents.impala.IMPALAWorkflow
+
+num_envs: 4
+
+normalize_obs: false
+rollout_length: 128 # train_batch_size = rollout_length * num_envs = 2048
+discount: 0.99
+
+minibatch_size: 128 # num_minibatches = batch_size / num_minibatches = 8
+
+total_timesteps: 100000
+
+num_eval_envs: 8
+eval_interval: 5
+eval_episodes: 16 # should be divided by num_eval_envs
+
+optimizer:
+  lr: 0.0003
+  grad_clip_norm: 10.0 # set 0 or none to turn-off
+  loss_weights:
+    actor_loss: 1.0
+    critic_loss: 0.5
+    actor_entropy_loss: -0.01
+
+agent_network:
+  continuous_action: false
+  actor_hidden_layer_sizes: [256, 256]
+  critic_hidden_layer_sizes: [256, 256]

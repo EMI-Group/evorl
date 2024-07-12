@@ -1,10 +1,2 @@
-
-
-from typing import Dict
-
-
-
-def sort_dict(d: Dict) -> Dict:
+def sort_dict(d: dict) -> dict:
     return dict(sorted(d.items()))
-
-

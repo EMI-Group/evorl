@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-from flax import struct
 import flax.linen as nn
 
 from .agent import Agent, AgentState
@@ -10,9 +9,9 @@ from evorl.envs import create_env, Discrete
 from evorl.sample_batch import SampleBatch
 from evorl.evaluator import Evaluator
 from evorl.types import (
-    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field
+    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field, PyTreeData
 )
-from evox import State
+from evorl.types import State
 
 from omegaconf import DictConfig
 from typing import Dict, Tuple, Sequence
@@ -30,8 +29,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-@struct.dataclass
-class A2CNetworkParams:
+
+class A2CNetworkParams(PyTreeData):
     """Contains training state for the learner."""
     q_params: Params
 
@@ -115,8 +114,8 @@ class DQNAgent(Agent):
 
 class DQNWorkflow(OffPolicyRLWorkflow):
     @staticmethod
-    def _rescale_config(config, devices) -> None:
-        num_devices = len(devices)
+    def _rescale_config(config: DictConfig) -> None:
+        pass
 
         #TODO: impl it
 

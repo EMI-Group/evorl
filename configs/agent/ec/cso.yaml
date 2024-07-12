@@ -1,0 +1,19 @@
+# @package _global_
+
+workflow_cls: evorl.agents.ec.so.cso.CSOWorkflow
+
+pop_size: 128
+num_iters: 1000
+
+phi: 0.0
+
+num_envs: 16
+episodes: 16 # episodes per individual for fitness
+
+discount: 1.0
+
+agent_network:
+  # actor_hidden_layer_sizes: [] # linear network
+  lb: -10.0
+  ub: 10.0
+  actor_hidden_layer_sizes: [16, 16]

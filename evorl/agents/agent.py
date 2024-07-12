@@ -1,27 +1,25 @@
-from flax import struct
-
 from abc import ABCMeta, abstractmethod
-import optax
+from collections.abc import Callable
 
 import chex
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
-    Action, Params, PolicyExtraInfo, LossDict, PyTreeNode
+    Action, Params, PolicyExtraInfo, LossDict, PyTreeNode, PyTreeData
 )
 from evorl.envs.space import Space
 from evorl.utils import running_statistics
-from typing import Mapping, Tuple, Union, Any, Optional
-from flax import struct
+from typing import Mapping, Tuple, Union, Any, Optional, Protocol
 
 AgentParams = Mapping[str, Params]
 
 
-class AgentState(PyTreeNode):
+class AgentState(PyTreeData):
     params: AgentParams
     obs_preprocessor_state: Optional[running_statistics.RunningStatisticsState] = None
     # TODO: define the action_postprocessor_state
     action_postprocessor_state: Any = None
 
+AgentActionFn = Callable[[AgentState, SampleBatch, chex.PRNGKey], Tuple[Action, PolicyExtraInfo]]
 
 class Agent(PyTreeNode, metaclass=ABCMeta):
     """
@@ -60,11 +58,11 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
             get the best action from the action distribution.
         """
         raise NotImplementedError()
-    
-    # @abstractmethod
-    def loss(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
+
+class LossFn(Protocol):
+    def __call__(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> LossDict:
         """
-            Optional loss function for the model.
+            The type for the loss function for the model.
             In some case, a single loss function is not enough. For example, DDPG has two loss functions: actor_loss and critic_loss.
         """
-        raise NotImplementedError()
+        pass

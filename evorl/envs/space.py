@@ -1,9 +1,9 @@
 import jax
 import jax.numpy as jnp
-from flax import struct
 import chex
+from evorl.types import PyTreeData
 
-class Space:
+class Space(PyTreeData):
     """
         a jax version of the gym.Space
     """
@@ -27,7 +27,7 @@ class Space:
         """Return True if x is a valid member of the space."""
         raise NotImplementedError
 
-@struct.dataclass   
+ 
 class Box(Space):
     low: chex.Array
     high: chex.Array
@@ -51,7 +51,7 @@ class Box(Space):
     def contains(self, x: chex.Array) -> chex.Array:
         return jnp.logical_and(jnp.all(x >= self.low), jnp.all(x <= self.high))
 
-@struct.dataclass  
+
 class Discrete(Space):
     n: int
 

@@ -26,7 +26,7 @@ from evorl.evaluator import Evaluator
 from evorl.metrics import MetricBase
 from ..agent import Agent, AgentState
 
-from evox import State
+from evorl.types import State
 # from evorl.types import State
 
 
@@ -34,7 +34,7 @@ import orbax.checkpoint as ocp
 import chex
 import optax
 from evorl.types import (
-    PyTreeNode, PyTreeDict
+    PyTreeData, PyTreeDict
 )
 from evorl.metrics import TrainMetric, WorkflowMetric
 from typing import Tuple, Sequence, Optional, Any
@@ -56,7 +56,7 @@ class EvalMetric(MetricBase):
     pop_episode_lengths: chex.Array
 
 
-class HyperParams(PyTreeNode):
+class HyperParams(PyTreeData):
     lr: chex.Array
 
 
@@ -64,7 +64,7 @@ class PBTWorkflow(RLWorkflow):
     def __init__(self,
                  workflow: RLWorkflow,
                  config: DictConfig):
-        super(PBTWorkflow, self).__init__(config)
+        super().__init__(config)
 
         self.workflow = workflow
 

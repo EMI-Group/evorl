@@ -1,11 +1,14 @@
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as np
 
 import chex
+from collections.abc import Sequence
 from typing import Tuple, Optional
 from evorl.sample_batch import SampleBatch
 from evorl.types import MISSING_REWARD
+from .jax_utils import is_jitted
 
 
 def compute_episode_length(
@@ -15,8 +18,7 @@ def compute_episode_length(
         dones: should be collected from episodic trajectory
     """
     # [B]
-    episode_lengths = (1-dones).sum(axis=0)+1
-    return episode_lengths.astype(jnp.int32)
+    return (1-dones).sum(axis=0).astype(jnp.int32)+1
 
 
 def compute_discount_return(
@@ -188,3 +190,35 @@ def average_episode_discount_return(
         jnp.full_like(episode_discount_return_sum, MISSING_REWARD),
         episode_discount_return_sum/cnt
     )
+
+
+def _default_episode_return_reduce_fn(x): return x[-1]
+
+
+def get_train_episode_return(episode_return_arr: Sequence[float], reduce_fn=_default_episode_return_reduce_fn):
+    """Handle episode return array with MISSING_REWARD, i.e., returned from multiple call of average_episode_discount_return
+    """
+    episode_return_arr = np.array(episode_return_arr)
+    mask = episode_return_arr == MISSING_REWARD
+    if mask.all():
+        return None
+    else:
+        return reduce_fn(episode_return_arr[~mask]).tolist()
+
+
+def fold_multi_steps(step_fn, num_steps):
+    def _multi_steps(state):
+        def _step(state, unused_t):
+            train_metrics, state = step_fn(state)
+            return state, train_metrics
+
+        state, train_metrics_arr = jax.lax.scan(
+            _step, state, (), length=num_steps
+        )
+
+        return train_metrics_arr, state
+
+    if is_jitted(step_fn):
+        _multi_steps = jax.jit(_multi_steps)
+
+    return _multi_steps

@@ -17,7 +17,7 @@ from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAu
 
 class BraxAdapter(EnvAdapter):
     def __init__(self, env: BraxEnv):
-        super(BraxAdapter, self).__init__(env)
+        super().__init__(env)
 
         action_spec = jnp.asarray(
             env.sys.actuator.ctrl_range, dtype=jnp.float32)
@@ -34,8 +34,6 @@ class BraxAdapter(EnvAdapter):
 
         info = PyTreeDict(sort_dict(brax_state.info))
         info.metrics = PyTreeDict(sort_dict(brax_state.metrics))
-        # not necessary, but we need non-empty extra until orbax fixes #818
-        extra = PyTreeDict(step_key=key) 
 
         return EnvState(
             env_state=brax_state,
@@ -43,7 +41,6 @@ class BraxAdapter(EnvAdapter):
             reward=brax_state.reward,
             done=brax_state.done,
             info=info,
-            extra=extra
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
