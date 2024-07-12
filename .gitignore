@@ -231,3 +231,4 @@ pyrightconfig.json
 /multirun
 /debug
 /test*.py
+.conda
