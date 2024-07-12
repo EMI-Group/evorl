@@ -88,10 +88,10 @@ class PBTWorkflow(RLWorkflow):
         config.pop_size = (config.pop_size // num_devices) * num_devices
 
     @classmethod
-    def build_from_config(cls, config: DictConfig, enable_multi_devices=True, devices: Optional[Sequence[jax.Device]] = None, enable_jit: bool = True):
+    def build_from_config(cls, config: DictConfig, enable_multi_devices=True, enable_jit: bool = True):
         config = copy.deepcopy(config)  # avoid in-place modification
-        if devices is None:
-            devices = jax.local_devices()
+
+        devices = jax.local_devices()
 
         OmegaConf.set_readonly(config, False)
         cls._rescale_config(config, devices)
