@@ -35,7 +35,7 @@ def get_random_actions(env: MultiAgentEnv):
 
 class JaxMARLAdapter(MultiAgentEnvAdapter):
     def __init__(self, env: MultiAgentEnv):
-        super(JaxMARLAdapter, self).__init__(env)
+        super().__init__(env)
         self._action_space = jaxmarl_space_to_evorl_space(env.action_spaces)
         self._obs_space = jaxmarl_space_to_evorl_space(env.observation_spaces)
 

@@ -35,7 +35,7 @@ class RLWorkflow(Workflow):
             config:
             devices: a single device or a list of devices.
         """
-        super(RLWorkflow, self).__init__(config)
+        super().__init__(config)
 
         self.pmap_axis_name = None
         self.devices = jax.local_devices()[:1]
@@ -113,7 +113,7 @@ class OnPolicyRLWorkflow(RLWorkflow):
         evaluator: Evaluator,
         config: DictConfig
     ):
-        super(OnPolicyRLWorkflow, self).__init__(config)
+        super().__init__(config)
 
         self.env = env
         self.agent = agent
@@ -182,7 +182,7 @@ class OffPolicyRLWorkflow(RLWorkflow):
         replay_buffer_init_fn: Callable[[Any, chex.PRNGKey], chex.ArrayTree],
         config: DictConfig,
     ):
-        super(OffPolicyRLWorkflow, self).__init__(config)
+        super().__init__(config)
 
         self.env = env
         self.agent = agent

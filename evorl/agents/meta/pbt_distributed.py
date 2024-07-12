@@ -65,7 +65,7 @@ class PBTWorkflow(RLWorkflow):
     def __init__(self,
                  workflow: RLWorkflow,
                  config: DictConfig):
-        super(PBTWorkflow, self).__init__(config)
+        super().__init__(config)
 
         self.workflow = workflow
 

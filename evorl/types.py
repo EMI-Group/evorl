@@ -82,8 +82,8 @@ class PyTreeDict(dict):
 
     def __setattr__(self, name, value):
         value = self._nested_convert(value)
-        super(PyTreeDict, self).__setattr__(name, value)
-        super(PyTreeDict, self).__setitem__(name, value)
+        super().__setattr__(name, value)
+        super().__setitem__(name, value)
 
     __setitem__ = __setattr__
 
@@ -95,7 +95,7 @@ class PyTreeDict(dict):
 
     def pop(self, k, d=None):
         delattr(self, k)
-        return super(PyTreeDict, self).pop(k, d)
+        return super().pop(k, d)
 
     def copy(self):
         d = super().copy()  # dict

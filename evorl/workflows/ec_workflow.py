@@ -40,7 +40,7 @@ class ECWorkflow(Workflow):
         candidate_transforms: Sequence[Callable] = (),
         fitness_transforms: Sequence[Callable] = (),
     ):
-        super(ECWorkflow, self).__init__(config)
+        super().__init__(config)
 
         self.agent=agent
         self._workflow = EvoXWorkflow(

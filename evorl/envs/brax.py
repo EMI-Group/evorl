@@ -17,7 +17,7 @@ from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAu
 
 class BraxAdapter(EnvAdapter):
     def __init__(self, env: BraxEnv):
-        super(BraxAdapter, self).__init__(env)
+        super().__init__(env)
 
         action_spec = jnp.asarray(
             env.sys.actuator.ctrl_range, dtype=jnp.float32)

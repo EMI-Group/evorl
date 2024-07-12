@@ -27,7 +27,7 @@ class ESBaseWorkflow(ECWorkflow):
         candidate_transforms: Sequence[Callable] = (),
         fitness_transforms: Sequence[Callable] = (),
     ):
-        super(ESBaseWorkflow, self).__init__(
+        super().__init__(
             config=config, 
             agent=agent,
             algorithm=algorithm,
