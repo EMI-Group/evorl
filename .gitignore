@@ -231,5 +231,3 @@ pyrightconfig.json
 /multirun
 /debug
 /test*.py
-configs/config.yaml
-xuanwu.yaml
