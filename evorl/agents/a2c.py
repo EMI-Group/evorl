@@ -174,8 +174,7 @@ class A2CAgent(Agent):
 
         v_targets = sample_batch.extras.v_targets
 
-        # value_loss = optax.huber_loss(vs, v_targets, delta=1).mean()
-        value_loss = optax.l2_loss(vs, v_targets).mean()
+        critic_loss = optax.l2_loss(vs, v_targets).mean()
 
         # ====== actor =======
 
@@ -204,7 +203,7 @@ class A2CAgent(Agent):
 
         return PyTreeDict(
             actor_loss=policy_loss,
-            critic_loss=value_loss,
+            critic_loss=critic_loss,
             actor_entropy_loss=entropy_loss
         )
 
@@ -318,12 +317,12 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
         # ======== compute GAE =======
         last_obs = trajectory.extras.env_extras.last_obs
-        v_obs = jnp.concatenate(
+        _obs = jnp.concatenate(
             [trajectory.obs, last_obs[-1:]], axis=0
         )
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(
-            state.agent_state, SampleBatch(obs=v_obs))
+            state.agent_state, SampleBatch(obs=_obs))
         v_targets, advantages = compute_gae(
             rewards=trajectory.rewards,  # peb_rewards
             values=vs,
@@ -332,11 +331,12 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             discount=self.config.discount
         )
 
-        trajectory.extras.v_targets = v_targets
-        trajectory.extras.advantages = advantages
+        trajectory.extras.v_targets = jax.lax.stop_gradient(v_targets)
+        trajectory.extras.advantages = jax.lax.stop_gradient(advantages)
         # [T,B,...] -> [T*B,...]
-        trajectory = flatten_rollout_trajectory(trajectory)
-        trajectory = tree_stop_gradient(trajectory)
+        trajectory = tree_stop_gradient(
+            flatten_rollout_trajectory(trajectory)
+        )
         # ============================
 
         def loss_fn(agent_state, sample_batch, key):
@@ -467,7 +467,7 @@ def rollout(
 
         # set PEB reward for GAE:
         truncation = env_nstate.info.truncation  # [#envs]
-        # Note: if truncation happens in any env in the batch, apply PEB
+        # Note: if truncation happens in any env in the batch, apply PEB for episodes with truncation=1
         rewards = transition.rewards + discount * jax.lax.cond(
             truncation.any(),
             lambda last_obs: agent.compute_values(

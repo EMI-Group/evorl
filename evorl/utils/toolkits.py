@@ -133,7 +133,7 @@ def compute_gae(rewards: jax.Array,  # [T, B]
 
     lambda_retruns = advantages + values[:-1]
 
-    return jax.lax.stop_gradient(lambda_retruns), jax.lax.stop_gradient(advantages)
+    return lambda_retruns, advantages
 
 
 def shuffle_sample_batch(sample_batch: SampleBatch, key: chex.PRNGKey):

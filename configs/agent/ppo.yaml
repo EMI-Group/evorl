@@ -6,9 +6,9 @@ num_envs: 4
 
 normalize_obs: false
 rollout_length: 512 # batch_size = rollout_length * num_envs = 2048
-gae_lambda: 0.95
 discount: 0.99
-clipping_epsilon: 0.2
+gae_lambda: 0.95
+clip_epsilon: 0.2
 
 minibatch_size: 256 # num_minibatches = batch_size / minibatch_size = 8
 reuse_rollout_epochs: 4 # apply multiple epochs (one epoch contains multiple minibatches) on the same rollout data
