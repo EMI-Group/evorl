@@ -166,7 +166,7 @@ def flatten_rollout_trajectory(trajectory: SampleBatch):
         Flatten the trajectory from [T, B, ...] to [T*B, ...]
     """
     return jtu.tree_map(
-        lambda x: x.reshape(-1, *x.shape[2:]),
+        lambda x: jax.lax.collapse(x, 0, 2),
         trajectory
     )
 

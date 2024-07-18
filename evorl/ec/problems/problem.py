@@ -82,7 +82,7 @@ class GeneralRLProblem(Problem):
 
             if self.discount == 1.0:
                 # use fast undiscount evaluation
-                env_state, episode_metrics = fast_eval_rollout_episode(
+                episode_metrics, env_state = fast_eval_rollout_episode(
                     self.env_step, self.agent_eval_actions,
                     env_state, pop_agent_state,
                     jax.random.split(rollout_key, num=pop_size),
@@ -92,7 +92,7 @@ class GeneralRLProblem(Problem):
                 objectives = episode_metrics.episode_returns
                 sampled_timesteps = episode_metrics.episode_lengths
             else:
-                env_state, episode_trajectory = eval_rollout_episode(
+                episode_trajectory, env_state = eval_rollout_episode(
                     self.env_step, self.agent_eval_actions,
                     env_state, pop_agent_state,
                     jax.random.split(rollout_key, num=pop_size),

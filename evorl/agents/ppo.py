@@ -128,7 +128,7 @@ class PPOAgent(Agent):
             logp=actions_dist.log_prob(actions)
         )
 
-        return jax.lax.stop_gradient(actions), policy_extras
+        return actions, policy_extras
 
     def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> tuple[Action, PolicyExtraInfo]:
         """
@@ -173,7 +173,7 @@ class PPOAgent(Agent):
 
         # ======= critic =======
         vs = self.value_network.apply(
-            agent_state.params.value_params, obs).squeeze(-1)
+            agent_state.params.value_params, obs)
 
         v_targets = sample_batch.extras.v_targets
 
@@ -225,7 +225,7 @@ class PPOAgent(Agent):
                 obs, agent_state.obs_preprocessor_state)
 
         return self.value_network.apply(
-            agent_state.params.value_params, obs).squeeze(-1)
+            agent_state.params.value_params, obs)
 
 
 class PPOWorkflow(OnPolicyRLWorkflow):
@@ -255,7 +255,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
 
         config.num_envs = config.num_envs // num_devices
         config.num_eval_envs = config.num_eval_envs // num_devices
-        config.minibatch_size = config.minibatch_size//num_devices
+        config.minibatch_size = config.minibatch_size // num_devices
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
@@ -312,7 +312,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # trajectory: [T, #envs, ...]
-        env_state, trajectory = rollout(
+        trajectory, env_state = rollout(
             self.env,
             self.agent,
             state.env_state,
@@ -364,7 +364,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
         def loss_fn(agent_state, sample_batch, key):
             # learn all data from trajectory
             loss_dict = self.agent.loss(agent_state, sample_batch, key)
-            loss_weights = self.config.optimizer.loss_weights
+            loss_weights = self.config.loss_weights
             loss = jnp.zeros(())
             for loss_key in loss_weights.keys():
                 loss += loss_weights[loss_key] * loss_dict[loss_key]
@@ -427,8 +427,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
         # ======== update metrics ========
 
         sampled_timesteps = psum(
-            jnp.array(self.config.rollout_length *
-                      self.config.num_envs, dtype=jnp.uint32),
+            jnp.uint32(self.config.rollout_length * self.config.num_envs),
             axis_name=self.pmap_axis_name)
 
         workflow_metrics = WorkflowMetric(
@@ -495,7 +494,7 @@ def rollout(
     rollout_length: int,
     discount: float,
     env_extra_fields: Sequence[str] = ('last_obs',),
-) -> tuple[EnvState, SampleBatch]:
+) -> tuple[SampleBatch, EnvState]:
     """
         Collect given rollout_length trajectory.
 
@@ -520,7 +519,7 @@ def rollout(
         )
 
         # transition: [#envs, ...]
-        env_nstate, transition = env_step(
+        transition, env_nstate = env_step(
             env.step, agent.compute_actions,
             env_state, agent_state,
             sample_batch, current_key, env_extra_fields

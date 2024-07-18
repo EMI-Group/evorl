@@ -80,6 +80,8 @@ def tree_stop_gradient(nest: chex.ArrayTree) -> chex.ArrayTree:
 def tree_astype(tree, dtype):
     return jtu.tree_map(lambda x: x.astype(dtype), tree)
 
+def tree_last(tree):
+    return jtu.tree_map(lambda x: x[-1], tree)
 
 def jit_method(*,
                static_argnums: int | Sequence[int] | None = None,

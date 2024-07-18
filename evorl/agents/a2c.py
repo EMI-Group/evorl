@@ -34,7 +34,6 @@ from typing import Tuple, Sequence, Any
 import logging
 
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -125,7 +124,7 @@ class A2CAgent(Agent):
             # logp=actions_dist.log_prob(actions)
         )
 
-        return jax.lax.stop_gradient(actions), policy_extras
+        return actions, policy_extras
 
     def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         """
@@ -170,7 +169,7 @@ class A2CAgent(Agent):
 
         # ======= critic =======
         vs = self.value_network.apply(
-            agent_state.params.value_params, obs).squeeze(-1)
+            agent_state.params.value_params, obs)
 
         v_targets = sample_batch.extras.v_targets
 
@@ -214,7 +213,7 @@ class A2CAgent(Agent):
                 obs, agent_state.obs_preprocessor_state)
 
         return self.value_network.apply(
-            agent_state.params.value_params, obs).squeeze(-1)
+            agent_state.params.value_params, obs)
 
 
 class A2CWorkflow(OnPolicyRLWorkflow):
@@ -239,6 +238,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
         config.num_envs = config.num_envs // num_devices
         config.num_eval_envs = config.num_eval_envs // num_devices
+        # Note: batch_size = num_envs * rollout_length, no need to rescale again
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
@@ -289,7 +289,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # trajectory: [T, #envs, ...]
-        env_state, trajectory = rollout(
+        trajectory, env_state = rollout(
             self.env,
             self.agent,
             state.env_state,
@@ -342,7 +342,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         def loss_fn(agent_state, sample_batch, key):
             # learn all data from trajectory
             loss_dict = self.agent.loss(agent_state, sample_batch, key)
-            loss_weights = self.config.optimizer.loss_weights
+            loss_weights = self.config.loss_weights
             loss = jnp.zeros(())
             for loss_key in loss_weights.keys():
                 loss += loss_weights[loss_key] * loss_dict[loss_key]
@@ -366,8 +366,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         # ======== update metrics ========
 
         sampled_timesteps = psum(
-            jnp.array(self.config.rollout_length *
-                      self.config.num_envs, dtype=jnp.uint32),
+            jnp.uint32(self.config.rollout_length * self.config.num_envs),
             axis_name=self.pmap_axis_name)
 
         workflow_metrics = WorkflowMetric(
@@ -434,7 +433,7 @@ def rollout(
     rollout_length: int,
     discount: float,
     env_extra_fields: Sequence[str] = ('last_obs',),
-) -> Tuple[EnvState, SampleBatch]:
+) -> tuple[SampleBatch, EnvState]:
     """
         Collect given rollout_length trajectory.
 
@@ -459,7 +458,7 @@ def rollout(
         )
 
         # transition: [#envs, ...]
-        env_nstate, transition = env_step(
+        transition, env_nstate = env_step(
             env.step, agent.compute_actions,
             env_state, agent_state,
             sample_batch, current_key, env_extra_fields
@@ -485,4 +484,4 @@ def rollout(
     (env_state, _), trajectory = jax.lax.scan(
         _one_step_rollout, (env_state, key), (), length=rollout_length)
 
-    return env_state, trajectory
+    return trajectory, env_state

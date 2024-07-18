@@ -24,7 +24,7 @@ def env_step(
     sample_batch: SampleBatch,
     key: chex.PRNGKey,
     env_extra_fields: Sequence[str] = (),
-) -> Tuple[EnvState, SampleBatch]:
+) -> tuple[SampleBatch, EnvState]:
     """
         Collect one-step data.
     """
@@ -48,7 +48,7 @@ def env_step(
         )
     )
 
-    return env_nstate, transition
+    return transition, env_nstate
 
 
 def eval_env_step(
@@ -58,7 +58,7 @@ def eval_env_step(
     agent_state: AgentState,  # readonly
     sample_batch: SampleBatch,
     key: chex.PRNGKey
-) -> Tuple[EnvState, SampleBatch]:
+) -> tuple[SampleBatch, EnvState]:
     """
         Collect one-step data in evaluation mode.
     """
@@ -71,7 +71,7 @@ def eval_env_step(
         dones=env_nstate.done,
     )
 
-    return env_nstate, transition
+    return transition, env_nstate
 
 
 def rollout(
@@ -82,7 +82,7 @@ def rollout(
     key: chex.PRNGKey,
     rollout_length: int,
     env_extra_fields: Sequence[str] = (),
-) -> Tuple[EnvState, SampleBatch]:
+) -> tuple[SampleBatch, EnvState]:
     """
         Collect given rollout_length trajectory.
         Tips: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
@@ -109,7 +109,7 @@ def rollout(
         )
 
         # transition: [#envs, ...]
-        env_nstate, transition = env_step(
+        transition, env_nstate = env_step(
             env_fn, action_fn,
             env_state, agent_state,
             sample_batch, current_key, env_extra_fields
@@ -123,7 +123,7 @@ def rollout(
         length=rollout_length
     )
 
-    return env_state, trajectory
+    return trajectory, env_state
 
 
 # def rollout_episode(
@@ -186,7 +186,7 @@ def rollout(
 #             obs=env_state.obs,
 #         )
 
-#         env_nstate, transition = jax.lax.cond(
+#         transition, env_nstate = jax.lax.cond(
 #             env_state.done.all(),
 #             lambda *x: (env_state.replace(), last_transition.replace()),
 #             _env_step,
@@ -247,7 +247,7 @@ def eval_rollout(
         )
 
         # transition: [#envs, ...]
-        env_nstate, transition = eval_env_step(
+        transition, env_nstate = eval_env_step(
             env_fn, action_fn,
             env_state, agent_state,
             sample_batch, current_key
@@ -262,7 +262,7 @@ def eval_rollout(
         length=rollout_length
     )
 
-    return env_state, trajectory
+    return trajectory, env_state
 
 
 def eval_rollout_episode(
@@ -272,7 +272,7 @@ def eval_rollout_episode(
     agent_state: AgentState,
     key: chex.PRNGKey,
     rollout_length: int,
-) -> Tuple[EnvState, SampleBatch]:
+) -> tuple[SampleBatch, EnvState]:
     """
         Collect given rollout_length trajectory.
         Avoid unnecessary env_step()
@@ -294,7 +294,7 @@ def eval_rollout_episode(
             obs=env_state.obs,
         )
 
-        env_nstate, transition = jax.lax.cond(
+        transition, env_nstate = jax.lax.cond(
             env_state.done.all(),
             lambda *x: (env_state.replace(), prev_transition.replace()),
             _eval_env_step,
@@ -307,7 +307,7 @@ def eval_rollout_episode(
     # run one-step rollout first to get bootstrap transition
     # it will not include in the trajectory when env_state is from env.reset()
     # this is manually controlled by user.
-    _, bootstrap_transition = _eval_env_step(
+    bootstrap_transition, _ = _eval_env_step(
         env_state, agent_state,
         SampleBatch(obs=env_state.obs), key
     )
@@ -317,7 +317,7 @@ def eval_rollout_episode(
         (), length=rollout_length
     )
 
-    return env_state, trajectory
+    return trajectory, env_state
 
 
 def fast_eval_rollout_episode(
@@ -327,7 +327,7 @@ def fast_eval_rollout_episode(
     agent_state: AgentState,
     key: chex.PRNGKey,
     rollout_length: int,
-) -> Tuple[EnvState, PyTreeDict]:
+) -> tuple[PyTreeDict, EnvState]:
     """
 
         Args:
@@ -352,7 +352,7 @@ def fast_eval_rollout_episode(
             obs=env_state.obs,
         )
 
-        env_nstate, transition = _eval_env_step(
+        transition, env_nstate = _eval_env_step(
             env_state, agent_state,
             sample_batch, current_key
         )
@@ -378,4 +378,4 @@ def fast_eval_rollout_episode(
          )
     )
 
-    return env_state, metrics
+    return metrics, env_state 

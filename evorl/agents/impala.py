@@ -143,7 +143,7 @@ class IMPALAAgent(Agent):
             # raw_action=raw_actions,
         )
 
-        return jax.lax.stop_gradient(actions), policy_extras
+        return actions, policy_extras
 
     def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> tuple[Action, PolicyExtraInfo]:
         """
@@ -191,7 +191,7 @@ class IMPALAAgent(Agent):
                 _obs, agent_state.obs_preprocessor_state)
 
         vs = self.value_network.apply(
-            agent_state.params.value_params, _obs).squeeze(-1)
+            agent_state.params.value_params, _obs)
 
         sampled_actions_logp = trajectory.extras.policy_extras.logp
         sampled_actions = trajectory.actions
@@ -358,7 +358,7 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
         key, rollout_key, learn_key, shuffle_key = jax.random.split(
             state.key, num=4)
 
-        env_state, trajectory = rollout(
+        trajectory, env_state = rollout(
             self.env.step,
             self.agent.compute_actions,
             state.env_state,

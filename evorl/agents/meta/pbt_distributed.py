@@ -22,11 +22,8 @@ from evorl.workflows import OnPolicyRLWorkflow, RLWorkflow
 from evorl.agents import AgentState
 from evorl.distributed import tree_device_put, tree_device_get, POP_AXIS_NAME
 from evorl.metrics import MetricBase
-
-
+from evorl.utils.jax_utils import tree_last
 from evorl.types import State
-# from evorl.types import State
-
 
 import orbax.checkpoint as ocp
 import chex
@@ -198,8 +195,7 @@ class PBTWorkflow(RLWorkflow):
 
             # jax.debug.print("{x}", x=train_metrics_trajectory.train_episode_return)
 
-            train_metrics = jtu.tree_map(
-                lambda x: x[-1], train_metrics_trajectory)
+            train_metrics = tree_last(train_metrics_trajectory)
 
             return train_metrics, wf_state
 

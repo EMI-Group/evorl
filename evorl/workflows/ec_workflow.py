@@ -14,12 +14,12 @@ from evox.workflows import StdWorkflow as EvoXWorkflow
 
 from evorl.agents import Agent
 from evorl.types import State
-from evorl.metrics import MetricBase, WorkflowMetric
+from evorl.metrics import MetricBase
 from evorl.distributed import POP_AXIS_NAME, psum, split_key_to_devices, get_global_ranks
 from .workflow import Workflow
 
 
-class WorkflowMetric(MetricBase):
+class ECWorkflowMetric(MetricBase):
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
@@ -97,7 +97,7 @@ class ECWorkflow(Workflow):
         """
             Customize the workflow metrics.
         """
-        return WorkflowMetric()
+        return ECWorkflowMetric()
 
     def setup(self, key: chex.PRNGKey) -> State:
         key, evox_key = jax.random.split(key, 2)
@@ -138,7 +138,7 @@ class ECWorkflow(Workflow):
             objectives=train_info['fitness'] * self._workflow.opt_direction
         )
 
-        workflow_metrics = WorkflowMetric(
+        workflow_metrics = ECWorkflowMetric(
             sampled_episodes=state.metrics.sampled_episodes+sampled_episodes,
             sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
             iterations=state.metrics.iterations + 1,

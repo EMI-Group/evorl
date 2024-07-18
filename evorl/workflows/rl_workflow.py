@@ -6,7 +6,7 @@ import chex
 import copy
 
 
-from evorl.agents import Agent
+from evorl.agents import Agent, AgentState
 from evorl.envs import Env
 from evorl.evaluator import Evaluator
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
@@ -77,16 +77,10 @@ class RLWorkflow(Workflow):
         """
         pass
 
-    def _setup_workflow_metrics(self) -> MetricBase:
-        """
-            Customize the workflow metrics.
-        """
-        return WorkflowMetric()
-
-    def step(self, key: chex.PRNGKey) -> Tuple[TrainMetric, State]:
+    def step(self, key: chex.PRNGKey) -> Tuple[MetricBase, State]:
         raise NotImplementedError
 
-    def evaluate(self, state: State) -> Tuple[EvaluateMetric, State]:
+    def evaluate(self, state: State) -> Tuple[MetricBase, State]:
         raise NotImplementedError
 
     @classmethod
@@ -120,13 +114,19 @@ class OnPolicyRLWorkflow(RLWorkflow):
         self.optimizer = optimizer
         self.evaluator = evaluator
 
+    def _setup_agent_and_optimizer(self, key: chex.PRNGKey) -> tuple[AgentState,chex.ArrayTree]:
+        agent_state = self.agent.init(key)
+        opt_state = self.optimizer.init(agent_state.params)
+        return agent_state, opt_state
+
+    def _setup_workflow_metrics(self) -> MetricBase:
+        return WorkflowMetric()
+
     def setup(self, key: chex.PRNGKey) -> State:
         key, agent_key, env_key = jax.random.split(key, 3)
 
-        agent_state = self.agent.init(agent_key)
-
+        agent_state, opt_state = self._setup_agent_and_optimizer(agent_key)
         workflow_metrics = self._setup_workflow_metrics()
-        opt_state = self.optimizer.init(agent_state.params)
 
         if self.enable_multi_devices:
             workflow_metrics, agent_state, opt_state = \
@@ -152,7 +152,7 @@ class OnPolicyRLWorkflow(RLWorkflow):
             opt_state=opt_state
         )
 
-    def evaluate(self, state: State) -> Tuple[EvaluateMetric, State]:
+    def evaluate(self, state: State) -> Tuple[MetricBase, State]:
         key, eval_key = jax.random.split(state.key, num=2)
 
         # [#episodes]
@@ -179,7 +179,6 @@ class OffPolicyRLWorkflow(RLWorkflow):
         optimizer: optax.GradientTransformation,
         evaluator: Evaluator,
         replay_buffer: Any,
-        replay_buffer_init_fn: Callable[[Any, chex.PRNGKey], chex.ArrayTree],
         config: DictConfig,
     ):
         super().__init__(config)
@@ -188,27 +187,32 @@ class OffPolicyRLWorkflow(RLWorkflow):
         self.agent = agent
         self.optimizer = optimizer
         self.evaluator = evaluator
-
         self.replay_buffer = replay_buffer
-        self._init_replay_buffer = replay_buffer_init_fn
+
+    def _setup_agent_and_optimizer(self, key: chex.PRNGKey) -> tuple[AgentState,chex.ArrayTree]:
+        agent_state = self.agent.init(key)
+        opt_state = self.optimizer.init(agent_state.params)
+        return agent_state, opt_state
+
+    def _setup_workflow_metrics(self) -> MetricBase:
+        return WorkflowMetric()
+
+    def _setup_replaybuffer(self, key:chex.PRNGKey) -> chex.ArrayTree:
+        raise NotImplementedError
+
+    def _postsetup_replaybuffer(self, state: State) -> State:
+        raise NotImplementedError
 
     def setup(self, key: chex.PRNGKey) -> State:
-        super().setup(key)
-        key, agent_key, env_key, buffer_key = jax.random.split(key, 4)
+        key, agent_key, env_key, rb_key = jax.random.split(key, 4)
 
-        agent_state = self.agent.init(agent_key)
-
+        agent_state, opt_state = self._setup_agent_and_optimizer(agent_key)
         workflow_metrics = self._setup_workflow_metrics()
-        opt_state = self.optimizer.init(agent_state.params)
-
-        replay_buffer_state = self._init_replay_buffer(
-            self.replay_buffer, buffer_key)
 
         if self.enable_multi_devices:
-            workflow_metrics, agent_state, opt_state, replay_buffer_state = \
+            workflow_metrics, agent_state, opt_state = \
                 jax.device_put_replicated(
-                    (workflow_metrics, agent_state,
-                     opt_state, replay_buffer_state),
+                    (workflow_metrics, agent_state, opt_state),
                     self.devices
                 )
 
@@ -217,21 +221,33 @@ class OffPolicyRLWorkflow(RLWorkflow):
 
             env_key = split_key_to_devices(env_key, self.devices)
             env_state = jax.pmap(
-                self.env.reset, axis_name=self.pmap_axis_name
-            )(env_key)
+                self.env.reset, axis_name=self.pmap_axis_name)(env_key)
+            rb_key = split_key_to_devices(rb_key, self.devices)
+            replay_buffer_state = jax.pmap(
+                self._setup_replaybuffer, axis_name=self.pmap_axis_name)(rb_key)
         else:
             env_state = self.env.reset(env_key)
+            replay_buffer_state = self._setup_replaybuffer(rb_key)
 
-        return State(
+        state = State(
             key=key,
             metrics=workflow_metrics,
-            replay_buffer_state=replay_buffer_state,
             agent_state=agent_state,
             env_state=env_state,
-            opt_state=opt_state
+            opt_state=opt_state,
+            replay_buffer_state=replay_buffer_state
         )
 
-    def evaluate(self, state: State) -> Tuple[EvaluateMetric, State]:
+        if self.enable_multi_devices:
+            state = jax.pmap(
+                self._postsetup_replaybuffer, axis_name=self.pmap_axis_name
+            )(state)
+        else:
+            state = self._postsetup_replaybuffer(state)
+        
+        return state
+
+    def evaluate(self, state: State) -> Tuple[MetricBase, State]:
         key, eval_key = jax.random.split(state.key, num=2)
 
         # [#episodes]
@@ -244,11 +260,7 @@ class OffPolicyRLWorkflow(RLWorkflow):
         eval_metrics = EvaluateMetric(
             episode_returns=raw_eval_metrics.episode_returns.mean(),
             episode_lengths=raw_eval_metrics.episode_lengths.mean()
-        )
-
-        eval_metrics = eval_metrics.all_reduce(
-            pmap_axis_name=self.pmap_axis_name
-        )
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         state = state.replace(key=key)
         return eval_metrics, state
