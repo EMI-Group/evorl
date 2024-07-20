@@ -8,7 +8,7 @@ from omegaconf import DictConfig
 import flax.linen as nn
 
 from evorl.sample_batch import SampleBatch
-from evorl.networks import make_policy_network, make_value_network
+from evorl.networks import make_policy_network, make_v_network
 from evorl.utils import running_statistics
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.utils.jax_utils import tree_stop_gradient, rng_split
@@ -70,7 +70,7 @@ class A2CAgent(Agent):
         )
         policy_params = policy_init_fn(policy_key)
 
-        value_network, value_init_fn = make_value_network(
+        value_network, value_init_fn = make_v_network(
             obs_size=obs_size,
             hidden_layer_sizes=self.critic_hidden_layer_sizes
         )
@@ -369,7 +369,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             jnp.uint32(self.config.rollout_length * self.config.num_envs),
             axis_name=self.pmap_axis_name)
 
-        workflow_metrics = WorkflowMetric(
+        workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
             iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)

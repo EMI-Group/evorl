@@ -361,7 +361,7 @@ def fast_eval_rollout_episode(
             episode_returns=prev_metrics.episode_returns +
             (1-transition.dones)*transition.rewards,
             episode_lengths=prev_metrics.episode_lengths +
-            (1-transition.dones)
+            (1-transition.dones) # this will miss counting the last step
         )
 
         return env_nstate, next_key, metrics
@@ -376,6 +376,10 @@ def fast_eval_rollout_episode(
              episode_returns=jnp.zeros(batch_shape),
              episode_lengths=jnp.zeros(batch_shape))
          )
+    )
+
+    metrics = metrics.replace(
+        episode_lengths=metrics.episode_lengths + 1
     )
 
     return metrics, env_state 

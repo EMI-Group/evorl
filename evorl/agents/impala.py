@@ -9,7 +9,7 @@ from omegaconf import DictConfig
 
 
 from evorl.sample_batch import SampleBatch
-from evorl.networks import make_policy_network, make_value_network
+from evorl.networks import make_policy_network, make_v_network
 from evorl.utils import running_statistics
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.utils.jax_utils import tree_stop_gradient, rng_split
@@ -88,7 +88,7 @@ class IMPALAAgent(Agent):
         )
         policy_params = policy_init_fn(policy_key)
 
-        value_network, value_init_fn = make_value_network(
+        value_network, value_init_fn = make_v_network(
             obs_size=obs_size,
             hidden_layer_sizes=self.critic_hidden_layer_sizes
         )
@@ -388,7 +388,7 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
         def loss_fn(agent_state, sample_batch, key):
             # learn all data from trajectory
             loss_dict = self.agent.loss(agent_state, sample_batch, key)
-            loss_weights = self.config.optimizer.loss_weights
+            loss_weights = self.config.loss_weights
             loss = jnp.zeros(())
             for loss_key in loss_weights.keys():
                 loss += loss_weights[loss_key] * loss_dict[loss_key]
@@ -447,7 +447,7 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
                       self.config.num_envs, dtype=jnp.uint32),
             axis_name=self.pmap_axis_name)
 
-        workflow_metrics = WorkflowMetric(
+        workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
             iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)

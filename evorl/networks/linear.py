@@ -87,37 +87,6 @@ class SNMLP(nn.Module):
         return hidden
 
 
-class VModule(nn.Module):
-    """Q Module."""
-    hidden_layer_sizes: Sequence[int] = (256, 256)
-    activation: ActivationFn = nn.relu
-    kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
-
-    @nn.compact
-    def __call__(self, obs: jax.Array):
-        vs = MLP(layer_sizes=list(self.hidden_layer_sizes) + [1],
-                 activation=self.activation,
-                 kernel_init=self.kernel_init)(obs)
-
-        return vs.squeeze(-1)
-
-
-class QModule(nn.Module):
-    """Q Module."""
-    hidden_layer_sizes: Sequence[int] = (256, 256)
-    activation: ActivationFn = nn.relu
-    kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
-
-    @nn.compact
-    def __call__(self, obs: jax.Array, actions: jax.Array):
-        hidden = jnp.concatenate([obs, actions], axis=-1)
-        qs = MLP(layer_sizes=list(self.hidden_layer_sizes) + [1],
-                 activation=self.activation,
-                 kernel_init=self.kernel_init)(hidden)
-
-        return qs.squeeze(-1)
-
-
 def make_policy_network(
     action_size: int,
     obs_size: int,
@@ -137,16 +106,28 @@ def make_policy_network(
     return policy_model, init_fn
 
 
-def make_value_network(
+def make_v_network(
     obs_size: int,
     hidden_layer_sizes: Sequence[int] = (256, 256),
-    activation: ActivationFn = nn.relu
+    activation: ActivationFn = nn.relu,
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
 ) -> nn.Module:
     """Creates a V network: (obs) -> value"""
-    value_model = VModule(
-        hidden_layer_sizes=hidden_layer_sizes,
-        activation=activation,
-    )
+
+    class VModule(nn.Module):
+        """V Module."""
+
+        @nn.compact
+        def __call__(self, obs: jax.Array):
+            vs = MLP(
+                layer_sizes=tuple(hidden_layer_sizes) + (1,),
+                activation=activation,
+                kernel_init=kernel_init
+            )(obs)
+
+            return vs.squeeze(-1)
+
+    value_model = VModule()
     dummy_obs = jnp.zeros((1, obs_size))
 
     def init_fn(rng): return value_model.init(rng, dummy_obs)
@@ -157,15 +138,53 @@ def make_value_network(
 def make_q_network(
     obs_size: int,
     action_size: int,
+    n_stack: int = 1,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
 ) -> nn.Module:
     """Creates a Q network: (obs, action) -> value """
+    if n_stack == 1:
+        class QModule(nn.Module):
+            """Q Module."""
 
-    q_module = QModule(
-        hidden_layer_sizes=hidden_layer_sizes,
-        activation=activation,
-    )
+            @nn.compact
+            def __call__(self, obs: jax.Array, actions: jax.Array):
+                hidden = jnp.concatenate([obs, actions], axis=-1)
+                qs = MLP(
+                    layer_sizes=tuple(hidden_layer_sizes) + (1,),
+                    activation=activation,
+                    kernel_init=kernel_init
+                )(hidden)
+
+                return qs.squeeze(-1)
+
+        q_module = QModule()
+    elif n_stack > 1:
+        class QStackModule(nn.Module):
+            n: int
+
+            @nn.compact
+            def __call__(self, obs: jax.Array, actions: jax.Array):
+                hidden = jnp.concatenate([obs, actions], axis=-1)
+                hidden = jnp.broadcast_to(hidden, (self.n,) + hidden.shape)
+
+                qs = nn.vmap(
+                    MLP,
+                    out_axes=-2,
+                    variable_axes={'params': 0},
+                    split_rngs={'params': True}
+                )(
+                    layer_sizes=tuple(hidden_layer_sizes) + (1,),
+                    activation=activation,
+                    kernel_init=kernel_init
+                )(hidden)
+
+                # [B..., n, 1] -> [B..., n]
+                return qs.squeeze(-1)
+
+        q_module = QStackModule(n=n_stack)
+
     dummy_obs = jnp.zeros((1, obs_size))
     dummy_action = jnp.zeros((1, action_size))
 

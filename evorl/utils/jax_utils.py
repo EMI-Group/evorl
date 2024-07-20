@@ -83,6 +83,13 @@ def tree_astype(tree, dtype):
 def tree_last(tree):
     return jtu.tree_map(lambda x: x[-1], tree)
 
+def scan_and_mean(*args, **kwargs):
+    """
+        usage: same like `jax.lax.scan`, bug the scan results will be averaged.
+    """
+    last_carry, ys = jax.lax.scan(*args, **kwargs)
+    return last_carry, jtu.tree_map(lambda x: x.mean(axis=0), ys)
+
 def jit_method(*,
                static_argnums: int | Sequence[int] | None = None,
                static_argnames: str | Iterable[str] | None = None,
