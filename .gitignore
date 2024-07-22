@@ -232,3 +232,4 @@ pyrightconfig.json
 /debug
 /test*.py
 .conda
+*.sh
