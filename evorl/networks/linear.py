@@ -96,7 +96,7 @@ def make_policy_network(
 ) -> nn.Module:
     """Creates a policy network."""
     policy_model = MLP(
-        layer_sizes=list(hidden_layer_sizes) + [action_size],
+        layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
         activation=activation,
         kernel_init=jax.nn.initializers.lecun_uniform(),
         activation_final=activation_final)
@@ -144,31 +144,22 @@ def make_q_network(
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
 ) -> nn.Module:
     """Creates a Q network: (obs, action) -> value """
-    if n_stack == 1:
-        class QModule(nn.Module):
-            """Q Module."""
 
-            @nn.compact
-            def __call__(self, obs: jax.Array, actions: jax.Array):
-                hidden = jnp.concatenate([obs, actions], axis=-1)
+    class QModule(nn.Module):
+        """Q Module."""
+        n: int
+
+        @nn.compact
+        def __call__(self, obs: jax.Array, actions: jax.Array):
+            hidden = jnp.concatenate([obs, actions], axis=-1)
+            if self.n == 1:
                 qs = MLP(
                     layer_sizes=tuple(hidden_layer_sizes) + (1,),
                     activation=activation,
                     kernel_init=kernel_init
                 )(hidden)
-
-                return qs.squeeze(-1)
-
-        q_module = QModule()
-    elif n_stack > 1:
-        class QStackModule(nn.Module):
-            n: int
-
-            @nn.compact
-            def __call__(self, obs: jax.Array, actions: jax.Array):
-                hidden = jnp.concatenate([obs, actions], axis=-1)
+            elif self.n > 1:
                 hidden = jnp.broadcast_to(hidden, (self.n,) + hidden.shape)
-
                 qs = nn.vmap(
                     MLP,
                     out_axes=-2,
@@ -179,11 +170,61 @@ def make_q_network(
                     activation=activation,
                     kernel_init=kernel_init
                 )(hidden)
+            else:
+                raise ValueError('n should be greater than 0')
 
-                # [B..., n, 1] -> [B..., n]
-                return qs.squeeze(-1)
+            return qs.squeeze(-1)
 
-        q_module = QStackModule(n=n_stack)
+    q_module = QModule(n=n_stack)
+
+    dummy_obs = jnp.zeros((1, obs_size))
+    dummy_action = jnp.zeros((1, action_size))
+
+    def init_fn(rng): return q_module.init(rng, dummy_obs, dummy_action)
+
+    return q_module, init_fn
+
+def make_discrete_q_network(
+    obs_size: int,
+    action_size: int,
+    n_stack: int = 1,
+    hidden_layer_sizes: Sequence[int] = (256, 256),
+    activation: ActivationFn = nn.relu,
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
+) -> nn.Module:
+    """Creates a Q network for discrete action space: (obs) -> q_values """
+
+    class QModule(nn.Module):
+        """Q Module."""
+        n: int
+
+        @nn.compact
+        def __call__(self, obs: jax.Array):
+            x = obs
+            if self.n == 1:
+                qs = MLP(
+                    layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
+                    activation=activation,
+                    kernel_init=kernel_init
+                )(x)
+            elif self.n > 1:
+                x = jnp.broadcast_to(x, (self.n,) + x.shape)
+                qs = nn.vmap(
+                    MLP,
+                    out_axes=-2,
+                    variable_axes={'params': 0},
+                    split_rngs={'params': True}
+                )(
+                    layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
+                    activation=activation,
+                    kernel_init=kernel_init
+                )(x)
+            else:
+                raise ValueError('n should be greater than 0')
+
+            return qs.squeeze(-1)
+
+    q_module = QModule(n=n_stack)
 
     dummy_obs = jnp.zeros((1, obs_size))
     dummy_action = jnp.zeros((1, action_size))

@@ -303,7 +303,14 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         )
 
         # one optimizer, two opt_states (in setup function) for both actor and critic
-        optimizer = optax.adam(learning_rate=config.optimizer.lr)
+        if (config.optimizer.grad_clip_norm is not None and
+                config.optimizer.grad_clip_norm > 0):
+            optimizer = optax.chain(
+                optax.clip_by_global_norm(config.optimizer.grad_clip_norm),
+                optax.adam(config.optimizer.lr)
+            )
+        else:
+            optimizer = optax.adam(config.optimizer.lr)
 
         replay_buffer = flashbax.make_item_buffer(
             max_length=config.replay_buffer_capacity,

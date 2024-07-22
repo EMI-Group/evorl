@@ -57,8 +57,7 @@ class A2CAgent(Agent):
         obs_size = self.obs_space.shape[0]
 
         if self.continuous_action:
-            action_size = self.action_space.shape[0]
-            action_size *= 2
+            action_size = self.action_space.shape[0] * 2
         else:
             action_size = self.action_space.n
 
