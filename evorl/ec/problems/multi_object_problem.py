@@ -293,7 +293,7 @@ def fast_eval_rollout_episode(
             obs=env_state.obs,
         )
 
-        env_nstate, transition = _eval_env_step(
+        transition, env_nstate = _eval_env_step(
             env_state, agent_state,
             sample_batch, current_key
         )

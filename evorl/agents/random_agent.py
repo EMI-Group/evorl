@@ -13,6 +13,7 @@ from .agent import Agent, AgentState
 
 import dataclasses
 
+EMPTY_RANDOM_AGENT_STATE = AgentState(params={})
 
 class DebugRandomAgent(Agent):
     """
@@ -21,9 +22,7 @@ class DebugRandomAgent(Agent):
     """
 
     def init(self, key: chex.PRNGKey) -> AgentState:
-        return AgentState(
-            params={}
-        )
+        return EMPTY_RANDOM_AGENT_STATE
 
     def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         batch_shapes = sample_batch.obs.shape[:-len(self.obs_space.shape)]
@@ -41,9 +40,7 @@ class RandomAgent(Agent):
     """
 
     def init(self, key: chex.PRNGKey) -> AgentState:
-        return AgentState(
-            params={}
-        )
+        return EMPTY_RANDOM_AGENT_STATE
 
     def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         batch_shapes = sample_batch.obs.shape[:-len(self.obs_space.shape)]

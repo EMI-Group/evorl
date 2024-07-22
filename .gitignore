@@ -230,6 +230,5 @@ pyrightconfig.json
 /outputs
 /multirun
 /debug
-/test*
-/*.sh
-/wandb
+/test*.py
+.conda

@@ -133,7 +133,7 @@ def compute_gae(rewards: jax.Array,  # [T, B]
 
     lambda_retruns = advantages + values[:-1]
 
-    return jax.lax.stop_gradient(lambda_retruns), jax.lax.stop_gradient(advantages)
+    return lambda_retruns, advantages
 
 
 def shuffle_sample_batch(sample_batch: SampleBatch, key: chex.PRNGKey):
@@ -166,7 +166,7 @@ def flatten_rollout_trajectory(trajectory: SampleBatch):
         Flatten the trajectory from [T, B, ...] to [T*B, ...]
     """
     return jtu.tree_map(
-        lambda x: x.reshape(-1, *x.shape[2:]),
+        lambda x: jax.lax.collapse(x, 0, 2),
         trajectory
     )
 

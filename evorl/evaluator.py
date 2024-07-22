@@ -43,7 +43,7 @@ class Evaluator(PyTreeNode):
             next_key, init_env_key = jax.random.split(key, 2)
             env_state = self.env.reset(init_env_key)
 
-            env_state, episode_trajectory = eval_rollout_episode(
+            episode_trajectory, env_state = eval_rollout_episode(
                 self.env.step, self.agent.evaluate_actions,
                 env_state, agent_state,
                 key, self.max_episode_steps
@@ -80,7 +80,7 @@ class Evaluator(PyTreeNode):
             next_key, init_env_key = jax.random.split(key, 2)
             env_state = self.env.reset(init_env_key)
 
-            env_state, episode_metrics = fast_eval_rollout_episode(
+            episode_metrics, env_state  = fast_eval_rollout_episode(
                 self.env.step, self.agent.evaluate_actions, 
                 env_state, agent_state,
                 key, self.max_episode_steps
