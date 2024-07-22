@@ -47,7 +47,7 @@ Initializer = Callable[..., Any]
 
 class TD3TrainMetric(MetricBase):
     critic_loss: chex.Array
-    actor_loss: Optional[chex.Array] = None
+    actor_loss: chex.Array
     raw_loss_dict: LossDict = metricfield(
         default_factory=PyTreeDict, reduce_fn=tree_pmean)
 
@@ -162,7 +162,7 @@ class TD3Agent(Agent):
 
         return jax.lax.stop_gradient(action), PyTreeDict()
 
-    def cirtic_loss(
+    def critic_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
         """
@@ -361,7 +361,7 @@ class TD3Workflow(DDPGWorkflow):
         )
 
         def critic_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.cirtic_loss(
+            loss_dict = self.agent.critic_loss(
                 agent_state, sample_batch, key)
 
             loss = self.config.loss_weights.critic_loss *\
@@ -515,27 +515,19 @@ class TD3Workflow(DDPGWorkflow):
 
     def learn(self, state: State) -> State:
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
+        sampled_timesteps = tree_unpmap(
+            state.metrics.sampled_timesteps).tolist()
         num_iters = math.ceil(
-            (self.config.total_timesteps-state.metrics.sampled_timesteps) /
+            (self.config.total_timesteps-sampled_timesteps) /
             (one_step_timesteps*self.config.fold_iters)
         )
 
-        def _multi_steps(state):
-            def _step(state, _):
-                train_metrics, state = self.step(state)
-                return state, train_metrics
-
-            state, train_metrics = jax.lax.scan(
-                _step, state, (), length=self.config.fold_iters)
-            train_metrics = tree_last(train_metrics)
-            return train_metrics, state
-
         for i in range(num_iters):
-            train_metrics, state = _multi_steps(state)
+            train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
 
             iterations = tree_unpmap(
-                state.metrics.iterations, self.pmap_axis_name)
+                state.metrics.iterations, self.pmap_axis_name).tolist()
             train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
             workflow_metrics = tree_unpmap(
                 workflow_metrics, self.pmap_axis_name

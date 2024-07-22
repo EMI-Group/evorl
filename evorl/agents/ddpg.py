@@ -157,7 +157,7 @@ class DDPGAgent(Agent):
 
         return jax.lax.stop_gradient(action), PyTreeDict()
 
-    def cirtic_loss(
+    def critic_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
         """
@@ -428,7 +428,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 
         # ==== fill tansition state from init agent ====
         rollout_length = math.ceil((config.learning_start_timesteps -
-                          rollout_timesteps) / config.num_envs)
+                                    rollout_timesteps) / config.num_envs)
         key, env_key, rollout_key = jax.random.split(key, 3)
 
         env_state = self.env.reset(env_key)
@@ -513,7 +513,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             replay_buffer_state, rb_key).experience
 
         def critic_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.cirtic_loss(
+            loss_dict = self.agent.critic_loss(
                 agent_state, sample_batch, key)
 
             loss = self.config.loss_weights.critic_loss *\
@@ -613,30 +613,32 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             opt_state=opt_state
         )
 
+    def _multi_steps(self, state):
+        def _step(state, _):
+            train_metrics, state = self.step(state)
+            return state, train_metrics
+
+        state, train_metrics = jax.lax.scan(
+            _step, state, (), length=self.config.fold_iters)
+        train_metrics = tree_last(train_metrics)
+        return train_metrics, state
+
     def learn(self, state: State) -> State:
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
+        sampled_timesteps = tree_unpmap(
+            state.metrics.sampled_timesteps).tolist()
         num_iters = math.ceil(
-            (self.config.total_timesteps-state.metrics.sampled_timesteps) /
+            (self.config.total_timesteps-sampled_timesteps) /
             (one_step_timesteps*self.config.fold_iters)
         )
 
-        @jax.jit
-        def _multi_steps(state):
-            def _step(state, _):
-                train_metrics, state = self.step(state)
-                return state, train_metrics
-
-            state, train_metrics = jax.lax.scan(
-                _step, state, (), length=self.config.fold_iters)
-            train_metrics = tree_last(train_metrics)
-            return train_metrics, state
-
         for i in range(num_iters):
-            train_metrics, state = _multi_steps(state)
+            train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
 
+            # current iteration
             iterations = tree_unpmap(
-                state.metrics.iterations, self.pmap_axis_name)
+                state.metrics.iterations, self.pmap_axis_name).tolist()
             train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
             workflow_metrics = tree_unpmap(
                 workflow_metrics, self.pmap_axis_name
@@ -665,6 +667,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         super().enable_jit()
         cls._postsetup_replaybuffer = jax.jit(
             cls._postsetup_replaybuffer, static_argnums=(0,))
+        cls._multi_steps = jax.jit(cls._multi_steps, static_argnums=(0,))
 
 
 def clean_trajectory(trajectory):
