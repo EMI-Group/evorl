@@ -467,7 +467,7 @@ class TD3Workflow(DDPGWorkflow):
                 )
             )
 
-            opt_state = state.opt_state.replace(
+            opt_state = opt_state.replace(
                 actor=actor_opt_state,
                 critic=critic_opt_state
             )
