@@ -11,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from typing import Tuple, Any, Sequence, Callable, Optional
 
 from .agent import Agent, AgentState
-from .ddpg import DDPGWorkflow, clean_trajectory
+from .ddpg import DDPGWorkflow, clean_trajectory, skip_replay_buffer_state
 from evorl.networks import make_q_network, make_policy_network
 from evorl.workflows import OffPolicyRLWorkflow
 from evorl.agents.random_agent import RandomAgent, EMPTY_RANDOM_AGENT_STATE
@@ -543,10 +543,12 @@ class TD3Workflow(DDPGWorkflow):
                 self.recorder.write(
                     {"eval": eval_metrics.to_local_dict()}, iterations)
 
+            saved_state = tree_unpmap(state, self.pmap_axis_name)
+            if not self.config.save_replay_buffer:
+                saved_state = skip_replay_buffer_state(state)
             self.checkpoint_manager.save(
                 iterations,
-                args=ocp.args.StandardSave(
-                    tree_unpmap(state, self.pmap_axis_name)),
+                args=ocp.args.StandardSave(saved_state),
             )
 
         return state

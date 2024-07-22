@@ -654,10 +654,12 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 self.recorder.write(
                     {"eval": eval_metrics.to_local_dict()}, iterations)
 
+            saved_state = tree_unpmap(state, self.pmap_axis_name)
+            if not self.config.save_replay_buffer:
+                saved_state = skip_replay_buffer_state(saved_state)
             self.checkpoint_manager.save(
                 iterations,
-                args=ocp.args.StandardSave(
-                    tree_unpmap(state, self.pmap_axis_name)),
+                args=ocp.args.StandardSave(saved_state),
             )
 
         return state
@@ -669,6 +671,9 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             cls._postsetup_replaybuffer, static_argnums=(0,))
         cls._multi_steps = jax.jit(cls._multi_steps, static_argnums=(0,))
 
+
+def skip_replay_buffer_state(state: State) -> State:
+    return state.replace(replay_buffer_state=None)
 
 def clean_trajectory(trajectory):
     """

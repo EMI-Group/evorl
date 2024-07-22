@@ -587,7 +587,6 @@ class SACWorkflow(OffPolicyRLWorkflow):
 
             critic_opt_state = opt_state.critic
             actor_opt_state = opt_state.actor
-            alpha_opt_state = opt_state.alpha
 
             key, critic_key, actor_key, alpha_key, rb_key = jax.random.split(
                 key, num=5)
@@ -642,6 +641,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
             )
 
             if self.config.adaptive_alpha:
+                alpha_opt_state = opt_state.alpha
                 (alpha_loss, alpha_loss_dict), agent_state, alpha_opt_state = alpha_update_fn(
                     alpha_opt_state,
                     agent_state,
@@ -761,10 +761,12 @@ class SACWorkflow(OffPolicyRLWorkflow):
                 self.recorder.write(
                     {"eval": eval_metrics.to_local_dict()}, iterations)
 
+            saved_state = tree_unpmap(state, self.pmap_axis_name)
+            if not self.config.save_replay_buffer:
+                saved_state = skip_replay_buffer_state(saved_state)
             self.checkpoint_manager.save(
                 iterations,
-                args=ocp.args.StandardSave(
-                    tree_unpmap(state, self.pmap_axis_name)),
+                args=ocp.args.StandardSave(saved_state),
             )
 
         return state
@@ -776,6 +778,8 @@ class SACWorkflow(OffPolicyRLWorkflow):
             cls._postsetup_replaybuffer, static_argnums=(0,))
         cls._multi_steps = jax.jit(cls._multi_steps, static_argnums=(0,))
 
+def skip_replay_buffer_state(state: State) -> State:
+    return state.replace(replay_buffer_state=None)
 
 def clean_trajectory(trajectory):
     """

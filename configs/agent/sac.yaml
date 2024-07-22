@@ -8,11 +8,11 @@ normalize_obs: false
 rollout_length: 1
 discount: 0.99
 total_timesteps: 1000000
-fold_iters: 4
+fold_iters: 64
 
 num_eval_envs: 16
 eval_episodes: 16 # should be divided by num_eval_envs
-eval_interval: 4
+eval_interval: 64
 
 random_timesteps: 12800 # steps filled into the replay buffer
 learning_start_timesteps: 12800 # steps before training starts
@@ -21,9 +21,9 @@ replay_buffer_capacity: 1000000
 
 reward_scale: 10.0
 tau: 0.005
-adaptive_alpha: true
+adaptive_alpha: false
 alpha: 0.2 # used as initial alpha value if adaptive_alpha is true
-actor_update_interval: 4
+actor_update_interval: 2
 num_updates_per_iter: 32 # #updates per rollout, usually use: num_envs * rollout_length // actor_update_interval
 
 loss_weights:
@@ -39,3 +39,5 @@ agent_network:
   continuous_action: true
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
+
+save_replay_buffer: true
