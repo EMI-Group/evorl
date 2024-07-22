@@ -29,6 +29,5 @@ optimizer:
   grad_clip_norm: 10.0 # set 0 or none to turn-off
 
 agent_network:
-  continuous_action: true
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
