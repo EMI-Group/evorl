@@ -331,7 +331,7 @@ class TD3Workflow(DDPGWorkflow):
         """
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
-        # the trajectory (T*B*variable dim), dim T = 1 (default) and B = num_envs
+        # the trajectory [T, B, ...]
         trajectory, env_state = rollout(
             env_fn=self.env.step,
             action_fn=self.agent.compute_actions,
@@ -344,6 +344,7 @@ class TD3Workflow(DDPGWorkflow):
 
         trajectory = clean_trajectory(trajectory)
         trajectory = flatten_rollout_trajectory(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
 
         agent_state = state.agent_state
         if agent_state.obs_preprocessor_state is not None:
@@ -476,7 +477,7 @@ class TD3Workflow(DDPGWorkflow):
                 (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict)
             )
 
-        (key, agent_state, opt_state), \
+        (_, agent_state, opt_state), \
             (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict) = scan_and_mean(
             _sample_and_update_fn,
             (learn_key, agent_state, state.opt_state),

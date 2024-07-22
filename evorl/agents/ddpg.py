@@ -409,9 +409,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         trajectory = flatten_rollout_trajectory(trajectory)
         trajectory = tree_stop_gradient(trajectory)
 
-        replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, trajectory)
-
         if agent_state.obs_preprocessor_state is not None:
             agent_state = agent_state.replace(
                 obs_preprocessor_state=running_statistics.update(
@@ -421,14 +418,17 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 )
             )
 
+        replay_buffer_state = self.replay_buffer.add(
+            replay_buffer_state, trajectory)
+
         rollout_timesteps = rollout_length*config.num_envs
         sampled_timesteps = psum(
             jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
         )
 
         # ==== fill tansition state from init agent ====
-        rollout_length = (config.learning_start_timesteps -
-                          rollout_timesteps) // config.num_envs
+        rollout_length = math.ceil((config.learning_start_timesteps -
+                          rollout_timesteps) / config.num_envs)
         key, env_key, rollout_key = jax.random.split(key, 3)
 
         env_state = self.env.reset(env_key)
@@ -446,9 +446,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         trajectory = flatten_rollout_trajectory(trajectory)
         trajectory = tree_stop_gradient(trajectory)
 
-        replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, trajectory)
-
         if agent_state.obs_preprocessor_state is not None:
             agent_state = agent_state.replace(
                 obs_preprocessor_state=running_statistics.update(
@@ -457,6 +454,9 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                     pmap_axis_name=self.pmap_axis_name,
                 )
             )
+
+        replay_buffer_state = self.replay_buffer.add(
+            replay_buffer_state, trajectory)
 
         rollout_timesteps = rollout_length*config.num_envs
         sampled_timesteps += psum(
@@ -480,7 +480,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         key, rollout_key, rb_key, critic_key, actor_key = jax.random.split(
             state.key, num=5)
 
-        # the trajectory (T*B*variable dim), dim T = 1 (default) and B = num_envs
+        # the trajectory [T, B, ...]
         trajectory, env_state = rollout(
             env_fn=self.env.step,
             action_fn=self.agent.compute_actions,
@@ -493,6 +493,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 
         trajectory = clean_trajectory(trajectory)
         trajectory = flatten_rollout_trajectory(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
 
         agent_state = state.agent_state
         if agent_state.obs_preprocessor_state is not None:
