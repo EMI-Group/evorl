@@ -311,7 +311,6 @@ class TD3Workflow(DDPGWorkflow):
             episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset=False,
-            discount=config.discount,
         )
 
         evaluator = Evaluator(env=eval_env, agent=agent,
