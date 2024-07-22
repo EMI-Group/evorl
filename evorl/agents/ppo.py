@@ -459,24 +459,25 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
+            iters = i+1
             train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
             workflow_metrics = tree_unpmap(
                 workflow_metrics, self.pmap_axis_name)
 
-            self.recorder.write(workflow_metrics.to_local_dict(), i)
+            self.recorder.write(workflow_metrics.to_local_dict(), iters)
             train_metric_data = train_metrics.to_local_dict()
             if train_metrics.train_episode_return == MISSING_REWARD:
                 train_metric_data['train_episode_return'] = None
-            self.recorder.write(train_metric_data, i)
+            self.recorder.write(train_metric_data, iters)
 
-            if (i+1) % self.config.eval_interval == 0:
+            if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write({'eval': eval_metrics.to_local_dict()}, i)
+                self.recorder.write({'eval': eval_metrics.to_local_dict()}, iters)
                 logger.debug(eval_metrics)
 
             self.checkpoint_manager.save(
-                i,
+                iters,
                 args=ocp.args.StandardSave(
                     tree_unpmap(state, self.pmap_axis_name))
             )
