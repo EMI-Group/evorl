@@ -2,33 +2,31 @@
 
 workflow_cls: evorl.agents.ddpg.DDPGWorkflow
 
-num_envs: 10
+num_envs: 1
 normalize_obs: false
 rollout_length: 1
 discount: 0.99
-exploration_epsilon: 0.1
-total_timesteps: 1000000 
+total_timesteps: 1000000
+fold_iters: 512
 
-num_eval_envs: 10
-eval_interval: 101
-log_interval: 101
-eval_episodes: 10 # should be divided by num_eval_envs
-critor_update_interval: 1
-actor_update_interval: 2
-tau: 0.005
-learning_starts: 25000 # steps before training starts 25000
-load: false
-load_path: ./outputs/train/
-check_load: false
+num_eval_envs: 16
+eval_episodes: 16 # should be divided by num_eval_envs
+eval_interval: 512 # unit: num of iterations
+
+random_timesteps: 12800 # steps filled into the replay buffer
+learning_start_timesteps: 25600 # steps before training starts
+batch_size: 256
+replay_buffer_capacity: 1000000
+
+exploration_epsilon: 0.1
+tau: 0.005 # soft update rate
+loss_weights:
+  actor_loss: 1.0
+  critic_loss: 0.5
 
 optimizer:
   lr: 3e-4
   grad_clip_norm: 10.0 # set 0 or none to turn-off
-
-replay_buffer:
-  capacity: 1000000
-  min_size: 300
-  sample_batch_size: 256
 
 agent_network:
   continuous_action: true
