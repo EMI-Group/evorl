@@ -210,6 +210,7 @@ class IMPALAAgent(Agent):
         rho = jnp.exp(actions_logp - sampled_actions_logp)
 
         # TODO: consider PEB: truncation in the middle of trajectory
+        # hint: use IS of td-error with 
         vtrace = compute_vtrace(
             rho_t=rho,
             v_t=vs[:-1],

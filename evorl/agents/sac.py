@@ -272,8 +272,9 @@ class SACWorkflow(OffPolicyRLWorkflow):
         return "SAC"
 
     @staticmethod
-    def _rescale_config(config, devices) -> None:
-        num_devices = len(devices)
+    def _rescale_config(config) -> None:
+        num_devices = jax.device_count()
+
         if config.num_envs % num_devices != 0:
             logger.warning(
                 f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
@@ -284,9 +285,27 @@ class SACWorkflow(OffPolicyRLWorkflow):
                 f"num_eval_envs({config.num_eval_envs}) cannot be divided by num_devices({num_devices}), "
                 f"rescale num_eval_envs to {config.num_eval_envs // num_devices}"
             )
+        if config.replay_buffer_capacity % num_devices != 0:
+            logger.warning(
+                f"replay_buffer_capacity({config.replay_buffer_capacity}) cannot be divided by num_devices({num_devices}), "
+                f"rescale replay_buffer_capacity to {config.replay_buffer_capacity // num_devices}"
+            )
+        if config.random_timesteps % num_devices != 0:
+            logger.warning(
+                f"random_timesteps({config.random_timesteps}) cannot be divided by num_devices({num_devices}), "
+                f"rescale random_timesteps to {config.random_timesteps // num_devices}"
+            )
+        if config.learning_start_timesteps % num_devices != 0:
+            logger.warning(
+                f"learning_start_timesteps({config.learning_start_timesteps}) cannot be divided by num_devices({num_devices}), "
+                f"rescale learning_start_timesteps to {config.learning_start_timesteps // num_devices}"
+            )
 
         config.num_envs = config.num_envs // num_devices
         config.num_eval_envs = config.num_eval_envs // num_devices
+        config.replay_buffer_capacity = config.replay_buffer_capacity // num_devices
+        config.random_timesteps = config.random_timesteps // num_devices
+        config.learning_start_timesteps = config.learning_start_timesteps // num_devices
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):

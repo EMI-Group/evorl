@@ -10,9 +10,10 @@ from omegaconf import DictConfig, OmegaConf
 from typing import Tuple, Any, Sequence, Callable, Optional
 
 from .agent import Agent, AgentState
+from .random_agent import RandomAgent, EMPTY_RANDOM_AGENT_STATE
 from evorl.networks import make_q_network, make_policy_network
 from evorl.workflows import OffPolicyRLWorkflow
-from evorl.agents.random_agent import RandomAgent, EMPTY_RANDOM_AGENT_STATE
+
 from evorl.envs import create_env, Box
 from evorl.sample_batch import SampleBatch
 from evorl.evaluator import Evaluator
@@ -130,8 +131,13 @@ class DDPGAgent(Agent):
             sample_barch: [#env, ...]
         used in sample action during rollout
         """
+        obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(
+                obs, agent_state.obs_preprocessor_state)
+            
         actions = self.actor_network.apply(
-            agent_state.params.actor_params, sample_batch.obs
+            agent_state.params.actor_params, obs
         )
         # add random noise
         noise = jax.random.normal(key, actions.shape) * \
@@ -149,11 +155,16 @@ class DDPGAgent(Agent):
         Args:
             sample_barch: [#env, ...]
         """
-        action = self.actor_network.apply(
-            agent_state.params.actor_params, sample_batch.obs
+        obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(
+                obs, agent_state.obs_preprocessor_state)
+            
+        actions = self.actor_network.apply(
+            agent_state.params.actor_params, obs
         )
 
-        return jax.lax.stop_gradient(action), PyTreeDict()
+        return jax.lax.stop_gradient(actions), PyTreeDict()
 
     def critic_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
@@ -257,6 +268,11 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 f"num_eval_envs({config.num_eval_envs}) cannot be divided by num_devices({num_devices}), "
                 f"rescale num_eval_envs to {config.num_eval_envs // num_devices}"
             )
+        if config.replay_buffer_capacity % num_devices != 0:
+            logger.warning(
+                f"replay_buffer_capacity({config.replay_buffer_capacity}) cannot be divided by num_devices({num_devices}), "
+                f"rescale replay_buffer_capacity to {config.replay_buffer_capacity // num_devices}"
+            )
         if config.random_timesteps % num_devices != 0:
             logger.warning(
                 f"random_timesteps({config.random_timesteps}) cannot be divided by num_devices({num_devices}), "
@@ -270,6 +286,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 
         config.num_envs = config.num_envs // num_devices
         config.num_eval_envs = config.num_eval_envs // num_devices
+        config.replay_buffer_capacity = config.replay_buffer_capacity // num_devices
         config.random_timesteps = config.random_timesteps // num_devices
         config.learning_start_timesteps = config.learning_start_timesteps // num_devices
 

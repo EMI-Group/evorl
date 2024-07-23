@@ -136,8 +136,13 @@ class TD3Agent(Agent):
             sample_barch: [#env, ...]
         used in sample action during rollout
         """
+        obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(
+                obs, agent_state.obs_preprocessor_state)
+
         actions = self.actor_network.apply(
-            agent_state.params.actor_params, sample_batch.obs
+            agent_state.params.actor_params, obs
         )
         # add random noise
         noise = jax.random.normal(key, actions.shape) * \
@@ -155,11 +160,16 @@ class TD3Agent(Agent):
         Args:
             sample_barch: [#env, ...]
         """
-        action = self.actor_network.apply(
-            agent_state.params.actor_params, sample_batch.obs
+        obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(
+                obs, agent_state.obs_preprocessor_state)
+
+        actions = self.actor_network.apply(
+            agent_state.params.actor_params, obs
         )
 
-        return jax.lax.stop_gradient(action), PyTreeDict()
+        return jax.lax.stop_gradient(actions), PyTreeDict()
 
     def critic_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey

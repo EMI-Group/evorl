@@ -73,8 +73,8 @@ class PBTWorkflow(RLWorkflow):
         return "PBT"
 
     @staticmethod
-    def _rescale_config(config, devices) -> None:
-        num_devices = len(devices)
+    def _rescale_config(config) -> None:
+        num_devices = jax.device_count()
 
         if config.pop_size % num_devices != 0:
             logger.warning(
