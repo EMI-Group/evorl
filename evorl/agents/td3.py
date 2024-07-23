@@ -463,7 +463,7 @@ class TD3Workflow(DDPGWorkflow):
                 agent_state.params.actor_params,
                 self.config.tau,
             )
-            target_critc_params = soft_target_update(
+            target_critic_params = soft_target_update(
                 agent_state.params.target_critic_params,
                 agent_state.params.critic_params,
                 self.config.tau,
@@ -471,7 +471,7 @@ class TD3Workflow(DDPGWorkflow):
             agent_state = agent_state.replace(
                 params=agent_state.params.replace(
                     target_actor_params=target_actor_params,
-                    target_critic_params=target_critc_params
+                    target_critic_params=target_critic_params
                 )
             )
 

@@ -14,9 +14,9 @@ from evorl.evaluator import Evaluator
 from evorl.utils import running_statistics
 from evorl.rollout import rollout
 from evox import State
-from evorl.distributed import split_key_to_devices, tree_unpmap, psum, agent_gradient_update, tree_pmean
+from evorl.distributed import tree_unpmap, psum, agent_gradient_update, tree_pmean
 from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean, tree_last
-from evorl.utils.toolkits import average_episode_discount_return, soft_target_update, flatten_rollout_trajectory
+from evorl.utils.toolkits import soft_target_update, flatten_rollout_trajectory
 from evorl.metrics import MetricBase, metricfield
 from evorl.distribution import get_tanh_norm_dist
 from omegaconf import DictConfig
@@ -675,14 +675,14 @@ class SACWorkflow(OffPolicyRLWorkflow):
                 res = (critic_loss, actor_loss,
                        critic_loss_dict, actor_loss_dict)
 
-            target_critc_params = soft_target_update(
+            target_critic_params = soft_target_update(
                 agent_state.params.target_critic_params,
                 agent_state.params.critic_params,
                 self.config.tau,
             )
             agent_state = agent_state.replace(
                 params=agent_state.params.replace(
-                    target_critic_params=target_critc_params
+                    target_critic_params=target_critic_params
                 )
             )
 
