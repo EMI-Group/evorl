@@ -1,4 +1,3 @@
-
 import jax
 import jax.numpy as jnp
 
@@ -25,7 +24,7 @@ from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAu
 
 class GymnaxAdapter(EnvAdapter):
     def __init__(self, env: GymnaxEnv, env_params: Optional[chex.ArrayTree] = None):
-        super(GymnaxAdapter, self).__init__(env)
+        super().__init__(env)
         self.env_params = env_params or env.default_params
 
         self._action_space = gymnax_space_to_evorl_space(

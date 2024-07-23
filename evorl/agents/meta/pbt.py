@@ -2,40 +2,23 @@ from optax.schedules import InjectStatefulHyperparamsState
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from flax import struct
 import math
 
 import hydra
 from omegaconf import DictConfig, open_dict, read_write
 
-
-from evorl.sample_batch import SampleBatch
-from evorl.networks import make_policy_network, make_value_network
-from evorl.utils import running_statistics
-from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.utils.jax_utils import tree_stop_gradient
-from evorl.utils.toolkits import (
-    compute_gae, flatten_rollout_trajectory,
-    average_episode_discount_return
-)
 from evorl.workflows import OnPolicyRLWorkflow, RLWorkflow
-from evorl.agents import AgentState
-from evorl.distributed import agent_gradient_update, tree_unpmap, psum
-from evorl.envs import create_env, Env, EnvState
-from evorl.evaluator import Evaluator
 from evorl.metrics import MetricBase
-from ..agent import Agent, AgentState
-
-from evox import State
-# from evorl.types import State
+from evorl.types import State
 
 
 import orbax.checkpoint as ocp
 import chex
 import optax
 from evorl.types import (
-    PyTreeNode, PyTreeDict
+    PyTreeData, PyTreeDict
 )
+from evorl.utils.jax_utils import tree_last
 from evorl.metrics import TrainMetric, WorkflowMetric
 from typing import Tuple, Sequence, Optional, Any
 import logging
@@ -45,6 +28,7 @@ import copy
 from omegaconf import OmegaConf
 
 from functools import partial
+
 
 class TrainMetric(MetricBase):
     pop_episode_returns: chex.Array
@@ -56,7 +40,7 @@ class EvalMetric(MetricBase):
     pop_episode_lengths: chex.Array
 
 
-class HyperParams(PyTreeNode):
+class HyperParams(PyTreeData):
     lr: chex.Array
 
 
@@ -64,7 +48,7 @@ class PBTWorkflow(RLWorkflow):
     def __init__(self,
                  workflow: RLWorkflow,
                  config: DictConfig):
-        super(PBTWorkflow, self).__init__(config)
+        super().__init__(config)
 
         self.workflow = workflow
 
@@ -92,11 +76,12 @@ class PBTWorkflow(RLWorkflow):
         devices = jax.local_devices()
 
         # OmegaConf.set_struct(target_workflow_config, True)
-        
+
         with read_write(target_workflow_config):
             with open_dict(target_workflow_config):
                 target_workflow_config.env = copy.deepcopy(config.env)
-                target_workflow_config.checkpoint = OmegaConf.create(dict(enable=False))
+                target_workflow_config.checkpoint = OmegaConf.create(
+                    dict(enable=False))
 
         OmegaConf.set_readonly(target_workflow_config, True)
 
@@ -157,8 +142,7 @@ class PBTWorkflow(RLWorkflow):
                 _one_step, wf_state, None, length=self.config.per_iter_workflow_steps
             )
 
-            train_metrics = jtu.tree_map(
-                lambda x: x[-1], train_metrics_trajectory)
+            train_metrics = tree_last(train_metrics_trajectory)
 
             return train_metrics, wf_state
 
@@ -186,12 +170,12 @@ class PBTWorkflow(RLWorkflow):
 
         def _dummy_fn(key, pop_episode_returns, pop, pop_workflow_state):
             return pop, pop_workflow_state
-        
+
         _exploit_and_explore = partial(exploit_and_explore, self.config)
 
         pop, pop_workflow_state = jax.lax.cond(
             state.metrics.iterations+1 <= math.ceil(self.config.warmup_steps /
-                                                 self.config.per_iter_workflow_steps),
+                                                    self.config.per_iter_workflow_steps),
             _dummy_fn,
             _exploit_and_explore,
             exploit_and_explore_key, pop_episode_returns, pop, pop_workflow_state
@@ -199,7 +183,8 @@ class PBTWorkflow(RLWorkflow):
 
         # ===== record metrics ======
         workflow_metrics = state.metrics.replace(
-            sampled_timesteps=jnp.sum(pop_workflow_state.metrics.sampled_timesteps),
+            sampled_timesteps=jnp.sum(
+                pop_workflow_state.metrics.sampled_timesteps),
             iterations=state.metrics.iterations + 1
         )
 

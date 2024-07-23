@@ -1,4 +1,4 @@
-evox == 0.8.1
+evox @ git+https://github.com/ZaberKo/evox@main
 hydra-core
 wandb
 pyyaml

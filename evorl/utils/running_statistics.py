@@ -8,25 +8,25 @@ https://github.com/deepmind/acme/blob/master/acme/jax/running_statistics.py
 from typing import Any, Optional, Tuple
 
 from brax.training.acme import types
-from flax import struct
+
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import chex
 
-from .jax_utils import tree_zeros_like
+from evorl.types import PyTreeData
+from .jax_utils import tree_zeros_like, tree_ones_like
 
-from .jax_utils import tree_ones_like
 
 
-@struct.dataclass
-class NestedMeanStd:
+
+class NestedMeanStd(PyTreeData):
     """A container for running statistics (mean, std) of possibly nested data."""
     mean: chex.ArrayTree
     std: chex.ArrayTree
 
 
-@struct.dataclass
+
 class RunningStatisticsState(NestedMeanStd):
     """Full state of running statistics computation."""
     count: chex.Array

@@ -12,7 +12,7 @@ from jumanji.specs import Spec, DiscreteArray, BoundedArray, Array
 # Note: this is used for singel agent envs.
 class JumanjiAdapter(EnvAdapter):
     def __init__(self, env: JumanjiEnv):
-        super(JumanjiAdapter, self).__init__(env)
+        super().__init__(env)
         self._action_sapce = jumanji_specs_to_evorl_space(env.action_spec)
         self._obs_space = jumanji_specs_to_evorl_space(env.observation_spec)
 

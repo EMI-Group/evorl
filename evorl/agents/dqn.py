@@ -509,9 +509,3 @@ def agent_params_gradient_update(loss_fn: Callable[..., float],
         return value, opt_state, agent_state
 
     return f
-
-
-
-
-
-

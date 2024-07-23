@@ -1,17 +1,20 @@
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from flax import struct
+import orbax.checkpoint as ocp
+import chex
+import optax
 import math
-
 from omegaconf import DictConfig
+import flax.linen as nn
 from functools import partial
 
+
 from evorl.sample_batch import SampleBatch
-from evorl.networks import make_policy_network, make_value_network
+from evorl.networks import make_policy_network, make_v_network
 from evorl.utils import running_statistics
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient, rng_split
 from evorl.utils.toolkits import (
     compute_gae, flatten_rollout_trajectory,
     average_episode_discount_return
@@ -21,41 +24,34 @@ from evorl.agents import AgentState
 from evorl.distributed import agent_gradient_update, tree_unpmap, psum
 from evorl.envs import create_env, Env, EnvState
 from evorl.evaluator import Evaluator
-from .agent import Agent, AgentState
-
-from evox import State
-# from evorl.types import State
-
-
-import orbax.checkpoint as ocp
-import chex
-import optax
+from evorl.rollout import env_step
 from evorl.types import (
     LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field,
-    MISSING_REWARD
+    MISSING_REWARD, PyTreeData, State
 )
 from evorl.metrics import TrainMetric, WorkflowMetric
-from typing import Tuple, Sequence, Optional, Any
+from .agent import Agent, AgentState
+
+from collections.abc import Sequence
+from typing import Any
 import logging
-import flax.linen as nn
-from flax import struct
+
 
 logger = logging.getLogger(__name__)
 
 
-@struct.dataclass
-class PPONetworkParams:
+class PPONetworkParams(PyTreeData):
     """Contains training state for the learner."""
     policy_params: Params
     value_params: Params
 
 
 class PPOAgent(Agent):
-    actor_hidden_layer_sizes: Tuple[int] = (256, 256)
-    critic_hidden_layer_sizes: Tuple[int] = (256, 256)
+    actor_hidden_layer_sizes: tuple[int] = (256, 256)
+    critic_hidden_layer_sizes: tuple[int] = (256, 256)
     normalize_obs: bool = False
     continuous_action: bool = False
-    clipping_epsilon: float = 0.2
+    clip_epsilon: float = 0.2
     policy_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
     value_network: nn.Module = pytree_field(lazy_init=True)
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
@@ -65,8 +61,7 @@ class PPOAgent(Agent):
         obs_size = self.obs_space.shape[0]
 
         if self.continuous_action:
-            action_size = self.action_space.shape[0]
-            action_size *= 2
+            action_size = self.action_space.shape[0] * 2
         else:
             action_size = self.action_space.n
 
@@ -78,7 +73,7 @@ class PPOAgent(Agent):
         )
         policy_params = policy_init_fn(policy_key)
 
-        value_network, value_init_fn = make_value_network(
+        value_network, value_init_fn = make_v_network(
             obs_size=obs_size,
             hidden_layer_sizes=self.critic_hidden_layer_sizes
         )
@@ -106,7 +101,7 @@ class PPOAgent(Agent):
             obs_preprocessor_state=obs_preprocessor_state
         )
 
-    def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
+    def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> tuple[Action, PolicyExtraInfo]:
         """
             Args:
                 sample_barch: [#env, ...]
@@ -132,9 +127,9 @@ class PPOAgent(Agent):
             logp=actions_dist.log_prob(actions)
         )
 
-        return jax.lax.stop_gradient(actions), policy_extras
+        return actions, policy_extras
 
-    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
+    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> tuple[Action, PolicyExtraInfo]:
         """
             Args:
                 sample_barch: [#env, ...]
@@ -177,12 +172,11 @@ class PPOAgent(Agent):
 
         # ======= critic =======
         vs = self.value_network.apply(
-            agent_state.params.value_params, obs).squeeze(-1)
+            agent_state.params.value_params, obs)
 
         v_targets = sample_batch.extras.v_targets
 
-        # value_loss = optax.huber_loss(vs, v_targets, delta=1).mean()
-        value_loss = optax.l2_loss(vs, v_targets).mean()
+        critic_loss = optax.squared_error(vs, v_targets).mean()
 
         # ====== actor =======
 
@@ -207,7 +201,7 @@ class PPOAgent(Agent):
         # advantages: [T*B]
         policy_sorrogate_loss1 = rho * advantages
         policy_sorrogate_loss2 = jnp.clip(
-            rho, 1-self.clipping_epsilon, 1+self.clipping_epsilon) * advantages
+            rho, 1-self.clip_epsilon, 1+self.clip_epsilon) * advantages
         policy_loss = - jnp.minimum(
             policy_sorrogate_loss1, policy_sorrogate_loss2).mean()
 
@@ -219,7 +213,7 @@ class PPOAgent(Agent):
 
         return PyTreeDict(
             actor_loss=policy_loss,
-            critic_loss=value_loss,
+            critic_loss=critic_loss,
             actor_entropy_loss=entropy_loss
         )
 
@@ -230,7 +224,7 @@ class PPOAgent(Agent):
                 obs, agent_state.obs_preprocessor_state)
 
         return self.value_network.apply(
-            agent_state.params.value_params, obs).squeeze(-1)
+            agent_state.params.value_params, obs)
 
 
 class PPOWorkflow(OnPolicyRLWorkflow):
@@ -239,8 +233,9 @@ class PPOWorkflow(OnPolicyRLWorkflow):
         return "PPO"
 
     @staticmethod
-    def _rescale_config(config, devices) -> None:
-        num_devices = len(devices)
+    def _rescale_config(config: DictConfig) -> None:
+        num_devices = jax.device_count()
+
         if config.num_envs % num_devices != 0:
             logger.warning(
                 f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
@@ -259,7 +254,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
 
         config.num_envs = config.num_envs // num_devices
         config.num_eval_envs = config.num_eval_envs // num_devices
-        config.minibatch_size = config.minibatch_size//num_devices
+        config.minibatch_size = config.minibatch_size // num_devices
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
@@ -271,7 +266,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             episode_length=max_episode_steps,
             parallel=config.num_envs,
             autoreset=True,
-            fast_reset=True
+            # fast_reset=True
         )
 
         agent = PPOAgent(
@@ -281,7 +276,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             normalize_obs=config.normalize_obs,
             continuous_action=config.agent_network.continuous_action,
-            clipping_epsilon=config.clipping_epsilon
+            clip_epsilon=config.clip_epsilon
         )
 
         if (config.optimizer.grad_clip_norm is not None and
@@ -311,12 +306,12 @@ class PPOWorkflow(OnPolicyRLWorkflow):
 
         return cls(env, agent, optimizer, evaluator, config)
 
-    def step(self, state: State) -> Tuple[TrainMetric, State]:
+    def step(self, state: State) -> tuple[TrainMetric, State]:
 
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # trajectory: [T, #envs, ...]
-        env_state, trajectory = rollout(
+        trajectory, env_state = rollout(
             self.env,
             self.agent,
             state.env_state,
@@ -344,12 +339,12 @@ class PPOWorkflow(OnPolicyRLWorkflow):
 
         # ======== compute GAE =======
         last_obs = trajectory.extras.env_extras.last_obs
-        v_obs = jnp.concatenate(
+        _obs = jnp.concatenate(
             [trajectory.obs, last_obs[-1:]], axis=0
         )
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(
-            state.agent_state, SampleBatch(obs=v_obs))
+            state.agent_state, SampleBatch(obs=_obs))
         v_targets, advantages = compute_gae(
             rewards=trajectory.rewards,  # peb_rewards
             values=vs,
@@ -357,17 +352,18 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             gae_lambda=self.config.gae_lambda,
             discount=self.config.discount
         )
-        trajectory.extras.v_targets = v_targets
-        trajectory.extras.advantages = advantages
+        trajectory.extras.v_targets = jax.lax.stop_gradient(v_targets)
+        trajectory.extras.advantages = jax.lax.stop_gradient(advantages)
         # [T,B,...] -> [T*B,...]
-        trajectory = flatten_rollout_trajectory(trajectory)
-        trajectory = tree_stop_gradient(trajectory)
+        trajectory = tree_stop_gradient(
+            flatten_rollout_trajectory(trajectory)
+        )
         # ============================
 
         def loss_fn(agent_state, sample_batch, key):
             # learn all data from trajectory
             loss_dict = self.agent.loss(agent_state, sample_batch, key)
-            loss_weights = self.config.optimizer.loss_weights
+            loss_weights = self.config.loss_weights
             loss = jnp.zeros(())
             for loss_key in loss_weights.keys():
                 loss += loss_weights[loss_key] * loss_dict[loss_key]
@@ -378,7 +374,8 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             loss_fn,
             self.optimizer,
             pmap_axis_name=self.pmap_axis_name,
-            has_aux=True)
+            has_aux=True
+        )
 
         num_minibatches = self.config.rollout_length * \
             self.config.num_envs // self.config.minibatch_size
@@ -388,11 +385,11 @@ class PPOWorkflow(OnPolicyRLWorkflow):
                 :num_minibatches*self.config.minibatch_size]
             return x.reshape(num_minibatches, -1, *x.shape[1:])
 
-        def minibatch_step(carray, trajectory):
-            opt_state, agent_state, key = carray
+        def minibatch_step(carry, trajectory):
+            opt_state, agent_state, key = carry
             key, learn_key = jax.random.split(key)
 
-            (loss, loss_dict), opt_state, agent_state = update_fn(
+            (loss, loss_dict), agent_state, opt_state = update_fn(
                 opt_state,
                 agent_state,
                 trajectory,
@@ -401,11 +398,11 @@ class PPOWorkflow(OnPolicyRLWorkflow):
 
             return (opt_state, agent_state, key), (loss, loss_dict)
 
-        def epoch_step(carray, _):
-            opt_state, agent_state, key = carray
-            key, perm_key, learn_key = jax.random.split(key, num=3)
+        def epoch_step(carry, _):
+            opt_state, agent_state, key = carry
+            perm_key, learn_key = jax.random.split(key, num=2)
 
-            (opt_state, agent_state, _), (loss_list, loss_dict_list) = jax.lax.scan(
+            (opt_state, agent_state, key), (loss_list, loss_dict_list) = jax.lax.scan(
                 minibatch_step,
                 (opt_state, agent_state, learn_key),
                 jtu.tree_map(
@@ -428,10 +425,11 @@ class PPOWorkflow(OnPolicyRLWorkflow):
 
         # ======== update metrics ========
 
-        sampled_timesteps = psum(self.config.rollout_length * self.config.num_envs,
-                                 axis_name=self.pmap_axis_name)
+        sampled_timesteps = psum(
+            jnp.uint32(self.config.rollout_length * self.config.num_envs),
+            axis_name=self.pmap_axis_name)
 
-        workflow_metrics = WorkflowMetric(
+        workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
             iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
@@ -461,64 +459,30 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
+            iters = i+1
             train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
             workflow_metrics = tree_unpmap(
                 workflow_metrics, self.pmap_axis_name)
 
-            self.recorder.write(workflow_metrics.to_local_dict(), i)
+            self.recorder.write(workflow_metrics.to_local_dict(), iters)
             train_metric_data = train_metrics.to_local_dict()
             if train_metrics.train_episode_return == MISSING_REWARD:
-                del train_metric_data['train_episode_return']
-            self.recorder.write(train_metric_data, i)
+                train_metric_data['train_episode_return'] = None
+            self.recorder.write(train_metric_data, iters)
 
-            if (i+1) % self.config.eval_interval == 0:
+            if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write({'eval': eval_metrics.to_local_dict()}, i)
+                self.recorder.write({'eval': eval_metrics.to_local_dict()}, iters)
                 logger.debug(eval_metrics)
 
             self.checkpoint_manager.save(
-                i,
+                iters,
                 args=ocp.args.StandardSave(
                     tree_unpmap(state, self.pmap_axis_name))
             )
 
         return state
-
-
-def env_step(
-    env: Env,
-    agent: Agent,
-    env_state: EnvState,
-    agent_state: AgentState,  # readonly
-    sample_batch: SampleBatch,
-    key: chex.PRNGKey,
-    env_extra_fields: Sequence[str] = (),
-) -> Tuple[EnvState, SampleBatch]:
-    """
-        Collect data.
-    """
-
-    actions, policy_extras = agent.compute_actions(
-        agent_state, sample_batch, key)
-    env_nstate = env.step(env_state, actions)
-
-    info = env_nstate.info
-    env_extras = {x: info[x] for x in env_extra_fields if x in info}
-
-    transition = SampleBatch(
-        obs=env_state.obs,
-        actions=actions,
-        rewards=env_nstate.reward,
-        dones=env_nstate.done,
-        # next_obs=env_nstate.info["last_obs"],
-        next_obs=env_nstate.obs,
-        extras=PyTreeDict(
-            policy_extras=policy_extras,
-            env_extras=env_extras
-        ))
-
-    return env_nstate, transition
 
 
 def rollout(
@@ -530,7 +494,7 @@ def rollout(
     rollout_length: int,
     discount: float,
     env_extra_fields: Sequence[str] = ('last_obs',),
-) -> Tuple[EnvState, SampleBatch]:
+) -> tuple[SampleBatch, EnvState]:
     """
         Collect given rollout_length trajectory.
 
@@ -547,7 +511,7 @@ def rollout(
             transition: one-step full info
         """
         env_state, current_key = carry
-        next_key, current_key = jax.random.split(current_key, 2)
+        next_key, current_key = rng_split(current_key, 2)
 
         # sample_batch: [#envs, ...]
         sample_batch = SampleBatch(
@@ -555,14 +519,15 @@ def rollout(
         )
 
         # transition: [#envs, ...]
-        env_nstate, transition = env_step(
-            env, agent, env_state, agent_state,
+        transition, env_nstate = env_step(
+            env.step, agent.compute_actions,
+            env_state, agent_state,
             sample_batch, current_key, env_extra_fields
         )
 
         # set PEB reward for GAE:
         truncation = env_nstate.info.truncation  # [#envs]
-        # Note: if truncation happens in any env in the batch, apply PEB
+        # Note: if truncation happens in any env in the batch, apply PEB for episodes with truncation=1
         rewards = transition.rewards + discount * jax.lax.cond(
             truncation.any(),
             lambda last_obs: agent.compute_values(

@@ -97,10 +97,34 @@
             "justMyCode": false
         },
         {
-            "name": "EC Train",
+            "name": "EC-SO Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.ec.mo_train",
+            "module": "evorl.train",
+            "args": [
+                "agent=ec/cmaes",
+                "env=brax/hopper",
+                "debug=true",
+                "checkpoint.enable=false"
+            ],
+            "env": {
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                // "CUDA_VISIBLE_DEVICES": "4,5,6",
+                // "JAX_DISABLE_JIT": "true"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "EC-MO Train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "evorl.train",
+            "args": [
+                "agent=ec/nsga2",
+                "env=brax/hopper",
+                "debug=true",
+                "checkpoint.enable=false"
+            ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",

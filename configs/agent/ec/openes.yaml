@@ -1,0 +1,22 @@
+# @package _global_
+
+workflow_cls: evorl.agents.ec.so.openes.OpenESWorkflow
+
+pop_size: 128
+num_iters: 1000
+
+noise_stdev: 0.1
+optimizer:
+  lr: 0.01
+
+num_envs: 16
+episodes: 16 # episodes per individual for fitness
+
+num_eval_envs: 128
+eval_episodes: 128
+
+discount: 1.0
+
+agent_network:
+  # actor_hidden_layer_sizes: [] # linear network
+  actor_hidden_layer_sizes: [16, 16]

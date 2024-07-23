@@ -1,17 +1,14 @@
 import chex
-from flax import struct
+
 
 from .space import Space
-from evorl.types import PyTreeDict, EnvLike, EnvInternalState, Action, Observation, Reward, Done, pytree_field
-from typing import Tuple
-from typing_extensions import (
-    Self  # pytype: disable=not-supported-yet
-)
+from evorl.types import PyTreeDict, EnvLike, EnvInternalState, Action, Observation, Reward, Done, pytree_field, PyTreeData
+
+from collections.abc import Callable
 from abc import ABC, abstractmethod
 
 
-@struct.dataclass
-class EnvState:
+class EnvState(PyTreeData):
     """
     Include all the information needed to represent the state of the environment.
 
@@ -25,6 +22,7 @@ class EnvState:
     extra: PyTreeDict = pytree_field(
         default_factory=PyTreeDict)  # extra info for interal use
 
+EnvStepFn = Callable[[EnvState, Action], EnvState]
 
 class Env(ABC):
     """Unified EvoRL Env API"""

@@ -1,0 +1,21 @@
+# @package _global_
+
+defaults:
+  - /agent/ec/rvea
+  - _self_
+
+pop_size: 128
+num_iters: 1000
+
+num_envs: 1
+episodes: 1 # episodes per individual for fitness
+
+discount: 1.0
+obj_names: ['reward_forward', 'reward_ctrl']
+opt_directions: ['max', 'max']
+
+agent_network:
+  # actor_hidden_layer_sizes: [] # linear network
+  lb: -10.0
+  ub: 10.0
+  actor_hidden_layer_sizes: [16, 16]

@@ -2,9 +2,10 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evox import Problem, State
+from evox import Problem
 import chex
 from typing import Tuple, List
+from evorl.types import State
 from evorl.workflows import Workflow
 import logging
 
