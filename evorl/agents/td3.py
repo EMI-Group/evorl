@@ -41,8 +41,6 @@ import logging
 import flax.linen as nn
 
 logger = logging.getLogger(__name__)
-ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
-Initializer = Callable[..., Any]
 
 
 class TD3TrainMetric(MetricBase):
@@ -118,7 +116,8 @@ class TD3Agent(Agent):
 
         # obs_preprocessor
         if self.normalize_obs:
-            self.obs_preprocessor = running_statistics.normalize
+            obs_preprocessor = running_statistics.normalize
+            self.set_frozen_attr('obs_preprocessor', obs_preprocessor)
             dummy_obs = self.obs_space.sample(obs_preprocessor_key)
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
@@ -201,7 +200,7 @@ class TD3Agent(Agent):
         qs_next_min = qs_next.min(-1)
 
         discounts = self.discount * \
-            (1-sample_batch.extras.env_extras.truncation)
+            (1-sample_batch.extras.env_extras.termination)
 
         qs_target = (
             sample_batch.rewards + discounts * qs_next_min
@@ -339,7 +338,7 @@ class TD3Workflow(DDPGWorkflow):
             agent_state=state.agent_state,
             key=rollout_key,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("last_obs", "truncation"),
+            env_extra_fields=("last_obs", "termination"),
         )
 
         trajectory = clean_trajectory(trajectory)

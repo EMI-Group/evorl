@@ -220,7 +220,7 @@ class SACAgent(Agent):
                 next_obs, agent_state.obs_preprocessor_state)
 
         discounts = self.discount * \
-            (1-sample_batch.extras.env_extras.truncation)
+            (1-sample_batch.extras.env_extras.termination)
 
         alpha = jnp.exp(agent_state.params.log_alpha)
 
@@ -386,7 +386,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
             extras=PyTreeDict(
                 policy_extras=PyTreeDict(),
                 env_extras=PyTreeDict(
-                    {"last_obs": dummy_obs, "truncation": dummy_done}
+                    {"last_obs": dummy_obs, "termination": dummy_done}
                 ),
             ),
         )
@@ -420,7 +420,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
             agent_state=EMPTY_RANDOM_AGENT_STATE,
             key=rollout_key,
             rollout_length=rollout_length,
-            env_extra_fields=("last_obs", "truncation"),
+            env_extra_fields=("last_obs", "termination"),
         )
 
         # [T, B, ...] -> [T*B, ...]
@@ -458,7 +458,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
             agent_state=state.agent_state,
             key=rollout_key,
             rollout_length=rollout_length,
-            env_extra_fields=("last_obs", "truncation"),
+            env_extra_fields=("last_obs", "termination"),
         )
 
         trajectory = clean_trajectory(trajectory)
@@ -505,7 +505,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
             agent_state=state.agent_state,
             key=rollout_key,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("last_obs", "truncation"),
+            env_extra_fields=("last_obs", "termination"),
         )
 
         trajectory = clean_trajectory(trajectory)

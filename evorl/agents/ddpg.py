@@ -39,9 +39,6 @@ import logging
 import flax.linen as nn
 
 logger = logging.getLogger(__name__)
-ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
-Initializer = Callable[..., Any]
-
 
 class DDPGTrainMetric(MetricBase):
     actor_loss: chex.Array
@@ -113,7 +110,8 @@ class DDPGAgent(Agent):
 
         # obs_preprocessor
         if self.normalize_obs:
-            self.obs_preprocessor = running_statistics.normalize
+            obs_preprocessor = running_statistics.normalize
+            self.set_frozen_attr('obs_preprocessor', obs_preprocessor)
             dummy_obs = self.obs_space.sample(obs_preprocessor_key)
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
@@ -190,7 +188,7 @@ class DDPGAgent(Agent):
         )
 
         discounts = self.discount * \
-            (1-sample_batch.extras.env_extras.truncation)
+            (1-sample_batch.extras.env_extras.termination)
 
         qs_target = (
             sample_batch.rewards + discounts * qs_next
@@ -367,7 +365,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             extras=PyTreeDict(
                 policy_extras=PyTreeDict(),
                 env_extras=PyTreeDict(
-                    {"last_obs": dummy_obs, "truncation": dummy_done}
+                    {"last_obs": dummy_obs, "termination": dummy_done}
                 ),
             ),
         )
@@ -401,7 +399,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             agent_state=EMPTY_RANDOM_AGENT_STATE,
             key=rollout_key,
             rollout_length=rollout_length,
-            env_extra_fields=("last_obs", "truncation"),
+            env_extra_fields=("last_obs", "termination"),
         )
 
         # [T, B, ...] -> [T*B, ...]
@@ -439,7 +437,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             agent_state=state.agent_state,
             key=rollout_key,
             rollout_length=rollout_length,
-            env_extra_fields=("last_obs", "truncation"),
+            env_extra_fields=("last_obs", "termination"),
         )
 
         trajectory = clean_trajectory(trajectory)
@@ -488,7 +486,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             agent_state=state.agent_state,
             key=rollout_key,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("last_obs", "truncation"),
+            env_extra_fields=("last_obs", "termination"),
         )
 
         trajectory = clean_trajectory(trajectory)
