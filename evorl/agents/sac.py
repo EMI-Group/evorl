@@ -249,7 +249,7 @@ class SACAgent(Agent):
                          alpha * actions_logp_t_plus_1)
         q_target = jnp.repeat(q_target[..., None], 2, axis=-1)
 
-        q_loss = optax.l2_loss(q_t, q_target).mean()
+        q_loss = optax.squared_error(q_t, q_target).mean()
         return PyTreeDict(critic_loss=q_loss)
 
 
@@ -313,6 +313,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
             normalize_obs=config.normalize_obs,
         )
 
+        # TODO: use different lr for critic and actor
         if (config.optimizer.grad_clip_norm is not None and
                 config.optimizer.grad_clip_norm > 0):
             optimizer = optax.chain(

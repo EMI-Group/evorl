@@ -172,7 +172,7 @@ class A2CAgent(Agent):
 
         v_targets = sample_batch.extras.v_targets
 
-        critic_loss = optax.l2_loss(vs, v_targets).mean()
+        critic_loss = optax.squared_error(vs, v_targets).mean()
 
         # ====== actor =======
 

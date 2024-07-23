@@ -202,7 +202,7 @@ class DDPGAgent(Agent):
         )
 
         # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
-        q_loss = optax.l2_loss(qs, qs_target).mean()
+        q_loss = optax.squared_error(qs, qs_target).mean()
 
         return PyTreeDict(
             critic_loss=q_loss,

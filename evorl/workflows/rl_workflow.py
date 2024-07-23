@@ -238,12 +238,15 @@ class OffPolicyRLWorkflow(RLWorkflow):
             replay_buffer_state=replay_buffer_state
         )
 
+        logger.info("Start replay buffer post-setup")
         if self.enable_multi_devices:
             state = jax.pmap(
                 self._postsetup_replaybuffer, axis_name=self.pmap_axis_name
             )(state)
         else:
             state = self._postsetup_replaybuffer(state)
+        
+        logger.info("Complete replay buffer post-setup")
         
         return state
 

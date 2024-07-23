@@ -223,7 +223,7 @@ class IMPALAAgent(Agent):
 
         # ======= critic =======
 
-        critic_loss = optax.l2_loss(vs[:-1], vtrace).mean()
+        critic_loss = optax.squared_error(vs[:-1], vtrace).mean()
 
         # ====== actor =======
 
