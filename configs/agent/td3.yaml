@@ -30,7 +30,7 @@ loss_weights:
   critic_loss: 0.5
 
 optimizer:
-  lr: 3e-4
+  lr: 0.0003
   grad_clip_norm: 10.0 # set 0 or none to turn-off
 
 agent_network:

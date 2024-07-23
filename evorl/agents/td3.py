@@ -269,7 +269,6 @@ class TD3Workflow(DDPGWorkflow):
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset=True,
-            discount=config.discount,
         )
 
         assert isinstance(

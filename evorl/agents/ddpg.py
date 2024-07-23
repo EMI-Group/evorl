@@ -19,7 +19,7 @@ from evorl.evaluator import Evaluator
 from evorl.rollout import rollout
 from evorl.distributed import split_key_to_devices, tree_unpmap, psum, tree_pmean
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, tree_last
+from evorl.utils.jax_utils import tree_stop_gradient, tree_last, scan_and_mean
 from evorl.utils.toolkits import soft_target_update, flatten_rollout_trajectory
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.metrics import WorkflowMetric, MetricBase, metricfield
@@ -284,7 +284,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset=True,
-            discount=config.discount,
         )
 
         assert isinstance(
@@ -475,8 +474,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         """
         the basic step function for the workflow to update agent
         """
-        key, rollout_key, rb_key, critic_key, actor_key = jax.random.split(
-            state.key, num=5)
+        key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # the trajectory [T, B, ...]
         trajectory, env_state = rollout(
@@ -506,9 +504,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         replay_buffer_state = self.replay_buffer.add(
             state.replay_buffer_state, trajectory
         )
-
-        sampled_batch = self.replay_buffer.sample(
-            replay_buffer_state, rb_key).experience
 
         def critic_loss_fn(agent_state, sample_batch, key):
             loss_dict = self.agent.critic_loss(
@@ -548,40 +543,64 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             detach_fn=lambda agent_state: agent_state.params.actor_params
         )
 
-        (critic_loss, critic_loss_dict), agent_state, critic_opt_state = critic_update_fn(
-            state.opt_state.critic,
-            agent_state,
-            sampled_batch,
-            critic_key
-        )
+        def _sample_and_update_fn(carry, unused_t):
+            key, agent_state, opt_state = carry
 
-        (actor_loss, actor_loss_dict), agent_state, actor_opt_state = actor_update_fn(
-            state.opt_state.actor,
-            agent_state,
-            sampled_batch,
-            actor_key
-        )
+            key, rb_key, critic_key, actor_key = jax.random.split(key, 4)
 
-        target_actor_params = soft_target_update(
-            agent_state.params.target_actor_params,
-            agent_state.params.actor_params,
-            self.config.tau,
-        )
-        target_critc_params = soft_target_update(
-            agent_state.params.target_critic_params,
-            agent_state.params.critic_params,
-            self.config.tau,
-        )
-        agent_state = agent_state.replace(
-            params=agent_state.params.replace(
-                target_actor_params=target_actor_params,
-                target_critic_params=target_critc_params
+            critic_opt_state = opt_state.critic
+            actor_opt_state = opt_state.actor
+
+            sampled_batch = self.replay_buffer.sample(
+                replay_buffer_state, rb_key).experience
+
+            (critic_loss, critic_loss_dict), agent_state, critic_opt_state = critic_update_fn(
+                opt_state.critic,
+                agent_state,
+                sampled_batch,
+                critic_key
             )
-        )
 
-        opt_state = PyTreeDict(
-            actor=actor_opt_state,
-            critic=critic_opt_state
+            (actor_loss, actor_loss_dict), agent_state, actor_opt_state = actor_update_fn(
+                opt_state.actor,
+                agent_state,
+                sampled_batch,
+                actor_key
+            )
+
+            target_actor_params = soft_target_update(
+                agent_state.params.target_actor_params,
+                agent_state.params.actor_params,
+                self.config.tau,
+            )
+            target_critc_params = soft_target_update(
+                agent_state.params.target_critic_params,
+                agent_state.params.critic_params,
+                self.config.tau,
+            )
+            agent_state = agent_state.replace(
+                params=agent_state.params.replace(
+                    target_actor_params=target_actor_params,
+                    target_critic_params=target_critc_params
+                )
+            )
+
+            opt_state = PyTreeDict(
+                actor=actor_opt_state,
+                critic=critic_opt_state
+            )
+
+            return (
+                (key, agent_state, opt_state),
+                (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict)
+            )
+
+        (_, agent_state, opt_state), \
+            (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict) = scan_and_mean(
+            _sample_and_update_fn,
+            (learn_key, agent_state, state.opt_state),
+            (),
+            length=self.config.num_updates_per_iter
         )
 
         train_metrics = DDPGTrainMetric(
