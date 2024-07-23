@@ -2,9 +2,9 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import math
-
+import numpy as np
 from omegaconf import DictConfig
-
+from collections.abc import Sequence
 
 from evorl.sample_batch import SampleBatch
 from evorl.networks import make_policy_network, make_v_network
@@ -12,7 +12,7 @@ from evorl.utils import running_statistics
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.toolkits import (
-    get_train_episode_return, fold_multi_steps
+    fold_multi_steps
 )
 from evorl.workflows import OnPolicyRLWorkflow
 from evorl.agents import AgentState
@@ -21,7 +21,7 @@ from evorl.envs import create_env, Env, EnvState
 from evorl.evaluator import Evaluator
 from .agent import Agent, AgentState
 from .a2c import A2CWorkflow as _A2CWorkflow
-from evorl.types import State
+from evorl.types import State, MISSING_REWARD
 
 import orbax.checkpoint as ocp
 import logging
@@ -82,3 +82,15 @@ class A2CWorkflow(_A2CWorkflow):
         return state
 
 
+def _default_episode_return_reduce_fn(x): return x[-1]
+
+
+def get_train_episode_return(episode_return_arr: Sequence[float], reduce_fn=_default_episode_return_reduce_fn):
+    """Handle episode return array with MISSING_REWARD, i.e., returned from multiple call of average_episode_discount_return
+    """
+    episode_return_arr = np.array(episode_return_arr)
+    mask = episode_return_arr == MISSING_REWARD
+    if mask.all():
+        return None
+    else:
+        return reduce_fn(episode_return_arr[~mask]).tolist()

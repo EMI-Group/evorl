@@ -17,7 +17,6 @@ class SampleBatch(PyTreeData):
       Batched transitions w/ additional first axis as batch_axis.
       Could also be used as a trajectory.
     """
-    # TODO: skip None in tree_map (should be work in native jax)
     obs: Optional[chex.ArrayTree] = None
     actions: Optional[chex.ArrayTree] = None
     rewards: Optional[Union[Reward, RewardDict]] = None

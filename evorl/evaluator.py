@@ -68,7 +68,6 @@ class Evaluator(PyTreeNode):
         )
 
     def _fast_evaluate(self, agent_state, num_episodes: int, key: chex.PRNGKey) -> EvaluateMetric:
-        # TODO
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
         if num_episodes % num_envs != 0:

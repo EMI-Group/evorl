@@ -192,20 +192,6 @@ def average_episode_discount_return(
     )
 
 
-def _default_episode_return_reduce_fn(x): return x[-1]
-
-
-def get_train_episode_return(episode_return_arr: Sequence[float], reduce_fn=_default_episode_return_reduce_fn):
-    """Handle episode return array with MISSING_REWARD, i.e., returned from multiple call of average_episode_discount_return
-    """
-    episode_return_arr = np.array(episode_return_arr)
-    mask = episode_return_arr == MISSING_REWARD
-    if mask.all():
-        return None
-    else:
-        return reduce_fn(episode_return_arr[~mask]).tolist()
-
-
 def fold_multi_steps(step_fn, num_steps):
     def _multi_steps(state):
         def _step(state, unused_t):

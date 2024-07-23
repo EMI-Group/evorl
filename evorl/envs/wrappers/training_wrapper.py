@@ -11,6 +11,11 @@ class EpisodeWrapper(Wrapper):
     """Maintains episode step count and sets done at episode end.
 
     This is the same as brax's EpisodeWrapper, and add some new fields in transition.info.
+    Including:
+        - steps: the current step count of the episode
+        - trunction: whether the episode is truncated
+        - termination: whether the episode is terminated
+        - last_obs: the next observation without autoreset
 
     args:
         env: the wrapped env should be a single un-vectorized environment.
@@ -45,13 +50,18 @@ class EpisodeWrapper(Wrapper):
 
     def _step(self, state: EnvState, action: jax.Array) -> EnvState:
         prev_done = state.done
-        steps = state.info.steps * (1-prev_done).astype(jnp.int32) + 1
+        # reset steps when prev episode is done(truncation or termination)
+        steps = state.info.steps * (1-prev_done).astype(jnp.int32)
 
         if self.record_episode_return:
             # reset the episode_return when the episode is done
             episode_return = state.info.episode_return * (1-prev_done)
 
+        # ==============
         state = self.env.step(state, action)
+
+        # ============== post update =========
+        steps = steps + 1
 
         done = jnp.where(
             steps >= self.episode_length,
@@ -61,6 +71,9 @@ class EpisodeWrapper(Wrapper):
 
         state.info.steps = steps
         state.info.termination = state.done
+        # Note: here we also consider the case:
+        # when termination and truncation are both happened
+        # at the last step, we set truncation=0
         state.info.truncation = jnp.where(
             steps >= self.episode_length,
             1 - state.done,
@@ -68,6 +81,7 @@ class EpisodeWrapper(Wrapper):
         )
         # the real next_obs at the end of episodes, where
         # state.obs could be changed in VmapAutoResetWrapper
+        # by the next episode's inital state
         state.info.last_obs = state.obs
 
         if self.record_episode_return:
