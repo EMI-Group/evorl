@@ -222,13 +222,12 @@ def make_discrete_q_network(
             else:
                 raise ValueError('n should be greater than 0')
 
-            return qs.squeeze(-1)
+            return qs
 
     q_module = QModule(n=n_stack)
 
     dummy_obs = jnp.zeros((1, obs_size))
-    dummy_action = jnp.zeros((1, action_size))
 
-    def init_fn(rng): return q_module.init(rng, dummy_obs, dummy_action)
+    def init_fn(rng): return q_module.init(rng, dummy_obs)
 
     return q_module, init_fn

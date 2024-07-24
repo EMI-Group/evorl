@@ -3,28 +3,30 @@
 workflow_cls: evorl.agents.dqn.DQNWorkflow
 
 num_envs: 1
-
+normalize_obs: false
 rollout_length: 1
 discount: 0.99
+total_timesteps: 5000000
+fold_iters: 512
+
+num_eval_envs: 16
+eval_episodes: 16 # should be divided by num_eval_envs
+eval_interval: 512
+
+random_timesteps: 4096 # steps filled into the replay buffer
+learning_start_timesteps: 4096 # steps before training starts
+batch_size: 256
+replay_buffer_capacity: 1000000
+
+tau: 0.005 # soft update rate, 1.0 means hard update
 exploration_epsilon: 0.1
-total_timesteps: 50000
-target_network_update_interval: 20
-learning_starts: 0
+num_updates_per_iter: 1
 
-num_eval_envs: 1
-eval_interval: 20
-eval_episodes: 20 # should be divided by num_eval_envs
-
-train_batch_size: 256
 optimizer:
   lr: 0.0003
-  loss_weights:
-    q_loss: 1.0
-
-replay_buffer:
-  capacity: 1000000
-  min_size: 10000
+  grad_clip_norm: null # disabled
 
 agent_network:
-  continuous_action: false
-  q_hidden_layer_sizes: [32, 32]
+  q_hidden_layer_sizes: [256, 256]
+
+save_replay_buffer: true

@@ -2,20 +2,20 @@ import math
 
 import jax
 import jax.numpy as jnp
-from flax import struct
 import flax.linen as nn
 
 from .agent import Agent, AgentState
-from evorl.networks import make_q_network, MLP
+from .random_agent import RandomAgent, EMPTY_RANDOM_AGENT_STATE
+from evorl.networks import make_discrete_q_network
 from evorl.workflows import OffPolicyRLWorkflow
 from evorl.rollout import rollout, env_step
 from evorl.envs import create_env, Discrete, Env, EnvState
 from evorl.sample_batch import SampleBatch
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices, tree_unpmap, agent_gradient_update, psum
-from evorl.distributed.gradients import loss_and_pgrad
+from evorl.distributed.gradients import agent_gradient_update
 from evorl.evaluator import Evaluator
 from evorl.types import (
-    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field, MISSING_REWARD
+    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, PyTreeData, pytree_field, MISSING_REWARD
 )
 from evox import State
 
@@ -25,28 +25,24 @@ import orbax.checkpoint as ocp
 import optax
 import chex
 import distrax
-import dataclasses
 
 import flashbax
 
 
-
 import logging
 
-from ..metrics import TrainMetric, WorkflowMetric
-from ..utils import running_statistics
-from ..utils.toolkits import average_episode_discount_return
+from evorl.metrics import TrainMetric, WorkflowMetric
+from evorl.utils import running_statistics
+from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean, tree_last
+from evorl.utils.toolkits import flatten_rollout_trajectory, soft_target_update
 
 logger = logging.getLogger(__name__)
-ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 
 
-@struct.dataclass
-class DQNNetworkParams:
+class DQNNetworkParams(PyTreeData):
     """Contains training state for the learner."""
     q_params: Params
     target_q_params: Params
-
 
 
 class DQNAgent(Agent):
@@ -56,24 +52,24 @@ class DQNAgent(Agent):
     q_hidden_layer_sizes: Tuple[int] = (256, 256)
     discount: float = 0.99
     exploration_epsilon: float = 0.1
+    normalize_obs: bool = False
     q_network: nn.Module = pytree_field(lazy_init=True)
-    target_q_network: nn.Module = pytree_field(lazy_init=True)
+    obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
     def init(self, key: chex.PRNGKey) -> AgentState:
         obs_size = self.obs_space.shape[0]
         action_size = self.action_space.n
 
-        q_network, q_init_fn = make_Qnetwork(
+        q_key, obs_preprocessor_key = jax.random.split(key)
+
+        q_network, q_init_fn = make_discrete_q_network(
             obs_size=obs_size,
             action_size=action_size,
             hidden_layer_sizes=self.q_hidden_layer_sizes,
         )
         self.set_frozen_attr('q_network', q_network)
 
-        key, q_key = jax.random.split(key)
-
         q_params = q_init_fn(q_key)
-
         target_q_params = q_params
 
         params_states = DQNNetworkParams(
@@ -81,8 +77,18 @@ class DQNAgent(Agent):
             target_q_params=target_q_params
         )
 
+        # obs_preprocessor
+        if self.normalize_obs:
+            obs_preprocessor = running_statistics.normalize
+            self.set_frozen_attr('obs_preprocessor', obs_preprocessor)
+            dummy_obs = self.obs_space.sample(obs_preprocessor_key)
+            # Note: statistics are broadcasted to [T*B]
+            obs_preprocessor_state = running_statistics.init_state(dummy_obs)
+        else:
+            obs_preprocessor_state = None
+
         return AgentState(
-            params=params_states
+            params=params_states, obs_preprocessor_state=obs_preprocessor_state
         )
 
     def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
@@ -91,6 +97,9 @@ class DQNAgent(Agent):
                 sample_barch: [#env, ...]
         """
         obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(
+                obs, agent_state.obs_preprocessor_state)
 
         qs = self.q_network.apply(
             agent_state.params.q_params, obs
@@ -98,17 +107,21 @@ class DQNAgent(Agent):
         # TODO: use tfp.Distribution
         actions_dist = distrax.EpsilonGreedy(
             qs, epsilon=self.exploration_epsilon)
+        # [B]: int from 0~(n-1)
         actions = actions_dist.sample(seed=key)
 
-        return actions, PyTreeDict(
-            q_values=qs
-        )
+        return actions, PyTreeDict()
 
     def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
         """
             Args:
                 sample_barch: [#env, ...]
         """
+        obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(
+                obs, agent_state.obs_preprocessor_state)
+
         qs = self.q_network.apply(
             agent_state.params.q_params, sample_batch.obs)
 
@@ -123,59 +136,87 @@ class DQNAgent(Agent):
             Args:
                 sample_batch: [B, ...]
         """
-        states = sample_batch.obs
+        obs = sample_batch.obs
         actions = sample_batch.actions
         rewards = sample_batch.rewards
-        next_states = sample_batch.next_obs
-        dones = sample_batch.dones
+        next_obs = sample_batch.extras.env_extras.last_obs
 
-        q_values = self.q_network.apply(agent_state.params.q_params, states)
-        next_actions = jnp.argmax(q_values, axis=1)
-        q_values = jnp.take_along_axis(q_values, actions[:, None], axis=1).squeeze(-1)
-        
+        if self.normalize_obs:
+            next_obs = self.obs_preprocessor(
+                next_obs, agent_state.obs_preprocessor_state
+            )
+            obs = self.obs_preprocessor(
+                obs, agent_state.obs_preprocessor_state)
+
+        discounts = self.discount * \
+            (1-sample_batch.extras.env_extras.termination)
+
+        qs = self.q_network.apply(agent_state.params.q_params, obs)
+        # [B,n]->[B]
+        qs = jnp.take_along_axis(qs, actions[..., None], axis=-1).squeeze(-1)
 
         # Double DQN_target
-        next_q_values = self.q_network.apply(agent_state.params.target_q_params, next_states)
-        next_q_values = jnp.take_along_axis(next_q_values, next_actions[:, None], axis=1).squeeze(-1)
+        next_qs = self.q_network.apply(
+            agent_state.params.target_q_params, next_obs)
+        # [B,n]->[B]
+        next_qs = next_qs.max(axis=-1)
 
-        # Future rewards are not considered for the completed status
-        next_q_values = next_q_values * (1 - dones)
-        target_q_values = rewards + self.discount * next_q_values
+        qs_target = jax.lax.stop_gradient(rewards + discounts * next_qs)
 
-        td_error = jax.lax.stop_gradient(target_q_values) - q_values
-        loss = jnp.mean(jnp.square(td_error))
+        q_loss = optax.squared_error(qs, qs_target).mean()
 
-        return PyTreeDict(
-            q_loss=loss)
-
-    def update_target_network(self, agent_state: AgentState) -> AgentState:
-        return agent_state.replace(
-            params=agent_state.params.replace(
-                target_q_params=agent_state.params.q_params
-            )
-        )
-
+        return PyTreeDict(q_loss=q_loss)
 
 
 class DQNWorkflow(OffPolicyRLWorkflow):
     @staticmethod
-    def _rescale_config(config, devices) -> None:
-        num_devices = len(devices)
+    def _rescale_config(config) -> None:
+        num_devices = jax.device_count()
 
-        #TODO: impl it
+        if config.num_envs % num_devices != 0:
+            logger.warning(
+                f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
+                f"rescale num_envs to {config.num_envs // num_devices}"
+            )
+        if config.num_eval_envs % num_devices != 0:
+            logger.warning(
+                f"num_eval_envs({config.num_eval_envs}) cannot be divided by num_devices({num_devices}), "
+                f"rescale num_eval_envs to {config.num_eval_envs // num_devices}"
+            )
+        if config.replay_buffer_capacity % num_devices != 0:
+            logger.warning(
+                f"replay_buffer_capacity({config.replay_buffer_capacity}) cannot be divided by num_devices({num_devices}), "
+                f"rescale replay_buffer_capacity to {config.replay_buffer_capacity // num_devices}"
+            )
+        if config.random_timesteps % num_devices != 0:
+            logger.warning(
+                f"random_timesteps({config.random_timesteps}) cannot be divided by num_devices({num_devices}), "
+                f"rescale random_timesteps to {config.random_timesteps // num_devices}"
+            )
+        if config.learning_start_timesteps % num_devices != 0:
+            logger.warning(
+                f"learning_start_timesteps({config.learning_start_timesteps}) cannot be divided by num_devices({num_devices}), "
+                f"rescale learning_start_timesteps to {config.learning_start_timesteps // num_devices}"
+            )
+
+        config.num_envs = config.num_envs // num_devices
+        config.num_eval_envs = config.num_eval_envs // num_devices
+        config.replay_buffer_capacity = config.replay_buffer_capacity // num_devices
+        config.random_timesteps = config.random_timesteps // num_devices
+        config.learning_start_timesteps = config.learning_start_timesteps // num_devices
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
         env = create_env(
-            config.env.env_name,
-            config.env.env_type,
-            episode_length=1000,
+            env_name=config.env.env_name,
+            env_type=config.env.env_type,
+            episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
-            autoreset=True
+            autoreset=True,
         )
 
-
-        assert isinstance(env.action_space, Discrete), "Only Discrete action space is supported."
+        assert isinstance(env.action_space,
+                          Discrete), "Only Discrete action space is supported."
 
         agent = DQNAgent(
             action_space=env.action_space,
@@ -185,327 +226,344 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             exploration_epsilon=config.exploration_epsilon
         )
 
-        optimizer = optax.adam(config.optimizer.lr)
-
-        replay_buffer = flashbax.make_flat_buffer(
-            max_length=config.replay_buffer.capacity,
-            min_length=config.replay_buffer.min_size,
-            sample_batch_size=config.train_batch_size,
-            add_batch_size=config.num_envs*config.rollout_length
-        )
-
-        def _replay_buffer_init_fn(replay_buffer, key):
-            # dummy_action = jnp.tile(env.action_space.sample(),
-            dummy_action = env.action_space.sample(key)
-            dummy_obs = env.obs_space.sample(key)
-
-            # TODO: handle RewardDict
-            dummy_reward = jnp.zeros(())
-            dummy_done = jnp.zeros(())
-
-            dummy_nest_obs = dummy_obs
-
-            # Customize your algorithm's stored data
-            dummy_sample_batch = SampleBatch(
-                obs=dummy_obs,
-                actions=dummy_action,
-                rewards=dummy_reward,
-                next_obs=dummy_nest_obs,
-                dones=dummy_done,
-                extras=PyTreeDict(
-                    policy_extras=PyTreeDict({'q_values': jnp.zeros(env.action_space.n)}),
-                    env_extras=PyTreeDict({'last_obs': dummy_obs,
-                                           'episode_return': dummy_reward})
-                )
+        if (config.optimizer.grad_clip_norm is not None and
+                config.optimizer.grad_clip_norm > 0):
+            optimizer = optax.chain(
+                optax.clip_by_global_norm(config.optimizer.grad_clip_norm),
+                optax.adam(config.optimizer.lr)
             )
+        else:
+            optimizer = optax.adam(config.optimizer.lr)
 
-            replay_buffer_state = replay_buffer.init(dummy_sample_batch)
-
-            return replay_buffer_state
-
+        replay_buffer = flashbax.make_item_buffer(
+            max_length=config.replay_buffer_capacity,
+            min_length=config.learning_start_timesteps,
+            sample_batch_size=config.batch_size,
+            add_batches=True,
+        )
 
         eval_env = create_env(
             config.env.env_name,
             config.env.env_type,
-            episode_length=1000,
-            parallel=config.num_envs,
+            episode_length=config.env.max_episode_steps,
+            parallel=config.num_eval_envs,
             autoreset=False
         )
 
         evaluator = Evaluator(
-            env=eval_env, agent=agent, max_episode_steps=1000)
+            env=eval_env, agent=agent, max_episode_steps=config.env.max_episode_steps)
 
-        return cls(env, agent, optimizer, evaluator, replay_buffer, _replay_buffer_init_fn, config)
+        workflow = cls(env, agent, optimizer, evaluator, replay_buffer, config)
+        workflow.epsilon_scheduler = optax.linear_schedule(
+            init_value=config.exploration_epsilon,
+            end_value=config.final_exploration_epsilon,
+            transition_steps=config.final_exploration_timesteps
+        )
 
+    def _setup_agent_and_optimizer(self, key: chex.PRNGKey) -> tuple[AgentState, chex.ArrayTree]:
+        agent_state = self.agent.init(key)
+        opt_state = self.optimizer.init(agent_state.params.q_params)
+        return agent_state, opt_state
+
+    def _setup_replaybuffer(self, key: chex.PRNGKey) -> chex.ArrayTree:
+        action_space = self.env.action_space
+        obs_space = self.env.obs_space
+
+        # create dummy data to initialize the replay buffer
+        dummy_action = jnp.zeros(action_space.shape, dtype=jnp.int32)
+        dummy_obs = jnp.zeros(obs_space.shape)
+
+        dummy_reward = jnp.zeros(())
+        dummy_done = jnp.zeros(())
+
+        dummy_sample_batch = SampleBatch(
+            obs=dummy_obs,
+            actions=dummy_action,
+            rewards=dummy_reward,
+            # next_obs=dummy_obs,
+            # dones=dummy_done,
+            extras=PyTreeDict(
+                policy_extras=PyTreeDict(),
+                env_extras=PyTreeDict(
+                    {"last_obs": dummy_obs, "termination": dummy_done}
+                ),
+            ),
+        )
+        replay_buffer_state = self.replay_buffer.init(dummy_sample_batch)
+
+        return replay_buffer_state
+
+    def _postsetup_replaybuffer(self, state: State) -> State:
+        action_space = self.env.action_space
+        obs_space = self.env.obs_space
+        config = self.config
+        replay_buffer_state = state.replay_buffer_state
+        agent_state = state.agent_state
+
+        # ==== fill random transitions ====
+        key, env_key, rollout_key = jax.random.split(state.key, 3)
+        random_agent = RandomAgent(
+            action_space=action_space, obs_space=obs_space)
+
+        # Note: in multi-devices mode, this method is running in pmap, and
+        # config.num_envs = config.num_envs // num_devices
+        # config.random_timesteps = config.random_timesteps // num_devices
+
+        rollout_length = config.random_timesteps // config.num_envs
+        env_state = self.env.reset(env_key)
+
+        trajectory, env_state = rollout(
+            env_fn=self.env.step,
+            action_fn=random_agent.compute_actions,
+            env_state=env_state,
+            agent_state=EMPTY_RANDOM_AGENT_STATE,
+            key=rollout_key,
+            rollout_length=rollout_length,
+            env_extra_fields=("last_obs", "termination"),
+        )
+
+        # [T, B, ...] -> [T*B, ...]
+        trajectory = clean_trajectory(trajectory)
+        trajectory = flatten_rollout_trajectory(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
+
+        if agent_state.obs_preprocessor_state is not None:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    trajectory.obs,
+                    pmap_axis_name=self.pmap_axis_name,
+                )
+            )
+
+        replay_buffer_state = self.replay_buffer.add(
+            replay_buffer_state, trajectory)
+
+        rollout_timesteps = rollout_length*config.num_envs
+        sampled_timesteps = psum(
+            jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
+        )
+
+        # ==== fill tansition state from init agent ====
+        rollout_length = math.ceil((config.learning_start_timesteps -
+                                    rollout_timesteps) / config.num_envs)
+        key, env_key, rollout_key = jax.random.split(key, 3)
+
+        env_state = self.env.reset(env_key)
+        trajectory, env_state = rollout(
+            env_fn=self.env.step,
+            action_fn=self.agent.compute_actions,
+            env_state=env_state,
+            agent_state=state.agent_state,
+            key=rollout_key,
+            rollout_length=rollout_length,
+            env_extra_fields=("last_obs", "termination"),
+        )
+
+        trajectory = clean_trajectory(trajectory)
+        trajectory = flatten_rollout_trajectory(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
+
+        if agent_state.obs_preprocessor_state is not None:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    trajectory.obs,
+                    pmap_axis_name=self.pmap_axis_name,
+                )
+            )
+
+        replay_buffer_state = self.replay_buffer.add(
+            replay_buffer_state, trajectory)
+
+        rollout_timesteps = rollout_length*config.num_envs
+        sampled_timesteps += psum(
+            jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
+        )
+
+        workflow_metrics = state.metrics.replace(
+            sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+        return state.replace(
+            key=key,
+            metrics=workflow_metrics,
+            replay_buffer_state=replay_buffer_state
+        )
 
     def step(self, state: State) -> Tuple[TrainMetric, State]:
+        key, rollout_key, learn_key, buffer_key = jax.random.split(
+            state.key, num=4)
 
-        key, rollout_key, learn_key, buffer_key = jax.random.split(state.key, num=4)
-
-        def fill_replay_buffer(state: State):
-            replay_buffer_state = state.replay_buffer_state
-            env_state = state.env_state
-            sample_batch = SampleBatch(
-                obs=env_state.obs
-            )
-            actions, _ = self.agent.compute_actions(state.agent_state, sample_batch, key)
-            env_nstate = self.env.step(env_state, actions)
-            trajectory = SampleBatch(
-                obs=env_state.obs,
-                actions=actions,
-                rewards=env_nstate.reward,
-                next_obs=env_nstate.obs,
-                dones=env_nstate.done,
-                extras=PyTreeDict(
-                    policy_extras=PyTreeDict({'q_values': env_nstate.info.episode_return}),
-                    env_extras=PyTreeDict({'last_obs': env_nstate.info.last_obs,
-                                           'episode_return': env_nstate.info.episode_return})
-                )
-            )
-            replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
-            env_state = env_nstate
-            state = state.update(
-                env_state=env_state,
-                replay_buffer_state=replay_buffer_state
-            )
-
-            train_episode_return = average_episode_discount_return(
-                env_state.info.episode_return,
-                trajectory.dones,
-                pmap_axis_name=self.pmap_axis_name
-            ).mean()
-
-            loss = jnp.zeros(())
-            loss_dict = PyTreeDict(
-                q_loss=loss
-            )
-            train_metrics = TrainMetric(
-                train_episode_return=train_episode_return,
-                loss=loss,
-                raw_loss_dict=loss_dict
-            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-            return train_metrics, state
-        
-        def normal_step(state: State):
-            # trajectory: [T, #envs, ...]
-            env_state, trajectory = rollout(
-                self.env,
-                self.agent,
-                state.env_state,
-                state.agent_state,
-                rollout_key,
-                rollout_length=self.config.rollout_length,
-                env_extra_fields=('last_obs', 'episode_return')
-            )
-            trajectory = jax.tree_util.tree_map(lambda x: jax.lax.collapse(x,0,2), trajectory)
-            replay_buffer_state = self.replay_buffer.add(
-                state.replay_buffer_state, trajectory
-            )
-            agent_state = state.agent_state
-            sample_batch = self.replay_buffer.sample(replay_buffer_state, buffer_key)
-
-            if agent_state.obs_preprocessor_state is not None:
-                agent_state = agent_state.replace(
-                    obs_preprocessor_state=running_statistics.update(
-                        agent_state.obs_preprocessor_state,
-                        trajectory.obs,
-                        pmap_axis_name=self.pmap_axis_name,
-                    )
-                )
-
-            train_episode_return = average_episode_discount_return(
-                trajectory.extras.env_extras.episode_return,
-                trajectory.dones,
-                pmap_axis_name=self.pmap_axis_name
-            )
-
-
-            def loss_fn(agent_state, sample_batch, key):
-                # learn all data from trajectory
-                loss_dict = self.agent.loss(agent_state, sample_batch, key)
-                loss_weights = self.config.optimizer.loss_weights
-                loss = jnp.zeros(())
-                for loss_key in loss_weights.keys():
-                    loss += loss_weights[loss_key] * loss_dict[loss_key]
-
-                return loss, loss_dict
-
-            update_fn = agent_params_gradient_update(
-                loss_fn,
-                self.optimizer,
-                pmap_axis_name=self.pmap_axis_name,
-                has_aux=True)
-
-            (loss, loss_dict), opt_state, agent_state = update_fn(
-                state.opt_state,
-                agent_state,
-                sample_batch.experience.first,
-                learn_key
-            )
-        
-            # ======== update metrics ========
-            train_metrics = TrainMetric(
-                train_episode_return=train_episode_return,
-                loss=loss,
-                raw_loss_dict=loss_dict
-            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-
-            return train_metrics, state.replace(
-                key=key,
-                env_state=env_state,
-                agent_state=agent_state,
-                opt_state=opt_state,
-                replay_buffer_state=replay_buffer_state
-            )
-        
-        condition = jax.lax.lt(state.metrics.iterations, int(self.config.learning_starts/self.config.num_envs/self.config.rollout_length))
-        train_metrics, state = jax.lax.cond(
-            condition,
-            fill_replay_buffer,
-            normal_step,
-            state
+        # the trajectory [T, B, ...]
+        trajectory, env_state = rollout(
+            env_fn=self.env.step,
+            action_fn=self.agent.compute_actions,
+            env_state=state.env_state,
+            agent_state=state.agent_state,
+            key=rollout_key,
+            rollout_length=self.config.rollout_length,
+            env_extra_fields=("last_obs", "termination"),
         )
-        sampled_timesteps = psum(self.config.rollout_length * self.config.num_envs,
-                                    axis_name=self.pmap_axis_name)
-        
-        workflow_metrics = WorkflowMetric(
-                sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
-                iterations=state.metrics.iterations + 1,
-            ).all_reduce(pmap_axis_name=self.pmap_axis_name)
-        
-        return train_metrics, state.update(
-                metrics=workflow_metrics
+
+        trajectory = clean_trajectory(trajectory)
+        trajectory = flatten_rollout_trajectory(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
+
+        agent_state = state.agent_state
+        if agent_state.obs_preprocessor_state is not None:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    trajectory.obs,
+                    pmap_axis_name=self.pmap_axis_name,
+                )
             )
+
+        replay_buffer_state = self.replay_buffer.add(
+            state.replay_buffer_state, trajectory
+        )
+
+        def loss_fn(agent_state, sample_batch, key):
+            loss_dict = self.agent.loss(agent_state, sample_batch, key)
+            return loss_dict.q_loss, loss_dict
+
+        q_update_fn = agent_gradient_update(
+            loss_fn,
+            self.optimizer,
+            pmap_axis_name=self.pmap_axis_name,
+            has_aux=True,
+            attach_fn=lambda agent_state, q_params: agent_state.replace(
+                params=agent_state.params.replace(q_params=q_params)
+            ),
+            detach_fn=lambda agent_state: agent_state.params.q_params
+        )
+
+        def _sample_and_update_fn(carry, unused_t):
+            key, agent_state, opt_state = carry
+
+            key, rb_key, q_key = jax.random.split(key, 3)
+
+            sampled_batch = self.replay_buffer.sample(
+                replay_buffer_state, rb_key).experience
+
+            (q_loss, loss_dict), agent_state, opt_state = q_update_fn(
+                opt_state,
+                agent_state,
+                sampled_batch,
+                q_key
+            )
+
+            target_q_params = soft_target_update(
+                agent_state.params.target_q_params,
+                agent_state.params.q_params,
+                self.config.tau,
+            )
+            agent_state = agent_state.replace(
+                params=agent_state.params.replace(
+                    target_q_params=target_q_params
+                )
+            )
+
+            return (key, agent_state, opt_state), (q_loss, loss_dict)
+
+        (_, agent_state, opt_state), (q_loss, loss_dict) = scan_and_mean(
+            _sample_and_update_fn,
+            (learn_key, agent_state, state.opt_state),
+            (),
+            length=self.config.num_updates_per_iter
+        )
+
+        train_metrics = TrainMetric(
+            loss=q_loss,
+            raw_loss_dict=loss_dict,
+        )
+
+        # calculate the numbner of timestep
+        sampled_timesteps = psum(
+            jnp.uint32(self.config.rollout_length * self.config.num_envs),
+            axis_name=self.pmap_axis_name
+        )
+
+        # iterations is the number of updates of the agent
+        workflow_metrics = state.metrics.replace(
+            sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
+            iterations=state.metrics.iterations + 1,
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+        return train_metrics, state.replace(
+            key=key,
+            metrics=workflow_metrics,
+            agent_state=agent_state,
+            env_state=env_state,
+            replay_buffer_state=replay_buffer_state,
+            opt_state=opt_state
+        )
+
+    def _multi_steps(self, state):
+        def _step(state, _):
+            train_metrics, state = self.step(state)
+            return state, train_metrics
+
+        state, train_metrics = jax.lax.scan(
+            _step, state, (), length=self.config.fold_iters)
+        train_metrics = tree_last(train_metrics)
+        return train_metrics, state
 
     def learn(self, state: State) -> State:
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
-        num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
+        sampled_timesteps = tree_unpmap(
+            state.metrics.sampled_timesteps).tolist()
+        num_iters = math.ceil(
+            (self.config.total_timesteps-sampled_timesteps) /
+            (one_step_timesteps*self.config.fold_iters)
+        )
 
-        start_iteration = tree_unpmap(
-            state.metrics.iterations, self.pmap_axis_name)
-
-        for i in range(start_iteration, num_iters):
-            train_metrics, state = self.step(state)
+        for i in range(num_iters):
+            train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
 
+            # current iteration
+            iterations = tree_unpmap(
+                state.metrics.iterations, self.pmap_axis_name).tolist()
             train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
             workflow_metrics = tree_unpmap(
-                workflow_metrics, self.pmap_axis_name)
+                workflow_metrics, self.pmap_axis_name
+            )
 
-            self.recorder.write(workflow_metrics.to_local_dict(), i)
+            self.recorder.write(
+                workflow_metrics.to_local_dict(), iterations)
+
             train_metric_data = train_metrics.to_local_dict()
-            if train_metrics.train_episode_return==MISSING_REWARD:
-                del train_metric_data['train_episode_return']
-            self.recorder.write(train_metric_data, i)
+            del train_metric_data['train_episode_return']
+            self.recorder.write(train_metric_data, iterations)
 
-            if (i+1) % self.config.target_network_update_interval == 0:
-                agent_state = self.agent.update_target_network(state.agent_state)
-                state = state.update(agent_state=agent_state)
-
-            if (i+1) % self.config.eval_interval == 0:
+            if iterations % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write({'eval': eval_metrics.to_local_dict()}, i)
-                logger.debug(eval_metrics)
+                self.recorder.write(
+                    {"eval": eval_metrics.to_local_dict()}, iterations)
 
+            saved_state = tree_unpmap(state, self.pmap_axis_name)
+            if not self.config.save_replay_buffer:
+                saved_state = skip_replay_buffer_state(saved_state)
             self.checkpoint_manager.save(
-                i,
-                args=ocp.args.StandardSave(
-                    tree_unpmap(state, self.pmap_axis_name))
+                iterations,
+                args=ocp.args.StandardSave(saved_state),
             )
 
         return state
 
-def rollout(
-    env: Env,
-    agent: DQNAgent,
-    env_state: EnvState,
-    agent_state: AgentState,
-    key: chex.PRNGKey,
-    rollout_length: int,
-    env_extra_fields: Sequence[str] = ('last_obs',),
-) -> Tuple[EnvState, SampleBatch]:
+
+def skip_replay_buffer_state(state: State) -> State:
+    return state.replace(replay_buffer_state=None)
+
+
+def clean_trajectory(trajectory):
     """
-        Collect given rollout_length trajectory.
-
-        Args:
-            env: vampped env w/ autoreset
-        Returns:
-            env_state: last env_state after rollout
-            trajectory: SampleBatch [T, #envs, ...], T=rollout_length
+    clean the trajectory to make it suitable for the replay buffer
     """
-
-    def _one_step_rollout(carry, unused_t):
-        """
-            sample_batch: one-step obs
-            transition: one-step full info
-        """
-        env_state, current_key = carry
-        next_key, current_key = jax.random.split(current_key, 2)
-
-        # sample_batch: [#envs, ...]
-        sample_batch = SampleBatch(
-            obs=env_state.obs,
-        )
-
-        # transition: [#envs, ...]
-        env_nstate, transition = env_step(
-            env, agent, env_state, agent_state,
-            sample_batch, current_key, env_extra_fields
-        )
-
-        return (env_nstate, next_key), transition
-
-    # trajectory: [T, #envs, ...]
-    (env_state, _), trajectory = jax.lax.scan(
-        _one_step_rollout, (env_state, key), (), length=rollout_length)
-
-    return env_state, trajectory
-
-
-def make_Qnetwork(
-    obs_size: int,
-    action_size: int,
-    hidden_layer_sizes: Sequence[int] = (256, 256),
-    activation: ActivationFn = nn.relu) -> nn.Module:
-
-    Qnetwork = MLP(
-        layer_sizes=list(hidden_layer_sizes) + [action_size],
-        activation=activation,
-        kernel_init=jax.nn.initializers.lecun_uniform(),
-        )
-    init_fn = lambda rng: Qnetwork.init(rng, jnp.ones((1,obs_size)))
-
-    return Qnetwork, init_fn
-
-def agent_params_gradient_update(loss_fn: Callable[..., float],
-                          optimizer: optax.GradientTransformation,
-                          pmap_axis_name: Optional[str],
-                          has_aux: bool = False):
-    def _loss_fn(params, agent_state, sample_batch, key):
-        return loss_fn(agent_state.replace(
-                params=agent_state.params.replace(
-                    q_params=params.q_params
-                )
-            ),sample_batch, key)
-
-    loss_and_pgrad_fn = loss_and_pgrad(
-        _loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux)
-
-    def f(opt_state, agent_state, *args, **kwargs):
-        value, grads = loss_and_pgrad_fn(
-            agent_state.params, agent_state, *args, **kwargs)
-
-        params_update, opt_state = optimizer.update(
-            grads, opt_state)
-        params = optax.apply_updates(agent_state.params, params_update)
-
-        agent_state = agent_state.replace(
-                params=agent_state.params.replace(
-                    q_params=params.q_params
-                )
-            )
-        return value, opt_state, agent_state
-
-    return f
+    return trajectory.replace(
+        next_obs=None,
+        dones=None,
+    )
