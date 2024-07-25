@@ -8,19 +8,22 @@ from .agent import Agent, AgentState
 from .random_agent import RandomAgent, EMPTY_RANDOM_AGENT_STATE
 from evorl.networks import make_discrete_q_network
 from evorl.workflows import OffPolicyRLWorkflow
-from evorl.rollout import rollout, env_step
-from evorl.envs import create_env, Discrete, Env, EnvState
+from evorl.rollout import rollout
+from evorl.envs import create_env, Discrete
 from evorl.sample_batch import SampleBatch
-from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices, tree_unpmap, agent_gradient_update, psum
+from evorl.distributed import tree_unpmap, agent_gradient_update, psum
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.evaluator import Evaluator
 from evorl.types import (
-    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, PyTreeData, pytree_field, MISSING_REWARD
+    LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, PyTreeData, pytree_field, State
 )
-from evox import State
+from evorl.metrics import TrainMetric, WorkflowMetric, MetricBase
+from evorl.utils import running_statistics
+from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean, tree_last
+from evorl.utils.toolkits import flatten_rollout_trajectory, soft_target_update
 
 from omegaconf import DictConfig
-from typing import Any, List, Optional, Sequence, Tuple, Callable, Dict
+from typing import Any
 import orbax.checkpoint as ocp
 import optax
 import chex
@@ -31,10 +34,7 @@ import flashbax
 
 import logging
 
-from evorl.metrics import TrainMetric, WorkflowMetric
-from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean, tree_last
-from evorl.utils.toolkits import flatten_rollout_trajectory, soft_target_update
+
 
 logger = logging.getLogger(__name__)
 
@@ -43,15 +43,17 @@ class DQNNetworkParams(PyTreeData):
     """Contains training state for the learner."""
     q_params: Params
     target_q_params: Params
+    exploration_epsilon: float
 
+class DQNWorkflowMetric(WorkflowMetric):
+    training_updates: chex.Array = jnp.zeros((), dtype=jnp.uint32) # not need sync
 
 class DQNAgent(Agent):
     """
         Double-DQN
     """
-    q_hidden_layer_sizes: Tuple[int] = (256, 256)
+    q_hidden_layer_sizes: tuple[int] = (256, 256)
     discount: float = 0.99
-    exploration_epsilon: float = 0.1
     normalize_obs: bool = False
     q_network: nn.Module = pytree_field(lazy_init=True)
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
@@ -74,7 +76,8 @@ class DQNAgent(Agent):
 
         params_states = DQNNetworkParams(
             q_params=q_params,
-            target_q_params=target_q_params
+            target_q_params=target_q_params,
+            exploration_epsilon=jnp.zeros(()) # set at workflow
         )
 
         # obs_preprocessor
@@ -91,7 +94,7 @@ class DQNAgent(Agent):
             params=params_states, obs_preprocessor_state=obs_preprocessor_state
         )
 
-    def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
+    def compute_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> tuple[Action, PolicyExtraInfo]:
         """
             Args:
                 sample_barch: [#env, ...]
@@ -106,13 +109,13 @@ class DQNAgent(Agent):
         )
         # TODO: use tfp.Distribution
         actions_dist = distrax.EpsilonGreedy(
-            qs, epsilon=self.exploration_epsilon)
+            qs, epsilon=agent_state.params.exploration_epsilon)
         # [B]: int from 0~(n-1)
         actions = actions_dist.sample(seed=key)
 
         return actions, PyTreeDict()
 
-    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> Tuple[Action, PolicyExtraInfo]:
+    def evaluate_actions(self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey) -> tuple[Action, PolicyExtraInfo]:
         """
             Args:
                 sample_barch: [#env, ...]
@@ -126,7 +129,7 @@ class DQNAgent(Agent):
             agent_state.params.q_params, sample_batch.obs)
 
         actions_dist = distrax.EpsilonGreedy(
-            qs, epsilon=self.exploration_epsilon)
+            qs, epsilon=agent_state.params.exploration_epsilon)
         actions = actions_dist.mode()
 
         return actions, PyTreeDict()
@@ -223,7 +226,6 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             obs_space=env.obs_space,
             q_hidden_layer_sizes=config.agent_network.q_hidden_layer_sizes,
             discount=config.discount,
-            exploration_epsilon=config.exploration_epsilon
         )
 
         if (config.optimizer.grad_clip_norm is not None and
@@ -254,15 +256,31 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             env=eval_env, agent=agent, max_episode_steps=config.env.max_episode_steps)
 
         workflow = cls(env, agent, optimizer, evaluator, replay_buffer, config)
+
+        num_iterations = math.ceil(config.total_timesteps / 
+            (config.num_envs * config.rollout_length * config.fold_iters)) * config.fold_iters
+        total_training_updates = num_iterations * config.num_updates_per_iter
         workflow.epsilon_scheduler = optax.linear_schedule(
-            init_value=config.exploration_epsilon,
-            end_value=config.final_exploration_epsilon,
-            transition_steps=config.final_exploration_timesteps
+            init_value=config.exploration_epsilon.start,
+            end_value=config.exploration_epsilon.end,
+            transition_steps=(
+                config.exploration_epsilon.exploration_fraction * total_training_updates
+            ) - 1
         )
+
+        return workflow
+
+    def _setup_workflow_metrics(self) -> MetricBase:
+        return DQNWorkflowMetric()
 
     def _setup_agent_and_optimizer(self, key: chex.PRNGKey) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(key)
         opt_state = self.optimizer.init(agent_state.params.q_params)
+
+        agent_state = agent_state.replace(
+            params = agent_state.params.replace(exploration_epsilon = self.epsilon_scheduler(0))
+        )
+
         return agent_state, opt_state
 
     def _setup_replaybuffer(self, key: chex.PRNGKey) -> chex.ArrayTree:
@@ -391,7 +409,7 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             replay_buffer_state=replay_buffer_state
         )
 
-    def step(self, state: State) -> Tuple[TrainMetric, State]:
+    def step(self, state: State) -> tuple[TrainMetric, State]:
         key, rollout_key, learn_key, buffer_key = jax.random.split(
             state.key, num=4)
 
@@ -439,8 +457,10 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             detach_fn=lambda agent_state: agent_state.params.q_params
         )
 
+        workflow_metrics = state.metrics
+
         def _sample_and_update_fn(carry, unused_t):
-            key, agent_state, opt_state = carry
+            key, agent_state, opt_state, wf_metrics = carry
 
             key, rb_key, q_key = jax.random.split(key, 3)
 
@@ -454,22 +474,40 @@ class DQNWorkflow(OffPolicyRLWorkflow):
                 q_key
             )
 
-            target_q_params = soft_target_update(
-                agent_state.params.target_q_params,
-                agent_state.params.q_params,
-                self.config.tau,
+            wf_metrics = wf_metrics.replace(
+                training_updates = wf_metrics.training_updates + 1
             )
-            agent_state = agent_state.replace(
-                params=agent_state.params.replace(
-                    target_q_params=target_q_params
+
+            def _soft_update_q(agent_state):
+                target_q_params = soft_target_update(
+                    agent_state.params.target_q_params,
+                    agent_state.params.q_params,
+                    self.config.tau,
                 )
+                return agent_state.replace(
+                    params=agent_state.params.replace(
+                        target_q_params=target_q_params
+                    )
+                )
+
+            agent_state = jax.lax.cond(
+                wf_metrics.training_updates%self.config.target_network_frequency==0,
+                _soft_update_q,
+                lambda agent_state: agent_state,
+                agent_state
             )
 
-            return (key, agent_state, opt_state), (q_loss, loss_dict)
+            agent_state = agent_state.replace(
+                params = agent_state.params.replace(
+                    exploration_epsilon = self.epsilon_scheduler(
+                        wf_metrics.training_updates)
+            ))
 
-        (_, agent_state, opt_state), (q_loss, loss_dict) = scan_and_mean(
+            return (key, agent_state, opt_state, wf_metrics), (q_loss, loss_dict)
+
+        (_, agent_state, opt_state, workflow_metrics), (q_loss, loss_dict) = scan_and_mean(
             _sample_and_update_fn,
-            (learn_key, agent_state, state.opt_state),
+            (learn_key, agent_state, state.opt_state, state.metrics),
             (),
             length=self.config.num_updates_per_iter
         )
@@ -485,8 +523,7 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             axis_name=self.pmap_axis_name
         )
 
-        # iterations is the number of updates of the agent
-        workflow_metrics = state.metrics.replace(
+        workflow_metrics = workflow_metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
             iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
@@ -559,7 +596,7 @@ def skip_replay_buffer_state(state: State) -> State:
     return state.replace(replay_buffer_state=None)
 
 
-def clean_trajectory(trajectory):
+def clean_trajectory(trajectory: SampleBatch):
     """
     clean the trajectory to make it suitable for the replay buffer
     """

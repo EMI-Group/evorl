@@ -6,20 +6,28 @@ num_envs: 1
 normalize_obs: false
 rollout_length: 1
 discount: 0.99
-total_timesteps: 5000000
-fold_iters: 512
+total_timesteps: 500000
+fold_iters: 64
 
 num_eval_envs: 16
 eval_episodes: 16 # should be divided by num_eval_envs
-eval_interval: 512
+eval_interval: 64
 
 random_timesteps: 4096 # steps filled into the replay buffer
 learning_start_timesteps: 4096 # steps before training starts
-batch_size: 256
-replay_buffer_capacity: 1000000
+batch_size: 128
+replay_buffer_capacity: 10000
 
+exploration_epsilon:
+  start: 0.8
+  end: 0.05
+  exploration_fraction: 0.5 # total steps: total_updates * exploration_fraction
+# DQN:
+# tau: 1.0
+# target_network_frequency: 500
+# DDQN:
 tau: 0.005 # soft update rate, 1.0 means hard update
-exploration_epsilon: 0.1
+target_network_frequency: 1 # unit: num of training updates
 num_updates_per_iter: 1
 
 optimizer:
