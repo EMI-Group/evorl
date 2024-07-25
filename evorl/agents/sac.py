@@ -13,7 +13,6 @@ from evorl.sample_batch import SampleBatch
 from evorl.evaluator import Evaluator
 from evorl.utils import running_statistics
 from evorl.rollout import rollout
-from evox import State
 from evorl.distributed import tree_unpmap, psum, agent_gradient_update, tree_pmean
 from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean, tree_last
 from evorl.utils.toolkits import soft_target_update, flatten_rollout_trajectory
@@ -33,7 +32,7 @@ from evorl.types import (
     PyTreeDict,
     PyTreeData,
     pytree_field,
-    MISSING_REWARD,
+    State
 )
 import logging
 import flax.linen as nn
@@ -801,7 +800,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
 def skip_replay_buffer_state(state: State) -> State:
     return state.replace(replay_buffer_state=None)
 
-def clean_trajectory(trajectory):
+def clean_trajectory(trajectory: SampleBatch):
     """
     clean the trajectory to make it suitable for the replay buffer
     """

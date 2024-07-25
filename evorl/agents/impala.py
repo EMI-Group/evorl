@@ -25,14 +25,12 @@ from evorl.envs import create_env, Env, EnvState
 from evorl.evaluator import Evaluator
 from .agent import Agent, AgentState
 
-from evox import State
-
 import orbax.checkpoint as ocp
 import chex
 import optax
 from evorl.types import (
     LossDict, Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field,
-    MISSING_REWARD, PyTreeData
+    MISSING_REWARD, PyTreeDatam, State
 )
 from evorl.metrics import TrainMetric, WorkflowMetric
 from typing import Any
