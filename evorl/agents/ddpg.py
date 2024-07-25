@@ -709,7 +709,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
 def skip_replay_buffer_state(state: State) -> State:
     return state.replace(replay_buffer_state=None)
 
-def clean_trajectory(trajectory):
+def clean_trajectory(trajectory: SampleBatch):
     """
     clean the trajectory to make it suitable for the replay buffer
     """

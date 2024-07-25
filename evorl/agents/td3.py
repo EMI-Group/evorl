@@ -11,7 +11,6 @@ from omegaconf import DictConfig, OmegaConf
 from typing import Tuple, Any, Sequence, Callable, Optional
 
 from .agent import Agent, AgentState
-from .ddpg import DDPGWorkflow, clean_trajectory, skip_replay_buffer_state
 from evorl.networks import make_q_network, make_policy_network
 from evorl.workflows import OffPolicyRLWorkflow
 from evorl.agents.random_agent import RandomAgent, EMPTY_RANDOM_AGENT_STATE
@@ -263,10 +262,46 @@ class TD3Agent(Agent):
         return PyTreeDict(actor_loss=actor_loss)
 
 
-class TD3Workflow(DDPGWorkflow):
+class TD3Workflow(OffPolicyRLWorkflow):
     @classmethod
     def name(cls):
         return "TD3"
+
+    @staticmethod
+    def _rescale_config(config) -> None:
+        num_devices = jax.device_count()
+
+        if config.num_envs % num_devices != 0:
+            logger.warning(
+                f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
+                f"rescale num_envs to {config.num_envs // num_devices}"
+            )
+        if config.num_eval_envs % num_devices != 0:
+            logger.warning(
+                f"num_eval_envs({config.num_eval_envs}) cannot be divided by num_devices({num_devices}), "
+                f"rescale num_eval_envs to {config.num_eval_envs // num_devices}"
+            )
+        if config.replay_buffer_capacity % num_devices != 0:
+            logger.warning(
+                f"replay_buffer_capacity({config.replay_buffer_capacity}) cannot be divided by num_devices({num_devices}), "
+                f"rescale replay_buffer_capacity to {config.replay_buffer_capacity // num_devices}"
+            )
+        if config.random_timesteps % num_devices != 0:
+            logger.warning(
+                f"random_timesteps({config.random_timesteps}) cannot be divided by num_devices({num_devices}), "
+                f"rescale random_timesteps to {config.random_timesteps // num_devices}"
+            )
+        if config.learning_start_timesteps % num_devices != 0:
+            logger.warning(
+                f"learning_start_timesteps({config.learning_start_timesteps}) cannot be divided by num_devices({num_devices}), "
+                f"rescale learning_start_timesteps to {config.learning_start_timesteps // num_devices}"
+            )
+
+        config.num_envs = config.num_envs // num_devices
+        config.num_eval_envs = config.num_eval_envs // num_devices
+        config.replay_buffer_capacity = config.replay_buffer_capacity // num_devices
+        config.random_timesteps = config.random_timesteps // num_devices
+        config.learning_start_timesteps = config.learning_start_timesteps // num_devices
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
@@ -331,6 +366,140 @@ class TD3Workflow(DDPGWorkflow):
             evaluator,
             replay_buffer,
             config,
+        )
+
+    def _setup_agent_and_optimizer(self, key: chex.PRNGKey) -> tuple[AgentState, chex.ArrayTree]:
+        agent_state = self.agent.init(key)
+        opt_state = PyTreeDict(dict(
+            actor=self.optimizer.init(agent_state.params.actor_params),
+            critic=self.optimizer.init(agent_state.params.critic_params)
+        ))
+        return agent_state, opt_state
+
+    def _setup_replaybuffer(self, key: chex.PRNGKey) -> chex.ArrayTree:
+        action_space = self.env.action_space
+        obs_space = self.env.obs_space
+
+        # create dummy data to initialize the replay buffer
+        dummy_action = jnp.zeros(action_space.shape)
+        dummy_obs = jnp.zeros(obs_space.shape)
+
+        dummy_reward = jnp.zeros(())
+        dummy_done = jnp.zeros(())
+
+        dummy_sample_batch = SampleBatch(
+            obs=dummy_obs,
+            actions=dummy_action,
+            rewards=dummy_reward,
+            # next_obs=dummy_obs,
+            # dones=dummy_done,
+            extras=PyTreeDict(
+                policy_extras=PyTreeDict(),
+                env_extras=PyTreeDict(
+                    {"last_obs": dummy_obs, "termination": dummy_done}
+                ),
+            ),
+        )
+        replay_buffer_state = self.replay_buffer.init(dummy_sample_batch)
+
+        return replay_buffer_state
+
+    def _postsetup_replaybuffer(self, state: State) -> State:
+        action_space = self.env.action_space
+        obs_space = self.env.obs_space
+        config = self.config
+        replay_buffer_state = state.replay_buffer_state
+        agent_state = state.agent_state
+
+        # ==== fill random transitions ====
+        key, env_key, rollout_key = jax.random.split(state.key, 3)
+        random_agent = RandomAgent(
+            action_space=action_space, obs_space=obs_space)
+
+        # Note: in multi-devices mode, this method is running in pmap, and
+        # config.num_envs = config.num_envs // num_devices
+        # config.random_timesteps = config.random_timesteps // num_devices
+
+        rollout_length = config.random_timesteps // config.num_envs
+        env_state = self.env.reset(env_key)
+
+        trajectory, env_state = rollout(
+            env_fn=self.env.step,
+            action_fn=random_agent.compute_actions,
+            env_state=env_state,
+            agent_state=EMPTY_RANDOM_AGENT_STATE,
+            key=rollout_key,
+            rollout_length=rollout_length,
+            env_extra_fields=("last_obs", "termination"),
+        )
+
+        # [T, B, ...] -> [T*B, ...]
+        trajectory = clean_trajectory(trajectory)
+        trajectory = flatten_rollout_trajectory(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
+
+        if agent_state.obs_preprocessor_state is not None:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    trajectory.obs,
+                    pmap_axis_name=self.pmap_axis_name,
+                )
+            )
+
+        replay_buffer_state = self.replay_buffer.add(
+            replay_buffer_state, trajectory)
+
+        rollout_timesteps = rollout_length*config.num_envs
+        sampled_timesteps = psum(
+            jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
+        )
+
+        # ==== fill tansition state from init agent ====
+        rollout_length = math.ceil((config.learning_start_timesteps -
+                                    rollout_timesteps) / config.num_envs)
+        key, env_key, rollout_key = jax.random.split(key, 3)
+
+        env_state = self.env.reset(env_key)
+        trajectory, env_state = rollout(
+            env_fn=self.env.step,
+            action_fn=self.agent.compute_actions,
+            env_state=env_state,
+            agent_state=state.agent_state,
+            key=rollout_key,
+            rollout_length=rollout_length,
+            env_extra_fields=("last_obs", "termination"),
+        )
+
+        trajectory = clean_trajectory(trajectory)
+        trajectory = flatten_rollout_trajectory(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
+
+        if agent_state.obs_preprocessor_state is not None:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    trajectory.obs,
+                    pmap_axis_name=self.pmap_axis_name,
+                )
+            )
+
+        replay_buffer_state = self.replay_buffer.add(
+            replay_buffer_state, trajectory)
+
+        rollout_timesteps = rollout_length*config.num_envs
+        sampled_timesteps += psum(
+            jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
+        )
+
+        workflow_metrics = state.metrics.replace(
+            sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+        return state.replace(
+            key=key,
+            metrics=workflow_metrics,
+            replay_buffer_state=replay_buffer_state
         )
 
     def step(self, state: State) -> Tuple[TD3TrainMetric, State]:
@@ -521,6 +690,16 @@ class TD3Workflow(DDPGWorkflow):
             opt_state=opt_state
         )
 
+    def _multi_steps(self, state):
+        def _step(state, _):
+            train_metrics, state = self.step(state)
+            return state, train_metrics
+
+        state, train_metrics = jax.lax.scan(
+            _step, state, (), length=self.config.fold_iters)
+        train_metrics = tree_last(train_metrics)
+        return train_metrics, state
+
     def learn(self, state: State) -> State:
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         sampled_timesteps = tree_unpmap(
@@ -560,3 +739,63 @@ class TD3Workflow(DDPGWorkflow):
             )
 
         return state
+
+    def learn(self, state: State) -> State:
+        one_step_timesteps = self.config.rollout_length * self.config.num_envs
+        sampled_timesteps = tree_unpmap(
+            state.metrics.sampled_timesteps).tolist()
+        num_iters = math.ceil(
+            (self.config.total_timesteps-sampled_timesteps) /
+            (one_step_timesteps*self.config.fold_iters)
+        )
+
+        for i in range(num_iters):
+            train_metrics, state = self._multi_steps(state)
+            workflow_metrics = state.metrics
+
+            # current iteration
+            iterations = tree_unpmap(
+                state.metrics.iterations, self.pmap_axis_name).tolist()
+            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+            workflow_metrics = tree_unpmap(
+                workflow_metrics, self.pmap_axis_name
+            )
+            self.recorder.write(
+                train_metrics.to_local_dict(), iterations)
+            self.recorder.write(
+                workflow_metrics.to_local_dict(), iterations)
+
+            if iterations % self.config.eval_interval == 0:
+                eval_metrics, state = self.evaluate(state)
+                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                self.recorder.write(
+                    {"eval": eval_metrics.to_local_dict()}, iterations)
+
+            saved_state = tree_unpmap(state, self.pmap_axis_name)
+            if not self.config.save_replay_buffer:
+                saved_state = skip_replay_buffer_state(saved_state)
+            self.checkpoint_manager.save(
+                iterations,
+                args=ocp.args.StandardSave(saved_state),
+            )
+
+        return state
+
+    @classmethod
+    def enable_jit(cls) -> None:
+        super().enable_jit()
+        cls._postsetup_replaybuffer = jax.jit(
+            cls._postsetup_replaybuffer, static_argnums=(0,))
+        cls._multi_steps = jax.jit(cls._multi_steps, static_argnums=(0,))
+
+def skip_replay_buffer_state(state: State) -> State:
+    return state.replace(replay_buffer_state=None)
+
+def clean_trajectory(trajectory: SampleBatch):
+    """
+    clean the trajectory to make it suitable for the replay buffer
+    """
+    return trajectory.replace(
+        next_obs=None,
+        dones=None,
+    )
