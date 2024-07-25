@@ -1,10 +1,11 @@
-from flax import struct
-import chex
-from evorl.types import ExtraInfo, PyTreeDict, Action
-from ..env import Env, EnvState, Space
-
 from typing import Tuple, Union
 
+import chex
+from flax import struct
+
+from evorl.types import Action, ExtraInfo, PyTreeDict
+
+from ..env import Env, EnvState, Space
 
 
 class Wrapper(Env):
@@ -29,12 +30,12 @@ class Wrapper(Env):
 
     @property
     def unwrapped(self) -> Env:
-        if hasattr(self.env, 'unwrapped'):
+        if hasattr(self.env, "unwrapped"):
             return self.env.unwrapped
         else:
             return self.env
 
     def __getattr__(self, name):
-        if name == '__setstate__':
+        if name == "__setstate__":
             raise AttributeError(name)
         return getattr(self.env, name)

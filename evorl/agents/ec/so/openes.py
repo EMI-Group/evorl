@@ -1,18 +1,19 @@
+import logging
+
+import evox.algorithms
 import jax
 import jax.numpy as jnp
-
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig
-import logging
-import evox.algorithms
 
-from evorl.utils.ec_utils import ParamVectorSpec
-from evorl.envs import create_wrapped_brax_env
-from evorl.ec import GeneralRLProblem
-from evorl.metrics import EvaluateMetric
 from evorl.distributed import tree_unpmap
+from evorl.ec import GeneralRLProblem
+from evorl.envs import create_wrapped_brax_env
 from evorl.evaluator import Evaluator
+from evorl.metrics import EvaluateMetric
 from evorl.types import State
+from evorl.utils.ec_utils import ParamVectorSpec
+
 from ..ec import DeterministicECAgent
 from .es_base import ESBaseWorkflow
 
@@ -37,7 +38,7 @@ class OpenESWorkflow(ESBaseWorkflow):
             action_space=env.action_space,
             obs_space=env.obs_space,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,  # use linear model
-            normalize_obs=False
+            normalize_obs=False,
         )
 
         problem = GeneralRLProblem(
@@ -55,13 +56,12 @@ class OpenESWorkflow(ESBaseWorkflow):
 
         # TODO: impl complete version of OpenES
         algorithm = evox.algorithms.OpenES(
-            center_init=param_vec_spec.to_vector(
-                agent_state.params.policy_params),
+            center_init=param_vec_spec.to_vector(agent_state.params.policy_params),
             pop_size=config.pop_size,
             learning_rate=config.optimizer.lr,
             noise_stdev=config.noise_stdev,
-            optimizer='adam',
-            mirrored_sampling=True
+            optimizer="adam",
+            mirrored_sampling=True,
         )
 
         def _candidate_transform(flat_cand):
@@ -76,9 +76,7 @@ class OpenESWorkflow(ESBaseWorkflow):
             autoreset=False,
         )
         evaluator = Evaluator(
-            env=eval_env,
-            agent=agent,
-            max_episode_steps=config.env.max_episode_steps
+            env=eval_env, agent=agent, max_episode_steps=config.env.max_episode_steps
         )
 
         workflow = cls(
@@ -87,8 +85,8 @@ class OpenESWorkflow(ESBaseWorkflow):
             evaluator=evaluator,
             algorithm=algorithm,
             problem=problem,
-            opt_direction='max',
-            candidate_transforms=(jax.vmap(_candidate_transform),)
+            opt_direction="max",
+            candidate_transforms=(jax.vmap(_candidate_transform),),
         )
         workflow._candidate_transform = _candidate_transform
 
@@ -101,56 +99,50 @@ class OpenESWorkflow(ESBaseWorkflow):
         if config.num_envs % num_devices != 0:
             logging.warning(
                 f"num_envs ({config.num_envs}) must be divisible by the number of devices ({num_devices}), "
-                f"rescale eval_episodes to {config.eval_episodes // num_devices}")
+                f"rescale eval_episodes to {config.eval_episodes // num_devices}"
+            )
 
         config.eval_episodes = config.eval_episodes // num_devices
 
     def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
-        """Evaluate the policy with the mean of CMAES
-        """
+        """Evaluate the policy with the mean of CMAES"""
         key, eval_key = jax.random.split(state.key, num=2)
 
-        flat_pop_center = state.evox_state.query_state('algorithm').center
+        flat_pop_center = state.evox_state.query_state("algorithm").center
         agent_state = self._candidate_transform(flat_pop_center)
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(
-            agent_state,
-            num_episodes=self.config.eval_episodes,
-            key=eval_key
+            agent_state, num_episodes=self.config.eval_episodes, key=eval_key
         )
 
         eval_metrics = EvaluateMetric(
             episode_returns=raw_eval_metrics.episode_returns.mean(),
-            episode_lengths=raw_eval_metrics.episode_lengths.mean()
+            episode_lengths=raw_eval_metrics.episode_lengths.mean(),
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         return eval_metrics, state.replace(key=key)
 
     def learn(self, state: State) -> State:
-        start_iteration = tree_unpmap(
-            state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
 
         for i in range(start_iteration, self.config.num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            train_metrics = tree_unpmap(
-                train_metrics,self.pmap_axis_name)
-            workflow_metrics = tree_unpmap(
-                workflow_metrics, self.pmap_axis_name)
+            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
 
             self.recorder.write(workflow_metrics.to_local_dict(), i)
             self.recorder.write(train_metrics.to_local_dict(), i)
 
             eval_metrics, state = self.evaluate(state)
             eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-            self.recorder.write(
-                {'eval_pop_center': eval_metrics.to_local_dict()}, i)
+            self.recorder.write({"eval_pop_center": eval_metrics.to_local_dict()}, i)
 
             self.checkpoint_manager.save(
                 i,
                 args=ocp.args.StandardSave(
                     tree_unpmap(state, self.pmap_axis_name),
-                )
+                ),
             )

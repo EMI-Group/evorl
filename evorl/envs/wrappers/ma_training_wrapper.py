@@ -1,13 +1,15 @@
+from typing import Tuple
+
+import chex
 import jax
-from jax import numpy as jnp
 import jax.tree_util as jtu
 from flax import struct
+from jax import numpy as jnp
 
-from evorl.utils.jax_utils import vmap_rng_split, tree_ones_like
+from evorl.utils.jax_utils import tree_ones_like, vmap_rng_split
+
 from ..env import Env, EnvState
 from .wrapper import Wrapper
-import chex
-from typing import Tuple
 
 
 class EpisodeWrapper(Wrapper):
@@ -22,8 +24,7 @@ class EpisodeWrapper(Wrapper):
         record_episode_return: whether to record the return of each episode
     """
 
-    def __init__(self, env: Env,
-                 episode_length: int):
+    def __init__(self, env: Env, episode_length: int):
         super().__init__(env)
         self.episode_length = episode_length
 
@@ -43,25 +44,20 @@ class EpisodeWrapper(Wrapper):
     def _step(self, state: EnvState, action: jax.Array) -> EnvState:
         state = self.env.step(state, action)
 
-        termination = state.done['__all__']
-        steps = state.info.steps * (1-termination).astype(jnp.int32) + 1
+        termination = state.done["__all__"]
+        steps = state.info.steps * (1 - termination).astype(jnp.int32) + 1
         done = jnp.where(
-            steps >= self.episode_length,
-            jnp.ones_like(termination),
-            termination
+            steps >= self.episode_length, jnp.ones_like(termination), termination
         )
-        
+
         agents_done = jtu.tree_map(
-            lambda x: jnp.where(done, x, jnp.ones_like(x)),
-            state.done
+            lambda x: jnp.where(done, x, jnp.ones_like(x)), state.done
         )
 
         state.info.steps = steps
         state.info.termination = termination
         state.info.truncation = jnp.where(
-            steps >= self.episode_length,
-            1 - termination,
-            jnp.zeros_like(termination)
+            steps >= self.episode_length, 1 - termination, jnp.zeros_like(termination)
         )
         # the real next_obs at the end of episodes, where
         # state.obs could be changed in VmapAutoResetWrapper
@@ -73,7 +69,7 @@ class EpisodeWrapper(Wrapper):
 class OneEpisodeWrapper(EpisodeWrapper):
     """Maintains episode step count and sets done at episode end.
 
-    When call step() after the env is done, stop simulation and 
+    When call step() after the env is done, stop simulation and
     directly return last state.
 
     args:
@@ -86,15 +82,17 @@ class OneEpisodeWrapper(EpisodeWrapper):
 
     def step(self, state: EnvState, action: jax.Array) -> EnvState:
         return jax.lax.cond(
-            state.done['__all__'],
+            state.done["__all__"],
             lambda state, action: state.replace(),
             self._step,
-            state, action
+            state,
+            action,
         )
+
 
 class VmapWrapper(Wrapper):
     """
-        Vectorizes Brax env.
+    Vectorizes Brax env.
     """
 
     def __init__(self, env: Env, num_envs: int = 1, vmap_step: bool = False):
@@ -104,15 +102,16 @@ class VmapWrapper(Wrapper):
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         """
-            Args:
-                key: support batched keys [B,2] or single key [2]
+        Args:
+            key: support batched keys [B,2] or single key [2]
         """
         if key.ndim <= 1:
             key = jax.random.split(key, self.num_envs)
         else:
             chex.assert_shape(
-                key, (self.num_envs, 2),
-                custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}"
+                key,
+                (self.num_envs, 2),
+                custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}",
             )
 
         return jax.vmap(self.env.reset)(key)
@@ -131,15 +130,16 @@ class VmapAutoResetWrapper(Wrapper):
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         """
-            Args:
-                key: support batched keys [B,2] or single key [2]
+        Args:
+            key: support batched keys [B,2] or single key [2]
         """
         if key.ndim <= 1:
             key = jax.random.split(key, self.num_envs)
         else:
             chex.assert_shape(
-                key, (self.num_envs, 2),
-                custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}"
+                key,
+                (self.num_envs, 2),
+                custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}",
             )
 
         reset_key, key = vmap_rng_split(key)
@@ -180,11 +180,11 @@ class VmapAutoResetWrapper(Wrapper):
     def _maybe_reset(self, state: EnvState) -> EnvState:
         """Overwrite the state and timestep appropriately if the episode terminates.
 
-            Note: run on single env
+        Note: run on single env
         """
 
         return jax.lax.cond(
-            state.done['__all__'],
+            state.done["__all__"],
             self._auto_reset,
             lambda state: state,
             state,
@@ -193,8 +193,8 @@ class VmapAutoResetWrapper(Wrapper):
 
 class FastVmapAutoResetWrapper(Wrapper):
     """
-        Brax-style AutoReset: no randomness in reset.
-        This wrapper is more efficient than VmapAutoResetWrapper.
+    Brax-style AutoReset: no randomness in reset.
+    This wrapper is more efficient than VmapAutoResetWrapper.
     """
 
     def __init__(self, env: Env, num_envs: int = 1):
@@ -203,15 +203,16 @@ class FastVmapAutoResetWrapper(Wrapper):
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         """
-            Args:
-                key: support batched keys [B,2] or single key [2]
+        Args:
+            key: support batched keys [B,2] or single key [2]
         """
         if key.ndim <= 1:
             key = jax.random.split(key, self.num_envs)
         else:
             chex.assert_shape(
-                key, (self.num_envs, 2),
-                custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}"
+                key,
+                (self.num_envs, 2),
+                custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}",
             )
 
         state = jax.vmap(self.env.reset)(key)
@@ -224,10 +225,11 @@ class FastVmapAutoResetWrapper(Wrapper):
         state = jax.vmap(self.env.step)(state, action)
 
         def where_done(x, y):
-            done = state.done['__all__']
+            done = state.done["__all__"]
             if done.ndim > 0:
                 done = jnp.reshape(
-                    done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
+                    done, [x.shape[0]] + [1] * (len(x.shape) - 1)
+                )  # type: ignore
             return jnp.where(done, x, y)
 
         env_state = jax.tree_map(

@@ -1,13 +1,15 @@
-import jax.numpy as jnp
-from .env import EnvAdapter, EnvState
-
 import chex
-from evorl.types import Action
-from .space import Space, Box, Discrete
-from .utils import sort_dict
+import jax.numpy as jnp
 import jumanji
 from jumanji.env import Environment as JumanjiEnv
-from jumanji.specs import Spec, DiscreteArray, BoundedArray, Array
+from jumanji.specs import Array, BoundedArray, DiscreteArray, Spec
+
+from evorl.types import Action
+
+from .env import EnvAdapter, EnvState
+from .space import Box, Discrete, Space
+from .utils import sort_dict
+
 
 # Note: this is used for singel agent envs.
 class JumanjiAdapter(EnvAdapter):
@@ -23,7 +25,7 @@ class JumanjiAdapter(EnvAdapter):
             obs=transition.observation,
             reward=transition.reward,
             done=jnp.asarray(transition.last(), dtype=jnp.float32),
-            info=sort_dict(transition.extras)
+            info=sort_dict(transition.extras),
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
@@ -45,6 +47,7 @@ class JumanjiAdapter(EnvAdapter):
     @property
     def obs_space(self) -> Space:
         return self._obs_space
+
 
 # TODO: multi-agent EnvAdapter
 

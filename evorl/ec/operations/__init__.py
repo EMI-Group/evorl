@@ -1,2 +1,2 @@
-from .crossover.mlp_crossover import mlp_crossover, MLPCrossover
-from .mutation.mlp_mutation import mlp_mutate, MLPMutation
+from .crossover.mlp_crossover import MLPCrossover, mlp_crossover
+from .mutation.mlp_mutation import MLPMutation, mlp_mutate

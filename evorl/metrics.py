@@ -1,28 +1,34 @@
+import dataclasses
+from typing import Optional
+from collections.abc import Callable
+
+import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
-import chex
 from flax import struct
-from typing import Optional, Callable
 
-
-from .types import LossDict, PyTreeDict, PyTreeData
 from .distributed import pmean, psum, tree_pmean
-import dataclasses
+from .types import LossDict, PyTreeData, PyTreeDict
 
 
-def metricfield(*, reduce_fn: Callable[[chex.Array, Optional[str]], chex.Array] = None, pytree_node=True, **kwargs):
-    metadata={'pytree_node': pytree_node, 'reduce_fn': reduce_fn}
-    kwargs.setdefault('metadata', {}).update(metadata)
+def metricfield(
+    *,
+    reduce_fn: Callable[[chex.Array, str | None], chex.Array] = None,
+    pytree_node=True,
+    **kwargs
+):
+    metadata = {"pytree_node": pytree_node, "reduce_fn": reduce_fn}
+    kwargs.setdefault("metadata", {}).update(metadata)
 
     return dataclasses.field(**kwargs)
 
 
 class MetricBase(PyTreeData, kw_only=True):
-    def all_reduce(self, pmap_axis_name: Optional[str] = None):
+    def all_reduce(self, pmap_axis_name: str | None = None):
         field_dict = {}
         for field in dataclasses.fields(self):
-            reduce_fn = field.metadata.get('reduce_fn', None)
+            reduce_fn = field.metadata.get("reduce_fn", None)
             value = getattr(self, field.name)
             if pmap_axis_name is not None and isinstance(reduce_fn, Callable):
                 value = reduce_fn(value, pmap_axis_name)
@@ -35,8 +41,8 @@ class MetricBase(PyTreeData, kw_only=True):
 
     def to_local_dict(self):
         """
-            Convert all dataclass to dict and convert
-            jax array and numpy array to python list
+        Convert all dataclass to dict and convert
+        jax array and numpy array to python list
         """
         return to_local_dict(self)
 
@@ -48,12 +54,13 @@ class WorkflowMetric(MetricBase):
 
 class TrainMetric(MetricBase):
     # manually reduce in the step()
-    train_episode_return: Optional[chex.Array] = None
+    train_episode_return: chex.Array | None = None
 
     # no need reduce_fn since it's already reduced in the step()
     loss: chex.Array = jnp.zeros(())
     raw_loss_dict: LossDict = metricfield(
-        default_factory=PyTreeDict, reduce_fn=tree_pmean)
+        default_factory=PyTreeDict, reduce_fn=tree_pmean
+    )
 
 
 class EvaluateMetric(MetricBase):
@@ -63,13 +70,12 @@ class EvaluateMetric(MetricBase):
 
 def _is_dataclass_instance(obj):
     """Returns True if obj is an instance of a dataclass."""
-    return hasattr(type(obj), '__dataclass_fields__')
+    return hasattr(type(obj), "__dataclass_fields__")
 
 
 def to_local_dict(obj, *, dict_factory=dict):
     if not _is_dataclass_instance(obj):
-        raise TypeError(
-            "to_local_dict() should be called on dataclass instances")
+        raise TypeError("to_local_dict() should be called on dataclass instances")
     return _to_local_dict_inner(obj, dict_factory)
 
 
@@ -80,7 +86,7 @@ def _to_local_dict_inner(obj, dict_factory):
             value = _to_local_dict_inner(getattr(obj, f.name), dict_factory)
             result.append((f.name, value))
         return dict_factory(result)
-    elif isinstance(obj, tuple) and hasattr(obj, '_fields'):
+    elif isinstance(obj, tuple) and hasattr(obj, "_fields"):
         # obj is a namedtuple.  Recurse into it, but the returned
         # object is another namedtuple of the same type.  This is
         # similar to how other list- or tuple-derived classes are
@@ -107,13 +113,18 @@ def _to_local_dict_inner(obj, dict_factory):
         # above).
         return type(obj)(_to_local_dict_inner(v, dict_factory) for v in obj)
     elif isinstance(obj, PyTreeDict):
-        return {_to_local_dict_inner(k, dict_factory):
-                     _to_local_dict_inner(v, dict_factory)
-                    for k, v in obj.items()}
+        return {
+            _to_local_dict_inner(k, dict_factory): _to_local_dict_inner(v, dict_factory)
+            for k, v in obj.items()
+        }
     elif isinstance(obj, dict):
-        return type(obj)((_to_local_dict_inner(k, dict_factory),
-                          _to_local_dict_inner(v, dict_factory))
-                         for k, v in obj.items())
+        return type(obj)(
+            (
+                _to_local_dict_inner(k, dict_factory),
+                _to_local_dict_inner(v, dict_factory),
+            )
+            for k, v in obj.items()
+        )
     else:
         if isinstance(obj, jax.Array) or isinstance(obj, np.ndarray):
             return obj.tolist()

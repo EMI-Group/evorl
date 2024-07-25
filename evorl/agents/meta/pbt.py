@@ -1,33 +1,26 @@
-from optax.schedules import InjectStatefulHyperparamsState
+import copy
+import logging
+import math
+from functools import partial
+from typing import Any, Optional, Tuple
+from collections.abc import Sequence
+
+import chex
+import flax.linen as nn
+import hydra
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import math
-
-import hydra
-from omegaconf import DictConfig, open_dict, read_write
-
-from evorl.workflows import OnPolicyRLWorkflow, RLWorkflow
-from evorl.metrics import MetricBase
-from evorl.types import State
-
-
-import orbax.checkpoint as ocp
-import chex
 import optax
-from evorl.types import (
-    PyTreeData, PyTreeDict
-)
-from evorl.utils.jax_utils import tree_last
-from evorl.metrics import TrainMetric, WorkflowMetric
-from typing import Tuple, Sequence, Optional, Any
-import logging
-import flax.linen as nn
+import orbax.checkpoint as ocp
 from flax import struct
-import copy
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict, read_write
+from optax.schedules import InjectStatefulHyperparamsState
 
-from functools import partial
+from evorl.metrics import MetricBase, TrainMetric, WorkflowMetric
+from evorl.types import PyTreeData, PyTreeDict, State
+from evorl.utils.jax_utils import tree_last
+from evorl.workflows import OnPolicyRLWorkflow, RLWorkflow
 
 
 class TrainMetric(MetricBase):
@@ -45,9 +38,7 @@ class HyperParams(PyTreeData):
 
 
 class PBTWorkflow(RLWorkflow):
-    def __init__(self,
-                 workflow: RLWorkflow,
-                 config: DictConfig):
+    def __init__(self, workflow: RLWorkflow, config: DictConfig):
         super().__init__(config)
 
         self.workflow = workflow
@@ -70,8 +61,7 @@ class PBTWorkflow(RLWorkflow):
     def _build_from_config(cls, config: DictConfig):
         target_workflow_config = config.target_workflow
         target_workflow_config = copy.deepcopy(target_workflow_config)
-        target_workflow_cls = hydra.utils.get_class(
-            target_workflow_config.workflow_cls)
+        target_workflow_cls = hydra.utils.get_class(target_workflow_config.workflow_cls)
 
         devices = jax.local_devices()
 
@@ -80,19 +70,19 @@ class PBTWorkflow(RLWorkflow):
         with read_write(target_workflow_config):
             with open_dict(target_workflow_config):
                 target_workflow_config.env = copy.deepcopy(config.env)
-                target_workflow_config.checkpoint = OmegaConf.create(
-                    dict(enable=False))
+                target_workflow_config.checkpoint = OmegaConf.create(dict(enable=False))
 
         OmegaConf.set_readonly(target_workflow_config, True)
 
         if len(devices) > 1:
             target_workflow = target_workflow_cls.build_from_config(
-                target_workflow_config, enable_multi_devices=True, devices=devices,
+                target_workflow_config,
+                enable_multi_devices=True,
+                devices=devices,
             )
         else:
             target_workflow = target_workflow_cls.build_from_config(
-                target_workflow_config,
-                enable_jit=True
+                target_workflow_config, enable_jit=True
             )
 
         return cls(target_workflow, config)
@@ -102,7 +92,7 @@ class PBTWorkflow(RLWorkflow):
 
         key, workflow_key, pop_key = jax.random.split(key, num=3)
         self.workflow.optimizer = optax.inject_hyperparams(
-            optax.adam, static_args=('b1', 'b2', 'eps', 'eps_root')
+            optax.adam, static_args=("b1", "b2", "eps", "eps_root")
         )(learning_rate=self.config.search_space.lr.low)
 
         pop_workflow_state = jax.vmap(self.workflow.setup)(
@@ -110,9 +100,12 @@ class PBTWorkflow(RLWorkflow):
         )
 
         pop = PyTreeDict(
-            lr=jax.random.uniform(pop_key, (pop_size,),
-                                  minval=self.config.search_space.lr.low,
-                                  maxval=self.config.search_space.lr.high)
+            lr=jax.random.uniform(
+                pop_key,
+                (pop_size,),
+                minval=self.config.search_space.lr.low,
+                maxval=self.config.search_space.lr.high,
+            )
         )
 
         pop_workflow_state = jax.vmap(apply_hyperparams_to_workflow_state)(
@@ -128,7 +121,7 @@ class PBTWorkflow(RLWorkflow):
             pop=pop,
         )
 
-    def step(self, state: State) -> Tuple[TrainMetric, State]:
+    def step(self, state: State) -> tuple[TrainMetric, State]:
         pop_workflow_state = state.pop_workflow_state
         pop = state.pop
 
@@ -157,8 +150,9 @@ class PBTWorkflow(RLWorkflow):
 
         # ===== eval ======
         if self.config.parallel_eval:
-            pop_eval_metrics, pop_workflow_state = jax.vmap(
-                self.workflow.evaluate)(pop_workflow_state)
+            pop_eval_metrics, pop_workflow_state = jax.vmap(self.workflow.evaluate)(
+                pop_workflow_state
+            )
         else:
             pop_eval_metrics, pop_workflow_state = jax.lax.map(
                 self.workflow.evaluate, pop_workflow_state
@@ -174,30 +168,34 @@ class PBTWorkflow(RLWorkflow):
         _exploit_and_explore = partial(exploit_and_explore, self.config)
 
         pop, pop_workflow_state = jax.lax.cond(
-            state.metrics.iterations+1 <= math.ceil(self.config.warmup_steps /
-                                                    self.config.per_iter_workflow_steps),
+            state.metrics.iterations + 1
+            <= math.ceil(
+                self.config.warmup_steps / self.config.per_iter_workflow_steps
+            ),
             _dummy_fn,
             _exploit_and_explore,
-            exploit_and_explore_key, pop_episode_returns, pop, pop_workflow_state
+            exploit_and_explore_key,
+            pop_episode_returns,
+            pop,
+            pop_workflow_state,
         )
 
         # ===== record metrics ======
         workflow_metrics = state.metrics.replace(
-            sampled_timesteps=jnp.sum(
-                pop_workflow_state.metrics.sampled_timesteps),
-            iterations=state.metrics.iterations + 1
+            sampled_timesteps=jnp.sum(pop_workflow_state.metrics.sampled_timesteps),
+            iterations=state.metrics.iterations + 1,
         )
 
         train_metrics = TrainMetric(
             pop_episode_returns=pop_eval_metrics.episode_returns,
-            pop_episode_lengths=pop_eval_metrics.episode_lengths
+            pop_episode_lengths=pop_eval_metrics.episode_lengths,
         )
 
         return train_metrics, state.replace(
             key=key,
             metrics=workflow_metrics,
             pop=pop,
-            pop_workflow_state=pop_workflow_state
+            pop_workflow_state=pop_workflow_state,
         )
 
     def learn(self, state: State) -> State:
@@ -207,18 +205,16 @@ class PBTWorkflow(RLWorkflow):
             self.recorder.write(workflow_metrics.to_local_dict(), i)
             self.recorder.write(train_metrics.to_local_dict(), i)
 
-            self.checkpoint_manager.save(
-                i,
-                args=ocp.args.StandardSave(state)
-            )
+            self.checkpoint_manager.save(i, args=ocp.args.StandardSave(state))
 
         return state
 
     def evaluate(self, state: State) -> State:
         # Tips: evaluation consumes every workflow_state's internal key
         if self.config.parallel_eval:
-            pop_eval_metrics, pop_workflow_state = jax.vmap(
-                self.workflow.evaluate)(pop_workflow_state)
+            pop_eval_metrics, pop_workflow_state = jax.vmap(self.workflow.evaluate)(
+                pop_workflow_state
+            )
         else:
             pop_eval_metrics, pop_workflow_state = jax.lax.map(
                 self.workflow.evaluate, pop_workflow_state
@@ -226,7 +222,7 @@ class PBTWorkflow(RLWorkflow):
 
         eval_metrics = EvalMetric(
             pop_episode_returns=pop_eval_metrics.episode_returns,
-            pop_episode_lengths=pop_eval_metrics.episode_lengths
+            pop_episode_lengths=pop_eval_metrics.episode_lengths,
         )
 
         return eval_metrics, state.replace(pop_workflow_state=pop_workflow_state)
@@ -245,10 +241,12 @@ def exploit_and_explore(config, key, pop_episode_returns, pop, pop_workflow_stat
         new = PyTreeDict()
         for hp_name in top.keys():
             new[hp_name] = top[hp_name] * (
-                1+jax.random.uniform(
+                1
+                + jax.random.uniform(
                     key,
                     minval=-config.perturb_factor[hp_name],
-                    maxval=config.perturb_factor[hp_name])
+                    maxval=config.perturb_factor[hp_name],
+                )
             )
         # TODO: check deepcopy is necessary (does not change the original state)
 
@@ -257,7 +255,8 @@ def exploit_and_explore(config, key, pop_episode_returns, pop, pop_workflow_stat
 
     # replace bottoms with random tops
     tops_choice_indices = jax.random.choice(
-        exploit_key, tops_indices, (len(bottoms_indices),))
+        exploit_key, tops_indices, (len(bottoms_indices),)
+    )
 
     def _read(indices, pop):
         return jtu.tree_map(lambda x: x[indices], pop)
@@ -268,25 +267,28 @@ def exploit_and_explore(config, key, pop_episode_returns, pop, pop_workflow_stat
     new_bottoms, new_bottoms_wf_state = jax.vmap(_exploit_and_explore_fn)(
         jax.random.split(explore_key, len(bottoms_indices)),
         _read(tops_choice_indices, pop),
-        _read(tops_choice_indices, pop_workflow_state)
+        _read(tops_choice_indices, pop_workflow_state),
     )
     pop = _write(bottoms_indices, pop, new_bottoms)
     pop_workflow_state = _write(
-        bottoms_indices, pop_workflow_state, new_bottoms_wf_state)
+        bottoms_indices, pop_workflow_state, new_bottoms_wf_state
+    )
 
     return pop, pop_workflow_state
 
 
-def apply_hyperparams_to_workflow_state(hyperparams: PyTreeDict[str, chex.Numeric], workflow_state: State):
+def apply_hyperparams_to_workflow_state(
+    hyperparams: PyTreeDict[str, chex.Numeric], workflow_state: State
+):
     """
-        Note1: InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
-        Note2: try to avoid deepcopy unnessary state
+    Note1: InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
+    Note2: try to avoid deepcopy unnessary state
     """
     opt_state = workflow_state.opt_state
     assert isinstance(opt_state, InjectStatefulHyperparamsState)
 
     opt_state = deepcopy_InjectStatefulHyperparamsState(opt_state)
-    opt_state.hyperparams['learning_rate'] = hyperparams.lr
+    opt_state.hyperparams["learning_rate"] = hyperparams.lr
     return workflow_state.replace(opt_state=opt_state)
 
 
@@ -295,5 +297,5 @@ def deepcopy_InjectStatefulHyperparamsState(state: InjectStatefulHyperparamsStat
         count=state.count,
         hyperparams=copy.deepcopy(state.hyperparams),
         hyperparams_states=state.hyperparams_states,
-        inner_state=state.inner_state
+        inner_state=state.inner_state,
     )

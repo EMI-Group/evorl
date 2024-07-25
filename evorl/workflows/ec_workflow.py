@@ -1,21 +1,26 @@
-from typing import Union
-from collections.abc import Callable, Sequence
-from typing_extensions import Self
-from omegaconf import DictConfig, OmegaConf
 import copy
+from collections.abc import Callable, Sequence
+from typing import Union
 
+import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import chex
-
 from evox import Algorithm, Problem
 from evox.workflows import StdWorkflow as EvoXWorkflow
+from omegaconf import DictConfig, OmegaConf
+from typing_extensions import Self
 
 from evorl.agents import Agent
-from evorl.types import State
+from evorl.distributed import (
+    POP_AXIS_NAME,
+    get_global_ranks,
+    psum,
+    split_key_to_devices,
+)
 from evorl.metrics import MetricBase
-from evorl.distributed import POP_AXIS_NAME, psum, split_key_to_devices, get_global_ranks
+from evorl.types import State
+
 from .workflow import Workflow
 
 
@@ -36,13 +41,13 @@ class ECWorkflow(Workflow):
         agent: Agent,
         algorithm: Algorithm,
         problem: Problem,
-        opt_direction: Union[str, Sequence[str]] = 'max',
+        opt_direction: str | Sequence[str] = "max",
         candidate_transforms: Sequence[Callable] = (),
         fitness_transforms: Sequence[Callable] = (),
     ):
         super().__init__(config)
 
-        self.agent=agent
+        self.agent = agent
         self._workflow = EvoXWorkflow(
             algorithm=algorithm,
             problem=problem,
@@ -50,7 +55,7 @@ class ECWorkflow(Workflow):
             opt_direction=opt_direction,
             candidate_transforms=candidate_transforms,
             fitness_transforms=fitness_transforms,
-            jit_step=False, # don't jit internally
+            jit_step=False,  # don't jit internally
         )
         self.pmap_axis_name = None
         self.devices = jax.local_devices()[:1]
@@ -60,7 +65,12 @@ class ECWorkflow(Workflow):
         return self.pmap_axis_name is not None
 
     @classmethod
-    def build_from_config(cls, config: DictConfig, enable_multi_devices: bool = False, enable_jit: bool = True):
+    def build_from_config(
+        cls,
+        config: DictConfig,
+        enable_multi_devices: bool = False,
+        enable_jit: bool = True,
+    ):
         config = copy.deepcopy(config)  # avoid in-place modification
 
         devices = jax.local_devices()
@@ -88,14 +98,14 @@ class ECWorkflow(Workflow):
     @staticmethod
     def _rescale_config(config: DictConfig) -> None:
         """
-            When enable_multi_devices=True, rescale config settings in-place to match multi-devices.
-            Note: not need for EvoX part, as it's already handled by EvoX.
+        When enable_multi_devices=True, rescale config settings in-place to match multi-devices.
+        Note: not need for EvoX part, as it's already handled by EvoX.
         """
         pass
 
     def _setup_workflow_metrics(self) -> MetricBase:
         """
-            Customize the workflow metrics.
+        Customize the workflow metrics.
         """
         return ECWorkflowMetric()
 
@@ -115,39 +125,30 @@ class ECWorkflow(Workflow):
             )
             key = split_key_to_devices(key, self.devices)
             evox_state = evox_state.replace(
-                rank=get_global_ranks(),
-                world_size=jax.device_count()
+                rank=get_global_ranks(), world_size=jax.device_count()
             )
 
-        return State(
-            key=key,
-            evox_state=evox_state,
-            metrics=workflow_metrics
-        )
-
+        return State(key=key, evox_state=evox_state, metrics=workflow_metrics)
 
     def step(self, state: State) -> tuple[TrainMetric, State]:
         train_info, evox_state = self._workflow.step(state.evox_state)
 
-        problem_state = state.evox_state.get_child_state('problem')
+        problem_state = state.evox_state.get_child_state("problem")
         sampled_episodes = psum(problem_state.sampled_episodes, self.pmap_axis_name)
         sampled_timesteps = psum(problem_state.sampled_timesteps, self.pmap_axis_name)
         # turn back to the original objectives
         # Note: train_info['fitness'] is already all-gathered in evox
         train_metrics = TrainMetric(
-            objectives=train_info['fitness'] * self._workflow.opt_direction
+            objectives=train_info["fitness"] * self._workflow.opt_direction
         )
 
         workflow_metrics = ECWorkflowMetric(
-            sampled_episodes=state.metrics.sampled_episodes+sampled_episodes,
-            sampled_timesteps=state.metrics.sampled_timesteps+sampled_timesteps,
+            sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
+            sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             iterations=state.metrics.iterations + 1,
         )
 
-        state = state.replace(
-            evox_state=evox_state,
-            metrics=workflow_metrics
-        )
+        state = state.replace(evox_state=evox_state, metrics=workflow_metrics)
 
         return train_metrics, state
 
@@ -157,6 +158,4 @@ class ECWorkflow(Workflow):
 
     @classmethod
     def enable_pmap(cls, axis_name) -> None:
-        cls.step = jax.pmap(
-            cls.step, axis_name, static_broadcasted_argnums=(0,)
-        )
+        cls.step = jax.pmap(cls.step, axis_name, static_broadcasted_argnums=(0,))

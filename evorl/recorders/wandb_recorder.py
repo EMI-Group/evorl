@@ -1,9 +1,15 @@
+from typing import Any, Optional
+from collections.abc import Mapping
+
 import wandb
+
 from .recorder import Recorder
-from typing import Mapping, Any, Optional
+
 
 class WandbRecorder(Recorder):
-    def __init__(self, *, project, name, config, tags, path, mode='disabled', **wandb_kwargs):
+    def __init__(
+        self, *, project, name, config, tags, path, mode="disabled", **wandb_kwargs
+    ):
         self.project = project
         self.name = name
         self.config = config
@@ -23,7 +29,7 @@ class WandbRecorder(Recorder):
             **self.wandb_kwargs
         )
 
-    def write(self, data: Mapping[str, Any], step: Optional[int] = None) -> None:
+    def write(self, data: Mapping[str, Any], step: int | None = None) -> None:
         wandb.log(data, step=step)
 
     def close(self):

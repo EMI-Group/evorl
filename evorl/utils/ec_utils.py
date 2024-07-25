@@ -1,12 +1,15 @@
+from collections import namedtuple
+from typing import Tuple
+from collections.abc import Callable
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax.tree_util import tree_flatten, tree_leaves, tree_unflatten
-from jax.flatten_util import ravel_pytree
-from collections import namedtuple
-from typing import Callable, Tuple
 from flax import struct
-    
+from jax.flatten_util import ravel_pytree
+from jax.tree_util import tree_flatten, tree_leaves, tree_unflatten
+
+
 class ParamVectorSpec:
     def __init__(self, params):
         self._ndim = tree_leaves(params)[0].ndim
@@ -14,10 +17,10 @@ class ParamVectorSpec:
         self.vec_size = flat.shape[0]
         self.to_vec_fn = lambda x: ravel_pytree(x)[0]
 
-    def to_vector(self, x)-> jax.Array:
+    def to_vector(self, x) -> jax.Array:
         """
-            Return: (flat, to_tree_fn)
-                see jax.flatten_util.ravel_pytree
+        Return: (flat, to_tree_fn)
+            see jax.flatten_util.ravel_pytree
         """
         leaves = tree_leaves(x)
         batch_ndim = leaves[0].ndim - self._ndim
@@ -28,7 +31,7 @@ class ParamVectorSpec:
 
         return vmap_to_vector(x)
 
-    def to_tree(self,x)-> jax.Array:
+    def to_tree(self, x) -> jax.Array:
         leaves = tree_leaves(x)
         batch_ndim = leaves[0].ndim - self._ndim
         vmap_to_tree = self.to_tree_fn

@@ -1,15 +1,17 @@
+from functools import partial
 from typing import Dict, Literal, Optional, Tuple
+
 import chex
-from jaxmarl.environments.multi_agent_env import MultiAgentEnv
-from gymnax.environments import spaces
-from brax import envs
 import jax
 import jax.numpy as jnp
-from functools import partial
-
+from brax import envs
+from gymnax.environments import spaces
 from jaxmarl.environments.mabrax.mabrax_env import (
-    MABraxEnv, _agent_action_mapping, _agent_observation_mapping
+    MABraxEnv,
+    _agent_action_mapping,
+    _agent_observation_mapping,
 )
+from jaxmarl.environments.multi_agent_env import MultiAgentEnv
 
 # TODO: move homogenisation to a separate wrapper
 
@@ -18,7 +20,7 @@ class MABraxEnvV2(MABraxEnv):
     def __init__(
         self,
         env_name: str,
-        homogenisation_method: Optional[Literal["max", "concat"]] = None,
+        homogenisation_method: Literal["max", "concat"] | None = None,
         backend: str = "positional",
         **kwargs
     ):
@@ -53,20 +55,27 @@ class MABraxEnvV2(MABraxEnv):
 
         self.num_agents = len(self.agent_obs_mapping)
         obs_sizes = {
-            agent: self.num_agents
-            + max([o.size for o in self.agent_obs_mapping.values()])
-            if homogenisation_method == "max"
-            else self.env.observation_size
-            if homogenisation_method == "concat"
-            else obs.size
+            agent: (
+                self.num_agents + max([o.size for o in self.agent_obs_mapping.values()])
+                if homogenisation_method == "max"
+                else (
+                    self.env.observation_size
+                    if homogenisation_method == "concat"
+                    else obs.size
+                )
+            )
             for agent, obs in self.agent_obs_mapping.items()
         }
         act_sizes = {
-            agent: max([a.size for a in self.agent_action_mapping.values()])
-            if homogenisation_method == "max"
-            else self.env.action_size
-            if homogenisation_method == "concat"
-            else act.size
+            agent: (
+                max([a.size for a in self.agent_action_mapping.values()])
+                if homogenisation_method == "max"
+                else (
+                    self.env.action_size
+                    if homogenisation_method == "concat"
+                    else act.size
+                )
+            )
             for agent, act in self.agent_action_mapping.items()
         }
 
@@ -93,8 +102,8 @@ class MABraxEnvV2(MABraxEnv):
         key: chex.PRNGKey,
         state: envs.State,
         global_action: chex.Array,
-    ) -> Tuple[
-        Dict[str, chex.Array], envs.State, Dict[str, float], Dict[str, bool], Dict
+    ) -> tuple[
+        dict[str, chex.Array], envs.State, dict[str, float], dict[str, bool], dict
     ]:
         next_state = self.env.step(state, global_action)  # type: ignore
         observations = self.get_obs(next_state)

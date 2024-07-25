@@ -15,15 +15,17 @@
 """Network definitions."""
 
 
-from typing import Any, Callable, Sequence, Tuple, Optional
 import warnings
+from functools import partial
+from typing import Any, Optional, Tuple
+from collections.abc import Callable, Sequence
 
-from brax.training import types
-from .spectral_norm import SNDense
-from flax import linen as nn
 import jax
 import jax.numpy as jnp
-from functools import partial
+from brax.training import types
+from flax import linen as nn
+
+from .spectral_norm import SNDense
 
 ActivationFn = Callable[[jax.Array], jax.Array]
 Initializer = Callable[..., Any]
@@ -31,12 +33,13 @@ Initializer = Callable[..., Any]
 
 class MLP(nn.Module):
     """MLP module."""
+
     layer_sizes: Sequence[int]
     activation: ActivationFn = nn.relu
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
-    activation_final: Optional[ActivationFn] = None
+    activation_final: ActivationFn | None = None
     bias: bool = True
-    norm_layer: Optional[nn.Module] = None
+    norm_layer: nn.Module | None = None
 
     @nn.compact
     def __call__(self, data: jax.Array):
@@ -44,9 +47,10 @@ class MLP(nn.Module):
         for i, hidden_size in enumerate(self.layer_sizes):
             hidden = nn.Dense(
                 hidden_size,
-                name=f'hidden_{i}',
+                name=f"hidden_{i}",
                 kernel_init=self.kernel_init,
-                use_bias=self.bias)(hidden)
+                use_bias=self.bias,
+            )(hidden)
 
             if i != len(self.layer_sizes) - 1:
                 if self.norm_layer is not None:
@@ -64,10 +68,11 @@ class MLP(nn.Module):
 
 class SNMLP(nn.Module):
     """MLP module with Spectral Normalization."""
+
     layer_sizes: Sequence[int]
     activation: ActivationFn = nn.relu
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
-    activation_final: Optional[ActivationFn] = None
+    activation_final: ActivationFn | None = None
     bias: bool = True
 
     @nn.compact
@@ -76,9 +81,10 @@ class SNMLP(nn.Module):
         for i, hidden_size in enumerate(self.layer_sizes):
             hidden = SNDense(
                 hidden_size,
-                name=f'hidden_{i}',
+                name=f"hidden_{i}",
                 kernel_init=self.kernel_init,
-                use_bias=self.bias)(hidden)
+                use_bias=self.bias,
+            )(hidden)
 
             if i != len(self.layer_sizes) - 1:
                 hidden = self.activation(hidden)
@@ -92,16 +98,18 @@ def make_policy_network(
     obs_size: int,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
-    activation_final: Optional[ActivationFn] = None
+    activation_final: ActivationFn | None = None,
 ) -> nn.Module:
     """Creates a policy network."""
     policy_model = MLP(
         layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
         activation=activation,
         kernel_init=jax.nn.initializers.lecun_uniform(),
-        activation_final=activation_final)
+        activation_final=activation_final,
+    )
 
-    def init_fn(rng): return policy_model.init(rng, jnp.zeros((1, obs_size)))
+    def init_fn(rng):
+        return policy_model.init(rng, jnp.zeros((1, obs_size)))
 
     return policy_model, init_fn
 
@@ -110,7 +118,7 @@ def make_v_network(
     obs_size: int,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
-    kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
 ) -> nn.Module:
     """Creates a V network: (obs) -> value"""
 
@@ -122,7 +130,7 @@ def make_v_network(
             vs = MLP(
                 layer_sizes=tuple(hidden_layer_sizes) + (1,),
                 activation=activation,
-                kernel_init=kernel_init
+                kernel_init=kernel_init,
             )(obs)
 
             return vs.squeeze(-1)
@@ -130,7 +138,8 @@ def make_v_network(
     value_model = VModule()
     dummy_obs = jnp.zeros((1, obs_size))
 
-    def init_fn(rng): return value_model.init(rng, dummy_obs)
+    def init_fn(rng):
+        return value_model.init(rng, dummy_obs)
 
     return value_model, init_fn
 
@@ -141,12 +150,13 @@ def make_q_network(
     n_stack: int = 1,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
-    kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
 ) -> nn.Module:
-    """Creates a Q network: (obs, action) -> value """
+    """Creates a Q network: (obs, action) -> value"""
 
     class QModule(nn.Module):
         """Q Module."""
+
         n: int
 
         @nn.compact
@@ -156,22 +166,24 @@ def make_q_network(
                 qs = MLP(
                     layer_sizes=tuple(hidden_layer_sizes) + (1,),
                     activation=activation,
-                    kernel_init=kernel_init
+                    kernel_init=kernel_init,
                 )(hidden)
             elif self.n > 1:
                 hidden = jnp.broadcast_to(hidden, (self.n,) + hidden.shape)
                 qs = nn.vmap(
                     MLP,
                     out_axes=-2,
-                    variable_axes={'params': 0},
-                    split_rngs={'params': True}
+                    variable_axes={"params": 0},
+                    split_rngs={"params": True},
                 )(
                     layer_sizes=tuple(hidden_layer_sizes) + (1,),
                     activation=activation,
-                    kernel_init=kernel_init
-                )(hidden)
+                    kernel_init=kernel_init,
+                )(
+                    hidden
+                )
             else:
-                raise ValueError('n should be greater than 0')
+                raise ValueError("n should be greater than 0")
 
             return qs.squeeze(-1)
 
@@ -180,9 +192,11 @@ def make_q_network(
     dummy_obs = jnp.zeros((1, obs_size))
     dummy_action = jnp.zeros((1, action_size))
 
-    def init_fn(rng): return q_module.init(rng, dummy_obs, dummy_action)
+    def init_fn(rng):
+        return q_module.init(rng, dummy_obs, dummy_action)
 
     return q_module, init_fn
+
 
 def make_discrete_q_network(
     obs_size: int,
@@ -190,12 +204,13 @@ def make_discrete_q_network(
     n_stack: int = 1,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
-    kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
 ) -> nn.Module:
-    """Creates a Q network for discrete action space: (obs) -> q_values """
+    """Creates a Q network for discrete action space: (obs) -> q_values"""
 
     class QModule(nn.Module):
         """Q Module."""
+
         n: int
 
         @nn.compact
@@ -205,22 +220,24 @@ def make_discrete_q_network(
                 qs = MLP(
                     layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
                     activation=activation,
-                    kernel_init=kernel_init
+                    kernel_init=kernel_init,
                 )(x)
             elif self.n > 1:
                 x = jnp.broadcast_to(x, (self.n,) + x.shape)
                 qs = nn.vmap(
                     MLP,
                     out_axes=-2,
-                    variable_axes={'params': 0},
-                    split_rngs={'params': True}
+                    variable_axes={"params": 0},
+                    split_rngs={"params": True},
                 )(
                     layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
                     activation=activation,
-                    kernel_init=kernel_init
-                )(x)
+                    kernel_init=kernel_init,
+                )(
+                    x
+                )
             else:
-                raise ValueError('n should be greater than 0')
+                raise ValueError("n should be greater than 0")
 
             return qs
 
@@ -228,6 +245,7 @@ def make_discrete_q_network(
 
     dummy_obs = jnp.zeros((1, obs_size))
 
-    def init_fn(rng): return q_module.init(rng, dummy_obs)
+    def init_fn(rng):
+        return q_module.init(rng, dummy_obs)
 
     return q_module, init_fn

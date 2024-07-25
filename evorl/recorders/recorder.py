@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Mapping, Any, Sequence, Optional
+from typing import Any, Optional
+from collections.abc import Mapping, Sequence
 
 
 class Recorder(ABC):
@@ -8,7 +9,7 @@ class Recorder(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def write(self, data: Mapping[str, Any], step: Optional[int] = None) -> None:
+    def write(self, data: Mapping[str, Any], step: int | None = None) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -27,7 +28,7 @@ class ChainRecorder(Recorder):
         for recorder in self.recorders:
             recorder.init()
 
-    def write(self, data: Mapping[str, Any], step: Optional[int] = None) -> None:
+    def write(self, data: Mapping[str, Any], step: int | None = None) -> None:
         for recorder in self.recorders:
             recorder.write(data, step)
 

@@ -1,15 +1,16 @@
-import flax.linen as nn
-import jax.numpy as jnp
-import jax
-
 import math
+from typing import Tuple
+from collections.abc import Sequence
+
+import flax.linen as nn
+import jax
+import jax.numpy as jnp
 from flax.linen.initializers import constant, orthogonal
-from typing import Sequence, Tuple
 
 
 class CNN_QNetwork(nn.Module):
     action_dim: int
-    normalize: bool = False # for native Atari envs 
+    normalize: bool = False  # for native Atari envs
 
     @nn.compact
     def __call__(self, x):
@@ -67,8 +68,11 @@ class CNN_AgentStem(nn.Module):
         x = nn.relu(x)
         # flatten to 1d
         x = x.reshape((x.shape[0], -1))
-        x = nn.Dense(self.last_hidden_size, kernel_init=orthogonal(
-            math.sqrt(2)), bias_init=constant(0.0))(x)
+        x = nn.Dense(
+            self.last_hidden_size,
+            kernel_init=orthogonal(math.sqrt(2)),
+            bias_init=constant(0.0),
+        )(x)
         x = nn.relu(x)
         return x
 
@@ -84,11 +88,13 @@ class Actor(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        return nn.Dense(self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0))(x)
+        return nn.Dense(
+            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+        )(x)
 
 
 def make_cnn_agent(
-    obs_shape: Tuple[int],
+    obs_shape: tuple[int],
     action_size: int,
     hidden_size: int = 512,
 ):

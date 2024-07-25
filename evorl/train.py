@@ -1,29 +1,30 @@
-import jax
-
-from omegaconf import DictConfig, OmegaConf
-import hydra
 import logging
-
-from evorl.workflows import Workflow
-from evorl.utils.jax_utils import optimize_gpu_utilization
-from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
-from evorl.recorders import WandbRecorder, LogRecorder, ChainRecorder
 from pathlib import Path
 
-logger = logging.getLogger('train')
+import hydra
+import jax
+from omegaconf import DictConfig, OmegaConf
+
+from evorl.recorders import ChainRecorder, LogRecorder, WandbRecorder
+from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
+from evorl.utils.jax_utils import optimize_gpu_utilization
+from evorl.workflows import Workflow
+
+logger = logging.getLogger("train")
 
 optimize_gpu_utilization()
 jax.config.update("jax_compilation_cache_dir", "../jax-cache")
-jax.config.update('jax_threefry_partitionable', True)
+jax.config.update("jax_threefry_partitionable", True)
 set_omegaconf_resolvers()
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train(config: DictConfig) -> None:
-    logger.info("config:\n"+OmegaConf.to_yaml(config))
+    logger.info("config:\n" + OmegaConf.to_yaml(config))
 
     if config.debug:
         from jax import config as jax_config
+
         jax_config.update("jax_debug_nans", True)
         # jax.config.update("jax_transfer_guard", "log")
         # jax_config.update("jax_debug_infs", True)
@@ -37,18 +38,19 @@ def train(config: DictConfig) -> None:
             config, enable_multi_devices=True
         )
     else:
-        workflow: Workflow = workflow_cls.build_from_config(
-            config, enable_jit=True
-        )
+        workflow: Workflow = workflow_cls.build_from_config(config, enable_jit=True)
 
     output_dir = get_output_dir()
     wandb_project = config.wandb.project
-    wandb_tags = [workflow_cls.name(), config.env.env_name, config.env.env_type] + \
-        OmegaConf.to_container(config.wandb.tags)
-    wandb_name = '-'.join(
+    wandb_tags = [
+        workflow_cls.name(),
+        config.env.env_name,
+        config.env.env_type,
+    ] + OmegaConf.to_container(config.wandb.tags)
+    wandb_name = "-".join(
         [workflow_cls.name(), config.env.env_name, config.env.env_type]
     )
-    wandb_mode = None if config.wandb.enable and not config.debug else 'disabled'
+    wandb_mode = None if config.wandb.enable and not config.debug else "disabled"
 
     wandb_recorder = WandbRecorder(
         project=wandb_project,
@@ -56,10 +58,9 @@ def train(config: DictConfig) -> None:
         config=OmegaConf.to_container(config),  # save the unrescaled config
         tags=wandb_tags,
         path=output_dir,
-        mode=wandb_mode
+        mode=wandb_mode,
     )
-    log_recorder = LogRecorder(
-        log_path=output_dir/f'{wandb_name}.log', console=True)
+    log_recorder = LogRecorder(log_path=output_dir / f"{wandb_name}.log", console=True)
     workflow.add_recorders([wandb_recorder, log_recorder])
 
     try:

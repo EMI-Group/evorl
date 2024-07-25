@@ -1,13 +1,10 @@
-from .env import Env, EnvState, EnvStepFn
-from .multi_agent_env import MultiAgentEnv
-from .space import Discrete, Box
-
-
-
+import importlib
 
 from .brax import create_wrapped_brax_env
+from .env import Env, EnvState, EnvStepFn
+from .multi_agent_env import MultiAgentEnv
+from .space import Box, Discrete
 
-import importlib
 if importlib.util.find_spec("gymnax") is not None:
     from .gymnax import create_wrapped_gymnax_env
 
@@ -19,24 +16,24 @@ if importlib.util.find_spec("jaxmarl") is not None:
 
 
 # TODO: unifiy env creator
-def create_env(env_name: str, env_type: str,**kwargs):
+def create_env(env_name: str, env_type: str, **kwargs):
     """
-        Unified env creator.
+    Unified env creator.
 
-        Args:
-            env_name: environment name
-            env_type: env package name, eg: 'brax'
+    Args:
+        env_name: environment name
+        env_type: env package name, eg: 'brax'
     """
-    if env_type == 'brax':
+    if env_type == "brax":
         env = create_wrapped_brax_env(env_name, **kwargs)
-    elif env_type == 'gymnax':
+    elif env_type == "gymnax":
         env = create_wrapped_gymnax_env(env_name, **kwargs)
-    elif env_type == 'jumanji':
+    elif env_type == "jumanji":
         env = create_jumanji_env(env_name, **kwargs)
-    elif env_type == 'jaxmarl':
+    elif env_type == "jaxmarl":
         env = create_wrapped_mabrax_env(env_name, **kwargs)
     else:
-        raise ValueError(f'env_type {env_type} not supported')
+        raise ValueError(f"env_type {env_type} not supported")
 
     # if autoreset:
     #     env = EpisodeWrapper(env, episode_length,

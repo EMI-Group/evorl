@@ -1,18 +1,17 @@
+from collections.abc import Callable, Sequence
+from typing import Union
+
+import chex
 import jax
 import jax.numpy as jnp
-import chex
-from typing import Union
-from collections.abc import Callable, Sequence
-from omegaconf import DictConfig, OmegaConf
-
 from evox import Algorithm, Problem
+from omegaconf import DictConfig, OmegaConf
 
 from evorl.agents import Agent
 from evorl.evaluator import Evaluator
-from evorl.workflows import ECWorkflow
 from evorl.metrics import EvaluateMetric
-from evorl.evaluator import Evaluator
 from evorl.types import State
+from evorl.workflows import ECWorkflow
 
 
 class ESBaseWorkflow(ECWorkflow):
@@ -23,27 +22,26 @@ class ESBaseWorkflow(ECWorkflow):
         evaluator: Evaluator,
         algorithm: Algorithm,
         problem: Problem,
-        opt_direction: Union[str, Sequence[str]] = 'max',
+        opt_direction: str | Sequence[str] = "max",
         candidate_transforms: Sequence[Callable] = (),
         fitness_transforms: Sequence[Callable] = (),
     ):
         super().__init__(
-            config=config, 
+            config=config,
             agent=agent,
             algorithm=algorithm,
             problem=problem,
             opt_direction=opt_direction,
             candidate_transforms=candidate_transforms,
-            fitness_transforms=fitness_transforms
+            fitness_transforms=fitness_transforms,
         )
 
         # An extra evalutor for pop_center
         self.evaluator = evaluator
 
-
     def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
         raise NotImplementedError
-    
+
     @classmethod
     def enable_jit(cls) -> None:
         super().enable_jit()

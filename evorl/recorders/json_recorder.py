@@ -1,12 +1,13 @@
-import logging
-from .recorder import Recorder
-from typing import Mapping, Any, Optional
-
-from pathlib import Path
-
 import json
+import logging
+from pathlib import Path
+from typing import Any, Optional
+from collections.abc import Mapping
 
-#TODO: test it
+from .recorder import Recorder
+
+
+# TODO: test it
 class JsonRecorder(Recorder):
     """Log file recorder"""
 
@@ -18,9 +19,9 @@ class JsonRecorder(Recorder):
         if not path.parent.exists():
             path.parent.mkdir(parents=True)
 
-        self.f = path.open('a')
+        self.f = path.open("a")
 
-    def write(self, data: Mapping[str, Any], step: Optional[int] = None) -> None:
+    def write(self, data: Mapping[str, Any], step: int | None = None) -> None:
         json.dump((dict(step=step), data), self.f, indent=4)
 
     def close(self) -> None:

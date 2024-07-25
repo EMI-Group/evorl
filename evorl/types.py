@@ -1,23 +1,16 @@
 import copy
+import dataclasses
+import logging
+from typing import Any, Protocol, Union
+from collections.abc import Mapping, Sequence
+
+import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from flax import struct
-import chex
-
-import logging
-
-from typing import (
-    Any, Mapping, Union, Sequence,
-    Protocol
-)
-from typing_extensions import (
-    dataclass_transform,  # pytype: disable=not-supported-yet
-)
-import dataclasses
-
-
 from jax.typing import ArrayLike, DTypeLike
+from typing_extensions import dataclass_transform  # pytype: disable=not-supported-yet
 
 Metrics = Mapping[str, chex.ArrayTree]
 Observation = Union[chex.Array, Mapping[str, chex.Array]]
@@ -47,7 +40,14 @@ Axis = Union[int, Sequence[int], None]
 
 
 class ReductionFn(Protocol):
-    def __call__(self, x: ArrayLike, axis: Axis = None, dtype: DTypeLike | None = None, out: None = None, keepdims: bool = False):
+    def __call__(
+        self,
+        x: ArrayLike,
+        axis: Axis = None,
+        dtype: DTypeLike | None = None,
+        out: None = None,
+        keepdims: bool = False,
+    ):
         pass
 
 
@@ -59,7 +59,7 @@ class ObsPreprocessorFn(Protocol):
 @jtu.register_pytree_node_class
 class PyTreeDict(dict):
     """
-        An easydict with pytree support
+    An easydict with pytree support
     """
 
     def __init__(self, *args, **kwargs):
@@ -139,8 +139,8 @@ def pytree_field(*, lazy_init=False, pytree_node=True, **kwargs):
     if lazy_init:
         kwargs.update(dict(init=False, repr=False))
 
-    metadata = {'pytree_node': pytree_node, 'lazy_init': lazy_init}
-    kwargs.setdefault('metadata', {}).update(metadata)
+    metadata = {"pytree_node": pytree_node, "lazy_init": lazy_init}
+    kwargs.setdefault("metadata", {}).update(metadata)
 
     return dataclasses.field(**kwargs)
 
@@ -152,26 +152,27 @@ class PyTreeNode:
 
     def set_frozen_attr(self, name, value):
         """
-            Force set attribute after __init__ of the dataclass
+        Force set attribute after __init__ of the dataclass
         """
         for field in dataclasses.fields(self):
             if field.name == name:
-                if field.metadata.get('lazy_init', False):
+                if field.metadata.get("lazy_init", False):
                     object.__setattr__(self, name, value)
                     return
                 else:
                     raise dataclasses.FrozenInstanceError(
-                        f"cannot assign to non-lazy_init field {name}")
+                        f"cannot assign to non-lazy_init field {name}"
+                    )
 
-        raise ValueError(
-            f"field {name} not found in {self.__class__.__name__}")
+        raise ValueError(f"field {name} not found in {self.__class__.__name__}")
 
 
 @dataclass_transform(field_specifiers=(pytree_field,), kw_only_default=True)
 class PyTreeData:
     """
-        Like PyTreeNode, but all fileds must be set at __init__, and not allow set_frozen_attr() method.
-        Additionally, add some useful methods for PyTreeData.
+    Like PyTreeNode, but all fileds must be set at __init__, and not allow set_frozen_attr() method.
+    Additionally, add some useful methods for PyTreeData.
     """
+
     def __init_subclass__(cls, **kwargs):
         struct.dataclass(cls, **kwargs)

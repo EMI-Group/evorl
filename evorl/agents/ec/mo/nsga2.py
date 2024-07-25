@@ -1,17 +1,17 @@
+import evox.algorithms
 import jax
 import jax.numpy as jnp
-
 import orbax.checkpoint as ocp
-from omegaconf import DictConfig
-import evox.algorithms
 from evox.operators import non_dominated_sort
+from omegaconf import DictConfig
 
+from evorl.distributed import tree_unpmap
+from evorl.ec import MultiObjectiveBraxProblem
+from evorl.envs import create_wrapped_brax_env
+from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.workflows import ECWorkflow
-from evorl.envs import create_wrapped_brax_env
-from evorl.ec import MultiObjectiveBraxProblem
-from evorl.distributed import tree_unpmap
-from evorl.types import State
+
 from ..ec import DeterministicECAgent
 
 
@@ -33,7 +33,7 @@ class NSGA2Workflow(ECWorkflow):
             action_space=env.action_space,
             obs_space=env.obs_space,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,  # use linear model
-            normalize_obs=False
+            normalize_obs=False,
         )
 
         problem = MultiObjectiveBraxProblem(
@@ -43,7 +43,7 @@ class NSGA2Workflow(ECWorkflow):
             max_episode_steps=config.env.max_episode_steps,
             discount=config.discount,
             metric_names=config.obj_names,
-            flatten_objectives=True
+            flatten_objectives=True,
         )
 
         # dummy agent_state
@@ -52,10 +52,8 @@ class NSGA2Workflow(ECWorkflow):
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
         algorithm = evox.algorithms.NSGA2(
-            lb=jnp.full((param_vec_spec.vec_size,),
-                        fill_value=config.agent_network.lb),
-            ub=jnp.full((param_vec_spec.vec_size,),
-                        fill_value=config.agent_network.ub),
+            lb=jnp.full((param_vec_spec.vec_size,), fill_value=config.agent_network.lb),
+            ub=jnp.full((param_vec_spec.vec_size,), fill_value=config.agent_network.ub),
             n_objs=len(config.obj_names),
             pop_size=config.pop_size,
         )
@@ -75,27 +73,24 @@ class NSGA2Workflow(ECWorkflow):
         )
 
     def learn(self, state: State) -> State:
-        start_iteration = tree_unpmap(
-            state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
 
         for i in range(start_iteration, self.config.num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            train_metrics = tree_unpmap(
-                train_metrics, self.pmap_axis_name)
-            workflow_metrics = tree_unpmap(
-                workflow_metrics, self.pmap_axis_name)
+            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
             self.recorder.write(workflow_metrics.to_local_dict(), i)
 
-            cpu_device = jax.devices('cpu')[0]
+            cpu_device = jax.devices("cpu")[0]
             with jax.default_device(cpu_device):
-                fitnesses = train_metrics.objectives*self._workflow.opt_direction
-                pf_rank = non_dominated_sort(fitnesses, 'scan')
+                fitnesses = train_metrics.objectives * self._workflow.opt_direction
+                pf_rank = non_dominated_sort(fitnesses, "scan")
                 pf_objectives = train_metrics.objectives[pf_rank == 0]
                 _train_metrics = train_metrics.to_local_dict()
-                _train_metrics['pf_objectives'] = pf_objectives.tolist()
-                _train_metrics['num_pf'] = pf_objectives.shape[0]
+                _train_metrics["pf_objectives"] = pf_objectives.tolist()
+                _train_metrics["num_pf"] = pf_objectives.shape[0]
 
             self.recorder.write(_train_metrics, i)
 
@@ -103,5 +98,5 @@ class NSGA2Workflow(ECWorkflow):
                 i,
                 args=ocp.args.StandardSave(
                     tree_unpmap(state, self.pmap_axis_name),
-                )
+                ),
             )

@@ -1,5 +1,3 @@
-from .workflow import Workflow
-
 from .ec_workflow import ECWorkflow
-
-from .rl_workflow import RLWorkflow, OnPolicyRLWorkflow, OffPolicyRLWorkflow
+from .rl_workflow import OffPolicyRLWorkflow, OnPolicyRLWorkflow, RLWorkflow
+from .workflow import Workflow

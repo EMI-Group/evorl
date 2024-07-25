@@ -1,21 +1,26 @@
+from typing import Any, List, Optional, Union
+from collections.abc import Callable, Sequence
+
+import distrax
 import jax
 import jax.numpy as jnp
 import numpy as np
-import distrax
-from typing import Any, List, Optional, Sequence, Union, Callable
-
 from tensorflow_probability.substrates import jax as tfp
-tfd = tfp.distributions # note: tfp use lazy init.
+
+tfd = tfp.distributions  # note: tfp use lazy init.
 from tensorflow_probability.substrates.jax.distributions import Categorical
+
 
 def get_categorical_dist(logits: jax.Array):
     return tfd.Categorical(logits=logits)
 
-def get_tanh_norm_dist(loc: jax.Array, scale: jax.Array, min_scale:float=1e-3):
+
+def get_tanh_norm_dist(loc: jax.Array, scale: jax.Array, min_scale: float = 1e-3):
     scale = jax.nn.softplus(scale) + min_scale
     distribution = tfd.Normal(loc=loc, scale=scale)
     return tfd.Independent(
-        TanhTransformedDistribution(distribution), reinterpreted_batch_ndims=1)
+        TanhTransformedDistribution(distribution), reinterpreted_batch_ndims=1
+    )
 
 
 # class TanhNormal(distrax.Transformed):
@@ -45,9 +50,9 @@ def get_trancated_norm_dist(loc, scale, low, high):
 
 
 class TanhTransformedDistribution(tfd.TransformedDistribution):
-    """Distribution followed by tanh. from acme. """
+    """Distribution followed by tanh. from acme."""
 
-    def __init__(self, distribution, threshold=.999, validate_args=False):
+    def __init__(self, distribution, threshold=0.999, validate_args=False):
         """Initialize the distribution.
 
         Args:
@@ -58,7 +63,8 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):
         super().__init__(
             distribution=distribution,
             bijector=tfp.bijectors.Tanh(),
-            validate_args=validate_args)
+            validate_args=validate_args,
+        )
         # Computes the log of the average probability distribution outside the
         # clipping range, i.e. on the interval [-inf, -atanh(threshold)] for
         # log_prob_left and [atanh(threshold), inf] for log_prob_right.
@@ -66,13 +72,15 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):
         inverse_threshold = self.bijector.inverse(threshold)
         # average(pdf) = p/epsilon
         # So log(average(pdf)) = log(p) - log(epsilon)
-        log_epsilon = jnp.log(1. - threshold)
+        log_epsilon = jnp.log(1.0 - threshold)
         # Those 2 values are differentiable w.r.t. model parameters, such that the
         # gradient is defined everywhere.
-        self._log_prob_left = self.distribution.log_cdf(
-            -inverse_threshold) - log_epsilon
-        self._log_prob_right = self.distribution.log_survival_function(
-            inverse_threshold) - log_epsilon
+        self._log_prob_left = (
+            self.distribution.log_cdf(-inverse_threshold) - log_epsilon
+        )
+        self._log_prob_right = (
+            self.distribution.log_survival_function(inverse_threshold) - log_epsilon
+        )
 
     def log_prob(self, event):
         # Without this clip there would be NaNs in the inner tf.where and that
@@ -81,9 +89,12 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):
         # The inverse image of {threshold} is the interval [atanh(threshold), inf]
         # which has a probability of "log_prob_right" under the given distribution.
         return jnp.where(
-            event <= -self._threshold, self._log_prob_left,
-            jnp.where(event >= self._threshold, self._log_prob_right,
-                      super().log_prob(event)))
+            event <= -self._threshold,
+            self._log_prob_left,
+            jnp.where(
+                event >= self._threshold, self._log_prob_right, super().log_prob(event)
+            ),
+        )
 
     def mode(self):
         return self.bijector.forward(self.distribution.mode())
@@ -92,11 +103,11 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):
         # We return an estimation using a single sample of the log_det_jacobian.
         # We can still do some backpropagation with this estimate.
         return self.distribution.entropy() + self.bijector.forward_log_det_jacobian(
-            self.distribution.sample(seed=seed), event_ndims=0)
+            self.distribution.sample(seed=seed), event_ndims=0
+        )
 
     @classmethod
-    def _parameter_properties(cls, dtype: Optional[Any], num_classes=None):
-        td_properties = super()._parameter_properties(dtype,
-                                                      num_classes=num_classes)
-        del td_properties['bijector']
+    def _parameter_properties(cls, dtype: Any | None, num_classes=None):
+        td_properties = super()._parameter_properties(dtype, num_classes=num_classes)
+        del td_properties["bijector"]
         return td_properties

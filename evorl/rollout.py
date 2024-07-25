@@ -1,17 +1,16 @@
+from functools import partial
+from typing import Tuple, Union
+from collections.abc import Sequence
+
+import chex
 import jax
 import jax.numpy as jnp
-import chex
-from typing import (
-    Union, Tuple, Sequence
-)
-from .agents import Agent, AgentState, AgentActionFn
-from .types import (
-    Reward, RewardDict, Action, PolicyExtraInfo, PyTreeDict
-)
-from .sample_batch import SampleBatch, Episode
+
+from .agents import Agent, AgentActionFn, AgentState
 from .envs import Env, EnvState, EnvStepFn
+from .sample_batch import Episode, SampleBatch
+from .types import Action, PolicyExtraInfo, PyTreeDict, Reward, RewardDict
 from .utils.jax_utils import rng_split
-from functools import partial
 
 # TODO: add RNN Policy support
 
@@ -26,15 +25,14 @@ def env_step(
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
     """
-        Collect one-step data.
+    Collect one-step data.
     """
 
     actions, policy_extras = action_fn(agent_state, sample_batch, key)
     env_nstate = env_fn(env_state, actions)
 
     info = env_nstate.info
-    env_extras = PyTreeDict(
-        {x: info[x] for x in env_extra_fields if x in info})
+    env_extras = PyTreeDict({x: info[x] for x in env_extra_fields if x in info})
 
     transition = SampleBatch(
         obs=env_state.obs,
@@ -42,10 +40,7 @@ def env_step(
         rewards=env_nstate.reward,
         dones=env_nstate.done,
         next_obs=env_nstate.obs,
-        extras=PyTreeDict(
-            policy_extras=policy_extras,
-            env_extras=env_extras
-        )
+        extras=PyTreeDict(policy_extras=policy_extras, env_extras=env_extras),
     )
 
     return transition, env_nstate
@@ -57,10 +52,10 @@ def eval_env_step(
     env_state: EnvState,
     agent_state: AgentState,  # readonly
     sample_batch: SampleBatch,
-    key: chex.PRNGKey
+    key: chex.PRNGKey,
 ) -> tuple[SampleBatch, EnvState]:
     """
-        Collect one-step data in evaluation mode.
+    Collect one-step data in evaluation mode.
     """
 
     actions, policy_extras = action_fn(agent_state, sample_batch, key)
@@ -84,43 +79,44 @@ def rollout(
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
     """
-        Collect given rollout_length trajectory.
-        Tips: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
+    Collect given rollout_length trajectory.
+    Tips: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
 
-        Args:
-            env: vmapped env w/ autoreset
+    Args:
+        env: vmapped env w/ autoreset
 
-        Returns:
-            env_state: last env_state after rollout
-            trajectory: SampleBatch [T, B, ...], T=rollout_length, B=#envs
+    Returns:
+        env_state: last env_state after rollout
+        trajectory: SampleBatch [T, B, ...], T=rollout_length, B=#envs
     """
 
     def _one_step_rollout(carry, unused_t):
         """
-            sample_batch: one-step obs
-            transition: one-step full info
+        sample_batch: one-step obs
+        transition: one-step full info
         """
         env_state, current_key = carry
         next_key, current_key = rng_split(current_key, 2)
 
         # sample_batch: [#envs, ...]
-        sample_batch = SampleBatch(
-            obs=env_state.obs
-        )
+        sample_batch = SampleBatch(obs=env_state.obs)
 
         # transition: [#envs, ...]
         transition, env_nstate = env_step(
-            env_fn, action_fn,
-            env_state, agent_state,
-            sample_batch, current_key, env_extra_fields
+            env_fn,
+            action_fn,
+            env_state,
+            agent_state,
+            sample_batch,
+            current_key,
+            env_extra_fields,
         )
 
         return (env_nstate, next_key), transition
 
     # trajectory: [T, #envs, ...]
     (env_state, _), trajectory = jax.lax.scan(
-        _one_step_rollout, (env_state, key), (),
-        length=rollout_length
+        _one_step_rollout, (env_state, key), (), length=rollout_length
     )
 
     return trajectory, env_state
@@ -220,23 +216,23 @@ def eval_rollout(
     agent_state: AgentState,
     key: chex.PRNGKey,
     rollout_length: int,
-) -> Tuple[EnvState, Union[Reward, RewardDict]]:
+) -> tuple[EnvState, Reward | RewardDict]:
     """
-        Collect given rollout_length trajectory.
+    Collect given rollout_length trajectory.
 
-        Args:
-            env: vmapped env w/o autoreset
-            discount: discount factor. When discount=1.0, return undiscounted return.
+    Args:
+        env: vmapped env w/o autoreset
+        discount: discount factor. When discount=1.0, return undiscounted return.
 
-        Returns:
-            env_state: last env_state after rollout
-            trajectory: shape: [T, #envs, ...]
+    Returns:
+        env_state: last env_state after rollout
+        trajectory: shape: [T, #envs, ...]
     """
 
     def _one_step_rollout(carry, unused_t):
         """
-            sample_batch: one-step obs
-            transition: one-step full info
+        sample_batch: one-step obs
+        transition: one-step full info
         """
         env_state, current_key = carry
         next_key, current_key = rng_split(current_key, 2)
@@ -248,18 +244,14 @@ def eval_rollout(
 
         # transition: [#envs, ...]
         transition, env_nstate = eval_env_step(
-            env_fn, action_fn,
-            env_state, agent_state,
-            sample_batch, current_key
+            env_fn, action_fn, env_state, agent_state, sample_batch, current_key
         )
 
         return (env_nstate, next_key), transition
 
     # trajectory: [T, #envs, ...]
     (env_state, _), trajectory = jax.lax.scan(
-        _one_step_rollout,
-        (env_state, key), (),
-        length=rollout_length
+        _one_step_rollout, (env_state, key), (), length=rollout_length
     )
 
     return trajectory, env_state
@@ -274,18 +266,18 @@ def eval_rollout_episode(
     rollout_length: int,
 ) -> tuple[SampleBatch, EnvState]:
     """
-        Collect given rollout_length trajectory.
-        Avoid unnecessary env_step()
-        Args:
-            env: vmapped env w/o autoreset
+    Collect given rollout_length trajectory.
+    Avoid unnecessary env_step()
+    Args:
+        env: vmapped env w/o autoreset
     """
 
     _eval_env_step = partial(eval_env_step, env_fn, action_fn)
 
     def _one_step_rollout(carry, unused_t):
         """
-            sample_batch: one-step obs
-            transition: one-step full info
+        sample_batch: one-step obs
+        transition: one-step full info
         """
         env_state, current_key, prev_transition = carry
         next_key, current_key = rng_split(current_key, 2)
@@ -298,8 +290,10 @@ def eval_rollout_episode(
             env_state.done.all(),
             lambda *x: (env_state.replace(), prev_transition.replace()),
             _eval_env_step,
-            env_state, agent_state,
-            sample_batch, current_key
+            env_state,
+            agent_state,
+            sample_batch,
+            current_key,
         )
 
         return (env_nstate, next_key, transition), transition
@@ -308,13 +302,14 @@ def eval_rollout_episode(
     # it will not include in the trajectory when env_state is from env.reset()
     # this is manually controlled by user.
     bootstrap_transition, _ = _eval_env_step(
-        env_state, agent_state,
-        SampleBatch(obs=env_state.obs), key
+        env_state, agent_state, SampleBatch(obs=env_state.obs), key
     )
 
     (env_state, _, _), trajectory = jax.lax.scan(
-        _one_step_rollout, (env_state, key, bootstrap_transition),
-        (), length=rollout_length
+        _one_step_rollout,
+        (env_state, key, bootstrap_transition),
+        (),
+        length=rollout_length,
     )
 
     return trajectory, env_state
@@ -330,20 +325,22 @@ def fast_eval_rollout_episode(
 ) -> tuple[PyTreeDict, EnvState]:
     """
 
-        Args:
-            env: vmapped env w/o autoreset
+    Args:
+        env: vmapped env w/o autoreset
     """
 
     _eval_env_step = partial(eval_env_step, env_fn, action_fn)
 
     def _terminate_cond(carry):
         env_state, current_key, prev_metrics = carry
-        return (prev_metrics.episode_lengths < rollout_length).all() & (~env_state.done.all())
+        return (prev_metrics.episode_lengths < rollout_length).all() & (
+            ~env_state.done.all()
+        )
 
     def _one_step_rollout(carry):
         """
-            sample_batch: one-step obs
-            transition: one-step full info
+        sample_batch: one-step obs
+        transition: one-step full info
         """
         env_state, current_key, prev_metrics = carry
         next_key, current_key = rng_split(current_key, 2)
@@ -353,15 +350,14 @@ def fast_eval_rollout_episode(
         )
 
         transition, env_nstate = _eval_env_step(
-            env_state, agent_state,
-            sample_batch, current_key
+            env_state, agent_state, sample_batch, current_key
         )
 
         metrics = PyTreeDict(
-            episode_returns=prev_metrics.episode_returns +
-            (1-transition.dones)*transition.rewards,
-            episode_lengths=prev_metrics.episode_lengths +
-            (1-transition.dones) # this will miss counting the last step
+            episode_returns=prev_metrics.episode_returns
+            + (1 - transition.dones) * transition.rewards,
+            episode_lengths=prev_metrics.episode_lengths
+            + (1 - transition.dones),  # this will miss counting the last step
         )
 
         return env_nstate, next_key, metrics
@@ -371,15 +367,16 @@ def fast_eval_rollout_episode(
     env_state, _, metrics = jax.lax.while_loop(
         _terminate_cond,
         _one_step_rollout,
-        (env_state, key,
-         PyTreeDict(
-             episode_returns=jnp.zeros(batch_shape),
-             episode_lengths=jnp.zeros(batch_shape))
-         )
+        (
+            env_state,
+            key,
+            PyTreeDict(
+                episode_returns=jnp.zeros(batch_shape),
+                episode_lengths=jnp.zeros(batch_shape),
+            ),
+        ),
     )
 
-    metrics = metrics.replace(
-        episode_lengths=metrics.episode_lengths + 1
-    )
+    metrics = metrics.replace(episode_lengths=metrics.episode_lengths + 1)
 
-    return metrics, env_state 
+    return metrics, env_state

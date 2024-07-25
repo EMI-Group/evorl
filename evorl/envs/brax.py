@@ -1,31 +1,33 @@
+import chex
 import jax
 import jax.numpy as jnp
-
+from brax.envs import Env as BraxEnv
+from brax.envs import get_environment
 from flax import struct
-import chex
-from .env import EnvAdapter, EnvState, Env
-from .space import Space, Box
-from .utils import sort_dict
-from evorl.types import Action, PyTreeDict
-from brax.envs import (
-    Env as BraxEnv,
-    get_environment
-)
 
-from .wrappers.training_wrapper import EpisodeWrapper, OneEpisodeWrapper, VmapAutoResetWrapper, VmapWrapper, FastVmapAutoResetWrapper
+from evorl.types import Action, PyTreeDict
+
+from .env import Env, EnvAdapter, EnvState
+from .space import Box, Space
+from .utils import sort_dict
+from .wrappers.training_wrapper import (
+    EpisodeWrapper,
+    FastVmapAutoResetWrapper,
+    OneEpisodeWrapper,
+    VmapAutoResetWrapper,
+    VmapWrapper,
+)
 
 
 class BraxAdapter(EnvAdapter):
     def __init__(self, env: BraxEnv):
         super().__init__(env)
 
-        action_spec = jnp.asarray(
-            env.sys.actuator.ctrl_range, dtype=jnp.float32)
+        action_spec = jnp.asarray(env.sys.actuator.ctrl_range, dtype=jnp.float32)
         self._action_sapce = Box(low=action_spec[:, 0], high=action_spec[:, 1])
 
         # Note: use jnp.inf or jnp.finfo(jnp.float32).min|max causes inf
-        obs_spec = jnp.full((env.observation_size,),
-                            1e10, dtype=jnp.float32)
+        obs_spec = jnp.full((env.observation_size,), 1e10, dtype=jnp.float32)
         self._obs_space = Box(low=-obs_spec, high=obs_spec)
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
@@ -67,9 +69,9 @@ class BraxAdapter(EnvAdapter):
 
 def create_brax_env(env_name: str, **kwargs) -> BraxAdapter:
     """
-        Args:
-            Autoreset: When use envs for RL training, set autoreset=True. When use envs for evaluation, set autoreset=False.
-            discount: discount factor for episode return calculation. The episode returns are Only recorded when autoreset=True.
+    Args:
+        Autoreset: When use envs for RL training, set autoreset=True. When use envs for evaluation, set autoreset=False.
+        discount: discount factor for episode return calculation. The episode returns are Only recorded when autoreset=True.
     """
 
     env = get_environment(env_name, **kwargs)
@@ -78,17 +80,20 @@ def create_brax_env(env_name: str, **kwargs) -> BraxAdapter:
     return env
 
 
-def create_wrapped_brax_env(env_name: str,
-                            episode_length: int = 1000,
-                            parallel: int = 1,
-                            autoreset: bool = True,
-                            fast_reset: bool = True,
-                            discount: float = 1.0,
-                            **kwargs) -> Env:
+def create_wrapped_brax_env(
+    env_name: str,
+    episode_length: int = 1000,
+    parallel: int = 1,
+    autoreset: bool = True,
+    fast_reset: bool = True,
+    discount: float = 1.0,
+    **kwargs
+) -> Env:
     env = create_brax_env(env_name, **kwargs)
     if autoreset:
-        env = EpisodeWrapper(env, episode_length,
-                             record_episode_return=True, discount=discount)
+        env = EpisodeWrapper(
+            env, episode_length, record_episode_return=True, discount=discount
+        )
         if fast_reset:
             env = FastVmapAutoResetWrapper(env, num_envs=parallel)
         else:

@@ -1,13 +1,13 @@
+from abc import abstractmethod
+from typing import List
+from collections.abc import Mapping
+
 import chex
+
+from evorl.types import Action, AgentID, EnvLike
+
 from .env import Env, EnvState
 from .space import Space
-from evorl.types import (
-    EnvLike,
-    Action,
-    AgentID
-)
-from typing import Mapping, List
-from abc import abstractmethod
 
 
 class MultiAgentEnv(Env):
@@ -20,7 +20,7 @@ class MultiAgentEnv(Env):
     @abstractmethod
     def step(self, state: EnvState, action: Mapping[AgentID, Action]) -> EnvState:
         """
-            EnvState should have fields like obs, reward, done, info, ...
+        EnvState should have fields like obs, reward, done, info, ...
         """
         raise NotImplementedError
 
@@ -38,9 +38,9 @@ class MultiAgentEnv(Env):
 
     @property
     @abstractmethod
-    def agents(self) -> List[AgentID]:
+    def agents(self) -> list[AgentID]:
         raise NotImplementedError
-    
+
     @property
     def unwrapped(self) -> EnvLike:
         return self.env

@@ -1,29 +1,28 @@
+import copy
+from typing import Any, Dict, Optional, Union
+from collections.abc import Sequence
+
+import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import chex
 
-import copy
-from typing import Sequence, Dict
-from .types import (
-    Reward, RewardDict, ExtraInfo, PyTreeData
-)
-from typing import (
-    Any, Union, Optional
-)
+from .types import ExtraInfo, PyTreeData, Reward, RewardDict
+
 
 class SampleBatch(PyTreeData):
     """
-      Batched transitions w/ additional first axis as batch_axis.
-      Could also be used as a trajectory.
+    Batched transitions w/ additional first axis as batch_axis.
+    Could also be used as a trajectory.
     """
-    obs: Optional[chex.ArrayTree] = None
-    actions: Optional[chex.ArrayTree] = None
-    rewards: Optional[Union[Reward, RewardDict]] = None
-    next_obs: Optional[chex.Array] = None
-    dones: Optional[chex.Array] = None
-    extras: Optional[ExtraInfo] = None
-    
+
+    obs: chex.ArrayTree | None = None
+    actions: chex.ArrayTree | None = None
+    rewards: Reward | RewardDict | None = None
+    next_obs: chex.Array | None = None
+    dones: chex.Array | None = None
+    extras: ExtraInfo | None = None
+
     def __add__(self, o: Any) -> Any:
         return jtu.tree_map(lambda x, y: x + y, self, o)
 
@@ -49,24 +48,20 @@ class SampleBatch(PyTreeData):
         return jtu.tree_map(lambda x: x[beg:end], self)
 
     def take(self, i, axis=0) -> Any:
-        return jtu.tree_map(lambda x: jnp.take(x, i, axis=axis, mode='wrap'), self)
+        return jtu.tree_map(lambda x: jnp.take(x, i, axis=axis, mode="wrap"), self)
 
     def concatenate(self, *others: Any, axis: int = 0) -> Any:
         return jtu.tree_map(lambda *x: jnp.concatenate(x, axis=axis), self, *others)
 
-    def index_set(
-        self, idx: Union[jax.Array, Sequence[jax.Array]], o: Any
-    ) -> Any:
+    def index_set(self, idx: jax.Array | Sequence[jax.Array], o: Any) -> Any:
         return jtu.tree_map(lambda x, y: x.at[idx].set(y), self, o)
 
-    def index_sum(
-        self, idx: Union[jax.Array, Sequence[jax.Array]], o: Any
-    ) -> Any:
+    def index_sum(self, idx: jax.Array | Sequence[jax.Array], o: Any) -> Any:
         return jtu.tree_map(lambda x, y: x.at[idx].add(y), self, o)
 
     def tree_replace(
-        self, params: Dict[str, Optional[jax.typing.ArrayLike]]
-    ) -> 'PyTreeData':
+        self, params: dict[str, jax.typing.ArrayLike | None]
+    ) -> "PyTreeData":
         """Creates a new object with parameters set.
 
         Args:
@@ -83,7 +78,7 @@ class SampleBatch(PyTreeData):
         """
         new = self
         for k, v in params.items():
-            new = _tree_replace(new, k.split('.'), v)
+            new = _tree_replace(new, k.split("."), v)
         return new
 
     @property
@@ -94,7 +89,7 @@ class SampleBatch(PyTreeData):
 def _tree_replace(
     base: PyTreeData,
     attr: Sequence[str],
-    val: Optional[jax.typing.ArrayLike],
+    val: jax.typing.ArrayLike | None,
 ) -> PyTreeData:
     """Sets attributes in a struct.dataclass with values."""
     if not attr:
@@ -107,7 +102,7 @@ def _tree_replace(
         for i, g in enumerate(lst):
             if not hasattr(g, attr[1]):
                 continue
-            v = val if not hasattr(val, '__iter__') else val[i]
+            v = val if not hasattr(val, "__iter__") else val[i]
             lst[i] = _tree_replace(g, attr[1:], v)
 
         return base.replace(**{attr[0]: lst})
@@ -135,5 +130,4 @@ class Episode(PyTreeData):
 
     @property
     def valid_mask(self) -> chex.Array:
-        return 1-right_shift(self.trajectory.dones, 1)
-    
+        return 1 - right_shift(self.trajectory.dones, 1)

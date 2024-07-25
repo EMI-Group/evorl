@@ -1,2 +1,1 @@
-from .agent import Agent, AgentState, AgentParams, AgentActionFn
-
+from .agent import Agent, AgentActionFn, AgentParams, AgentState

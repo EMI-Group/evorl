@@ -7,28 +7,27 @@ https://github.com/deepmind/acme/blob/master/acme/jax/running_statistics.py
 
 from typing import Any, Optional, Tuple
 
-from brax.training.acme import types
-
+import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import chex
+from brax.training.acme import types
 
 from evorl.types import PyTreeData
-from .jax_utils import tree_zeros_like, tree_ones_like
 
-
+from .jax_utils import tree_ones_like, tree_zeros_like
 
 
 class NestedMeanStd(PyTreeData):
     """A container for running statistics (mean, std) of possibly nested data."""
+
     mean: chex.ArrayTree
     std: chex.ArrayTree
 
 
-
 class RunningStatisticsState(NestedMeanStd):
     """Full state of running statistics computation."""
+
     count: chex.Array
     summed_variance: chex.ArrayTree
 
@@ -44,13 +43,13 @@ def init_state(nest: chex.ArrayTree) -> RunningStatisticsState:
         summed_variance=tree_zeros_like(nest, dtype=dtype_float),
         # Initialize with ones to make sure normalization works correctly
         # in the initial state.
-        std=tree_ones_like(nest, dtype=dtype_float)
+        std=tree_ones_like(nest, dtype=dtype_float),
     )
 
 
-def _validate_batch_shapes(batch: chex.Array,
-                           reference_sample: chex.Array,
-                           batch_dims: Tuple[int, ...]) -> None:
+def _validate_batch_shapes(
+    batch: chex.Array, reference_sample: chex.Array, batch_dims: tuple[int, ...]
+) -> None:
     """Verifies shapes of the batch leaves against the reference sample.
 
     Checks that batch dimensions are the same in all leaves in the batch.
@@ -65,23 +64,27 @@ def _validate_batch_shapes(batch: chex.Array,
     Returns:
       None.
     """
-    def validate_node_shape(reference_sample: chex.Array,
-                            batch: chex.Array) -> None:
+
+    def validate_node_shape(reference_sample: chex.Array, batch: chex.Array) -> None:
         expected_shape = batch_dims + reference_sample.shape
         # assert batch.shape == expected_shape, f'{batch.shape} != {expected_shape}'
-        chex.assert_shape(batch, expected_shape, custom_message=f'{batch.shape} != {expected_shape}')
+        chex.assert_shape(
+            batch, expected_shape, custom_message=f"{batch.shape} != {expected_shape}"
+        )
 
     jtu.tree_map(validate_node_shape, reference_sample, batch)
 
 
-def update(state: RunningStatisticsState,
-           batch: chex.ArrayTree,
-           *,
-           weights: Optional[chex.Array] = None,
-           std_min_value: float = 1e-6,
-           std_max_value: float = 1e6,
-           pmap_axis_name: Optional[str] = None,
-           validate_shapes: bool = True) -> RunningStatisticsState:
+def update(
+    state: RunningStatisticsState,
+    batch: chex.ArrayTree,
+    *,
+    weights: chex.Array | None = None,
+    std_min_value: float = 1e-6,
+    std_max_value: float = 1e6,
+    pmap_axis_name: str | None = None,
+    validate_shapes: bool = True,
+) -> RunningStatisticsState:
     """Updates the running statistics with the given batch of data.
 
     Note: data batch and state elements (mean, etc.) must have the same structure.
@@ -110,12 +113,10 @@ def update(state: RunningStatisticsState,
     """
     # We require exactly the same structure to avoid issues when flattened
     # batch and state have different order of elements.
-    assert jtu.tree_structure(
-        batch) == jtu.tree_structure(state.mean)
+    assert jtu.tree_structure(batch) == jtu.tree_structure(state.mean)
     batch_shape = jtu.tree_leaves(batch)[0].shape
     # We assume the batch dimensions always go first.
-    batch_dims = batch_shape[:len(batch_shape) -
-                             jtu.tree_leaves(state.mean)[0].ndim]
+    batch_dims = batch_shape[: len(batch_shape) - jtu.tree_leaves(state.mean)[0].ndim]
     batch_axis = range(len(batch_dims))
     if weights is None:
         step_increment = jnp.prod(jnp.array(batch_dims))
@@ -131,12 +132,12 @@ def update(state: RunningStatisticsState,
     if validate_shapes:
         if weights is not None:
             if weights.shape != batch_dims:
-                raise ValueError(f'{weights.shape} != {batch_dims}')
+                raise ValueError(f"{weights.shape} != {batch_dims}")
         _validate_batch_shapes(batch, state.mean, batch_dims)
 
     def _compute_node_statistics(
-            mean: chex.Array, summed_variance: chex.Array,
-            batch: chex.Array) -> Tuple[chex.Array, chex.Array]:
+        mean: chex.Array, summed_variance: chex.Array, batch: chex.Array
+    ) -> tuple[chex.Array, chex.Array]:
         assert isinstance(mean, chex.Array), type(mean)
         assert isinstance(summed_variance, chex.Array), type(summed_variance)
         # The mean and the sum of past variances are updated with Welford's
@@ -144,33 +145,30 @@ def update(state: RunningStatisticsState,
         diff_to_old_mean = batch - mean
         if weights is not None:
             expanded_weights = jnp.reshape(
-                weights,
-                list(weights.shape) + [1] * (batch.ndim - weights.ndim))
+                weights, list(weights.shape) + [1] * (batch.ndim - weights.ndim)
+            )
             diff_to_old_mean = diff_to_old_mean * expanded_weights
         mean_update = jnp.sum(diff_to_old_mean, axis=batch_axis) / count
         if pmap_axis_name is not None:
-            mean_update = jax.lax.psum(
-                mean_update, axis_name=pmap_axis_name)
+            mean_update = jax.lax.psum(mean_update, axis_name=pmap_axis_name)
         mean = mean + mean_update
 
         diff_to_new_mean = batch - mean
         variance_update = diff_to_old_mean * diff_to_new_mean
         variance_update = jnp.sum(variance_update, axis=batch_axis)
         if pmap_axis_name is not None:
-            variance_update = jax.lax.psum(
-                variance_update, axis_name=pmap_axis_name)
+            variance_update = jax.lax.psum(variance_update, axis_name=pmap_axis_name)
         summed_variance = summed_variance + variance_update
         return mean, summed_variance
 
-    updated_stats = jtu.tree_map(_compute_node_statistics, state.mean,
-                                           state.summed_variance, batch)
+    updated_stats = jtu.tree_map(
+        _compute_node_statistics, state.mean, state.summed_variance, batch
+    )
     # Extract `mean` and `summed_variance` from `updated_stats` nest.
     mean = jtu.tree_map(lambda _, x: x[0], state.mean, updated_stats)
-    summed_variance = jtu.tree_map(lambda _, x: x[1], state.mean,
-                                             updated_stats)
+    summed_variance = jtu.tree_map(lambda _, x: x[1], state.mean, updated_stats)
 
-    def compute_std(summed_variance: chex.Array,
-                    std: chex.Array) -> chex.Array:
+    def compute_std(summed_variance: chex.Array, std: chex.Array) -> chex.Array:
         assert isinstance(summed_variance, chex.Array)
         # Summed variance can get negative due to rounding errors.
         summed_variance = jnp.maximum(summed_variance, 0)
@@ -181,16 +179,18 @@ def update(state: RunningStatisticsState,
     std = jtu.tree_map(compute_std, summed_variance, state.std)
 
     return RunningStatisticsState(
-        count=count, mean=mean, summed_variance=summed_variance, std=std)
+        count=count, mean=mean, summed_variance=summed_variance, std=std
+    )
 
 
-def normalize(batch: chex.Array,
-              mean_std: NestedMeanStd,
-              max_abs_value: Optional[float] = None) -> chex.Array:
+def normalize(
+    batch: chex.Array, mean_std: NestedMeanStd, max_abs_value: float | None = None
+) -> chex.Array:
     """Normalizes data using running statistics."""
 
-    def normalize_leaf(data: chex.Array, mean: chex.Array,
-                       std: chex.Array) -> chex.Array:
+    def normalize_leaf(
+        data: chex.Array, mean: chex.Array, std: chex.Array
+    ) -> chex.Array:
         # Only normalize inexact
         if not jnp.issubdtype(data.dtype, jnp.inexact):
             return data
@@ -203,8 +203,7 @@ def normalize(batch: chex.Array,
     return jtu.tree_map(normalize_leaf, batch, mean_std.mean, mean_std.std)
 
 
-def denormalize(batch: chex.Array,
-                mean_std: NestedMeanStd) -> chex.Array:
+def denormalize(batch: chex.Array, mean_std: NestedMeanStd) -> chex.Array:
     """Denormalizes values in a nested structure using the given mean/std.
 
     Only values of inexact types are denormalized.
@@ -219,8 +218,9 @@ def denormalize(batch: chex.Array,
       Nested structure with denormalized values.
     """
 
-    def denormalize_leaf(data: chex.Array, mean: chex.Array,
-                         std: chex.Array) -> chex.Array:
+    def denormalize_leaf(
+        data: chex.Array, mean: chex.Array, std: chex.Array
+    ) -> chex.Array:
         # Only denormalize inexact
         if not jnp.issubdtype(data.dtype, jnp.inexact):
             return data

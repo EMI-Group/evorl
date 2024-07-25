@@ -1,10 +1,12 @@
 import chex
 import jax
 import jax.numpy as jnp
-from ..space import Box, Space
-from ..env import Env, EnvState
-from .wrapper import Wrapper
+
 from evorl.types import Action, Observation
+
+from ..env import Env, EnvState
+from ..space import Box, Space
+from .wrapper import Wrapper
 
 
 class ObsFlattenWrapper(Wrapper):
@@ -15,14 +17,10 @@ class ObsFlattenWrapper(Wrapper):
 
     def _flatten_obs(self, state: EnvState) -> EnvState:
         start_idx = state.obs.ndim - self.obs_ndim
-        state = state.replace(
-            obs=jax.lax.collapse(state.obs, start_idx)
-        )
+        state = state.replace(obs=jax.lax.collapse(state.obs, start_idx))
 
-        if 'last_obs' in state.info:
-            state.info.last_obs = jax.lax.collapse(
-                state.info.last_obs, start_idx
-            )
+        if "last_obs" in state.info:
+            state.info.last_obs = jax.lax.collapse(state.info.last_obs, start_idx)
 
         return state
 
@@ -37,7 +35,4 @@ class ObsFlattenWrapper(Wrapper):
     @property
     def obs_space(self) -> Space:
         ori_obs_space = self.env.obs_space
-        return Box(
-            low=jnp.ravel(ori_obs_space.low),
-            high=jnp.ravel(ori_obs_space.high)
-        )
+        return Box(low=jnp.ravel(ori_obs_space.low), high=jnp.ravel(ori_obs_space.high))

@@ -1,11 +1,21 @@
+from abc import ABC, abstractmethod
+from collections.abc import Callable
+
 import chex
 
+from evorl.types import (
+    Action,
+    Done,
+    EnvInternalState,
+    EnvLike,
+    Observation,
+    PyTreeData,
+    PyTreeDict,
+    Reward,
+    pytree_field,
+)
 
 from .space import Space
-from evorl.types import PyTreeDict, EnvLike, EnvInternalState, Action, Observation, Reward, Done, pytree_field, PyTreeData
-
-from collections.abc import Callable
-from abc import ABC, abstractmethod
 
 
 class EnvState(PyTreeData):
@@ -13,16 +23,19 @@ class EnvState(PyTreeData):
     Include all the information needed to represent the state of the environment.
 
     """
+
     env_state: EnvInternalState
     obs: Observation
     reward: Reward
     done: Done
-    info: PyTreeDict = pytree_field(
-        default_factory=PyTreeDict)  # info from env
+    info: PyTreeDict = pytree_field(default_factory=PyTreeDict)  # info from env
     extra: PyTreeDict = pytree_field(
-        default_factory=PyTreeDict)  # extra info for interal use
+        default_factory=PyTreeDict
+    )  # extra info for interal use
+
 
 EnvStepFn = Callable[[EnvState, Action], EnvState]
+
 
 class Env(ABC):
     """Unified EvoRL Env API"""
@@ -34,7 +47,7 @@ class Env(ABC):
     @abstractmethod
     def step(self, state: EnvState, action: Action) -> EnvState:
         """
-            EnvState should have fields like obs, reward, done, info, ...
+        EnvState should have fields like obs, reward, done, info, ...
         """
         raise NotImplementedError
 
@@ -53,7 +66,7 @@ class Env(ABC):
 
 class EnvAdapter(Env):
     """
-        Convert envs from other packages to EvoRL's Env API.
+    Convert envs from other packages to EvoRL's Env API.
     """
 
     def __init__(self, env: EnvLike):
