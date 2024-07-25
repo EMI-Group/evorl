@@ -1,11 +1,7 @@
-from collections.abc import Sequence
-from typing import Optional, Tuple
-
 import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import numpy as np
 
 from evorl.sample_batch import SampleBatch
 from evorl.types import MISSING_REWARD

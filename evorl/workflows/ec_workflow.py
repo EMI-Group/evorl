@@ -1,11 +1,9 @@
 import copy
 from collections.abc import Callable, Sequence
-from typing import Union
 
 import chex
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 from evox import Algorithm, Problem
 from evox.workflows import StdWorkflow as EvoXWorkflow
 from omegaconf import DictConfig, OmegaConf

@@ -1,13 +1,12 @@
-from functools import partial
-from typing import Optional, Tuple
 from collections.abc import Callable, Mapping, Sequence
+from functools import partial
 
 import chex
 import jax
 
 from evorl.agents import Agent, AgentState
 from evorl.envs import EnvState, MultiAgentEnv
-from evorl.sample_batch import Episode, SampleBatch
+from evorl.sample_batch import SampleBatch
 from evorl.types import AgentID, PyTreeDict
 from evorl.utils.ma_utils import batchify, unbatchify
 
@@ -161,9 +160,7 @@ def decentralized_rollout_with_shared_model(
     agent_state: AgentState,  # readonly
     key: chex.PRNGKey,
     rollout_length: int,
-    obs_batchify_fn: None | (
-        Callable[[jax.Array], Mapping[AgentID, jax.Array]]
-    ) = None,
+    obs_batchify_fn: None | (Callable[[jax.Array], Mapping[AgentID, jax.Array]]) = None,
     action_unbatchify_fn: None | (
         Callable[[jax.Array], Mapping[AgentID, jax.Array]]
     ) = None,

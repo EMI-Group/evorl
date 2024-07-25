@@ -1,11 +1,10 @@
 import logging
-from pathlib import Path
 
 import hydra
 import jax
 from omegaconf import DictConfig, OmegaConf
 
-from evorl.recorders import ChainRecorder, LogRecorder, WandbRecorder
+from evorl.recorders import LogRecorder, WandbRecorder
 from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
 from evorl.utils.jax_utils import optimize_gpu_utilization
 from evorl.workflows import Workflow

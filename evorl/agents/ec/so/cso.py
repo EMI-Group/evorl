@@ -7,11 +7,8 @@ from omegaconf import DictConfig
 from evorl.distributed import tree_unpmap
 from evorl.ec import GeneralRLProblem
 from evorl.envs import create_wrapped_brax_env
-from evorl.evaluator import Evaluator
-from evorl.metrics import EvaluateMetric
 from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
-from evorl.utils.jax_utils import jit_method
 from evorl.workflows import ECWorkflow
 
 from ..ec import DeterministicECAgent

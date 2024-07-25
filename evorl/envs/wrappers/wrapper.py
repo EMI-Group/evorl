@@ -1,9 +1,6 @@
-from typing import Tuple, Union
-
 import chex
-from flax import struct
 
-from evorl.types import Action, ExtraInfo, PyTreeDict
+from evorl.types import Action
 
 from ..env import Env, EnvState, Space
 

@@ -2,7 +2,7 @@ import chex
 import jax.numpy as jnp
 import jumanji
 from jumanji.env import Environment as JumanjiEnv
-from jumanji.specs import Array, BoundedArray, DiscreteArray, Spec
+from jumanji.specs import Array, BoundedArray, DiscreteArray
 
 from evorl.types import Action
 

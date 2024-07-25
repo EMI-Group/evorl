@@ -1,13 +1,10 @@
 import copy
 import logging
-from typing import Any, Optional, Tuple
-from collections.abc import Callable, Sequence
+from typing import Any
 
 import chex
 import jax
-import jax.numpy as jnp
 import optax
-import orbax.checkpoint as ocp
 from omegaconf import DictConfig, OmegaConf
 from typing_extensions import Self  # pytype: disable=not-supported-yet
 
@@ -15,7 +12,7 @@ from evorl.agents import Agent, AgentState
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
 from evorl.envs import Env
 from evorl.evaluator import Evaluator
-from evorl.metrics import EvaluateMetric, MetricBase, TrainMetric, WorkflowMetric
+from evorl.metrics import EvaluateMetric, MetricBase, WorkflowMetric
 from evorl.types import State
 
 from .workflow import Workflow

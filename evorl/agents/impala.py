@@ -10,15 +10,13 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
-from flax import struct
 from omegaconf import DictConfig
 
-from evorl.agents import AgentState
 from evorl.distributed import agent_gradient_update, psum, tree_unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import Env, EnvState, create_env
+from evorl.envs import create_env
 from evorl.evaluator import Evaluator
-from evorl.metrics import TrainMetric, WorkflowMetric
+from evorl.metrics import TrainMetric
 from evorl.networks import make_policy_network, make_v_network
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
@@ -28,19 +26,13 @@ from evorl.types import (
     LossDict,
     Params,
     PolicyExtraInfo,
-    PyTreeDatam,
     PyTreeDict,
     State,
     pytree_field,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import rng_split, tree_stop_gradient
-from evorl.utils.toolkits import (
-    average_episode_discount_return,
-    compute_gae,
-    flatten_rollout_trajectory,
-    shuffle_sample_batch,
-)
+from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.toolkits import average_episode_discount_return
 from evorl.workflows import OnPolicyRLWorkflow
 
 from .agent import Agent, AgentState

@@ -1,4 +1,3 @@
-import chex
 import jax.numpy as jnp
 
 from evorl.types import Action

@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any, Tuple, Union
+from typing import Any
 
 import chex
-import jax
 from omegaconf import DictConfig
 from typing_extensions import Self  # pytype: disable=not-supported-yet
 

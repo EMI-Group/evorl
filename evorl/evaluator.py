@@ -1,11 +1,8 @@
-import dataclasses
 import logging
 import math
 
 import chex
 import jax
-import jax.numpy as jnp
-import jax.tree_util as jtu
 
 from evorl.agents import Agent
 from evorl.envs import Env

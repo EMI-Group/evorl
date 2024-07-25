@@ -1,15 +1,14 @@
-from functools import partial
-from typing import Tuple, Union
 from collections.abc import Sequence
+from functools import partial
 
 import chex
 import jax
 import jax.numpy as jnp
 
-from .agents import Agent, AgentActionFn, AgentState
-from .envs import Env, EnvState, EnvStepFn
-from .sample_batch import Episode, SampleBatch
-from .types import Action, PolicyExtraInfo, PyTreeDict, Reward, RewardDict
+from .agents import AgentActionFn, AgentState
+from .envs import EnvState, EnvStepFn
+from .sample_batch import SampleBatch
+from .types import PyTreeDict, Reward, RewardDict
 from .utils.jax_utils import rng_split
 
 # TODO: add RNN Policy support

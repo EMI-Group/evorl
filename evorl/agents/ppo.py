@@ -13,12 +13,11 @@ import optax
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig
 
-from evorl.agents import AgentState
 from evorl.distributed import agent_gradient_update, psum, tree_unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.envs import Env, EnvState, create_env
 from evorl.evaluator import Evaluator
-from evorl.metrics import TrainMetric, WorkflowMetric
+from evorl.metrics import TrainMetric
 from evorl.networks import make_policy_network, make_v_network
 from evorl.rollout import env_step
 from evorl.sample_batch import SampleBatch

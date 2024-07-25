@@ -20,8 +20,8 @@ Reference:
     - https://arxiv.org/abs/1802.05957
     - https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/spectral_norm.py
 """
-from typing import Any, Tuple
 from collections.abc import Callable
+from typing import Any
 
 import jax.numpy as jnp
 from brax.training.types import PRNGKey

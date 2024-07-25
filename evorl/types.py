@@ -1,12 +1,8 @@
-import copy
 import dataclasses
-import logging
-from typing import Any, Protocol, Union
 from collections.abc import Mapping, Sequence
+from typing import Any, Protocol, Union
 
 import chex
-import jax
-import jax.numpy as jnp
 import jax.tree_util as jtu
 from flax import struct
 from jax.typing import ArrayLike, DTypeLike

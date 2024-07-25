@@ -1,5 +1,5 @@
-from typing import Any, Optional
 from collections.abc import Mapping
+from typing import Any
 
 import wandb
 

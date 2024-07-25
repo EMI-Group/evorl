@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Dict, Literal, Optional, Tuple
+from typing import Literal
 
 import chex
 import jax
@@ -11,7 +11,6 @@ from jaxmarl.environments.mabrax.mabrax_env import (
     _agent_action_mapping,
     _agent_observation_mapping,
 )
-from jaxmarl.environments.multi_agent_env import MultiAgentEnv
 
 # TODO: move homogenisation to a separate wrapper
 

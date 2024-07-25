@@ -2,7 +2,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from evorl.types import Action, Observation
+from evorl.types import Action
 
 from ..env import Env, EnvState
 from ..space import Box, Space

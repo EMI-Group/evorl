@@ -1,6 +1,5 @@
 """Brax training gradient utility functions."""
 
-from typing import Optional
 from collections.abc import Callable
 
 import chex

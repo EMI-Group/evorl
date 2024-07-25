@@ -1,9 +1,8 @@
 import copy
 import logging
 import math
-from functools import partial
-from typing import Dict, Tuple, Union
 from collections.abc import Callable
+from functools import partial
 
 import chex
 import jax

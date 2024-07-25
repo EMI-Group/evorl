@@ -2,28 +2,15 @@ import logging
 import math
 from collections.abc import Sequence
 
-import jax
-import jax.numpy as jnp
 import jax.tree_util as jtu
 import numpy as np
 import orbax.checkpoint as ocp
-from omegaconf import DictConfig
 
-from evorl.agents import AgentState
-from evorl.distributed import agent_gradient_update, psum, tree_unpmap
-from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import Env, EnvState, create_env
-from evorl.evaluator import Evaluator
-from evorl.networks import make_policy_network, make_v_network
-from evorl.sample_batch import SampleBatch
+from evorl.distributed import tree_unpmap
 from evorl.types import MISSING_REWARD, State
-from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.toolkits import fold_multi_steps
-from evorl.workflows import OnPolicyRLWorkflow
 
 from .a2c import A2CWorkflow as _A2CWorkflow
-from .agent import Agent, AgentState
 
 logger = logging.getLogger(__name__)
 

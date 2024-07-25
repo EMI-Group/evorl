@@ -2,7 +2,6 @@ from functools import partial
 
 import chex
 import jax
-import jax.numpy as jnp
 import jax.tree_util as jtu
 
 

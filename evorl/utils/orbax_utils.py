@@ -1,12 +1,10 @@
 import logging
-from typing import Any, Optional
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 import chex
-import jax.tree_util as jtu
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig, OmegaConf
-from orbax.checkpoint.composite_checkpoint_handler import CompositeArgs as Composite
 
 from evorl.utils.cfg_utils import get_output_dir
 

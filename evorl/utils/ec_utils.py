@@ -1,13 +1,6 @@
-from collections import namedtuple
-from typing import Tuple
-from collections.abc import Callable
-
 import jax
-import jax.numpy as jnp
-import numpy as np
-from flax import struct
 from jax.flatten_util import ravel_pytree
-from jax.tree_util import tree_flatten, tree_leaves, tree_unflatten
+from jax.tree_util import tree_leaves
 
 
 class ParamVectorSpec:

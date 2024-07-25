@@ -1,12 +1,9 @@
-from typing import Tuple
-
 import chex
 import jax
 import jax.tree_util as jtu
-from flax import struct
 from jax import numpy as jnp
 
-from evorl.utils.jax_utils import tree_ones_like, vmap_rng_split
+from evorl.utils.jax_utils import vmap_rng_split
 
 from ..env import Env, EnvState
 from .wrapper import Wrapper

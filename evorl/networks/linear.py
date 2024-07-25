@@ -13,16 +13,11 @@
 # limitations under the License.
 
 """Network definitions."""
-
-
-import warnings
-from functools import partial
-from typing import Any, Optional, Tuple
 from collections.abc import Callable, Sequence
+from typing import Any
 
 import jax
 import jax.numpy as jnp
-from brax.training import types
 from flax import linen as nn
 
 from .spectral_norm import SNDense

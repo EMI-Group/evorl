@@ -2,8 +2,6 @@ import copy
 import logging
 import math
 from functools import partial
-from typing import Any, Optional, Tuple
-from collections.abc import Sequence
 
 import chex
 import hydra
@@ -12,20 +10,17 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
-from flax import struct
-from jax.experimental import mesh_utils
 from jax.experimental.shard_map import shard_map
 from jax.sharding import Mesh, NamedSharding
 from jax.sharding import PartitionSpec as P
 from omegaconf import DictConfig, OmegaConf, open_dict, read_write
 from optax.schedules import InjectStatefulHyperparamsState
 
-from evorl.agents import AgentState
 from evorl.distributed import POP_AXIS_NAME, tree_device_get, tree_device_put
-from evorl.metrics import MetricBase, TrainMetric, WorkflowMetric
+from evorl.metrics import MetricBase, TrainMetric
 from evorl.types import PyTreeData, PyTreeDict, State
 from evorl.utils.jax_utils import tree_last
-from evorl.workflows import OnPolicyRLWorkflow, RLWorkflow
+from evorl.workflows import RLWorkflow
 
 logger = logging.getLogger(__name__)
 

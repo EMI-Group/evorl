@@ -1,11 +1,8 @@
 from collections.abc import Callable, Sequence
-from typing import Union
 
-import chex
 import jax
-import jax.numpy as jnp
 from evox import Algorithm, Problem
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from evorl.agents import Agent
 from evorl.evaluator import Evaluator

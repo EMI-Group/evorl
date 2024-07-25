@@ -12,7 +12,7 @@ import optax
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig
 
-from evorl.distributed import agent_gradient_update, psum, tree_unpmap
+from evorl.distributed import psum, tree_unpmap
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import Discrete, create_env
 from evorl.evaluator import Evaluator

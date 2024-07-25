@@ -1,7 +1,6 @@
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable
-from typing import Any, Optional, Protocol, Tuple, Union
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from typing import Any, Protocol
 
 import chex
 

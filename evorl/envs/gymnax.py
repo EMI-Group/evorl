@@ -1,16 +1,13 @@
-from typing import Any, Dict, Optional
-
 import chex
 import gymnax
 import jax
 import jax.numpy as jnp
-from flax import struct
 from gymnax.environments.environment import Environment as GymnaxEnv
 from gymnax.environments.spaces import Box as GymnaxBox
 from gymnax.environments.spaces import Discrete as GymnaxDiscrete
 from gymnax.environments.spaces import Space as GymnaxSpace
 
-from evorl.types import Action, PyTreeDict, pytree_field
+from evorl.types import Action, PyTreeDict
 
 from .env import Env, EnvAdapter, EnvState
 from .space import Box, Discrete, Space

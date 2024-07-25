@@ -1,5 +1,4 @@
 import math
-from typing import Tuple
 from collections.abc import Sequence
 
 import flax.linen as nn

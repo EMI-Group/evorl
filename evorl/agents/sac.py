@@ -1,7 +1,7 @@
 import logging
 import math
-from typing import Any, Optional, Tuple
 from collections.abc import Callable
+from typing import Any
 
 import chex
 import flashbax
@@ -10,15 +10,13 @@ import jax
 import jax.numpy as jnp
 import optax
 import orbax.checkpoint as ocp
-from chex._src.pytypes import PRNGKey
-from flax import struct
 from omegaconf import DictConfig
 
 from evorl.distributed import agent_gradient_update, psum, tree_pmean, tree_unpmap
 from evorl.distribution import get_tanh_norm_dist
 from evorl.envs import Box, create_env
 from evorl.evaluator import Evaluator
-from evorl.metrics import MetricBase, TrainMetric, WorkflowMetric, metricfield
+from evorl.metrics import MetricBase, TrainMetric, metricfield
 from evorl.networks import make_policy_network, make_q_network
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch

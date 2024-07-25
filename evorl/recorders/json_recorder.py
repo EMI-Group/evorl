@@ -1,8 +1,7 @@
 import json
-import logging
-from pathlib import Path
-from typing import Any, Optional
 from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
 from .recorder import Recorder
 

@@ -1,6 +1,6 @@
 import logging
-from typing import Any, Optional, Tuple
 from collections.abc import Sequence
+from typing import Any
 
 import chex
 import flax.linen as nn
@@ -8,18 +8,10 @@ import jax
 import jax.numpy as jnp
 from flax import struct
 
-from evorl.agents import AgentState
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.networks.linear import MLP, ActivationFn
 from evorl.sample_batch import SampleBatch
-from evorl.types import (
-    Action,
-    LossDict,
-    Params,
-    PolicyExtraInfo,
-    PyTreeDict,
-    pytree_field,
-)
+from evorl.types import Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field
 from evorl.utils import running_statistics
 
 from ..agent import Agent, AgentState

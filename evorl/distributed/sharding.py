@@ -1,10 +1,5 @@
-from typing import Optional, Union
-from collections.abc import Sequence
-
 import chex
 import jax
-import jax.numpy as jnp
-from jax.sharding import Sharding
 
 
 def tree_device_put(tree: chex.ArrayTree, device):

@@ -2,7 +2,6 @@ import logging
 
 import evox.algorithms
 import jax
-import jax.numpy as jnp
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig
 

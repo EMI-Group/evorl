@@ -1,24 +1,22 @@
 import logging
 import math
-from typing import Any, Optional, Tuple
-from collections.abc import Callable, Sequence
+from typing import Any
 
 import chex
 import flashbax
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from evorl.agents.random_agent import EMPTY_RANDOM_AGENT_STATE, RandomAgent
-from evorl.distributed import psum, split_key_to_devices, tree_pmean, tree_unpmap
+from evorl.distributed import psum, tree_pmean, tree_unpmap
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import Box, create_env
 from evorl.evaluator import Evaluator
-from evorl.metrics import MetricBase, WorkflowMetric, metricfield
+from evorl.metrics import MetricBase, metricfield
 from evorl.networks import make_policy_network, make_q_network
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch

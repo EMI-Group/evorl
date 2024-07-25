@@ -3,7 +3,6 @@ import jax
 import jax.numpy as jnp
 from brax.envs import Env as BraxEnv
 from brax.envs import get_environment
-from flax import struct
 
 from evorl.types import Action, PyTreeDict
 

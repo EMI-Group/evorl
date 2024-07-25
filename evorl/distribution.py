@@ -1,14 +1,10 @@
-from typing import Any, List, Optional, Union
-from collections.abc import Callable, Sequence
+from typing import Any
 
-import distrax
 import jax
 import jax.numpy as jnp
-import numpy as np
 from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions  # note: tfp use lazy init.
-from tensorflow_probability.substrates.jax.distributions import Categorical
 
 
 def get_categorical_dist(logits: jax.Array):

@@ -5,13 +5,10 @@ This file was taken from acme and modified to simplify dependencies:
 https://github.com/deepmind/acme/blob/master/acme/jax/running_statistics.py
 """
 
-from typing import Any, Optional, Tuple
-
 import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from brax.training.acme import types
 
 from evorl.types import PyTreeData
 

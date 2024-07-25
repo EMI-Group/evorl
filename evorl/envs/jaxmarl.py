@@ -1,10 +1,8 @@
-from typing import Dict, List, Tuple
 from collections.abc import Mapping
 
 import chex
 import jax
 import jax.numpy as jnp
-import jaxmarl
 from jaxmarl.environments import MultiAgentEnv
 
 from evorl.types import Action, AgentID, PyTreeDict

@@ -1,13 +1,10 @@
-import dataclasses
-from typing import Tuple
-
 import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 from evorl.sample_batch import SampleBatch
-from evorl.types import Action, LossDict, PolicyExtraInfo, PyTreeDict
+from evorl.types import Action, PolicyExtraInfo, PyTreeDict
 
 from .agent import Agent, AgentState
 

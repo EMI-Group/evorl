@@ -1,7 +1,6 @@
 import os
-import re
+from collections.abc import Iterable, Sequence
 from functools import partial
-from collections.abc import Callable, Iterable, Sequence
 
 import chex
 import jax

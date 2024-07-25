@@ -1,5 +1,4 @@
 from abc import abstractmethod
-from typing import List
 from collections.abc import Mapping
 
 import chex

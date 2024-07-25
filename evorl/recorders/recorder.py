@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 
 class Recorder(ABC):

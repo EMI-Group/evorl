@@ -1,5 +1,3 @@
-from typing import Dict
-
 import chex
 import jax
 import jax.numpy as jnp

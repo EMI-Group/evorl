@@ -1,14 +1,12 @@
 import dataclasses
-from typing import Optional
 from collections.abc import Callable
 
 import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
-from flax import struct
 
-from .distributed import pmean, psum, tree_pmean
+from .distributed import pmean, tree_pmean
 from .types import LossDict, PyTreeData, PyTreeDict
 
 

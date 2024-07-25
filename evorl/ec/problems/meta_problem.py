@@ -1,14 +1,11 @@
 import logging
-from typing import List, Tuple
 
 import chex
 import jax
-import jax.numpy as jnp
 import jax.tree_util as jtu
 from evox import Problem
 
 from evorl.types import State
-from evorl.workflows import Workflow
 
 MetaInfo = chex.ArrayTree
 
