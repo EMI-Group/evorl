@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Network definitions."""
+
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -174,9 +175,7 @@ def make_q_network(
                     layer_sizes=tuple(hidden_layer_sizes) + (1,),
                     activation=activation,
                     kernel_init=kernel_init,
-                )(
-                    hidden
-                )
+                )(hidden)
             else:
                 raise ValueError("n should be greater than 0")
 
@@ -228,9 +227,7 @@ def make_discrete_q_network(
                     layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
                     activation=activation,
                     kernel_init=kernel_init,
-                )(
-                    x
-                )
+                )(x)
             else:
                 raise ValueError("n should be greater than 0")
 

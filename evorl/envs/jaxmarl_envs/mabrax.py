@@ -21,7 +21,7 @@ class MABraxEnvV2(MABraxEnv):
         env_name: str,
         homogenisation_method: Literal["max", "concat"] | None = None,
         backend: str = "positional",
-        **kwargs
+        **kwargs,
     ):
         """Multi-Agent Brax environment.
         Compared to the original MABraxEnv, this version disables the autoreset and other wrappers in internal brax envs.

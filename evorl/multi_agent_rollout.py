@@ -161,9 +161,8 @@ def decentralized_rollout_with_shared_model(
     key: chex.PRNGKey,
     rollout_length: int,
     obs_batchify_fn: None | (Callable[[jax.Array], Mapping[AgentID, jax.Array]]) = None,
-    action_unbatchify_fn: None | (
-        Callable[[jax.Array], Mapping[AgentID, jax.Array]]
-    ) = None,
+    action_unbatchify_fn: None
+    | (Callable[[jax.Array], Mapping[AgentID, jax.Array]]) = None,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
     """

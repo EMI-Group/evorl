@@ -497,7 +497,6 @@ class SACWorkflow(OffPolicyRLWorkflow):
         )
 
     def step(self, state: State) -> tuple[TrainMetric, State]:
-
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # the trajectory [T, B, ...]
@@ -667,13 +666,16 @@ class SACWorkflow(OffPolicyRLWorkflow):
             return (key, agent_state, opt_state), res
 
         if self.config.adaptive_alpha:
-            (_, agent_state, opt_state), (
-                critic_loss,
-                actor_loss,
-                alpha_loss,
-                critic_loss_dict,
-                actor_loss_dict,
-                alpha_loss_dict,
+            (
+                (_, agent_state, opt_state),
+                (
+                    critic_loss,
+                    actor_loss,
+                    alpha_loss,
+                    critic_loss_dict,
+                    actor_loss_dict,
+                    alpha_loss_dict,
+                ),
             ) = scan_and_mean(
                 _sample_and_update_fn,
                 (learn_key, agent_state, state.opt_state),
@@ -689,11 +691,14 @@ class SACWorkflow(OffPolicyRLWorkflow):
                 ),
             ).all_reduce(pmap_axis_name=self.pmap_axis_name)
         else:
-            (_, agent_state, opt_state), (
-                critic_loss,
-                actor_loss,
-                critic_loss_dict,
-                actor_loss_dict,
+            (
+                (_, agent_state, opt_state),
+                (
+                    critic_loss,
+                    actor_loss,
+                    critic_loss_dict,
+                    actor_loss_dict,
+                ),
             ) = scan_and_mean(
                 _sample_and_update_fn,
                 (learn_key, agent_state, state.opt_state),

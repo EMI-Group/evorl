@@ -1,0 +1,43 @@
+# [tool.black]
+# line-length = 88
+
+# [tool.isort]
+# profile = "black"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+src = ["evorl", "tests"]
+
+[build-system]
+requires = ["setuptools >= 62.6"] # to support `file` directive
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {attr = "evorl.__version__"}
+dependencies = {file = ["requirements/requirements.txt"]}
+optional-dependencies.dev = {file = ["requirements/requirements-dev.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["evorl"]
+namespaces = false
+
+[project]
+name = "evorl"
+authors = [
+    {name = "Bowen Zheng", email = "bowen.zheng@protonmail.com"}
+]
+description = "An efficient Evolutionary Reinforcement Learning Framework on Jax"
+readme = "README.md"
+dynamic = ["version", "dependencies", "optional-dependencies"]
+requires-python = ">= 3.10"
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: GPU",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]

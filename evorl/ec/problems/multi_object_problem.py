@@ -53,8 +53,8 @@ class MultiObjectiveBraxProblem(Problem):
         self.flatten_objectives = flatten_objectives
 
         if isinstance(reduce_fn, dict):
-            assert len(reduce_fn) == len(
-                metric_names
+            assert (
+                len(reduce_fn) == len(metric_names)
             ), "when reduce_fn is a list, it should have the same length as metric_names"
             self.reduce_fn = reduce_fn
         else:
@@ -91,7 +91,6 @@ class MultiObjectiveBraxProblem(Problem):
             metric_names = metric_names + ("episode_length",)
 
         def _evaluate_fn(key, unused_t):
-
             next_key, init_env_key, rollout_key = jax.random.split(key, 3)
             env_state = self.env_reset(jax.random.split(init_env_key, num=pop_size))
 
@@ -184,7 +183,6 @@ def eval_env_step(
     key: chex.PRNGKey,
     metric_names: tuple[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
-
     actions, policy_extras = action_fn(agent_state, sample_batch, key)
     env_nstate = env_fn(env_state, actions)
 

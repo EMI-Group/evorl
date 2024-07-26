@@ -96,7 +96,6 @@ class MetaProblem(AbstractMetaProblem):
         return metrics, state
 
     def evaluate_individual(self, init_key, individual) -> MetaInfo:
-
         def _one_time_evaluate(key, _):
             key, init_key = jax.random.split(key)
             workflow_state = self.workflow.init(init_key)

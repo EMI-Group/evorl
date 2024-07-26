@@ -26,7 +26,7 @@ class WandbRecorder(Recorder):
             tags=self.tags,
             dir=self.dir,
             mode=self.mode,
-            **self.wandb_kwargs
+            **self.wandb_kwargs,
         )
 
     def write(self, data: Mapping[str, Any], step: int | None = None) -> None:

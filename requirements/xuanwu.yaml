@@ -7,8 +7,7 @@ dependencies:
   - jupyterlab
   - tqdm
   # vscode support
-  - autopep8
-  - pylint
+  - ruff
   - ipywidgets
   - pytest
   # -------

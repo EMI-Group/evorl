@@ -64,7 +64,6 @@ class PPOAgent(Agent):
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
     def init(self, key: chex.PRNGKey) -> AgentState:
-
         obs_size = self.obs_space.shape[0]
 
         if self.continuous_action:
@@ -313,7 +312,6 @@ class PPOWorkflow(OnPolicyRLWorkflow):
         return cls(env, agent, optimizer, evaluator, config)
 
     def step(self, state: State) -> tuple[TrainMetric, State]:
-
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # trajectory: [T, #envs, ...]

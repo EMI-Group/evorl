@@ -147,7 +147,6 @@ class MLPMutation:
         reset_prob: float = 0.1,
         vec_relative_prob: float = 0.0,
     ):
-
         self.weight_max_magnitude = weight_max_magnitude
         self.mut_strength = mut_strength
         self.num_mutation_frac = num_mutation_frac

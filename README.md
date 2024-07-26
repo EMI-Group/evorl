@@ -1,32 +1,36 @@
 # EvoRL
-EvoRL is an efficient Evolutionary Reinforcement Learning Framework based on [EvoX](https://github.com/EMI-Group/evox) (A JAX-accelerated EC Framework)
 
+EvoRL is an efficient Evolutionary Reinforcement Learning Framework integrated with [EvoX](https://github.com/EMI-Group/evox) (A JAX-accelerated EC Framework)
 
-# Setup
-```
-conda|mamba env create -f xuanwu.yaml
+## Setup
+
+For developer:
+
+```shell
+conda|mamba env create -f requirements/xuanwu.yaml
 # install jax (in various way)
 pip install "jax[cuda12]"
 # install pip packages
-pip install -r requirements-dev.txt
+pip install -r requirements/requirements-conda.txt
 conda activate xuanwu
 ```
 
-# Usage
+## Usage
 
 EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms.
 
 Train agents from cli:
+
 ```shell
 python -m evorl.train agent=a2c env=brax/ant
 
 python -m evorl.train agent=a2c env=gymnax/CartPole-v1 agent_network.continuous_action=false
 
 # sweep over multiple config values (seed=114 or seed=514):
-python -m evorl.train -m agent=a2c env=brax/ant seed=114,514 
+python -m evorl.train -m agent=a2c env=brax/ant seed=114,514
 ```
 
-# Acknowledgement
+## Acknowledgement
 
 - brax
 - acme

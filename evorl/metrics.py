@@ -14,7 +14,7 @@ def metricfield(
     *,
     reduce_fn: Callable[[chex.Array, str | None], chex.Array] = None,
     pytree_node=True,
-    **kwargs
+    **kwargs,
 ):
     metadata = {"pytree_node": pytree_node, "reduce_fn": reduce_fn}
     kwargs.setdefault("metadata", {}).update(metadata)

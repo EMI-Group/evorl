@@ -20,7 +20,9 @@ def compute_episode_length(
 
 
 def compute_discount_return(
-    rewards: chex.Array, dones: chex.Array, discount: float = 1.0  # [T, B]  # [T, B]
+    rewards: chex.Array,
+    dones: chex.Array,
+    discount: float = 1.0,  # [T, B]  # [T, B]
 ) -> chex.Array:
     """
     For episodic trajectory
@@ -173,7 +175,6 @@ def average_episode_discount_return(
     dones: jax.Array,  # [T,B]
     pmap_axis_name: str | None = None,
 ) -> jax.Array:
-
     cnt = dones.sum()
     episode_discount_return_sum = (episode_discount_return * dones).sum()
 

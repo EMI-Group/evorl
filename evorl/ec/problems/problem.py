@@ -73,7 +73,6 @@ class GeneralRLProblem(Problem):
         pop_size = jax.tree_leaves(pop_agent_state)[0].shape[0]
 
         def _evaluate_fn(key, unused_t):
-
             next_key, init_env_key, rollout_key = jax.random.split(key, 3)
             env_state = self.env_reset(jax.random.split(init_env_key, num=pop_size))
 

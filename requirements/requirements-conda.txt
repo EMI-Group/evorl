@@ -1,7 +1,11 @@
+brax
+chex
+distrax
 evox @ git+https://github.com/ZaberKo/evox@main
-hydra-core
-wandb
-pyyaml
 flashbax
 gymnax
+jaxmarl
 jumanji
+optax
+orbax-checkpoint
+pgx

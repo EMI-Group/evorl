@@ -86,7 +86,7 @@ def create_wrapped_brax_env(
     autoreset: bool = True,
     fast_reset: bool = True,
     discount: float = 1.0,
-    **kwargs
+    **kwargs,
 ) -> Env:
     env = create_brax_env(env_name, **kwargs)
     if autoreset:

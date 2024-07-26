@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import chex
 
+
 def test_ParamVectorSpec():
     model = nn.Dense(features=7)
 
@@ -13,11 +14,11 @@ def test_ParamVectorSpec():
 
     batch_params = [model.init(key, x) for key in keys]
     params = batch_params[0]
-    batch_params = jax.tree_util.tree_map(lambda *x: jnp.stack(x, axis=0), *batch_params)
-
+    batch_params = jax.tree_util.tree_map(
+        lambda *x: jnp.stack(x, axis=0), *batch_params
+    )
 
     param_spec = ParamVectorSpec(params)
-
 
     flat, to_tree = param_spec.to_vector(params)
     assert flat.shape == (param_spec.vec_size,)

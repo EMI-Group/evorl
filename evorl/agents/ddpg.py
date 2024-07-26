@@ -583,11 +583,14 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
                 (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict),
             )
 
-        (_, agent_state, opt_state), (
-            critic_loss,
-            actor_loss,
-            critic_loss_dict,
-            actor_loss_dict,
+        (
+            (_, agent_state, opt_state),
+            (
+                critic_loss,
+                actor_loss,
+                critic_loss_dict,
+                actor_loss_dict,
+            ),
         ) = scan_and_mean(
             _sample_and_update_fn,
             (learn_key, agent_state, state.opt_state),

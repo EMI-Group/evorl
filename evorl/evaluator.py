@@ -40,7 +40,6 @@ class Evaluator(PyTreeNode):
             )
 
         def _evaluate_fn(key, unused_t):
-
             next_key, init_env_key = jax.random.split(key, 2)
             env_state = self.env.reset(init_env_key)
 
@@ -83,7 +82,6 @@ class Evaluator(PyTreeNode):
             )
 
         def _evaluate_fn(key, unused_t):
-
             next_key, init_env_key = jax.random.split(key, 2)
             env_state = self.env.reset(init_env_key)
 

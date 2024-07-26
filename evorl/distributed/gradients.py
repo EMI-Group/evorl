@@ -76,7 +76,6 @@ def agent_gradient_update(
         [chex.ArrayTree, chex.ArrayTree], chex.ArrayTree
     ] = _detach_params_to_agent_state,
 ):
-
     def _loss_fn(params, agent_state, sample_batch, key):
         agent_state = attach_fn(agent_state, params)
         return loss_fn(agent_state, sample_batch, key)

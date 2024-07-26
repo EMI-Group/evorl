@@ -20,6 +20,7 @@ Reference:
     - https://arxiv.org/abs/1802.05957
     - https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/spectral_norm.py
 """
+
 from collections.abc import Callable
 from typing import Any
 

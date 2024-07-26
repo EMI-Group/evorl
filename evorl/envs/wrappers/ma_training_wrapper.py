@@ -224,9 +224,7 @@ class FastVmapAutoResetWrapper(Wrapper):
         def where_done(x, y):
             done = state.done["__all__"]
             if done.ndim > 0:
-                done = jnp.reshape(
-                    done, [x.shape[0]] + [1] * (len(x.shape) - 1)
-                )  # type: ignore
+                done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
             return jnp.where(done, x, y)
 
         env_state = jax.tree_map(

@@ -3,25 +3,24 @@ import chex
 from evorl.agents.random_agent import RandomAgent
 from evorl.envs import create_env
 
+
 def _test_info_keys(env_state):
-    for key in ('steps', 'termination', 'truncation', 'last_obs', 'episode_return', 'reset_key'):
-        assert key in env_state.info, f'Missing key {key} in env_state.info'
+    for key in (
+        "steps",
+        "termination",
+        "truncation",
+        "last_obs",
+        "episode_return",
+        "reset_key",
+    ):
+        assert key in env_state.info, f"Missing key {key} in env_state.info"
 
 
 def test_brax():
     num_envs = 7
-    env = create_env(
-        'ant',
-        'brax',
-        parallel=num_envs,
-        autoreset=True,
-        discount=0.99
-    )
+    env = create_env("ant", "brax", parallel=num_envs, autoreset=True, discount=0.99)
 
-    agent = RandomAgent(
-        action_space=env.action_space,
-        obs_space=env.obs_space
-    )
+    agent = RandomAgent(action_space=env.action_space, obs_space=env.obs_space)
 
     env_key, agent_key, step_key = jax.random.split(jax.random.PRNGKey(42), 3)
 
@@ -36,4 +35,3 @@ def test_brax():
         env_state = env.step(env_state, action)
 
     _test_info_keys(env_state)
-

@@ -54,7 +54,6 @@ class StochasticECAgent(Agent):
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
     def init(self, key: chex.PRNGKey) -> AgentState:
-
         obs_size = self.obs_space.shape[0]
 
         if self.continuous_action:
@@ -147,7 +146,6 @@ class DeterministicECAgent(Agent):
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
     def init(self, key: chex.PRNGKey) -> AgentState:
-
         obs_size = self.obs_space.shape[0]
 
         # it must be continuous action
