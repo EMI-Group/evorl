@@ -64,7 +64,7 @@ class TD3Agent(Agent):
 
     critic_hidden_layer_sizes: tuple[int] = (256, 256)
     actor_hidden_layer_sizes: tuple[int] = (256, 256)
-    discount: float = 1
+    discount: float = 0.99
     exploration_epsilon: float = 0.5
     policy_noise: float = 0.2
     clip_policy_noise: float = 0.5
@@ -682,41 +682,6 @@ class TD3Workflow(OffPolicyRLWorkflow):
         )
         train_metrics = tree_last(train_metrics)
         return train_metrics, state
-
-    def learn(self, state: State) -> State:
-        one_step_timesteps = self.config.rollout_length * self.config.num_envs
-        sampled_timesteps = tree_unpmap(state.metrics.sampled_timesteps).tolist()
-        num_iters = math.ceil(
-            (self.config.total_timesteps - sampled_timesteps)
-            / (one_step_timesteps * self.config.fold_iters)
-        )
-
-        for i in range(num_iters):
-            train_metrics, state = self._multi_steps(state)
-            workflow_metrics = state.metrics
-
-            iterations = tree_unpmap(
-                state.metrics.iterations, self.pmap_axis_name
-            ).tolist()
-            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
-            self.recorder.write(train_metrics.to_local_dict(), iterations)
-            self.recorder.write(workflow_metrics.to_local_dict(), iterations)
-
-            if iterations % self.config.eval_interval == 0:
-                eval_metrics, state = self.evaluate(state)
-                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write({"eval": eval_metrics.to_local_dict()}, iterations)
-
-            saved_state = tree_unpmap(state, self.pmap_axis_name)
-            if not self.config.save_replay_buffer:
-                saved_state = skip_replay_buffer_state(state)
-            self.checkpoint_manager.save(
-                iterations,
-                args=ocp.args.StandardSave(saved_state),
-            )
-
-        return state
 
     def learn(self, state: State) -> State:
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
