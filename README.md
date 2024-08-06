@@ -22,12 +22,12 @@ EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms.
 Train agents from cli:
 
 ```shell
-python -m evorl.train agent=a2c env=brax/ant
+python -m evorl.train agent=exp/ppo/brax/ant env=brax/ant
 
-python -m evorl.train agent=a2c env=gymnax/CartPole-v1 agent_network.continuous_action=false
+python -m evorl.train agent=exp/ppo/brax/ant env=gymnax/CartPole-v1 agent_network.continuous_action=false
 
 # sweep over multiple config values (seed=114 or seed=514):
-python -m evorl.train -m agent=a2c env=brax/ant seed=114,514
+python -m evorl.train -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514
 ```
 
 ## Acknowledgement
