@@ -33,7 +33,7 @@ from evorl.types import (
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import scan_and_mean, tree_last, tree_stop_gradient
 from evorl.utils.toolkits import flatten_rollout_trajectory, soft_target_update
-from evorl.workflows import OffPolicyRLWorkflow
+from evorl.workflows import OffPolicyRLWorkflow, skip_replay_buffer_state
 
 from .agent import Agent, AgentState
 from .random_agent import EMPTY_RANDOM_AGENT_STATE, RandomAgent
@@ -602,10 +602,6 @@ class DQNWorkflow(OffPolicyRLWorkflow):
             )
 
         return state
-
-
-def skip_replay_buffer_state(state: State) -> State:
-    return state.replace(replay_buffer_state=None)
 
 
 def clean_trajectory(trajectory: SampleBatch):

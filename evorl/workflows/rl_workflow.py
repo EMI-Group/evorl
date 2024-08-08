@@ -259,3 +259,11 @@ class OffPolicyRLWorkflow(RLWorkflow):
 
         state = state.replace(key=key)
         return eval_metrics, state
+
+
+def skip_replay_buffer_state(state: State) -> State:
+    """
+    Utility function to remove replay_buffer_state from state;
+    Usually used when saving the off-policy workflow state to disk.
+    """
+    return state.replace(replay_buffer_state=None)
