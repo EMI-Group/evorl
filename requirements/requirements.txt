@@ -6,7 +6,8 @@ flashbax
 gymnax
 hydra-core
 
-jax[cuda12]
+jax
+jaxlib
 jaxmarl
 jumanji
 numpy
