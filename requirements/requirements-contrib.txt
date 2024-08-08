@@ -1,0 +1,10 @@
+-e ".[dev]"
+jupyterlab
+matplotlib
+numpy
+pandas
+pytest
+ruff
+scipy
+seaborn
+tqdm
