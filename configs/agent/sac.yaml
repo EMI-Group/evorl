@@ -18,7 +18,7 @@ learning_start_timesteps: 4096 # steps before training starts
 batch_size: 256
 replay_buffer_capacity: 1000000
 
-reward_scale: 10.0
+reward_scale: 1.0
 tau: 0.005
 adaptive_alpha: false
 alpha: 0.2 # used as initial alpha value if adaptive_alpha is true
@@ -32,7 +32,7 @@ loss_weights:
 
 optimizer:
   lr: 0.0003
-  grad_clip_norm: 10.0 # set 0 or null to turn-off
+  grad_clip_norm: 0 # set 0 or null to turn-off
 
 agent_network:
   continuous_action: true

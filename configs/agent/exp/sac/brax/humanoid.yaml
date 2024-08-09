@@ -1,0 +1,23 @@
+# @package _global_
+
+defaults:
+  - /agent/sac
+  - _self_
+
+num_envs: 128
+normalize_obs: true
+rollout_length: 1
+discount: 0.99
+total_timesteps: 5000000
+fold_iters: 8192
+
+num_eval_envs: 16
+eval_episodes: 16 # should be divided by num_eval_envs
+eval_interval: 8192 # unit: num of iterations
+
+num_updates_per_iter: 4
+
+# Note: unlike brax, corrently we don't change lr & reward_scale
+
+checkpoint:
+  save_interval_steps: 81920
