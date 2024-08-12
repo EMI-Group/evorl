@@ -83,7 +83,7 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=pbt-ngpu",
+                "agent=pbt",
                 "env=brax/ant",
                 "debug=true",
                 "checkpoint.enable=false"
@@ -91,7 +91,7 @@
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
-                "CUDA_VISIBLE_DEVICES": "0,1"
+                // "CUDA_VISIBLE_DEVICES": "0,1"
                 // "JAX_DISABLE_JIT": "true"
             },
             "justMyCode": false

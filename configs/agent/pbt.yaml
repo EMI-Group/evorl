@@ -6,7 +6,7 @@ defaults:
 
 workflow_cls: evorl.agents.meta.pbt.PBTWorkflow
 
-pop_size: 2
+pop_size: 128
 
 parallel_train: true
 parallel_eval: true
