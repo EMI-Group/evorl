@@ -4,8 +4,6 @@ defaults:
   - agent: null
   - logging
 
-
-
 seed: 42
 debug: false
 checkpoint:
