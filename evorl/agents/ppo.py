@@ -547,4 +547,4 @@ def rollout(
         _one_step_rollout, (env_state, key), (), length=rollout_length
     )
 
-    return env_state, trajectory
+    return trajectory, env_state
