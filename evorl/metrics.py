@@ -124,7 +124,7 @@ def _to_local_dict_inner(obj, dict_factory):
             for k, v in obj.items()
         )
     else:
-        if isinstance(obj, jax.Array) or isinstance(obj, np.ndarray):
-            return obj.tolist()
+        if isinstance(obj, jax.Array):
+            return np.array(obj)
         else:
             return obj

@@ -1,6 +1,7 @@
 import copy
 import logging
 import math
+import numpy as np
 from functools import partial
 
 import chex
@@ -12,8 +13,9 @@ import optax
 from optax.schedules import InjectStatefulHyperparamsState
 import orbax.checkpoint as ocp
 
-from jax.sharding import Mesh, NamedSharding
+from jax.sharding import Mesh, NamedSharding, PositionalSharding
 from jax.sharding import PartitionSpec as P
+from jax.experimental.shard_map import shard_map
 
 from omegaconf import DictConfig, OmegaConf, open_dict, read_write
 
@@ -24,8 +26,8 @@ from evorl.distributed import (
     parallel_map,
 )
 from evorl.metrics import MetricBase
-from evorl.types import PyTreeData, PyTreeDict, State
-from evorl.utils.jax_utils import tree_last
+from evorl.types import PyTreeData, PyTreeDict, State, MISSING_REWARD
+from evorl.utils.jax_utils import scan_and_mean
 from evorl.workflows import RLWorkflow, Workflow
 from evorl.metrics import WorkflowMetric
 
@@ -55,7 +57,8 @@ class PBTWorkflow(Workflow):
 
         self.workflow = workflow
         self.devices = jax.local_devices()[:1]
-        self.sharding = None
+        self.sharding = None  # training sharding
+        # self.pbt_update_sharding = None
 
     @classmethod
     def name(cls):
@@ -98,6 +101,7 @@ class PBTWorkflow(Workflow):
         mesh = Mesh(devices, axis_names=(POP_AXIS_NAME,))
         workflow.devices = devices
         workflow.sharding = NamedSharding(mesh, P(POP_AXIS_NAME))
+        # workflow.pbt_update_sharding = PositionalSharding(devices[0])
 
         return workflow
 
@@ -178,13 +182,9 @@ class PBTWorkflow(Workflow):
                 train_metrics, wf_state = self.workflow.step(wf_state)
                 return wf_state, train_metrics
 
-            wf_state, train_metrics_trajectory = jax.lax.scan(
-                _one_step, wf_state, (), length=self.config.per_iter_workflow_steps
+            wf_state, train_metrics = scan_and_mean(
+                _one_step, wf_state, (), length=self.config.workflow_steps_per_iter
             )
-
-            # jax.debug.print("{x}", x=train_metrics_trajectory.train_episode_return)
-
-            train_metrics = tree_last(train_metrics_trajectory)
 
             return train_metrics, wf_state
 
@@ -218,13 +218,21 @@ class PBTWorkflow(Workflow):
         def _dummy_fn(pop, pop_workflow_state, pop_metrics, key):
             return pop, pop_workflow_state
 
+        # _exploit_and_explore_fn = shard_map(
+        #     self.exploit_and_explore,
+        #     mesh=self.pbt_update_sharding.mesh,
+        #     in_specs=self.pbt_update_sharding.spec,
+        #     out_specs=self.pbt_update_sharding.spec,
+        # )
+        _exploit_and_explore_fn = self.exploit_and_explore
+
         pop, pop_workflow_state = jax.lax.cond(
             state.metrics.iterations + 1
             <= math.ceil(
-                self.config.warmup_steps / self.config.per_iter_workflow_steps
+                self.config.warmup_steps / self.config.workflow_steps_per_iter
             ),
             _dummy_fn,
-            self.exploit_and_explore,
+            _exploit_and_explore_fn,
             pop,
             pop_workflow_state,
             pop_episode_returns,
@@ -256,8 +264,30 @@ class PBTWorkflow(Workflow):
         for i in range(self.config.num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
+
             self.recorder.write(workflow_metrics.to_local_dict(), i)
-            self.recorder.write(train_metrics.to_local_dict(), i)
+
+            train_metrics_dict = train_metrics.to_local_dict()
+
+            if "train_episode_return" in train_metrics_dict["pop_train_metrics"]:
+                train_episode_return = train_metrics_dict["pop_train_metrics"][
+                    "train_episode_return"
+                ]
+                train_metrics_dict["pop_train_metrics"]["train_episode_return"] = (
+                    train_episode_return[train_episode_return != MISSING_REWARD]
+                )
+
+            train_metrics_dict["pop_episode_returns"] = _get_pop_statistics(
+                train_metrics_dict["pop_episode_returns"], histogram=True
+            )
+            train_metrics_dict["pop_episode_lengths"] = _get_pop_statistics(
+                train_metrics_dict["pop_episode_lengths"], histogram=True
+            )
+            train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
+                _get_pop_statistics, train_metrics_dict["pop_train_metrics"]
+            )
+
+            self.recorder.write(train_metrics_dict, i)
 
             self.checkpoint_manager.save(i, args=ocp.args.StandardSave(state))
 
@@ -303,6 +333,7 @@ class PBTWorkflow(Workflow):
         parents = _pop_read(tops_indices, pop)
         parents_wf_state = _pop_read(tops_indices, pop_workflow_state)
 
+        # TODO: check sharding issue with vmap under multi-devices.
         offsprings = jax.vmap(
             partial(
                 explore,
@@ -337,6 +368,19 @@ def _pop_read(indices, pop):
 
 def _pop_write(indices, pop, new):
     return jtu.tree_map(lambda x, y: x.at[indices].set(y), pop, new)
+
+
+def _get_pop_statistics(pop_metric, histogram=False):
+    data = dict(
+        min=np.min(pop_metric).tolist(),
+        max=np.max(pop_metric).tolist(),
+        mean=np.mean(pop_metric).tolist(),
+    )
+
+    if histogram:
+        data["val"] = pop_metric
+
+    return data
 
 
 def apply_hyperparams_to_workflow_state(

@@ -1,6 +1,8 @@
+import jax.tree_util as jtu
 import logging
 from collections.abc import Mapping
 from typing import Any
+import numpy as np
 
 # from pprint import pformat
 import yaml
@@ -34,8 +36,16 @@ class LogRecorder(Recorder):
             self.logger.propagate = False
 
     def write(self, data: Mapping[str, Any], step: int | None = None) -> None:
+        data = jtu.tree_map(lambda x: _convert_data(x), data)
         formatted_data = f"iteration {step}:\n" + yaml.dump(data, indent=2)
         self.logger.info(formatted_data)
 
     def close(self) -> None:
         self.file_handler.close()
+
+
+def _convert_data(val):
+    if isinstance(val, np.ndarray):
+        return val.tolist()
+    else:
+        return val

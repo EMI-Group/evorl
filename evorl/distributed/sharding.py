@@ -29,5 +29,5 @@ def parallel_map(fn: Callable, sharding):
         mesh=sharding.mesh,
         in_specs=sharding.spec,
         out_specs=sharding.spec,
-        check_rep=False,
+        # check_rep=False,
     )
