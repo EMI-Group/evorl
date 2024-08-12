@@ -37,7 +37,7 @@ class AbstractWorkflow(ABC):
 class Workflow(AbstractWorkflow):
     def __init__(self, config: DictConfig):
         self.config = config
-        self.recorder = ChainRecorder()
+        self.recorder = ChainRecorder([])
         self.checkpoint_manager = setup_checkpoint_manager(config)
 
     @classmethod

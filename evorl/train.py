@@ -29,6 +29,7 @@ def train(config: DictConfig) -> None:
         # jax_config.update("jax_debug_infs", True)
 
     workflow_cls = hydra.utils.get_class(config.workflow_cls)
+    workflow_cls = type(workflow_cls.__name__, (workflow_cls,), {})
 
     devices = jax.local_devices()
     if len(devices) > 1:
