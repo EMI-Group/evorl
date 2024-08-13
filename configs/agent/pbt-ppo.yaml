@@ -6,13 +6,13 @@ defaults:
 
 workflow_cls: evorl.agents.meta.pbt.PBTWorkflow
 
-pop_size: 64
+pop_size: 8
 
 parallel_train: true
 parallel_eval: true
-workflow_steps_per_iter: 50
+workflow_steps_per_iter: 5
 
-warmup_steps: 100 # warmup_iters = warmup_steps // workflow_steps_per_iter
+warmup_steps: 5 # warmup_iters = warmup_steps // workflow_steps_per_iter
 
 num_iters: 500
 

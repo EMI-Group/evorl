@@ -2,6 +2,7 @@ import copy
 import logging
 import math
 import numpy as np
+import pandas as pd
 from functools import partial
 
 import chex
@@ -27,7 +28,7 @@ from evorl.distributed import (
 )
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeData, PyTreeDict, State, MISSING_REWARD
-from evorl.utils.jax_utils import scan_and_mean
+from evorl.utils.jax_utils import tree_last
 from evorl.workflows import RLWorkflow, Workflow
 from evorl.metrics import WorkflowMetric
 
@@ -40,6 +41,7 @@ class TrainMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
     pop_train_metrics: MetricBase
+    pop: chex.ArrayTree
 
 
 class EvalMetric(MetricBase):
@@ -182,9 +184,11 @@ class PBTWorkflow(Workflow):
                 train_metrics, wf_state = self.workflow.step(wf_state)
                 return wf_state, train_metrics
 
-            wf_state, train_metrics = scan_and_mean(
+            wf_state, train_metrics_list = jax.lax.scan(
                 _one_step, wf_state, (), length=self.config.workflow_steps_per_iter
             )
+
+            train_metrics = tree_last(train_metrics_list)
 
             return train_metrics, wf_state
 
@@ -249,6 +253,7 @@ class PBTWorkflow(Workflow):
             pop_episode_returns=pop_eval_metrics.episode_returns,
             pop_episode_lengths=pop_eval_metrics.episode_lengths,
             pop_train_metrics=pop_train_metrics,
+            pop=state.pop,  # save prev pop instead of new pop to match the metrics
         )
 
         train_metrics = tree_device_get(train_metrics, self.devices[0])
@@ -283,6 +288,9 @@ class PBTWorkflow(Workflow):
             train_metrics_dict["pop_episode_lengths"] = _get_pop_statistics(
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
+
+            train_metrics_dict["pop"] = _convert_pop_to_df(train_metrics_dict["pop"])
+
             train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
                 _get_pop_statistics, train_metrics_dict["pop_train_metrics"]
             )
@@ -302,7 +310,7 @@ class PBTWorkflow(Workflow):
 
         pop_eval_metrics, pop_workflow_state = jax.jit(
             eval_fn, in_shardings=self.sharding, out_shardings=self.sharding
-        )(pop_workflow_state)
+        )(state.pop_workflow_state)
 
         # customize your pop metrics here
         eval_metrics = EvalMetric(
@@ -378,9 +386,15 @@ def _get_pop_statistics(pop_metric, histogram=False):
     )
 
     if histogram:
-        data["val"] = pop_metric
+        data["val"] = pd.Series(pop_metric)
 
     return data
+
+
+def _convert_pop_to_df(pop):
+    df = pd.DataFrame.from_dict(pop)
+    df.insert(0, "pop_id", range(len(df)))
+    return df
 
 
 def apply_hyperparams_to_workflow_state(

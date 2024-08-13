@@ -64,7 +64,7 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=pbt",
+                "agent=pbt-ppo",
                 "env=brax/ant",
                 "debug=true",
                 // "checkpoint.enable=false"
@@ -83,7 +83,7 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=pbt",
+                "agent=pbt-ppo",
                 "env=brax/ant",
                 "debug=true",
                 "checkpoint.enable=false"

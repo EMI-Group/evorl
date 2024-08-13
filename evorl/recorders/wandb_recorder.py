@@ -28,15 +28,18 @@ class WandbRecorder(Recorder):
         wandb.init(**self.wandb_kwargs)
 
     def write(self, data: Mapping[str, Any], step: int | None = None) -> None:
-        data = jtu.tree_map(lambda x: _convert_2d_data(x), data)
+        data = jtu.tree_map(lambda x: _convert_data(x), data)
         wandb.log(data, step=step)
 
     def close(self):
         wandb.finish()
 
 
-def _convert_2d_data(val):
-    if isinstance(val, np.ndarray) and val.ndim == 1:
+def _convert_data(val):
+    """
+    Special handling of pandas objects for wandb logging
+    """
+    if isinstance(val, pd.Series):
         return wandb.Histogram(val)
     elif isinstance(val, pd.DataFrame):
         return wandb.Table(dataframe=val)
