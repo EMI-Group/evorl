@@ -240,8 +240,8 @@ class FastVmapAutoResetWrapper(Wrapper):
             )
 
         state = jax.vmap(self.env.reset)(key)
-        state.info.first_env_state = state.env_state
-        state.info.first_obs = state.obs
+        state.extra.first_env_state = state.env_state
+        state.extra.first_obs = state.obs
 
         return state
 
@@ -255,8 +255,8 @@ class FastVmapAutoResetWrapper(Wrapper):
             return jnp.where(done, x, y)
 
         env_state = jax.tree_map(
-            where_done, state.info.first_env_state, state.env_state
+            where_done, state.extra.first_env_state, state.env_state
         )
-        obs = where_done(state.info.first_obs, state.obs)
+        obs = where_done(state.extra.first_obs, state.obs)
 
         return state.replace(env_state=env_state, obs=obs)
