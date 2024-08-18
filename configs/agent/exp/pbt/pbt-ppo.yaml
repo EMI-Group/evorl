@@ -1,0 +1,18 @@
+# @package _global_
+
+defaults:
+  - /agent/pbt-ppo
+  - _self_
+
+pop_size: 128
+
+parallel_train: true
+parallel_eval: true
+workflow_steps_per_iter: 25
+
+warmup_steps: 100
+
+num_iters: 5000
+
+checkpoint:
+  save_interval_steps: 50

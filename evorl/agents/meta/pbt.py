@@ -4,6 +4,7 @@ import math
 import numpy as np
 import pandas as pd
 from functools import partial
+import dataclasses
 
 import chex
 import hydra
@@ -47,10 +48,6 @@ class TrainMetric(MetricBase):
 class EvalMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
-
-
-class HyperParams(PyTreeData):
-    lr: chex.Array
 
 
 class PBTWorkflow(Workflow):
@@ -162,7 +159,9 @@ class PBTWorkflow(Workflow):
         )(workflow_keys)
 
         pop_workflow_state = jax.jit(
-            jax.vmap(apply_hyperparams_to_workflow_state, spmd_axis_name=POP_AXIS_NAME),
+            jax.vmap(
+                self.apply_hyperparams_to_workflow_state, spmd_axis_name=POP_AXIS_NAME
+            ),
             in_shardings=self.sharding,
             out_shardings=self.sharding,
         )(pop, pop_workflow_state)
@@ -351,7 +350,7 @@ class PBTWorkflow(Workflow):
         )(parents, jax.random.split(explore_key, bottoms_indices.shape[0]))
 
         # Note: no need to deepcopy parents wf_state here
-        offsprings_workflow_state = jax.vmap(apply_hyperparams_to_workflow_state)(
+        offsprings_workflow_state = jax.vmap(self.apply_hyperparams_to_workflow_state)(
             offsprings, parents_wf_state
         )
 
@@ -363,6 +362,20 @@ class PBTWorkflow(Workflow):
         )
 
         return pop, pop_workflow_state
+
+    def apply_hyperparams_to_workflow_state(
+        self, hyperparams: PyTreeDict[str, chex.Numeric], workflow_state: State
+    ):
+        """
+        Note1: InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
+        Note2: try to avoid deepcopy unnessary state
+        """
+        opt_state = workflow_state.opt_state
+        assert isinstance(opt_state, InjectStatefulHyperparamsState)
+
+        opt_state = deepcopy_InjectStatefulHyperparamsState(opt_state)
+        opt_state.hyperparams["learning_rate"] = hyperparams.lr
+        return workflow_state.replace(opt_state=opt_state)
 
     @classmethod
     def enable_jit(cls) -> None:
@@ -395,21 +408,6 @@ def _convert_pop_to_df(pop):
     df = pd.DataFrame.from_dict(pop)
     df.insert(0, "pop_id", range(len(df)))
     return df
-
-
-def apply_hyperparams_to_workflow_state(
-    hyperparams: PyTreeDict[str, chex.Numeric], workflow_state: State
-):
-    """
-    Note1: InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
-    Note2: try to avoid deepcopy unnessary state
-    """
-    opt_state = workflow_state.opt_state
-    assert isinstance(opt_state, InjectStatefulHyperparamsState)
-
-    opt_state = deepcopy_InjectStatefulHyperparamsState(opt_state)
-    opt_state.hyperparams["learning_rate"] = hyperparams.lr
-    return workflow_state.replace(opt_state=opt_state)
 
 
 def deepcopy_InjectStatefulHyperparamsState(state: InjectStatefulHyperparamsState):

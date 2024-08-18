@@ -1,0 +1,44 @@
+# @package _global_
+
+defaults:
+  - /agent@target_workflow: paramppo
+  - _self_
+
+workflow_cls: evorl.agents.meta.pbt_param_ppo.PBTParamPPOWorkflow
+
+pop_size: 8
+
+parallel_train: true
+parallel_eval: true
+workflow_steps_per_iter: 5
+
+warmup_steps: 5 # warmup_iters = warmup_steps // workflow_steps_per_iter
+
+num_iters: 500
+
+# PBT hyperparameters:
+bottom_ratio: 0.2
+top_ratio: 0.2
+
+perturb_factor:
+  actor_loss_weight: 0.2
+  critic_loss_weight: 0.2
+  entropy_loss_weight: 0.2
+
+search_space:
+  actor_loss_weight:
+    low: 0.01
+    high: 10
+  critic_loss_weight:
+    low: 0.01
+    high: 10
+  entropy_loss_weight:
+    low: -1
+    high: -1e-5
+
+target_workflow:
+  num_eval_envs: 16
+  eval_episodes: 16
+
+checkpoint:
+  save_interval_steps: 50

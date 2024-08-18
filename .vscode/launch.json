@@ -85,10 +85,10 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=pbt-ppo",
+                "agent=pbt-paramppo",
                 "env=brax/ant",
                 "debug=true",
-                // "checkpoint.enable=false"
+                "checkpoint.enable=false"
                 // "hydra.verbose=true",
             ],
             "env": {
