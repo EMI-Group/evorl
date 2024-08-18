@@ -63,11 +63,13 @@ class GymAdapter(EnvAdapter):
     def reset(self, key: chex.PRNGKey) -> EnvState:
         obs, info = _to_jax(self._reset())
 
-        info = PyTreeDict()
-        info.termination = jnp.zeros((self.num_envs,))
-        info.truncation = jnp.zeros((self.num_envs,))
-        info.last_obs = obs
-        info.episode_return = jnp.zeros((self.num_envs,))
+        info = PyTreeDict(
+            termination=jnp.zeros((self.num_envs,)),
+            truncation=jnp.zeros((self.num_envs,)),
+            last_obs=obs,
+            episode_return=jnp.zeros((self.num_envs,)),
+            autoreset=jnp.zeros((self.num_envs,)),
+        )
 
         return EnvState(
             env_state=None,
@@ -80,20 +82,24 @@ class GymAdapter(EnvAdapter):
     def step(self, state: EnvState, action: Action) -> EnvState:
         episode_return = state.info.episode_return * (1 - state.done)
 
-        obs, reward, terminated, truncated, info = _to_jax(
+        obs, reward, termination, truncation, info = _to_jax(
             self._step(
                 action,
             )
         )
 
         reward = reward.astype(jnp.float32)
-        done = (jnp.logical_or(terminated, truncated)).astype(jnp.float32)
+        done = (jnp.logical_or(termination, truncation)).astype(jnp.float32)
 
+        # when autoreset happens (indicated by prev_done)
+        # we add a new field `autoreset` to mark invalid transition for the additional reset() step in envpool.
+        # use it in q-learning based algorithms
         info = state.info.replace(
-            termination=terminated.astype(jnp.float32),
-            truncation=truncated.astype(jnp.float32),
+            termination=termination.astype(jnp.float32),
+            truncation=truncation.astype(jnp.float32),
             last_obs=state.obs,
             episode_return=episode_return + reward,
+            autoreset=state.done,  # prev_done
         )
 
         return state.replace(obs=obs, reward=reward, done=done, info=info)
