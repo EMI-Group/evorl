@@ -14,6 +14,9 @@ if importlib.util.find_spec("jumanji") is not None:
 if importlib.util.find_spec("jaxmarl") is not None:
     from .jaxmarl import create_wrapped_mabrax_env
 
+if importlib.util.find_spec("envpool") is not None:
+    from .envpool import creat_gym_env
+
 
 # TODO: unifiy env creator
 def create_env(env_name: str, env_type: str, **kwargs):
@@ -32,18 +35,15 @@ def create_env(env_name: str, env_type: str, **kwargs):
         env = create_jumanji_env(env_name, **kwargs)
     elif env_type == "jaxmarl":
         env = create_wrapped_mabrax_env(env_name, **kwargs)
+    elif env_type.startswith("envpool"):
+        _env_type = env_type.split("_")[1]
+        if _env_type in ["gym", "gymnasium"]:
+            env = creat_gym_env(
+                env_name, gymnasium_env=_env_type == "gymnasium", **kwargs
+            )
+        else:
+            raise ValueError(f"env_type {env_type} not supported")
     else:
         raise ValueError(f"env_type {env_type} not supported")
-
-    # if autoreset:
-    #     env = EpisodeWrapper(env, episode_length,
-    #                          record_episode_return=True, discount=discount)
-    #     if fast_reset:
-    #         env = VmapAutoResetWrapperV2(env, num_envs=parallel)
-    #     else:
-    #         env = VmapAutoResetWrapper(env, num_envs=parallel)
-    # else:
-    #     env = OneEpisodeWrapper(env, episode_length)
-    #     env = VmapWrapper(env, num_envs=parallel, vmap_step=False)
 
     return env
