@@ -64,10 +64,17 @@ class GymnaxAdapter(EnvAdapter):
         reward = reward.astype(jnp.float32)
         done = done.astype(jnp.float32)
 
-        state.info.update(info)
-        state.extra.step_key = key
+        info = state.info.replace(**info)
+        extra = state.extra.replace(step_key=key)
 
-        return state.replace(env_state=env_state, obs=obs, reward=reward, done=done)
+        return state.replace(
+            env_state=env_state,
+            obs=obs,
+            reward=reward,
+            done=done,
+            info=info,
+            extra=extra,
+        )
 
     @property
     def action_space(self) -> Space:

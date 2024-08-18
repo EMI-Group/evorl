@@ -47,14 +47,16 @@ class BraxAdapter(EnvAdapter):
     def step(self, state: EnvState, action: Action) -> EnvState:
         brax_state = self.env.step(state.env_state, action)
 
-        state.info.update(brax_state.info)
-        state.info.metrics.update(brax_state.metrics)
+        metrics = state.info.metrics.replace(**brax_state.metrics)
+
+        info = state.info.replace(**brax_state.info, metrics=metrics)
 
         return state.replace(
             env_state=brax_state,
             obs=brax_state.obs,
             reward=brax_state.reward,
             done=brax_state.done,
+            info=info,
         )
 
     @property
