@@ -9,6 +9,9 @@ line-length = 88
 target-version = "py310"
 src = ["evorl", "tests"]
 
+[tool.ruff.lint]
+ignore = ["F401"]
+
 [build-system]
 requires = ["setuptools >= 62.6"] # to support `file` directive
 build-backend = "setuptools.build_meta"

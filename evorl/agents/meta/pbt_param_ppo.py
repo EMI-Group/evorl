@@ -1,39 +1,12 @@
-import copy
-import logging
-import math
-import numpy as np
-import pandas as pd
-from functools import partial
-
-
 import chex
-import hydra
 import jax
-import jax.numpy as jnp
-import jax.tree_util as jtu
-import optax
-from optax.schedules import InjectStatefulHyperparamsState
-import orbax.checkpoint as ocp
-
-from jax.sharding import Mesh, NamedSharding, PositionalSharding
-from jax.sharding import PartitionSpec as P
-from jax.experimental.shard_map import shard_map
-
-from omegaconf import DictConfig, OmegaConf, open_dict, read_write
-
 from evorl.distributed import (
     POP_AXIS_NAME,
-    tree_device_get,
     tree_device_put,
-    parallel_map,
 )
-from evorl.metrics import MetricBase
-from evorl.types import PyTreeData, PyTreeDict, State, MISSING_REWARD
-from evorl.utils.jax_utils import tree_last
-from evorl.workflows import RLWorkflow, Workflow
-from evorl.metrics import WorkflowMetric
+from evorl.types import PyTreeDict, State
 
-from .pbt import PBTWorkflow
+from .pbt import PBTWorkflow, PBTWorkflowMetric
 
 
 class PBTParamPPOWorkflow(PBTWorkflow):
@@ -66,7 +39,7 @@ class PBTParamPPOWorkflow(PBTWorkflow):
         pop = tree_device_put(pop, self.sharding)
 
         # save metric on GPU0
-        workflow_metrics = WorkflowMetric()
+        workflow_metrics = PBTWorkflowMetric()
 
         workflow_keys = jax.random.split(workflow_key, pop_size)
         workflow_keys = jax.device_put(workflow_keys, self.sharding)

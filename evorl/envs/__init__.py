@@ -1,19 +1,20 @@
 import importlib
 
-from .brax import create_wrapped_brax_env
+from .brax import create_brax_env, create_wrapped_brax_env
 from .env import Env, EnvState, EnvStepFn
 from .multi_agent_env import MultiAgentEnv
 from .space import Box, Discrete
+from .wrappers.wrapper import get_wrapper
 from .wrappers.training_wrapper import AutoresetMode
 
 if importlib.util.find_spec("gymnax") is not None:
-    from .gymnax import create_wrapped_gymnax_env
+    from .gymnax import create_gymnax_env, create_wrapped_gymnax_env
 
 if importlib.util.find_spec("jumanji") is not None:
     from .jumanji import create_jumanji_env
 
 if importlib.util.find_spec("jaxmarl") is not None:
-    from .jaxmarl import create_wrapped_mabrax_env
+    from .jaxmarl import create_mabrax_env, create_wrapped_mabrax_env
 
 if importlib.util.find_spec("envpool") is not None:
     from .envpool import creat_gym_env

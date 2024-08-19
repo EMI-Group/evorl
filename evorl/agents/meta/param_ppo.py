@@ -1,48 +1,27 @@
 import logging
-import math
-from collections.abc import Sequence
 from functools import partial
-from typing import Any
 
 import chex
-import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import optax
-import orbax.checkpoint as ocp
-from omegaconf import DictConfig
-
-from evorl.distributed import agent_gradient_update, psum, tree_unpmap
-from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import Env, EnvState, create_env
-from evorl.evaluator import Evaluator
+from evorl.distributed import agent_gradient_update, psum
 from evorl.metrics import TrainMetric
-from evorl.networks import make_policy_network, make_v_network
-from evorl.rollout import env_step
+from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
-    MISSING_REWARD,
-    Action,
-    LossDict,
-    Params,
-    PolicyExtraInfo,
-    PyTreeData,
     PyTreeDict,
     State,
-    pytree_field,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import rng_split, tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.toolkits import (
     average_episode_discount_return,
     compute_gae,
     flatten_rollout_trajectory,
 )
-from evorl.workflows import OnPolicyRLWorkflow
 
-from ..agent import Agent, AgentState
-from ..ppo import PPOAgent, rollout, PPOWorkflow
+from ..ppo import PPOWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +36,7 @@ class ParamPPOWorkflow(PPOWorkflow):
 
         return state.replace(
             hp_state=PyTreeDict(
+                gae_lambda=0.95,
                 actor_loss_weight=1.0,
                 critic_loss_weight=0.5,
                 entropy_loss_weight=-0.01,
@@ -68,14 +48,13 @@ class ParamPPOWorkflow(PPOWorkflow):
 
         # trajectory: [T, #envs, ...]
         trajectory, env_state = rollout(
-            self.env,
-            self.agent,
+            self.env.step,
+            self.agent.compute_actions,
             state.env_state,
             state.agent_state,
             rollout_key,
             rollout_length=self.config.rollout_length,
-            discount=self.config.discount,
-            env_extra_fields=("last_obs", "episode_return"),
+            env_extra_fields=("autoreset", "episode_return"),
         )
 
         agent_state = state.agent_state
@@ -95,8 +74,7 @@ class ParamPPOWorkflow(PPOWorkflow):
         )
 
         # ======== compute GAE =======
-        last_obs = trajectory.extras.env_extras.last_obs
-        _obs = jnp.concatenate([trajectory.obs, last_obs[-1:]], axis=0)
+        _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(state.agent_state, SampleBatch(obs=_obs))
         v_targets, advantages = compute_gae(

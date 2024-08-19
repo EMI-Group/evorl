@@ -12,7 +12,7 @@ from .comm import (
     unpmap,
 )
 from .gradients import agent_gradient_update
-from .sharding import tree_device_get, tree_device_put, parallel_map
+from .sharding import parallel_map, tree_device_get, tree_device_put
 
 PMAP_AXIS_NAME = "P"
 

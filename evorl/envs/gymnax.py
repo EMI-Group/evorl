@@ -14,13 +14,13 @@ from .space import Box, Discrete, Space
 from .wrappers.action_wrapper import ActionSquashWrapper
 from .wrappers.obs_wrapper import ObsFlattenWrapper
 from .wrappers.training_wrapper import (
+    AutoresetMode,
     EpisodeWrapper,
     FastVmapAutoResetWrapper,
     OneEpisodeWrapper,
     VmapAutoResetWrapper,
     VmapEnvPoolAutoResetWrapper,
     VmapWrapper,
-    AutoresetMode,
 )
 
 

@@ -3,9 +3,8 @@ import logging
 import chex
 import jax
 import jax.tree_util as jtu
-from evox import Problem
-
 from evorl.types import State
+from evox import Problem
 
 MetaInfo = chex.ArrayTree
 

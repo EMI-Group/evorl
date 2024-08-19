@@ -14,7 +14,7 @@ from omegaconf import DictConfig
 from evorl.agents.random_agent import EMPTY_RANDOM_AGENT_STATE, RandomAgent
 from evorl.distributed import psum, tree_pmean, tree_unpmap
 from evorl.distributed.gradients import agent_gradient_update
-from evorl.envs import Box, create_env, AutoresetMode
+from evorl.envs import AutoresetMode, Box, create_env
 from evorl.evaluator import Evaluator
 from evorl.metrics import MetricBase, metricfield
 from evorl.networks import make_policy_network, make_q_network

@@ -2,10 +2,7 @@ import jax
 import jax.numpy as jnp
 import chex
 
-import pytest
-
 from evorl.utils.toolkits import compute_gae, compute_discount_return
-from evorl.types import SampleBatch
 
 
 def test_gae():

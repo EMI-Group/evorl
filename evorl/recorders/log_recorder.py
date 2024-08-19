@@ -1,7 +1,8 @@
-import jax.tree_util as jtu
 import logging
 from collections.abc import Mapping
 from typing import Any
+
+import jax.tree_util as jtu
 import numpy as np
 import pandas as pd
 

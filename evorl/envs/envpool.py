@@ -1,17 +1,17 @@
-import chex
-import numpy as np
 from functools import partial
+
+import chex
+import envpool
+import gym
+import gym.spaces
+import gymnasium
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as np
+from envpool.python.protocol import EnvPool
 from jax.experimental import io_callback
 
-import gymnasium
-import gym
-import gym.spaces
-
-import envpool
-from envpool.python.protocol import EnvPool
 from evorl.types import Action, PyTreeDict
 
 from .env import Env, EnvAdapter, EnvState
@@ -51,11 +51,12 @@ class GymAdapter(EnvAdapter):
             dummy_action, (self.num_envs,) + dummy_action.shape
         )
         step_spec = _to_jax_spec(self.env.step(dummy_actions))
-        # step_spec[-1]["final_observation"] = None
-        # step_spec[-1]["final_info"] = None
 
-        _reset = lambda: self.env.reset()
-        _step = lambda action: self.env.step(np.asarray(action))
+        def _reset():
+            return self.env.reset()
+
+        def _step(action):
+            return self.env.step(action)
 
         self._reset = partial(io_callback, _reset, reset_spec)
         self._step = partial(io_callback, _step, step_spec)
@@ -66,7 +67,6 @@ class GymAdapter(EnvAdapter):
         info = PyTreeDict(
             termination=jnp.zeros((self.num_envs,)),
             truncation=jnp.zeros((self.num_envs,)),
-            last_obs=obs,
             episode_return=jnp.zeros((self.num_envs,)),
             autoreset=jnp.zeros((self.num_envs,)),
         )
@@ -97,7 +97,6 @@ class GymAdapter(EnvAdapter):
         info = state.info.replace(
             termination=termination.astype(jnp.float32),
             truncation=truncation.astype(jnp.float32),
-            last_obs=state.obs,
             episode_return=episode_return + reward,
             autoreset=state.done,  # prev_done
         )

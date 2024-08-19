@@ -1,8 +1,9 @@
 defaults:
   - _self_
-  - env: brax/ant
-  - agent: null
   - logging
+  - env: null
+  - agent: null
+
 
 seed: 42
 debug: false

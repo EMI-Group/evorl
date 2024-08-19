@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import chex
-from evorl.distribution import TanhNormal
+from evorl.distribution import get_tanh_norm_dist
 
 
 def test_tanh_normal():
@@ -12,7 +12,7 @@ def test_tanh_normal():
     loc = jnp.zeros((T, B, A))
     scale = jnp.ones((T, B, A))
 
-    actions_dist = TanhNormal(loc, scale)
+    actions_dist = get_tanh_norm_dist(loc, scale)
 
     actions = jax.random.uniform(
         jax.random.PRNGKey(42), shape=(T, B, A), minval=-0.999, maxval=0.999
@@ -36,7 +36,7 @@ def test_tanh_normal_grad():
     )
 
     def loss_fn(loc, scale):
-        actions_dist = TanhNormal(loc, scale)
+        actions_dist = get_tanh_norm_dist(loc, scale)
         logp = actions_dist.log_prob(actions)
 
         return -logp.mean()

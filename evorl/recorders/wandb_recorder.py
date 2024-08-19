@@ -1,10 +1,9 @@
 from collections.abc import Mapping
 from typing import Any
-import wandb
-import numpy as np
-import pandas as pd
 
 import jax.tree_util as jtu
+import pandas as pd
+import wandb
 
 from .recorder import Recorder
 

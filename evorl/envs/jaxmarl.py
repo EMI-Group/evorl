@@ -15,13 +15,13 @@ from .multi_agent_env import MultiAgentEnvAdapter
 from .space import Space
 from .utils import sort_dict
 from .wrappers.training_wrapper import (
+    AutoresetMode,
     EpisodeWrapper,
     FastVmapAutoResetWrapper,
     OneEpisodeWrapper,
     VmapAutoResetWrapper,
     VmapEnvPoolAutoResetWrapper,
     VmapWrapper,
-    AutoresetMode,
 )
 
 

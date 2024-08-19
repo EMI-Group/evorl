@@ -287,7 +287,7 @@ def eval_rollout_episode(
 
         transition, env_nstate = jax.lax.cond(
             env_state.done.all(),
-            lambda *x: (env_state.replace(), prev_transition.replace()),
+            lambda *x: (prev_transition.replace(), env_state.replace()),
             _eval_env_step,
             env_state,
             agent_state,

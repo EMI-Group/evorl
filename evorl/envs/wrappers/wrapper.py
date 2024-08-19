@@ -36,3 +36,13 @@ class Wrapper(Env):
         if name == "__setstate__":
             raise AttributeError(name)
         return getattr(self.env, name)
+
+
+def get_wrapper(env: Env, wrapper_cls: type) -> bool:
+    """Check if the environment has a specific wrapper."""
+    if isinstance(env, wrapper_cls):
+        return env
+    elif hasattr(env, "env"):
+        return get_wrapper(env.env, wrapper_cls)
+    else:
+        return None

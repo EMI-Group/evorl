@@ -1,37 +1,31 @@
 import copy
 import logging
 import math
-import numpy as np
-import pandas as pd
 from functools import partial
-import dataclasses
 
 import chex
 import hydra
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as np
 import optax
-from optax.schedules import InjectStatefulHyperparamsState
 import orbax.checkpoint as ocp
-
-from jax.sharding import Mesh, NamedSharding, PositionalSharding
-from jax.sharding import PartitionSpec as P
-from jax.experimental.shard_map import shard_map
-
-from omegaconf import DictConfig, OmegaConf, open_dict, read_write
-
+import pandas as pd
 from evorl.distributed import (
     POP_AXIS_NAME,
+    parallel_map,
     tree_device_get,
     tree_device_put,
-    parallel_map,
 )
 from evorl.metrics import MetricBase
-from evorl.types import PyTreeData, PyTreeDict, State, MISSING_REWARD
+from evorl.types import MISSING_REWARD, PyTreeDict, State
 from evorl.utils.jax_utils import tree_last
 from evorl.workflows import RLWorkflow, Workflow
-from evorl.metrics import WorkflowMetric
+from jax.sharding import Mesh, NamedSharding
+from jax.sharding import PartitionSpec as P
+from omegaconf import DictConfig, OmegaConf, open_dict, read_write
+from optax.schedules import InjectStatefulHyperparamsState
 
 from .pbt_operations import explore, select
 
@@ -48,6 +42,12 @@ class TrainMetric(MetricBase):
 class EvalMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
+
+
+class PBTWorkflowMetric(MetricBase):
+    # the average of sampled timesteps of all workflows
+    sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
+    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class PBTWorkflow(Workflow):
@@ -147,7 +147,7 @@ class PBTWorkflow(Workflow):
         pop = tree_device_put(pop, self.sharding)
 
         # save metric on GPU0
-        workflow_metrics = WorkflowMetric()
+        workflow_metrics = PBTWorkflowMetric()
 
         workflow_keys = jax.random.split(workflow_key, pop_size)
         workflow_keys = jax.device_put(workflow_keys, self.sharding)
@@ -243,8 +243,12 @@ class PBTWorkflow(Workflow):
         )
 
         # ===== record metrics ======
+        sampled_timesteps = (
+            jnp.sum(pop_workflow_state.metrics.sampled_timesteps, dtype=jnp.float32)
+            / 1e6
+        )
         workflow_metrics = state.metrics.replace(
-            sampled_timesteps=jnp.sum(pop_workflow_state.metrics.sampled_timesteps),
+            sampled_timesteps_m=sampled_timesteps,
             iterations=state.metrics.iterations + 1,
         )
 

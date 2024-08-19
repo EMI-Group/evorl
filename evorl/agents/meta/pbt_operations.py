@@ -2,13 +2,10 @@
 This module defines the PBT operation template and a default implementation (tuning lr only).
 """
 
-import copy
 import chex
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
-
-from evorl.types import PyTreeDict, State
+from evorl.types import PyTreeDict
 
 
 def explore(

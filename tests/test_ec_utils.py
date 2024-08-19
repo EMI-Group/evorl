@@ -20,13 +20,13 @@ def test_ParamVectorSpec():
 
     param_spec = ParamVectorSpec(params)
 
-    flat, to_tree = param_spec.to_vector(params)
+    flat = param_spec.to_vector(params)
     assert flat.shape == (param_spec.vec_size,)
-    recover = to_tree(flat)
+    recover = param_spec.to_tree(flat)
     chex.assert_trees_all_equal_shapes_and_dtypes(params, recover)
 
-    batch_flat, to_tree = param_spec.to_vector(batch_params)
+    batch_flat = param_spec.to_vector(batch_params)
     assert batch_flat.shape == (5, param_spec.vec_size)
 
-    batch_recover = to_tree(batch_flat)
+    batch_recover = param_spec.to_tree(batch_flat)
     chex.assert_trees_all_close(batch_params, batch_recover)

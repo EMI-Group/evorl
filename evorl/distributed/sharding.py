@@ -1,7 +1,8 @@
+from collections.abc import Callable
+
 import chex
 import jax
 from jax.experimental.shard_map import shard_map
-from collections.abc import Callable
 
 
 def tree_device_put(tree: chex.ArrayTree, device):

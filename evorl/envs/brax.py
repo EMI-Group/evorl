@@ -10,13 +10,13 @@ from .env import Env, EnvAdapter, EnvState
 from .space import Box, Space
 from .utils import sort_dict
 from .wrappers.training_wrapper import (
+    AutoresetMode,
     EpisodeWrapper,
     FastVmapAutoResetWrapper,
     OneEpisodeWrapper,
     VmapAutoResetWrapper,
     VmapEnvPoolAutoResetWrapper,
     VmapWrapper,
-    AutoresetMode,
 )
 
 

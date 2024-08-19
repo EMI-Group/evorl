@@ -7,14 +7,13 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-from evox import Problem, State
-
 from evorl.agents import Agent, AgentState
 from evorl.envs import Env, EnvState
 from evorl.rollout import SampleBatch
 from evorl.types import Action, PolicyExtraInfo, PyTreeDict, ReductionFn
 from evorl.utils.jax_utils import rng_split
 from evorl.utils.toolkits import compute_discount_return, compute_episode_length
+from evox import Problem, State
 
 logger = logging.getLogger(__name__)
 

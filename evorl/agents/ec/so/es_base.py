@@ -1,14 +1,13 @@
 from collections.abc import Callable, Sequence
 
 import jax
-from evox import Algorithm, Problem
-from omegaconf import DictConfig
-
 from evorl.agents import Agent
 from evorl.evaluator import Evaluator
 from evorl.metrics import EvaluateMetric
 from evorl.types import State
 from evorl.workflows import ECWorkflow
+from evox import Algorithm, Problem
+from omegaconf import DictConfig
 
 
 class ESBaseWorkflow(ECWorkflow):

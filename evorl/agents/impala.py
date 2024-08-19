@@ -14,7 +14,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import agent_gradient_update, psum, tree_unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import create_env, AutoresetMode
+from evorl.envs import AutoresetMode, create_env
 from evorl.evaluator import Evaluator
 from evorl.metrics import TrainMetric
 from evorl.networks import make_policy_network, make_v_network
@@ -26,10 +26,10 @@ from evorl.types import (
     LossDict,
     Params,
     PolicyExtraInfo,
+    PyTreeData,
     PyTreeDict,
     State,
     pytree_field,
-    PyTreeData,
 )
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient

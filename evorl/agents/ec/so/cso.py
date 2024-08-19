@@ -2,14 +2,13 @@ import evox.algorithms
 import jax
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
-from omegaconf import DictConfig
-
 from evorl.distributed import tree_unpmap
 from evorl.ec import GeneralRLProblem
-from evorl.envs import create_wrapped_brax_env, AutoresetMode
+from evorl.envs import AutoresetMode, create_wrapped_brax_env
 from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.workflows import ECWorkflow
+from omegaconf import DictConfig
 
 from ..ec import DeterministicECAgent
 

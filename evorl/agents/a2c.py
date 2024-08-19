@@ -1,6 +1,5 @@
 import logging
 import math
-from collections.abc import Sequence
 from typing import Any
 
 import chex
@@ -13,11 +12,11 @@ from omegaconf import DictConfig
 
 from evorl.distributed import agent_gradient_update, psum, tree_unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import Env, EnvState, create_env, AutoresetMode
+from evorl.envs import AutoresetMode, create_env
 from evorl.evaluator import Evaluator
 from evorl.metrics import TrainMetric
 from evorl.networks import make_policy_network, make_v_network
-from evorl.rollout import env_step
+from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
     MISSING_REWARD,
@@ -31,7 +30,7 @@ from evorl.types import (
     pytree_field,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import rng_split, tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.toolkits import (
     average_episode_discount_return,
     compute_gae,
@@ -58,7 +57,9 @@ class A2CAgent(Agent):
     continuous_action: bool = False
     policy_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
     value_network: nn.Module = pytree_field(lazy_init=True)
-    obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
+    obs_preprocessor: Any = pytree_field(
+        default=None, lazy_init=True, pytree_node=False
+    )
 
     def init(self, key: chex.PRNGKey) -> AgentState:
         obs_size = self.obs_space.shape[0]
@@ -169,12 +170,15 @@ class A2CAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
+        # mask invalid transitions at autoreset
+        mask = jnp.logical_not(sample_batch.extras.env_extras.autoreset)
+
         # ======= critic =======
         vs = self.value_network.apply(agent_state.params.value_params, obs)
 
         v_targets = sample_batch.extras.v_targets
 
-        critic_loss = optax.squared_error(vs, v_targets).mean()
+        critic_loss = optax.squared_error(vs, v_targets).mean(where=mask)
 
         # ====== actor =======
 
@@ -192,12 +196,12 @@ class A2CAgent(Agent):
         advantages = sample_batch.extras.advantages
 
         # advantages: [T*B]
-        policy_loss = -(advantages * actions_logp).mean()
+        policy_loss = -(advantages * actions_logp).mean(where=mask)
         # entropy: [T*B]
         if self.continuous_action:
-            entropy_loss = actions_dist.entropy(seed=key).mean()
+            entropy_loss = actions_dist.entropy(seed=key).mean(where=mask)
         else:
-            entropy_loss = actions_dist.entropy().mean()
+            entropy_loss = actions_dist.entropy().mean(where=mask)
 
         return PyTreeDict(
             actor_loss=policy_loss,
@@ -248,7 +252,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             config.env.env_type,
             episode_length=max_episode_steps,
             parallel=config.num_envs,
-            autoreset_mode=AutoresetMode.NORMAL,
+            autoreset_mode=AutoresetMode.ENVPOOL,
         )
 
         agent = A2CAgent(
@@ -290,14 +294,13 @@ class A2CWorkflow(OnPolicyRLWorkflow):
 
         # trajectory: [T, #envs, ...]
         trajectory, env_state = rollout(
-            self.env,
-            self.agent,
+            self.env.step,
+            self.agent.compute_actions,
             state.env_state,
             state.agent_state,
             rollout_key,
             rollout_length=self.config.rollout_length,
-            discount=self.config.discount,
-            env_extra_fields=("last_obs", "episode_return"),
+            env_extra_fields=("autoreset", "episode_return"),
         )
 
         agent_state = state.agent_state
@@ -317,8 +320,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         )
 
         # ======== compute GAE =======
-        last_obs = trajectory.extras.env_extras.last_obs
-        _obs = jnp.concatenate([trajectory.obs, last_obs[-1:]], axis=0)
+        _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(state.agent_state, SampleBatch(obs=_obs))
         v_targets, advantages = compute_gae(
@@ -411,73 +413,3 @@ class A2CWorkflow(OnPolicyRLWorkflow):
             )
 
         return state
-
-
-def rollout(
-    env: Env,
-    agent: A2CAgent,
-    env_state: EnvState,
-    agent_state: AgentState,
-    key: chex.PRNGKey,
-    rollout_length: int,
-    discount: float,
-    env_extra_fields: Sequence[str] = ("last_obs",),
-) -> tuple[SampleBatch, EnvState]:
-    """
-    Collect given rollout_length trajectory.
-
-    Args:
-        env: vampped env w/ autoreset
-    Returns:
-        env_state: last env_state after rollout
-        trajectory: SampleBatch [T, #envs, ...], T=rollout_length
-    """
-
-    def _one_step_rollout(carry, unused_t):
-        """
-        sample_batch: one-step obs
-        transition: one-step full info
-        """
-        env_state, current_key = carry
-        next_key, current_key = rng_split(current_key, 2)
-
-        # sample_batch: [#envs, ...]
-        sample_batch = SampleBatch(
-            obs=env_state.obs,
-        )
-
-        # transition: [#envs, ...]
-        transition, env_nstate = env_step(
-            env.step,
-            agent.compute_actions,
-            env_state,
-            agent_state,
-            sample_batch,
-            current_key,
-            env_extra_fields,
-        )
-
-        # set PEB reward for GAE:
-        truncation = env_nstate.info.truncation  # [#envs]
-        # Note: if truncation happens in any env in the batch, apply PEB for episodes with truncation=1
-        rewards = transition.rewards + discount * jax.lax.cond(
-            truncation.any(),
-            lambda last_obs: agent.compute_values(
-                agent_state, SampleBatch(obs=last_obs)
-            )
-            * truncation,
-            lambda last_obs: jnp.zeros_like(transition.rewards),
-            env_nstate.info.last_obs,  # [#envs, ...]
-        )
-
-        transition = transition.replace(rewards=rewards)
-        # transition.info["policy_extras"]["peb_rewards"] = reward # ok for dict
-
-        return (env_nstate, next_key), transition
-
-    # trajectory: [T, #envs, ...]
-    (env_state, _), trajectory = jax.lax.scan(
-        _one_step_rollout, (env_state, key), (), length=rollout_length
-    )
-
-    return trajectory, env_state
