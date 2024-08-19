@@ -62,7 +62,7 @@ class StochasticECAgent(Agent):
         else:
             action_size = self.action_space.n
 
-        policy_key, value_key, obs_preprocessor_key = jax.random.split(key, 3)
+        policy_key, obs_preprocessor_key = jax.random.split(key)
         policy_network, policy_init_fn = make_policy_network(
             action_size=action_size,
             obs_size=obs_size,
