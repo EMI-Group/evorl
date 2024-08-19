@@ -81,7 +81,7 @@ class ParamPPOWorkflow(PPOWorkflow):
             rewards=trajectory.rewards,  # peb_rewards
             values=vs,
             dones=trajectory.dones,
-            gae_lambda=self.config.gae_lambda,
+            gae_lambda=state.hp_state.gae_lambda,
             discount=self.config.discount,
         )
         trajectory.extras.v_targets = jax.lax.stop_gradient(v_targets)

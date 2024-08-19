@@ -243,12 +243,10 @@ class PBTWorkflow(Workflow):
         )
 
         # ===== record metrics ======
-        sampled_timesteps = (
-            jnp.sum(pop_workflow_state.metrics.sampled_timesteps, dtype=jnp.float32)
-            / 1e6
-        )
         workflow_metrics = state.metrics.replace(
-            sampled_timesteps_m=sampled_timesteps,
+            sampled_timesteps_m=jnp.sum(
+                pop_workflow_state.metrics.sampled_timesteps / 1e6
+            ),  # convert uint32 to float32
             iterations=state.metrics.iterations + 1,
         )
 

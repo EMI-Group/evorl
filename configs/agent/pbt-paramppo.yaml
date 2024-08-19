@@ -24,6 +24,7 @@ perturb_factor:
   actor_loss_weight: 0.2
   critic_loss_weight: 0.2
   entropy_loss_weight: 0.2
+  gae_lambda: 0.2
 
 search_space:
   actor_loss_weight:
@@ -35,6 +36,9 @@ search_space:
   entropy_loss_weight:
     low: -1
     high: -1e-5
+  gae_lambda:
+    low: 0.8
+    high: 0.99999
 
 target_workflow:
   num_eval_envs: 16
