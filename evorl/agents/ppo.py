@@ -15,7 +15,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import agent_gradient_update, psum, tree_unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import Env, EnvState, create_env
+from evorl.envs import Env, EnvState, create_env, AutoresetMode
 from evorl.evaluator import Evaluator
 from evorl.metrics import TrainMetric
 from evorl.networks import make_policy_network, make_v_network
@@ -266,8 +266,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             config.env.env_type,
             episode_length=max_episode_steps,
             parallel=config.num_envs,
-            autoreset=True,
-            # fast_reset=True
+            autoreset_mode=AutoresetMode.NORMAL,
         )
 
         agent = PPOAgent(
@@ -296,7 +295,7 @@ class PPOWorkflow(OnPolicyRLWorkflow):
             config.env.env_type,
             episode_length=max_episode_steps,
             parallel=config.num_eval_envs,
-            autoreset=False,
+            autoreset_mode=AutoresetMode.DISABLED,
         )
 
         one_step_rollout_steps = config.num_envs * config.rollout_length

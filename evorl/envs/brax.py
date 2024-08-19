@@ -14,7 +14,9 @@ from .wrappers.training_wrapper import (
     FastVmapAutoResetWrapper,
     OneEpisodeWrapper,
     VmapAutoResetWrapper,
+    VmapEnvPoolAutoResetWrapper,
     VmapWrapper,
+    AutoresetMode,
 )
 
 
@@ -85,20 +87,21 @@ def create_wrapped_brax_env(
     env_name: str,
     episode_length: int = 1000,
     parallel: int = 1,
-    autoreset: bool = True,
-    fast_reset: bool = True,
+    autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
     discount: float = 1.0,
     **kwargs,
 ) -> Env:
     env = create_brax_env(env_name, **kwargs)
-    if autoreset:
+    if autoreset_mode != AutoresetMode.DISABLED:
         env = EpisodeWrapper(
             env, episode_length, record_episode_return=True, discount=discount
         )
-        if fast_reset:
+        if autoreset_mode == AutoresetMode.FAST:
             env = FastVmapAutoResetWrapper(env, num_envs=parallel)
-        else:
+        elif autoreset_mode == AutoresetMode.NORMAL:
             env = VmapAutoResetWrapper(env, num_envs=parallel)
+        elif autoreset_mode == AutoresetMode.ENVPOOL:
+            env = VmapEnvPoolAutoResetWrapper(env, num_envs=parallel)
     else:
         env = OneEpisodeWrapper(env, episode_length)
         env = VmapWrapper(env, num_envs=parallel, vmap_step=True)

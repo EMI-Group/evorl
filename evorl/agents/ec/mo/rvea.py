@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import tree_unpmap
 from evorl.ec import MultiObjectiveBraxProblem
-from evorl.envs import create_wrapped_brax_env
+from evorl.envs import create_wrapped_brax_env, AutoresetMode
 from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.workflows import ECWorkflow
@@ -26,7 +26,7 @@ class RVEAWorkflow(ECWorkflow):
             config.env.env_name,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
-            autoreset=False,
+            autoreset_mode=AutoresetMode.DISABLED,
         )
 
         agent = DeterministicECAgent(

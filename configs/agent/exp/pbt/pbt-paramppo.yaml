@@ -12,7 +12,7 @@ workflow_steps_per_iter: 25
 
 warmup_steps: 100
 
-num_iters: 5000
+num_iters: 500
 
 checkpoint:
   save_interval_steps: 50

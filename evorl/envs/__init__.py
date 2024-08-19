@@ -4,6 +4,7 @@ from .brax import create_wrapped_brax_env
 from .env import Env, EnvState, EnvStepFn
 from .multi_agent_env import MultiAgentEnv
 from .space import Box, Discrete
+from .wrappers.training_wrapper import AutoresetMode
 
 if importlib.util.find_spec("gymnax") is not None:
     from .gymnax import create_wrapped_gymnax_env

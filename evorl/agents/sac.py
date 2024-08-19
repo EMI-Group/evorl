@@ -14,7 +14,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import agent_gradient_update, psum, tree_pmean, tree_unpmap
 from evorl.distribution import get_tanh_norm_dist
-from evorl.envs import Box, create_env
+from evorl.envs import Box, create_env, AutoresetMode
 from evorl.evaluator import Evaluator
 from evorl.metrics import MetricBase, TrainMetric, metricfield
 from evorl.networks import make_policy_network, make_q_network
@@ -299,7 +299,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
             env_type=config.env.env_type,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
-            autoreset=True,
+            autoreset_mode=AutoresetMode.NORMAL,
         )
 
         assert isinstance(
@@ -341,7 +341,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
             config.env.env_type,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
-            autoreset=False,
+            autoreset_mode=AutoresetMode.DISABLED,
         )
 
         evaluator = Evaluator(

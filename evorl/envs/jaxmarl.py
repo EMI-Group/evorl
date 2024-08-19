@@ -14,12 +14,14 @@ from .jaxmarl_envs import make_mabrax_env
 from .multi_agent_env import MultiAgentEnvAdapter
 from .space import Space
 from .utils import sort_dict
-from .wrappers.ma_training_wrapper import (
+from .wrappers.training_wrapper import (
     EpisodeWrapper,
     FastVmapAutoResetWrapper,
     OneEpisodeWrapper,
     VmapAutoResetWrapper,
+    VmapEnvPoolAutoResetWrapper,
     VmapWrapper,
+    AutoresetMode,
 )
 
 
@@ -177,17 +179,18 @@ def create_wrapped_mabrax_env(
     env_name: str,
     episode_length: int = 1000,
     parallel: int = 1,
-    autoreset: bool = True,
-    fast_reset: bool = False,
+    autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
     **kwargs,
 ) -> JaxMARLAdapter:
     env = create_mabrax_env(env_name, **kwargs)
-    if autoreset:
+    if autoreset_mode != AutoresetMode.DISABLED:
         env = EpisodeWrapper(env, episode_length)
-        if fast_reset:
+        if autoreset_mode == AutoresetMode.FAST:
             env = FastVmapAutoResetWrapper(env, num_envs=parallel)
-        else:
+        elif autoreset_mode == AutoresetMode.NORMAL:
             env = VmapAutoResetWrapper(env, num_envs=parallel)
+        elif autoreset_mode == AutoresetMode.ENVPOOL:
+            env = VmapEnvPoolAutoResetWrapper(env, num_envs=parallel)
     else:
         env = OneEpisodeWrapper(env, episode_length)
         env = VmapWrapper(env, num_envs=parallel, vmap_step=True)

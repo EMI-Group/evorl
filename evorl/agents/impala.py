@@ -14,7 +14,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import agent_gradient_update, psum, tree_unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import create_env
+from evorl.envs import create_env, AutoresetMode
 from evorl.evaluator import Evaluator
 from evorl.metrics import TrainMetric
 from evorl.networks import make_policy_network, make_v_network
@@ -29,6 +29,7 @@ from evorl.types import (
     PyTreeDict,
     State,
     pytree_field,
+    PyTreeData,
 )
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient
@@ -303,8 +304,7 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
             config.env.env_type,
             episode_length=max_episode_steps,
             parallel=config.num_envs,
-            autoreset=True,
-            fast_reset=True,
+            autoreset_mode=AutoresetMode.NORMAL,
         )
 
         # Maybe need a discount array for different agents
@@ -341,7 +341,7 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
             config.env.env_type,
             episode_length=max_episode_steps,
             parallel=config.num_eval_envs,
-            autoreset=False,
+            autoreset_mode=AutoresetMode.DISABLED,
         )
 
         evaluator = Evaluator(

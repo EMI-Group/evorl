@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import tree_unpmap
 from evorl.ec import GeneralRLProblem
-from evorl.envs import create_wrapped_brax_env
+from evorl.envs import create_wrapped_brax_env, AutoresetMode, AutoresetMode
 from evorl.evaluator import Evaluator
 from evorl.metrics import EvaluateMetric
 from evorl.types import State
@@ -30,7 +30,7 @@ class CMAESWorkflow(ESBaseWorkflow):
             config.env.env_name,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
-            autoreset=False,
+            autoreset_mode=AutoresetMode.DISABLED,
         )
 
         agent = DeterministicECAgent(
@@ -68,7 +68,7 @@ class CMAESWorkflow(ESBaseWorkflow):
             config.env.env_name,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
-            autoreset=False,
+            autoreset_mode=AutoresetMode.DISABLED,
         )
         evaluator = Evaluator(
             env=eval_env, agent=agent, max_episode_steps=config.env.max_episode_steps

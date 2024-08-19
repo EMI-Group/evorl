@@ -1,6 +1,8 @@
+from enum import Enum
 import chex
 import jax
-from jax import numpy as jnp
+import jax.numpy as jnp
+import jax.tree_util as jtu
 
 from evorl.utils.jax_utils import vmap_rng_split
 
@@ -260,3 +262,70 @@ class FastVmapAutoResetWrapper(Wrapper):
         obs = where_done(state.extra.first_obs, state.obs)
 
         return state.replace(env_state=env_state, obs=obs)
+
+
+class VmapEnvPoolAutoResetWrapper(Wrapper):
+    """
+    EnvPool style AutoReset: an additional reset step after the episode ends.
+    """
+
+    def __init__(self, env: Env, num_envs: int = 1):
+        super().__init__(env)
+        self.num_envs = num_envs
+
+    def reset(self, key: chex.PRNGKey) -> EnvState:
+        """
+        Args:
+            key: support batched keys [B,2] or single key [2]
+        """
+        if key.ndim <= 1:
+            key = jax.random.split(key, self.num_envs)
+        else:
+            chex.assert_shape(
+                key,
+                (self.num_envs, 2),
+                custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}",
+            )
+
+        reset_key, key = vmap_rng_split(key)
+        state = jax.vmap(self.env.reset)(key)
+        state.info.autoreset = jnp.zeros_like(state.done)  # for autoreset flag
+        state.extra.reset_key = reset_key  # for autoreset
+
+        return state
+
+    def step(self, state: EnvState, action: jax.Array) -> EnvState:
+        def _step(state: EnvState, action: jax.Array) -> EnvState:
+            # on single env
+            new_state = self.env.step(state, action)
+            new_state.info.autoreset = state.done
+            return new_state
+
+        autoreset = state.done
+
+        def _where_done(x, y):
+            done = autoreset
+            if done.ndim > 0:
+                done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))
+            return jnp.where(done, x, y)
+
+        reset_state = self.reset(state.extra.reset_key)
+        new_state = new_state = jax.vmap(self.env.step)(state, action)
+        new_state.info.autoreset = autoreset
+
+        # Map heterogeneous computation (non-parallelizable).
+        # This avoids lax.cond becoming lax.select in vmap
+        state = jtu.tree_map(
+            _where_done,
+            reset_state,
+            new_state,
+        )
+
+        return state
+
+
+class AutoresetMode(Enum):
+    NORMAL = "normal"
+    FAST = "fast"
+    DISABLED = "disabled"
+    ENVPOOL = "envpool"

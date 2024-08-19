@@ -13,7 +13,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import psum, tree_pmean, tree_unpmap
 from evorl.distributed.gradients import agent_gradient_update
-from evorl.envs import Box, create_env
+from evorl.envs import Box, create_env, AutoresetMode
 from evorl.evaluator import Evaluator
 from evorl.metrics import MetricBase, metricfield
 from evorl.networks import make_policy_network, make_q_network
@@ -278,7 +278,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             config.env.env_type,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
-            autoreset=True,
+            autoreset_mode=AutoresetMode.NORMAL,
         )
 
         assert isinstance(
@@ -318,7 +318,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
             config.env.env_type,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
-            autoreset=False,
+            autoreset_mode=AutoresetMode.DISABLED,
         )
 
         evaluator = Evaluator(
