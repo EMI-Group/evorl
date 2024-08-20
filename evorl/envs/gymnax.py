@@ -29,13 +29,6 @@ class GymnaxAdapter(EnvAdapter):
         super().__init__(env)
         self.env_params = env_params or env.default_params
 
-        self._action_space = gymnax_space_to_evorl_space(
-            self.env.action_space(self.env_params)
-        )
-        self._obs_space = gymnax_space_to_evorl_space(
-            self.env.observation_space(self.env_params)
-        )
-
     def reset(self, key: chex.PRNGKey) -> EnvState:
         key, reset_key = jax.random.split(key)
         obs, env_state = self.env.reset(reset_key, self.env_params)
@@ -82,11 +75,11 @@ class GymnaxAdapter(EnvAdapter):
 
     @property
     def action_space(self) -> Space:
-        return self._action_space
+        return gymnax_space_to_evorl_space(self.env.action_space(self.env_params))
 
     @property
     def obs_space(self) -> Space:
-        return self._obs_space
+        return gymnax_space_to_evorl_space(self.env.observation_space(self.env_params))
 
 
 def _inf_to_num(x, num=1e10):

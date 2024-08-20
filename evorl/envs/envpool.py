@@ -40,8 +40,6 @@ class GymAdapter(EnvAdapter):
 
     def __init__(self, env: EnvPool):
         super().__init__(env)
-        self._action_sapce = gym_space_to_evorl_space(env.action_space)
-        self._obs_space = gym_space_to_evorl_space(env.observation_space)
         self.num_envs = env.config["num_envs"]
 
         reset_spec = _to_jax_spec(self.env.reset())
@@ -107,11 +105,11 @@ class GymAdapter(EnvAdapter):
 
     @property
     def action_space(self) -> Space:
-        return self._action_sapce
+        return gym_space_to_evorl_space(self.env.action_space)
 
     @property
     def obs_space(self) -> Space:
-        return self._obs_space
+        return gym_space_to_evorl_space(self.env.observation_space)
 
 
 class OneEpisodeWrapper(Wrapper):

@@ -37,8 +37,6 @@ def get_random_actions(env: MultiAgentEnv):
 class JaxMARLAdapter(MultiAgentEnvAdapter):
     def __init__(self, env: MultiAgentEnv):
         super().__init__(env)
-        self._action_space = jaxmarl_space_to_evorl_space(env.action_spaces)
-        self._obs_space = jaxmarl_space_to_evorl_space(env.observation_spaces)
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         key, reset_key, dummy_step_key = jax.random.split(key, 3)
@@ -88,11 +86,11 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
 
     @property
     def action_space(self) -> Mapping[AgentID, Space]:
-        return self._action_space
+        return jaxmarl_space_to_evorl_space(self.env.action_spaces)
 
     @property
     def obs_space(self) -> Mapping[AgentID, Space]:
-        return self._obs_space
+        return jaxmarl_space_to_evorl_space(self.env.observation_spaces)
 
     @property
     def agents(self) -> list[AgentID]:

@@ -24,13 +24,6 @@ class BraxAdapter(EnvAdapter):
     def __init__(self, env: BraxEnv):
         super().__init__(env)
 
-        action_spec = jnp.asarray(env.sys.actuator.ctrl_range, dtype=jnp.float32)
-        self._action_sapce = Box(low=action_spec[:, 0], high=action_spec[:, 1])
-
-        # Note: use jnp.inf or jnp.finfo(jnp.float32).min|max causes inf
-        obs_spec = jnp.full((env.observation_size,), 1e10, dtype=jnp.float32)
-        self._obs_space = Box(low=-obs_spec, high=obs_spec)
-
     def reset(self, key: chex.PRNGKey) -> EnvState:
         key, reset_key = jax.random.split(key)
         brax_state = self.env.reset(reset_key)
@@ -63,11 +56,13 @@ class BraxAdapter(EnvAdapter):
 
     @property
     def action_space(self) -> Space:
-        return self._action_sapce
+        action_spec = jnp.asarray(self.env.sys.actuator.ctrl_range, dtype=jnp.float32)
+        return Box(low=action_spec[:, 0], high=action_spec[:, 1])
 
     @property
     def obs_space(self) -> Space:
-        return self._obs_space
+        obs_spec = jnp.full((self.env.observation_size,), 1e10, dtype=jnp.float32)
+        return Box(low=-obs_spec, high=obs_spec)
 
 
 def create_brax_env(env_name: str, **kwargs) -> BraxAdapter:

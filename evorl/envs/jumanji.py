@@ -15,8 +15,6 @@ from .utils import sort_dict
 class JumanjiAdapter(EnvAdapter):
     def __init__(self, env: JumanjiEnv):
         super().__init__(env)
-        self._action_sapce = jumanji_specs_to_evorl_space(env.action_spec)
-        self._obs_space = jumanji_specs_to_evorl_space(env.observation_spec)
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         env_state, transition = self.env.reset(key)
@@ -42,11 +40,11 @@ class JumanjiAdapter(EnvAdapter):
 
     @property
     def action_space(self) -> Space:
-        return self._action_sapce
+        return jumanji_specs_to_evorl_space(self.env.action_spec)
 
     @property
     def obs_space(self) -> Space:
-        return self._obs_space
+        return jumanji_specs_to_evorl_space(self.env.observation_spec)
 
 
 # TODO: multi-agent EnvAdapter
