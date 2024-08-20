@@ -118,7 +118,7 @@ def compute_gae(
 
     deltas = rewards + discount * (1 - dones) * values[1:] - values[:-1]
 
-    last_gae = jnp.zeros_like(values[0])
+    bootstrap_gae = jnp.zeros_like(values[0])
 
     def _compute_gae(gae_t_plus_1, x_t):
         delta_t, factor_t = x_t
@@ -128,7 +128,7 @@ def compute_gae(
 
     _, advantages = jax.lax.scan(
         _compute_gae,
-        last_gae,
+        bootstrap_gae,
         (deltas, discount * gae_lambda * (1 - dones)),
         reverse=True,
         unroll=16,

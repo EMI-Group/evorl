@@ -32,7 +32,7 @@ from evorl.types import (
     pytree_field,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.toolkits import average_episode_discount_return
 from evorl.workflows import OnPolicyRLWorkflow
 
@@ -62,9 +62,7 @@ class IMPALAAgent(Agent):
     clip_rho_threshold: float = 1.0
     clip_c_threshold: float = 1.0
     clip_pg_rho_threshold: float = 1.0
-    clip_ppo_epsilon: float = 0.2
     adv_mode: str = pytree_field(default="official", pytree_node=False)
-    pg_loss_mode: str = pytree_field(default="a2c", pytree_node=False)
     policy_network: nn.Module = pytree_field(lazy_init=True)
     value_network: nn.Module = pytree_field(lazy_init=True)
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
@@ -133,7 +131,6 @@ class IMPALAAgent(Agent):
         policy_extras = PyTreeDict(
             # Log probabilities of the selected actions for importance sampling
             logp=actions_dist.log_prob(actions)
-            # raw_action=raw_actions,
         )
 
         return actions, policy_extras
@@ -175,11 +172,11 @@ class IMPALAAgent(Agent):
                 actor_entropy_loss
             ]
         """
+        # mask invalid transitions at autoreset
+        mask = jnp.logical_not(trajectory.extras.env_extras.autoreset)
 
         obs = trajectory.obs
-        last_obs = trajectory.extras.env_extras.last_obs
-        _obs = jnp.concatenate([obs, last_obs[-1:]], axis=0)
-
+        _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
         if self.normalize_obs:
             _obs = self.obs_preprocessor(_obs, agent_state.obs_preprocessor_state)
 
@@ -214,14 +211,16 @@ class IMPALAAgent(Agent):
             clip_c_threshold=self.clip_c_threshold,
         )
 
+        vtrace = jax.lax.stop_gradient(vtrace)
+
         # ======= critic =======
 
-        critic_loss = optax.squared_error(vs[:-1], vtrace).mean()
+        critic_loss = optax.squared_error(vs[:-1], vtrace).mean(where=mask)
 
         # ====== actor =======
 
-        advantages = compute_pg_advantage(
-            rho_t=rho,
+        # GAE-V: [T*B]
+        pg_advantages = compute_pg_advantage(
             vtrace=vtrace,
             v_t=vs[:-1],
             v_t_plus_1=vs[1:],
@@ -229,37 +228,26 @@ class IMPALAAgent(Agent):
             dones=trajectory.dones,
             discount=self.discount,
             lambda_=self.vtrace_lambda,
-            clip_pg_rho_threshold=self.clip_pg_rho_threshold,
             mode=self.adv_mode,
         )
-        advantages = jax.lax.stop_gradient(advantages)
 
-        # advantages: [T*B]
-        if self.pg_loss_mode == "a2c":
-            policy_loss = -(advantages * actions_logp).mean()
-        elif self.pg_loss_mode == "ppo":
-            policy_sorrogate_loss1 = rho * advantages
-            policy_sorrogate_loss2 = (
-                jnp.clip(rho, 1 - self.clipping_epsilon, 1 + self.clip_ppo_epsilon)
-                * advantages
-            )
-            policy_loss = -jnp.minimum(
-                policy_sorrogate_loss1, policy_sorrogate_loss2
-            ).mean()
-        else:
-            raise ValueError(f"pg_loss_mode {self.pg_loss_mode} is not supported")
+        clipped_pg_rho_t = jnp.minimum(self.clip_pg_rho_threshold, rho)
+        pg_advantage = clipped_pg_rho_t * pg_advantages
+        pg_advantage = jax.lax.stop_gradient(pg_advantage)
+
+        policy_loss = -(pg_advantage * actions_logp).mean(where=mask)
 
         # entropy: [T*B]
         if self.continuous_action:
-            entropy_loss = actions_dist.entropy(seed=key).mean()
+            entropy_loss = actions_dist.entropy(seed=key).mean(where=mask)
         else:
-            entropy_loss = actions_dist.entropy().mean()
+            entropy_loss = actions_dist.entropy().mean(where=mask)
 
         return PyTreeDict(
             actor_loss=policy_loss,
             critic_loss=critic_loss,
-            actor_entropy_loss=entropy_loss,
-            rho=rho.mean(),
+            actor_entropy=entropy_loss,
+            rho=rho.mean(where=mask),
         )
 
 
@@ -304,7 +292,7 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
             config.env.env_type,
             episode_length=max_episode_steps,
             parallel=config.num_envs,
-            autoreset_mode=AutoresetMode.NORMAL,
+            autoreset_mode=AutoresetMode.ENVPOOL,
         )
 
         # Maybe need a discount array for different agents
@@ -320,9 +308,7 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
             clip_rho_threshold=config.clip_rho_threshold,
             clip_c_threshold=config.clip_c_threshold,
             clip_pg_rho_threshold=config.clip_pg_rho_threshold,
-            clip_ppo_epsilon=config.clip_ppo_epsilon,
             adv_mode=config.adv_mode,
-            pg_loss_mode=config.pg_loss_mode,
         )
 
         if (
@@ -351,7 +337,7 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
         return cls(env, agent, optimizer, evaluator, config)
 
     def step(self, state: State) -> tuple[IMPALATrainMetric, State]:
-        key, rollout_key, learn_key, shuffle_key = jax.random.split(state.key, num=4)
+        key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         trajectory, env_state = rollout(
             self.env.step,
@@ -360,7 +346,7 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
             state.agent_state,
             rollout_key,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("last_obs", "episode_return"),
+            env_extra_fields=("autoreset", "episode_return"),
         )
 
         agent_state = state.agent_state
@@ -396,7 +382,7 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
         )
 
         # minibatch_size: num of envs in one batch
-        # unit in batch: trajectory [T, ...]
+        # unit in batch: trajectory [T, B//k, ...]
         num_minibatches = self.config.num_envs // self.config.minibatch_size
 
         def _get_shuffled_minibatch(perm_key, x):
@@ -418,19 +404,30 @@ class IMPALAWorkflow(OnPolicyRLWorkflow):
 
             return (opt_state, agent_state, key), (loss, loss_dict)
 
-        perm_key, learn_key = jax.random.split(key, num=2)
+        def epoch_step(carry, _):
+            opt_state, agent_state, key = carry
+            shuffle_key, learn_key = jax.random.split(key)
+            batch_trajectory = jtu.tree_map(
+                partial(_get_shuffled_minibatch, shuffle_key), trajectory
+            )
 
-        (opt_state, agent_state, key), (loss_list, loss_dict_list) = jax.lax.scan(
-            minibatch_step,
+            (opt_state, agent_state, key), (loss, loss_dict) = scan_and_mean(
+                minibatch_step,
+                (opt_state, agent_state, learn_key),
+                batch_trajectory,
+                length=num_minibatches,
+            )
+
+            return (opt_state, agent_state, key), (loss, loss_dict)
+
+        (opt_state, agent_state, _), (loss, loss_dict) = scan_and_mean(
+            epoch_step,
             (state.opt_state, agent_state, learn_key),
-            jtu.tree_map(partial(_get_shuffled_minibatch, perm_key), trajectory),
-            length=num_minibatches,
+            None,
+            length=self.config.reuse_rollout_epochs,
         )
 
         # ======== update metrics ========
-
-        loss = loss_list.mean()
-        loss_dict = jtu.tree_map(jnp.mean, loss_dict_list)
 
         sampled_timesteps = psum(
             jnp.array(
@@ -498,7 +495,7 @@ def compute_vtrace(
     v_t_plus_1,
     rewards,
     dones,
-    discount,
+    discount=0.99,
     lambda_=1.0,
     clip_rho_threshold=1.0,
     clip_c_threshold=1.0,
@@ -516,52 +513,50 @@ def compute_vtrace(
     # calculate δV_t
     td_error = clipped_rho_t * (rewards + discounts * v_t_plus_1 - v_t)
 
-    # calculate vtrace - v_t
-    def _cal_vtrace_minus_v(vtrace_minus_v, params):
+    # calculate delta = vtrace - v_t
+    def _compute_delta(delta, params):
         td_error, discount, c = params
-        vtrace_minus_v = td_error + discount * c * vtrace_minus_v
-        return vtrace_minus_v, vtrace_minus_v
+        delta = td_error + discount * c * delta
+        return delta, delta
 
-    _, vtrace_minus_v = jax.lax.scan(
-        _cal_vtrace_minus_v,
-        jnp.zeros_like(v_t[0]),
+    bootstrap_delta = jnp.zeros_like(v_t[-1])
+    _, delta = jax.lax.scan(
+        _compute_delta,
+        bootstrap_delta,
         (td_error, discounts, clipped_c_t),
         reverse=True,
+        unroll=16,
     )
 
     # calculate vs
-    vtrace = vtrace_minus_v + v_t
+    vtrace = delta + v_t
 
     return vtrace
 
 
 def compute_pg_advantage(
-    rho_t,
     vtrace,
     v_t,
     v_t_plus_1,
     rewards,
     dones,
-    discount,
+    discount=0.99,
     lambda_=1.0,
-    clip_pg_rho_threshold=1.0,
     mode="official",
 ):
     discounts = discount * (1 - dones)
     # calculate advantage function
     if mode == "official":
         # Note: rllib also follows this implementation
-        q_t_plus_1 = jnp.concatenate([vtrace[1:], v_t_plus_1[-1:]], axis=0)
-        q_t = rewards + discounts * q_t_plus_1
+        gae_v_t_plus_1 = jnp.concatenate([vtrace[1:], v_t_plus_1[-1:]], axis=0)
     elif mode == "acme":
-        q_t_plus_1 = jnp.concatenate(
+        gae_v_t_plus_1 = jnp.concatenate(
             [lambda_ * vtrace[1:] + (1 - lambda_) * v_t[1:], v_t_plus_1[-1:]], axis=0
         )
-        q_t = rewards + discounts * q_t_plus_1
     else:
         raise ValueError(f"mode {mode} is not supported")
 
-    clipped_pg_rho_t = jnp.minimum(clip_pg_rho_threshold, rho_t)
-    pg_advantage = clipped_pg_rho_t * (q_t - v_t)
+    q_t = rewards + discounts * gae_v_t_plus_1
+    gae_adv = q_t - v_t
 
-    return pg_advantage
+    return gae_adv
