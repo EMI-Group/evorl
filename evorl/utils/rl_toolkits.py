@@ -191,6 +191,27 @@ def average_episode_discount_return(
     )
 
 
+def approximate_kl(logratio: jax.Array, mode="k3", axis=-1) -> jax.Array:
+    """
+    Approximate KL divergence by K3 estimator (no bias, low variance)
+    http://joschu.net/blog/kl-approx.html
+
+    Args:
+        logratio: ratio of p(x)/q(x), where x are sampled from q(x)
+    Returns:
+        approx_kl: approximated KL(q||p) (Forward KL)
+    """
+    ratio = jnp.exp(logratio)
+
+    if mode == "k1":
+        approx_kl = -jnp.mean(logratio, axis=axis)
+    elif mode == "k2":
+        approx_kl = jnp.mean(0.5 * jnp.square(logratio), axis=axis)
+    elif mode == "k3":
+        approx_kl = jnp.mean((ratio - 1) * logratio, axis=axis)
+    return approx_kl
+
+
 def fold_multi_steps(step_fn, num_steps):
     def _multi_steps(state):
         def _step(state, unused_t):

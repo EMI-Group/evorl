@@ -33,7 +33,7 @@ from evorl.types import (
 )
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
-from evorl.utils.rl_toolkits import average_episode_discount_return
+from evorl.utils.rl_toolkits import average_episode_discount_return, approximate_kl
 from evorl.workflows import OnPolicyRLWorkflow
 
 from .agent import Agent, AgentState
@@ -182,8 +182,8 @@ class IMPALAAgent(Agent):
 
         vs = self.value_network.apply(agent_state.params.value_params, _obs)
 
-        sampled_actions_logp = trajectory.extras.policy_extras.logp
-        sampled_actions = trajectory.actions
+        behavior_actions_logp = trajectory.extras.policy_extras.logp
+        behavior_actions = trajectory.actions
 
         # [T, B, A]
         raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
@@ -194,8 +194,9 @@ class IMPALAAgent(Agent):
             actions_dist = get_categorical_dist(raw_actions)
 
         # [T, B]
-        actions_logp = actions_dist.log_prob(sampled_actions)
-        rho = jnp.exp(actions_logp - sampled_actions_logp)
+        actions_logp = actions_dist.log_prob(behavior_actions)
+        logrho = actions_logp - behavior_actions_logp
+        rho = jnp.exp(logrho)
 
         # TODO: consider PEB: truncation in the middle of trajectory
         # hint: use IS of td-error with
@@ -239,15 +240,18 @@ class IMPALAAgent(Agent):
 
         # entropy: [T*B]
         if self.continuous_action:
-            entropy_loss = actions_dist.entropy(seed=key).mean(where=mask)
+            actor_entropy = actions_dist.entropy(seed=key).mean(where=mask)
         else:
-            entropy_loss = actions_dist.entropy().mean(where=mask)
+            actor_entropy = actions_dist.entropy().mean(where=mask)
+
+        approx_kl = approximate_kl(logrho)
 
         return PyTreeDict(
             actor_loss=policy_loss,
             critic_loss=critic_loss,
-            actor_entropy=entropy_loss,
+            actor_entropy=actor_entropy,
             rho=rho.mean(where=mask),
+            approx_kl=approx_kl,
         )
 
 

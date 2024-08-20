@@ -37,6 +37,7 @@ from evorl.utils.rl_toolkits import (
     average_episode_discount_return,
     compute_gae,
     flatten_rollout_trajectory,
+    approximate_kl,
 )
 from evorl.workflows import OnPolicyRLWorkflow
 
@@ -197,7 +198,8 @@ class PPOAgent(Agent):
 
         advantages = sample_batch.extras.advantages
 
-        rho = jnp.exp(actions_logp - behavior_actions_logp)
+        logrho = actions_logp - behavior_actions_logp
+        rho = jnp.exp(logrho)
 
         # advantages: [T*B]
         policy_sorrogate_loss1 = rho * advantages
@@ -214,10 +216,13 @@ class PPOAgent(Agent):
         else:
             actor_entropy = actions_dist.entropy().mean(where=mask)
 
+        approx_kl = approximate_kl(logrho)
+
         return PyTreeDict(
             actor_loss=actor_loss,
             critic_loss=critic_loss,
             actor_entropy=actor_entropy,
+            approx_kl=approx_kl,
         )
 
     def compute_values(
