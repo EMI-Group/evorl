@@ -18,7 +18,7 @@ eval_episodes: 16 # should be divided by num_eval_envs
 loss_weights:
   actor_loss: 1.0
   critic_loss: 0.5
-  actor_entropy_loss: -0.01
+  actor_entropy: -0.01
 
 optimizer:
   lr: 0.0003

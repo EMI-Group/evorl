@@ -204,20 +204,20 @@ class PPOAgent(Agent):
         policy_sorrogate_loss2 = (
             jnp.clip(rho, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * advantages
         )
-        policy_loss = -jnp.minimum(policy_sorrogate_loss1, policy_sorrogate_loss2).mean(
+        actor_loss = -jnp.minimum(policy_sorrogate_loss1, policy_sorrogate_loss2).mean(
             where=mask
         )
 
         # entropy: [T*B]
         if self.continuous_action:
-            entropy_loss = actions_dist.entropy(seed=key).mean(where=mask)
+            actor_entropy = actions_dist.entropy(seed=key).mean(where=mask)
         else:
-            entropy_loss = actions_dist.entropy().mean(where=mask)
+            actor_entropy = actions_dist.entropy().mean(where=mask)
 
         return PyTreeDict(
-            actor_loss=policy_loss,
+            actor_loss=actor_loss,
             critic_loss=critic_loss,
-            actor_entropy_loss=entropy_loss,
+            actor_entropy=actor_entropy,
         )
 
     def compute_values(

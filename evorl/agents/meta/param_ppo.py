@@ -96,7 +96,7 @@ class ParamPPOWorkflow(PPOWorkflow):
             loss_weights = dict(
                 actor_loss=state.hp_state.actor_loss_weight,
                 critic_loss=state.hp_state.critic_loss_weight,
-                actor_entropy_loss=state.hp_state.entropy_loss_weight,
+                actor_entropy=state.hp_state.entropy_loss_weight,
             )
             loss = jnp.zeros(())
             for loss_key in loss_weights.keys():
