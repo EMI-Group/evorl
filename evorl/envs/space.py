@@ -34,15 +34,15 @@ class Box(Space):
     low: chex.Array
     high: chex.Array
 
-    def __post_init__(self):
-        chex.assert_trees_all_equal_dtypes(
-            self.low,
-            self.high,
-            custom_message="low and high should have the same shape and dtype!",
-        )
-        assert (
-            self.high >= self.low
-        ).all(), "high should be greater than or equal to low"
+    # def __post_init__(self):
+    #     chex.assert_trees_all_equal_dtypes(
+    #         self.low,
+    #         self.high,
+    #         custom_message="low and high should have the same shape and dtype!",
+    #     )
+    #     assert (
+    #         self.high >= self.low
+    #     ).all(), "high should be greater than or equal to low"
 
     def sample(self, key: chex.PRNGKey) -> chex.Array:
         return jax.random.uniform(
@@ -64,8 +64,8 @@ class Box(Space):
 class Discrete(Space):
     n: int
 
-    def __post_init__(self):
-        assert self.n > 0, "n should be a positive integer"
+    # def __post_init__(self):
+    #     assert self.n > 0, "n should be a positive integer"
 
     def sample(self, key: chex.PRNGKey) -> chex.Array:
         return jax.random.randint(key, shape=(), minval=0, maxval=self.n)

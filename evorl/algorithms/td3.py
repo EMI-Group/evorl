@@ -404,7 +404,7 @@ class TD3Workflow(OffPolicyRLWorkflow):
 
         # ==== fill random transitions ====
         key, env_key, rollout_key = jax.random.split(state.key, 3)
-        random_agent = RandomAgent(action_space=action_space, obs_space=obs_space)
+        random_agent = RandomAgent()
         random_agent_state = random_agent.init(obs_space, action_space, key)
 
         # Note: in multi-devices mode, this method is running in pmap, and

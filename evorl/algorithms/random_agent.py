@@ -41,9 +41,6 @@ class RandomAgent(Agent):
     An agent that takes random actions.
     """
 
-    obs_space_shape: tuple[int] = pytree_field(lazy_init=True)
-    action_sample_fn: callable = pytree_field(lazy_init=True)
-
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:

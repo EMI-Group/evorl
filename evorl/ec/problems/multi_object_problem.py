@@ -7,8 +7,8 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-from evorl.algorithms import Agent, AgentState
-from evorl.envs import Env, EnvState
+from evorl.algorithms import Agent, AgentState, AgentActionFn
+from evorl.envs import Env, EnvState, EnvStepFn
 from evorl.rollout import SampleBatch
 from evorl.types import Action, PolicyExtraInfo, PyTreeDict, ReductionFn
 from evorl.utils.jax_utils import rng_split
@@ -95,7 +95,7 @@ class MultiObjectiveBraxProblem(Problem):
 
             if self.discount == 1.0:
                 # use fast undiscount evaluation
-                env_state, metrics = fast_eval_rollout_episode(
+                metrics, env_state = fast_eval_rollout_episode(
                     self.env_step,
                     self.agent_eval_actions,
                     env_state,
@@ -106,7 +106,7 @@ class MultiObjectiveBraxProblem(Problem):
                 )
 
             else:
-                env_state, episode_trajectory = eval_rollout_episode(
+                episode_trajectory, env_state = eval_rollout_episode(
                     self.env_step,
                     self.agent_eval_actions,
                     env_state,
@@ -172,16 +172,14 @@ class MultiObjectiveBraxProblem(Problem):
 
 
 def eval_env_step(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[
-        [AgentState, SampleBatch, chex.PRNGKey], tuple[Action, PolicyExtraInfo]
-    ],
+    env_fn: EnvStepFn,
+    action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
     sample_batch: SampleBatch,
     key: chex.PRNGKey,
     metric_names: tuple[str] = (),
-) -> tuple[EnvState, SampleBatch]:
+) -> tuple[SampleBatch, EnvState]:
     actions, policy_extras = action_fn(agent_state, sample_batch, key)
     env_nstate = env_fn(env_state, actions)
 
@@ -202,7 +200,7 @@ def eval_env_step(
         dones=env_nstate.done,
     )
 
-    return env_nstate, transition
+    return transition, env_nstate
 
 
 def eval_rollout_episode(
@@ -215,7 +213,7 @@ def eval_rollout_episode(
     key: chex.PRNGKey,
     rollout_length: int,
     metric_names: tuple[str] = (),
-) -> tuple[EnvState, SampleBatch]:
+) -> tuple[SampleBatch, EnvState]:
     """
     Collect given rollout_length trajectory.
     Avoid unnecessary env_step()
@@ -241,7 +239,7 @@ def eval_rollout_episode(
             obs=env_state.obs,
         )
 
-        env_nstate, transition = jax.lax.cond(
+        transition, env_nstate = jax.lax.cond(
             env_state.done.all(),
             lambda *x: (env_state.replace(), prev_transition.replace()),
             _eval_env_step,
@@ -256,15 +254,18 @@ def eval_rollout_episode(
     # run one-step rollout first to get bootstrap transition
     # it will not include in the trajectory when env_state is from env.reset()
     # this is manually controlled by user.
-    _, transition = _eval_env_step(
+    bootstrap_transition, _ = _eval_env_step(
         env_state, agent_state, SampleBatch(obs=env_state.obs), key
     )
 
     (env_state, _, _), trajectory = jax.lax.scan(
-        _one_step_rollout, (env_state, key, transition), (), length=rollout_length
+        _one_step_rollout,
+        (env_state, key, bootstrap_transition),
+        (),
+        length=rollout_length,
     )
 
-    return env_state, trajectory
+    return trajectory, env_state
 
 
 def fast_eval_rollout_episode(
@@ -277,7 +278,7 @@ def fast_eval_rollout_episode(
     key: chex.PRNGKey,
     rollout_length: int,
     metric_names: tuple[str] = (),
-) -> tuple[EnvState, SampleBatch]:
+) -> tuple[PyTreeDict, EnvState]:
     """
     Collect given rollout_length trajectory.
     Avoid unnecessary env_step()
@@ -342,4 +343,8 @@ def fast_eval_rollout_episode(
         ),
     )
 
-    return env_state, metrics
+    if "episode_length" in metrics:
+        # note: here we use `episode_length` instead of `episode_lengths`
+        metrics = metrics.replace(episode_length=metrics.episode_length + 1)
+
+    return metrics, env_state
