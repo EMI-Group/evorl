@@ -16,7 +16,7 @@ from evorl.types import Action, PyTreeDict
 
 from .env import Env, EnvAdapter, EnvState
 from .space import Box, Discrete, Space
-from .wrappers.wrapper import Wrapper
+from .wrappers import Wrapper, AutoresetMode
 
 
 def _to_jax(x):
@@ -56,13 +56,15 @@ class GymAdapter(EnvAdapter):
             return self.env.reset()
 
         def _step(action):
-            return self.env.step(action)
+            return self.env.step(np.asarray(action))
 
         self._reset = partial(io_callback, _reset, reset_spec)
         self._step = partial(io_callback, _step, step_spec)
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         obs, info = _to_jax(self._reset())
+
+        # Note: we drop the original info as they are not static
 
         info = PyTreeDict(
             termination=jnp.zeros((self.num_envs,)),
@@ -160,12 +162,18 @@ def creat_gym_env(
     gymnasium_env=True,
     episode_length: int = 1000,
     parallel: int = 1,
-    autoreset: bool = True,
+    autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
     **kwargs,
 ) -> GymAdapter:
     """
     Tips: unlike other jax-based env, most wrappers are handled in envpool.
     """
+
+    if autoreset_mode not in [AutoresetMode.ENVPOOL, AutoresetMode.DISABLED]:
+        raise ValueError(
+            "Only AutoresetMode.ENVPOOL and AutoresetMode.DISABLED are supported for envpool based env."
+        )
+
     if gymnasium_env:
         env = envpool.make_gymnasium(
             env_name, num_envs=parallel, max_episode_steps=episode_length, **kwargs
@@ -177,7 +185,7 @@ def creat_gym_env(
 
     env = GymAdapter(env)
 
-    if not autoreset:
+    if autoreset_mode == AutoresetMode.DISABLED:
         env = OneEpisodeWrapper(env)
 
     return env
