@@ -114,7 +114,7 @@ class OnPolicyRLWorkflow(RLWorkflow):
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree]:
-        agent_state = self.agent.init(key)
+        agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = self.optimizer.init(agent_state.params)
         return agent_state, opt_state
 
@@ -186,7 +186,7 @@ class OffPolicyRLWorkflow(RLWorkflow):
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree]:
-        agent_state = self.agent.init(key)
+        agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = self.optimizer.init(agent_state.params)
         return agent_state, opt_state
 

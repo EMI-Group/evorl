@@ -14,7 +14,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import psum, tree_unpmap
 from evorl.distributed.gradients import agent_gradient_update
-from evorl.envs import AutoresetMode, Discrete, create_env
+from evorl.envs import AutoresetMode, Discrete, create_env, Space
 from evorl.evaluator import Evaluator
 from evorl.metrics import MetricBase, TrainMetric, WorkflowMetric
 from evorl.networks import make_discrete_q_network
@@ -64,7 +64,9 @@ class DQNAgent(Agent):
     q_network: nn.Module = pytree_field(lazy_init=True)
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
-    def init(self, key: chex.PRNGKey) -> AgentState:
+    def init(
+        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
+    ) -> AgentState:
         obs_size = self.obs_space.shape[0]
         action_size = self.action_space.n
 
@@ -229,8 +231,6 @@ class DQNWorkflow(OffPolicyRLWorkflow):
         ), "Only Discrete action space is supported."
 
         agent = DQNAgent(
-            action_space=env.action_space,
-            obs_space=env.obs_space,
             q_hidden_layer_sizes=config.agent_network.q_hidden_layer_sizes,
             discount=config.discount,
         )
@@ -292,7 +292,7 @@ class DQNWorkflow(OffPolicyRLWorkflow):
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree]:
-        agent_state = self.agent.init(key)
+        agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = self.optimizer.init(agent_state.params.q_params)
 
         agent_state = agent_state.replace(

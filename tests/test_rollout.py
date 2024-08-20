@@ -12,7 +12,7 @@ from evorl.envs import create_env
 def test_rollout():
     env = create_env("ant", "brax", parallel=7)
 
-    agent = DebugRandomAgent(action_space=env.action_space, obs_space=env.obs_space)
+    agent = DebugRandomAgent()
 
     key = jax.random.PRNGKey(42)
 
@@ -20,7 +20,7 @@ def test_rollout():
 
     env_state = env.reset(env_key)
 
-    agent_state = agent.init(agent_key)
+    agent_state = agent.init(env.obs_space, env.action_space, agent_key)
 
     env_extra_fields = (
         "termination",

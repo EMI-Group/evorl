@@ -29,8 +29,6 @@ class NSGA2Workflow(ECWorkflow):
         )
 
         agent = DeterministicECAgent(
-            action_space=env.action_space,
-            obs_space=env.obs_space,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,  # use linear model
             normalize_obs=False,
         )
@@ -47,7 +45,7 @@ class NSGA2Workflow(ECWorkflow):
 
         # dummy agent_state
         agent_key = jax.random.PRNGKey(config.seed)
-        agent_state = agent.init(agent_key)
+        agent_state = agent.init(env.obs_space, env.action_space, agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
         algorithm = evox.algorithms.NSGA2(

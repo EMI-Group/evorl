@@ -12,7 +12,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import agent_gradient_update, psum, tree_unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import AutoresetMode, create_env
+from evorl.envs import AutoresetMode, create_env, Space
 from evorl.evaluator import Evaluator
 from evorl.metrics import TrainMetric
 from evorl.networks import make_policy_network, make_v_network
@@ -61,13 +61,15 @@ class A2CAgent(Agent):
         default=None, lazy_init=True, pytree_node=False
     )
 
-    def init(self, key: chex.PRNGKey) -> AgentState:
-        obs_size = self.obs_space.shape[0]
+    def init(
+        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
+    ) -> AgentState:
+        obs_size = obs_space.shape[0]
 
         if self.continuous_action:
-            action_size = self.action_space.shape[0] * 2
+            action_size = action_space.shape[0] * 2
         else:
-            action_size = self.action_space.n
+            action_size = action_space.n
 
         policy_key, value_key, obs_preprocessor_key = jax.random.split(key, 3)
         policy_network, policy_init_fn = make_policy_network(
@@ -92,7 +94,7 @@ class A2CAgent(Agent):
         if self.normalize_obs:
             obs_preprocessor = running_statistics.normalize
             self.set_frozen_attr("obs_preprocessor", obs_preprocessor)
-            dummy_obs = self.obs_space.sample(obs_preprocessor_key)
+            dummy_obs = obs_space.sample(obs_preprocessor_key)
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
@@ -256,8 +258,6 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         )
 
         agent = A2CAgent(
-            action_space=env.action_space,
-            obs_space=env.obs_space,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             normalize_obs=config.normalize_obs,

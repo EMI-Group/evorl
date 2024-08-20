@@ -36,9 +36,13 @@ def _create_example_agent_env(num_envs, rollout_length):
 
     env = create_wrapped_brax_env(env, parallel=num_envs)
     agent = A2CAgent(
-        action_space=env.action_space,
-        obs_space=env.obs_space,
         continuous_action=True,
     )
 
     return agent, env
+
+
+def test_agent_hashable():
+    agent, env = _create_example_agent_env(5, 1000)
+    agent.init(env.obs_space, env.action_space, jax.random.PRNGKey(42))
+    hash(agent)

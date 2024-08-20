@@ -13,6 +13,7 @@ from evorl.networks.linear import MLP, ActivationFn
 from evorl.sample_batch import SampleBatch
 from evorl.types import Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field
 from evorl.utils import running_statistics
+from evorl.envs import Space
 
 from ..agent import Agent, AgentState
 
@@ -53,7 +54,9 @@ class StochasticECAgent(Agent):
     policy_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
-    def init(self, key: chex.PRNGKey) -> AgentState:
+    def init(
+        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
+    ) -> AgentState:
         obs_size = self.obs_space.shape[0]
 
         if self.continuous_action:
@@ -145,7 +148,9 @@ class DeterministicECAgent(Agent):
     policy_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
-    def init(self, key: chex.PRNGKey) -> AgentState:
+    def init(
+        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
+    ) -> AgentState:
         obs_size = self.obs_space.shape[0]
 
         # it must be continuous action

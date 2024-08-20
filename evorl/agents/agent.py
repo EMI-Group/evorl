@@ -4,7 +4,7 @@ from typing import Any, Protocol
 
 import chex
 
-from evorl.envs.space import Space
+from evorl.envs import Space
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
@@ -40,11 +40,8 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
     - compute loss by loss
     """
 
-    action_space: Space
-    obs_space: Space
-
     @abstractmethod
-    def init(self, key) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key) -> AgentState:
         pass
 
     @abstractmethod

@@ -18,14 +18,12 @@ def setup_trajectory():
     env = create_wrapped_brax_env(
         "ant", parallel=5, autoreset_mode=AutoresetMode.ENVPOOL
     )
-    agent = IMPALAAgent(
-        action_space=env.action_space, obs_space=env.obs_space, continuous_action=True
-    )
+    agent = IMPALAAgent(continuous_action=True)
 
     key, rollout_key = jax.random.split(jax.random.PRNGKey(42))
 
     env_state = env.reset(key)
-    agent_state = agent.init(key)
+    agent_state = agent.init(env.obs_space, env.action_space, key)
 
     trajectory, env_state = rollout(
         env.step,

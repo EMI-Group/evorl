@@ -15,7 +15,7 @@ def test_eval_rollout_epsiode():
         autoreset_mode=AutoresetMode.NORMAL,
     )
 
-    agent = DebugRandomAgent(action_space=env.action_space, obs_space=env.obs_space)
+    agent = DebugRandomAgent()
 
     evaluator = Evaluator(env, agent, 1000, discount=0.99)
 
@@ -23,7 +23,7 @@ def test_eval_rollout_epsiode():
 
     key, rollout_key, env_key, agent_key = jax.random.split(key, 4)
 
-    agent_state = agent.init(agent_key)
+    agent_state = agent.init(env.obs_space, env.action_space, agent_key)
 
     metric = evaluator.evaluate(agent_state, 7 * 3, rollout_key)
 
@@ -40,7 +40,7 @@ def test_fast_eval_rollout_epsiode():
         autoreset_mode=AutoresetMode.NORMAL,
     )
 
-    agent = DebugRandomAgent(action_space=env.action_space, obs_space=env.obs_space)
+    agent = DebugRandomAgent()
 
     evaluator = Evaluator(env, agent, 1000)
 
@@ -48,7 +48,7 @@ def test_fast_eval_rollout_epsiode():
 
     key, rollout_key, env_key, agent_key = jax.random.split(key, 4)
 
-    agent_state = agent.init(agent_key)
+    agent_state = agent.init(env.obs_space, env.action_space, agent_key)
 
     metric = evaluator.evaluate(agent_state, 7 * 3, rollout_key)
 

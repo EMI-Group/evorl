@@ -13,7 +13,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import psum, tree_pmean, tree_unpmap
 from evorl.distributed.gradients import agent_gradient_update
-from evorl.envs import AutoresetMode, Box, create_env
+from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluator import Evaluator
 from evorl.metrics import MetricBase, metricfield
 from evorl.networks import make_policy_network, make_q_network
@@ -72,7 +72,9 @@ class DDPGAgent(Agent):
     actor_network: nn.Module = pytree_field(lazy_init=True)
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
-    def init(self, key: chex.PRNGKey) -> AgentState:
+    def init(
+        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
+    ) -> AgentState:
         obs_size = self.obs_space.shape[0]
         action_size = self.action_space.shape[0]
 
@@ -286,8 +288,6 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
         ), "Only continue action space is supported."
 
         agent = DDPGAgent(
-            action_space=env.action_space,
-            obs_space=env.obs_space,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             discount=config.discount,
@@ -337,7 +337,7 @@ class DDPGWorkflow(OffPolicyRLWorkflow):
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree]:
-        agent_state = self.agent.init(key)
+        agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = PyTreeDict(
             dict(
                 actor=self.optimizer.init(agent_state.params.actor_params),

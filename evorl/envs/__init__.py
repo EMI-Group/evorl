@@ -3,7 +3,7 @@ import importlib
 from .brax import create_brax_env, create_wrapped_brax_env
 from .env import Env, EnvState, EnvStepFn
 from .multi_agent_env import MultiAgentEnv
-from .space import Box, Discrete
+from .space import Space, Box, Discrete
 from .wrappers.wrapper import get_wrapper
 from .wrappers.training_wrapper import AutoresetMode
 
