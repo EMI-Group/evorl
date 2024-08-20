@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import chex
 
-from evorl.utils.toolkits import compute_gae, compute_discount_return
+from evorl.utils.rl_toolkits import compute_gae, compute_discount_return
 
 
 def test_gae():

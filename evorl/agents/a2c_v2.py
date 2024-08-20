@@ -8,7 +8,7 @@ import orbax.checkpoint as ocp
 
 from evorl.distributed import tree_unpmap
 from evorl.types import MISSING_REWARD, State
-from evorl.utils.toolkits import fold_multi_steps
+from evorl.utils.rl_toolkits import fold_multi_steps
 
 from .a2c import A2CWorkflow as _A2CWorkflow
 

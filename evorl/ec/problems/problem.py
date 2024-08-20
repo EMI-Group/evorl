@@ -8,7 +8,7 @@ from evorl.agents import Agent
 from evorl.envs import Env
 from evorl.rollout import eval_rollout_episode, fast_eval_rollout_episode
 from evorl.types import ReductionFn
-from evorl.utils.toolkits import compute_discount_return, compute_episode_length
+from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_length
 from evox import Problem, State
 
 logger = logging.getLogger(__name__)

@@ -6,7 +6,7 @@ from evorl.agents.impala import compute_vtrace, IMPALAAgent
 from evorl.rollout import rollout
 from evorl.agents.random_agent import RandomAgent
 from evorl.envs import create_wrapped_brax_env, AutoresetMode
-from evorl.utils.toolkits import compute_gae, flatten_rollout_trajectory
+from evorl.utils.rl_toolkits import compute_gae, flatten_rollout_trajectory
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 
 from hydra import compose, initialize

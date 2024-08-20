@@ -32,7 +32,7 @@ from evorl.types import (
 )
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import scan_and_mean, tree_last, tree_stop_gradient
-from evorl.utils.toolkits import flatten_rollout_trajectory, soft_target_update
+from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 from evorl.workflows import OffPolicyRLWorkflow, skip_replay_buffer_state
 
 from .agent import Agent, AgentState

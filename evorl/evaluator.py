@@ -9,7 +9,7 @@ from evorl.envs import Env
 from evorl.metrics import EvaluateMetric
 from evorl.rollout import eval_rollout_episode, fast_eval_rollout_episode
 from evorl.types import PyTreeNode, pytree_field
-from evorl.utils.toolkits import compute_discount_return, compute_episode_length
+from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_length
 
 logger = logging.getLogger(__name__)
 

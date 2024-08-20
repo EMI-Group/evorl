@@ -31,7 +31,7 @@ from evorl.types import (
 )
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient
-from evorl.utils.toolkits import (
+from evorl.utils.rl_toolkits import (
     average_episode_discount_return,
     compute_gae,
     flatten_rollout_trajectory,
