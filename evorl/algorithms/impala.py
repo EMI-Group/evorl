@@ -157,7 +157,7 @@ class IMPALAAgent(Agent):
 
         actions = actions_dist.mode()
 
-        return jax.lax.stop_gradient(actions), PyTreeDict()
+        return actions, PyTreeDict()
 
     def loss(
         self, agent_state: AgentState, trajectory: SampleBatch, key: chex.PRNGKey

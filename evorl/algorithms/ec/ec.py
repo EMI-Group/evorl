@@ -117,7 +117,7 @@ class StochasticECAgent(Agent):
             # logp=actions_dist.log_prob(actions)
         )
 
-        return jax.lax.stop_gradient(actions), policy_extras
+        return actions, policy_extras
 
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
@@ -139,7 +139,7 @@ class StochasticECAgent(Agent):
 
         actions = actions_dist.mode()
 
-        return jax.lax.stop_gradient(actions), PyTreeDict()
+        return actions, PyTreeDict()
 
 
 class DeterministicECAgent(Agent):
@@ -200,7 +200,7 @@ class DeterministicECAgent(Agent):
 
         # Note: ECAgent always output best action w/o exploration noise
 
-        return jax.lax.stop_gradient(actions), PyTreeDict()
+        return actions, PyTreeDict()
 
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey

@@ -164,7 +164,7 @@ class TD3Agent(Agent):
 
         actions = self.actor_network.apply(agent_state.params.actor_params, obs)
 
-        return jax.lax.stop_gradient(actions), PyTreeDict()
+        return actions, PyTreeDict()
 
     def critic_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey

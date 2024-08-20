@@ -153,7 +153,7 @@ class PPOAgent(Agent):
 
         actions = actions_dist.mode()
 
-        return jax.lax.stop_gradient(actions), PyTreeDict()
+        return actions, PyTreeDict()
 
     def loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
