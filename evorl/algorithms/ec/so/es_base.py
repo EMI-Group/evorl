@@ -1,7 +1,7 @@
 from collections.abc import Callable, Sequence
 
 import jax
-from evorl.agents import Agent
+from evorl.algorithms import Agent
 from evorl.evaluator import Evaluator
 from evorl.metrics import EvaluateMetric
 from evorl.types import State

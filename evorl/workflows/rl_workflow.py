@@ -8,7 +8,7 @@ import optax
 from omegaconf import DictConfig, OmegaConf
 from typing_extensions import Self  # pytype: disable=not-supported-yet
 
-from evorl.agents import Agent, AgentState
+from evorl.algorithms import Agent, AgentState
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
 from evorl.envs import Env
 from evorl.evaluator import Evaluator

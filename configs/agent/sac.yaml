@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.agents.sac.SACWorkflow
+workflow_cls: evorl.algorithms.sac.SACWorkflow
 
 num_envs: 1
 normalize_obs: false

@@ -2,7 +2,7 @@ import jax
 import chex
 
 from evorl.evaluator import Evaluator
-from evorl.agents.random_agent import DebugRandomAgent
+from evorl.algorithms.random_agent import DebugRandomAgent
 from evorl.envs import create_wrapped_brax_env, AutoresetMode
 
 

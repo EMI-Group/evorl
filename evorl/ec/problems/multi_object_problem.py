@@ -7,7 +7,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-from evorl.agents import Agent, AgentState
+from evorl.algorithms import Agent, AgentState
 from evorl.envs import Env, EnvState
 from evorl.rollout import SampleBatch
 from evorl.types import Action, PolicyExtraInfo, PyTreeDict, ReductionFn

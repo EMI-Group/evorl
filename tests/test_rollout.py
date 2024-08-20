@@ -5,7 +5,7 @@ from evorl.rollout import (
     rollout,
 )
 
-from evorl.agents.random_agent import DebugRandomAgent
+from evorl.algorithms.random_agent import DebugRandomAgent
 from evorl.envs import create_env
 
 

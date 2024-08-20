@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.agents.ec.so.cso.CSOWorkflow
+workflow_cls: evorl.algorithms.ec.so.cso.CSOWorkflow
 
 pop_size: 128
 num_iters: 1000

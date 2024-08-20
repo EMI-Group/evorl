@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.agents.ec.mo.nsga2.NSGA2Workflow
+workflow_cls: evorl.algorithms.ec.mo.nsga2.NSGA2Workflow
 
 pop_size: 128
 num_iters: 1000

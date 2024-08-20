@@ -9,7 +9,7 @@ from evox.workflows import StdWorkflow as EvoXWorkflow
 from omegaconf import DictConfig, OmegaConf
 from typing_extensions import Self
 
-from evorl.agents import Agent
+from evorl.algorithms import Agent
 from evorl.distributed import (
     POP_AXIS_NAME,
     get_global_ranks,

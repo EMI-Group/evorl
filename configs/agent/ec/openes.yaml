@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.agents.ec.so.openes.OpenESWorkflow
+workflow_cls: evorl.algorithms.ec.so.openes.OpenESWorkflow
 
 pop_size: 128
 num_iters: 1000

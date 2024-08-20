@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.agents.impala.IMPALAWorkflow
+workflow_cls: evorl.algorithms.impala.IMPALAWorkflow
 
 num_envs: 256
 

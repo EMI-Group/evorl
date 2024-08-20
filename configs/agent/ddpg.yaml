@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.agents.ddpg.DDPGWorkflow
+workflow_cls: evorl.algorithms.ddpg.DDPGWorkflow
 
 num_envs: 1
 normalize_obs: false

@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.agents.a2c.A2CWorkflow
+workflow_cls: evorl.algorithms.a2c.A2CWorkflow
 
 num_envs: 4
 

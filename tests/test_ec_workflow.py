@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import chex
-from evorl.agents.ec.so.cmaes import CMAESWorkflow
+from evorl.algorithms.ec.so.cmaes import CMAESWorkflow
 from hydra import compose, initialize
 from evox import algorithms, problems, monitors
 

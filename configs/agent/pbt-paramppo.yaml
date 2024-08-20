@@ -4,7 +4,7 @@ defaults:
   - /agent@target_workflow: paramppo
   - _self_
 
-workflow_cls: evorl.agents.meta.pbt_param_ppo.PBTParamPPOWorkflow
+workflow_cls: evorl.algorithms.meta.pbt_param_ppo.PBTParamPPOWorkflow
 
 pop_size: 8
 

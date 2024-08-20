@@ -4,7 +4,7 @@ import math
 import chex
 import jax
 
-from evorl.agents import Agent
+from evorl.algorithms import Agent
 from evorl.envs import Env
 from evorl.metrics import EvaluateMetric
 from evorl.rollout import eval_rollout_episode, fast_eval_rollout_episode

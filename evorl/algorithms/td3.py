@@ -11,7 +11,7 @@ import optax
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig
 
-from evorl.agents.random_agent import EMPTY_RANDOM_AGENT_STATE, RandomAgent
+from evorl.algorithms.random_agent import EMPTY_RANDOM_AGENT_STATE, RandomAgent
 from evorl.distributed import psum, tree_pmean, tree_unpmap
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import AutoresetMode, Box, create_env, Space
