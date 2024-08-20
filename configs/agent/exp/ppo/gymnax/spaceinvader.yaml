@@ -1,0 +1,29 @@
+# @package _global_
+
+defaults:
+  - /agent/ppo
+  - _self_
+
+num_envs: 256
+rollout_length: 512
+
+minibatch_size: 8192 # 512*16
+reuse_rollout_epochs: 4
+
+total_timesteps: 500000000 # 500M
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 50
+
+loss_weights:
+  actor_loss: 1.0
+  critic_loss: 0.5
+  actor_entropy: -0.1
+
+optimizer:
+  lr: 0.0005
+  grad_clip_norm: 0
+
+agent_network:
+  continuous_action: false
