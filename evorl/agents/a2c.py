@@ -324,7 +324,7 @@ class A2CWorkflow(OnPolicyRLWorkflow):
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(state.agent_state, SampleBatch(obs=_obs))
         v_targets, advantages = compute_gae(
-            rewards=trajectory.rewards,  # peb_rewards
+            rewards=trajectory.rewards,
             values=vs,
             dones=trajectory.dones,
             gae_lambda=self.config.gae_lambda,
