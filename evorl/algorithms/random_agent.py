@@ -10,8 +10,6 @@ from evorl.envs import Space
 
 from .agent import Agent, AgentState
 
-EMPTY_RANDOM_AGENT_STATE = AgentState(params={})
-
 
 class DebugRandomAgent(Agent):
     """
@@ -19,21 +17,16 @@ class DebugRandomAgent(Agent):
     Used for testing and debugging.
     """
 
-    obs_space_shape: tuple[int] = pytree_field(lazy_init=True)
-    action_sample_fn: Callable[[chex.PRNGKey], Action] = pytree_field(lazy_init=True)
-
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        self.set_frozen_attr("obs_space_shape", obs_space.shape)
-        self.set_frozen_attr("action_sample_fn", action_space.sample)
-        return EMPTY_RANDOM_AGENT_STATE
+        return AgentState(params={}, obs_space=obs_space, action_space=action_space)
 
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        batch_shapes = sample_batch.obs.shape[: -len(self.obs_space_shape)]
-        actions = self.action_sample_fn(key)
+        batch_shapes = sample_batch.obs.shape[: -len(agent_state.obs_space.shape)]
+        actions = agent_state.action_space.sample(key)
         actions = jnp.broadcast_to(actions, batch_shapes + actions.shape)
         return actions, PyTreeDict()
 
@@ -54,16 +47,14 @@ class RandomAgent(Agent):
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        self.set_frozen_attr("obs_space_shape", obs_space.shape)
-        self.set_frozen_attr("action_sample_fn", action_space.sample)
-        return EMPTY_RANDOM_AGENT_STATE
+        return AgentState(params={}, obs_space=obs_space, action_space=action_space)
 
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        batch_shapes = sample_batch.obs.shape[: -len(self.obs_space_shape)]
+        batch_shapes = sample_batch.obs.shape[: -len(agent_state.obs_space.shape)]
 
-        action_sample_fn = self.action_sample_fn
+        action_sample_fn = agent_state.action_space.sample
         for _ in range(len(batch_shapes)):
             action_sample_fn = jax.vmap(action_sample_fn)
 

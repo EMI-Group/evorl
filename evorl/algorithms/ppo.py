@@ -66,12 +66,12 @@ class PPOAgent(Agent):
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        obs_size = self.obs_space.shape[0]
+        obs_size = obs_space.shape[0]
 
         if self.continuous_action:
-            action_size = self.action_space.shape[0] * 2
+            action_size = action_space.shape[0] * 2
         else:
-            action_size = self.action_space.n
+            action_size = action_space.n
 
         policy_key, value_key, obs_preprocessor_key = jax.random.split(key, 3)
         policy_network, policy_init_fn = make_policy_network(
@@ -96,7 +96,7 @@ class PPOAgent(Agent):
         if self.normalize_obs:
             obs_preprocessor = running_statistics.normalize
             self.set_frozen_attr("obs_preprocessor", obs_preprocessor)
-            dummy_obs = self.obs_space.sample(obs_preprocessor_key)
+            dummy_obs = obs_space.sample(obs_preprocessor_key)
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:

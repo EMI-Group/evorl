@@ -13,6 +13,8 @@ from evorl.types import (
     PolicyExtraInfo,
     PyTreeData,
     PyTreeNode,
+    PyTreeDict,
+    pytree_field,
 )
 from evorl.utils import running_statistics
 
@@ -24,6 +26,9 @@ class AgentState(PyTreeData):
     obs_preprocessor_state: running_statistics.RunningStatisticsState | None = None
     # TODO: define the action_postprocessor_state
     action_postprocessor_state: Any = None
+    action_space: Space | None = None
+    obs_space: Space | None = None
+    extra_state: Any = None
 
 
 AgentActionFn = Callable[

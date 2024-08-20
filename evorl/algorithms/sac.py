@@ -36,7 +36,7 @@ from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_upda
 from evorl.workflows import OffPolicyRLWorkflow, skip_replay_buffer_state
 
 from .agent import Agent, AgentState
-from .random_agent import EMPTY_RANDOM_AGENT_STATE, RandomAgent
+from .random_agent import RandomAgent
 
 logger = logging.getLogger(__name__)
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
@@ -73,8 +73,8 @@ class SACAgent(Agent):
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        obs_size = self.obs_space.shape[0]
-        action_size = self.action_space.shape[0]
+        obs_size = obs_space.shape[0]
+        action_size = action_space.shape[0]
 
         key, critic_key, actor_key, obs_preprocessor_key = jax.random.split(key, num=4)
 
@@ -111,13 +111,17 @@ class SACAgent(Agent):
         if self.normalize_obs:
             obs_preprocessor = running_statistics.normalize
             self.set_frozen_attr("obs_preprocessor", obs_preprocessor)
-            dummy_obs = self.obs_space.sample(obs_preprocessor_key)
+            dummy_obs = obs_space.sample(obs_preprocessor_key)
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
             obs_preprocessor_state = None
 
+        entropy_target = -jnp.prod(jnp.array(action_space.shape, dtype=jnp.float32))
+
         return AgentState(
-            params=params_state, obs_preprocessor_state=obs_preprocessor_state
+            params=params_state,
+            obs_preprocessor_state=obs_preprocessor_state,
+            extra_state=PyTreeDict(entropy_target=entropy_target),  # the constant
         )
 
     def compute_actions(
@@ -156,13 +160,13 @@ class SACAgent(Agent):
         actions = actions_dist.sample(seed=key)
         actions_logp = actions_dist.log_prob(actions)
 
-        entropy_target = -jnp.prod(
-            jnp.array(self.action_space.shape, dtype=jnp.float32)
-        )
         # official impl:
         alpha = jnp.exp(agent_state.params.log_alpha)
         alpha_loss = jnp.mean(
-            -alpha * jax.lax.stop_gradient(actions_logp + entropy_target)
+            -alpha
+            * jax.lax.stop_gradient(
+                actions_logp + agent_state.extra_state.entropy_target
+            )
         )
 
         # another impl: see stable-baselines3/issues/36
@@ -412,7 +416,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
         # ==== fill random transitions ====
         key, env_key, rollout_key = jax.random.split(state.key, 3)
         random_agent = RandomAgent(action_space=action_space, obs_space=obs_space)
-
+        random_agent_state = random_agent.init(obs_space, action_space, key)
         # Note: in multi-devices mode, this method is running in pmap, and
         # config.num_envs = config.num_envs // num_devices
         # config.random_timesteps = config.random_timesteps // num_devices
@@ -424,7 +428,7 @@ class SACWorkflow(OffPolicyRLWorkflow):
             env_fn=self.env.step,
             action_fn=random_agent.compute_actions,
             env_state=env_state,
-            agent_state=EMPTY_RANDOM_AGENT_STATE,
+            agent_state=random_agent_state,
             key=rollout_key,
             rollout_length=rollout_length,
             env_extra_fields=("last_obs", "termination"),
