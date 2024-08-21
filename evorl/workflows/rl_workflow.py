@@ -95,7 +95,7 @@ class RLWorkflow(Workflow):
         )
 
 
-class OnPolicyRLWorkflow(RLWorkflow):
+class OnPolicyWorkflow(RLWorkflow):
     def __init__(
         self,
         env: Env,
@@ -165,7 +165,7 @@ class OnPolicyRLWorkflow(RLWorkflow):
         return eval_metrics, state
 
 
-class OffPolicyRLWorkflow(RLWorkflow):
+class OffPolicyWorkflow(RLWorkflow):
     def __init__(
         self,
         env: Env,
@@ -259,11 +259,3 @@ class OffPolicyRLWorkflow(RLWorkflow):
 
         state = state.replace(key=key)
         return eval_metrics, state
-
-
-def skip_replay_buffer_state(state: State) -> State:
-    """
-    Utility function to remove replay_buffer_state from state;
-    Usually used when saving the off-policy workflow state to disk.
-    """
-    return state.replace(replay_buffer_state=None)

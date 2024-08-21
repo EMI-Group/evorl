@@ -38,7 +38,9 @@ def train(config: DictConfig) -> None:
             config, enable_multi_devices=True
         )
     else:
-        workflow: Workflow = workflow_cls.build_from_config(config, enable_jit=True)
+        workflow: Workflow = workflow_cls.build_from_config(
+            config, enable_jit=config.enable_jit
+        )
 
     output_dir = get_output_dir()
     wandb_project = config.wandb.project

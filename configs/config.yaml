@@ -7,6 +7,7 @@ defaults:
 
 seed: 42
 debug: false
+enable_jit: true
 checkpoint:
   enable: true
   save_interval_steps: 100

@@ -34,7 +34,7 @@ from evorl.types import (
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import average_episode_discount_return, approximate_kl
-from evorl.workflows import OnPolicyRLWorkflow
+from evorl.workflows import OnPolicyWorkflow
 
 from .agent import Agent, AgentState
 
@@ -257,7 +257,7 @@ class IMPALAAgent(Agent):
         )
 
 
-class IMPALAWorkflow(OnPolicyRLWorkflow):
+class IMPALAWorkflow(OnPolicyWorkflow):
     """
     Syncrhonous version of IMPALA (A2C|PPO w/ V-Trace)
     """

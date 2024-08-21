@@ -23,4 +23,4 @@ num_updates_per_iter: 8
 # Note: unlike brax, corrently we don't change lr & reward_scale
 
 checkpoint:
-  save_interval_steps: 81920
+  save_interval_steps: 5120

@@ -167,3 +167,11 @@ def is_jitted(func):
     Detect if a function is wrapped by jit or pmap.
     """
     return hasattr(func, "lower")
+
+
+def has_nan(x: jax.Array) -> bool:
+    return jnp.isnan(x).any()
+
+
+def tree_has_nan(tree: chex.ArrayTree) -> bool:
+    return jtu.tree_map(has_nan, tree)

@@ -39,7 +39,7 @@ from evorl.utils.rl_toolkits import (
     flatten_rollout_trajectory,
     approximate_kl,
 )
-from evorl.workflows import OnPolicyRLWorkflow
+from evorl.workflows import OnPolicyWorkflow
 
 from .agent import Agent, AgentState
 
@@ -237,7 +237,7 @@ class PPOAgent(Agent):
         return self.value_network.apply(agent_state.params.value_params, obs)
 
 
-class PPOWorkflow(OnPolicyRLWorkflow):
+class PPOWorkflow(OnPolicyWorkflow):
     @classmethod
     def name(cls):
         return "PPO"

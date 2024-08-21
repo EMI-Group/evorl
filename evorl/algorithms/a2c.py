@@ -36,7 +36,7 @@ from evorl.utils.rl_toolkits import (
     compute_gae,
     flatten_rollout_trajectory,
 )
-from evorl.workflows import OnPolicyRLWorkflow
+from evorl.workflows import OnPolicyWorkflow
 
 from .agent import Agent, AgentState
 
@@ -221,7 +221,7 @@ class A2CAgent(Agent):
         return self.value_network.apply(agent_state.params.value_params, obs)
 
 
-class A2CWorkflow(OnPolicyRLWorkflow):
+class A2CWorkflow(OnPolicyWorkflow):
     @classmethod
     def name(cls):
         return "A2C"
