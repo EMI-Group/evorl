@@ -35,6 +35,14 @@ def optimize_gpu_utilization():
     )
 
 
+def enable_deterministic_mode():
+    xla_flags = os.getenv("XLA_FLAGS", "")
+    # print(f"current XLA_FLAGS: {xla_flags}")
+    if len(xla_flags) > 0:
+        xla_flags = xla_flags + " "
+    os.environ["XLA_FLAGS"] = xla_flags + "--xla_gpu_deterministic_ops=true"
+
+
 # use chex.set_n_cpu_devices(n) instead
 # def set_host_device_count(n):
 #     """

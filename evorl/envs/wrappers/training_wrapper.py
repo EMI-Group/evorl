@@ -25,18 +25,22 @@ class EpisodeWrapper(Wrapper):
         env: the wrapped env should be a single un-vectorized environment.
         episode_length: the maxiumum length of each episode for truncation
         action_repeat: the number of times to repeat each action
+        record_last_obs: whether to record the real next observation of each episode
         record_episode_return: whether to record the return of each episode
+        discount: the discount factor for computing the return when setting record_episode_return=True
     """
 
     def __init__(
         self,
         env: Env,
         episode_length: int,
+        record_last_obs: bool = True,
         record_episode_return: bool = False,
         discount: float = 1.0,
     ):
         super().__init__(env)
         self.episode_length = episode_length
+        self.record_last_obs = record_last_obs
         self.record_episode_return = record_episode_return
         self.discount = discount
 
@@ -46,7 +50,8 @@ class EpisodeWrapper(Wrapper):
         state.info.steps = jnp.zeros((), dtype=jnp.int32)
         state.info.termination = jnp.zeros(())
         state.info.truncation = jnp.zeros(())
-        state.info.last_obs = jnp.zeros_like(state.obs)
+        if self.record_last_obs:
+            state.info.last_obs = jnp.zeros_like(state.obs)
         if self.record_episode_return:
             state.info.episode_return = jnp.zeros(())
 
@@ -82,10 +87,12 @@ class EpisodeWrapper(Wrapper):
         state.info.truncation = jnp.where(
             steps >= self.episode_length, 1 - state.done, jnp.zeros_like(state.done)
         )
-        # the real next_obs at the end of episodes, where
-        # state.obs could be changed in VmapAutoResetWrapper
-        # by the next episode's inital state
-        state.info.last_obs = state.obs
+
+        if self.record_last_obs:
+            # the real next_obs at the end of episodes, where
+            # state.obs could be changed in VmapAutoResetWrapper
+            # by the next episode's inital state
+            state.info.last_obs = state.obs
 
         if self.record_episode_return:
             if self.discount == 1.0:  # a shortcut for discount=1.0
@@ -111,10 +118,11 @@ class OneEpisodeWrapper(EpisodeWrapper):
     def __init__(self, env: Env, episode_length: int):
         super().__init__(env, episode_length, False)
 
+    def _dummy_step(self, state: EnvState, action: jax.Array) -> EnvState:
+        return state.replace()
+
     def step(self, state: EnvState, action: jax.Array) -> EnvState:
-        return jax.lax.cond(
-            state.done, lambda state, action: state.replace(), self._step, state, action
-        )
+        return jax.lax.cond(state.done, self._dummy_step, self._step, state, action)
 
 
 class VmapWrapper(Wrapper):
@@ -123,6 +131,11 @@ class VmapWrapper(Wrapper):
     """
 
     def __init__(self, env: Env, num_envs: int = 1, vmap_step: bool = False):
+        """
+        Args:
+            num_envs: number of envs to vectorize
+            vmap_step: whether to vectorize the step function by `vmap`, or use `lax.map`
+        """
         super().__init__(env)
         self.num_envs = num_envs
         self.vmap_step = vmap_step
@@ -191,7 +204,6 @@ class VmapAutoResetWrapper(Wrapper):
             Note: run on single env
         """
         # Make sure that the random key in the environment changes at each call to reset.
-        # State is a type variable hence it does not have key type hinted, so we type ignore.
         new_key, reset_key = jax.random.split(state.extra.reset_key)
         reset_state = self.env.reset(reset_key)
 
@@ -213,7 +225,7 @@ class VmapAutoResetWrapper(Wrapper):
         return jax.lax.cond(
             state.done,
             self._auto_reset,
-            lambda state: state,
+            lambda state: state.replace(),
             state,
         )
 

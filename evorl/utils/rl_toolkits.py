@@ -16,7 +16,8 @@ def compute_episode_length(
     dones: should be collected from episodic trajectory
     """
     # [B]
-    return (1 - dones).sum(axis=0).astype(jnp.int32) + 1
+    prev_dones = dones[:-1].astype(jnp.int32)
+    return (1 - prev_dones).sum(axis=0) + 1
 
 
 def compute_discount_return(
@@ -45,46 +46,6 @@ def compute_discount_return(
         reverse=True,
         unroll=16,
     )
-
-    return discount_return  # [B]
-
-
-def compute_discount_return_mod(
-    rewards: chex.Array,  # [T, B]
-    dones: chex.Array,  # [T, B]
-    prev_dones: chex.Array,  # [B]
-    discount: float = 1.0,
-) -> chex.Array:
-    """
-    for autoreset envs trajectory
-    """
-
-    def _compute_discount_return(carry, x_t):
-        # G_t := r_t + γ * G_{t+1}
-
-        discount_return_sum, discount_return = carry
-        reward_t, dones_t = x_t
-        discount_return_sum += discount_return * dones_t
-        discount_return = reward_t + discount_return * (1 - dones_t) * discount
-
-        return (discount_return_sum, discount_return), None
-
-    # [#envs]
-    discount_return = jnp.zeros_like(rewards[0])
-
-    discount_return_sum, discount_return, _ = jax.lax.scan(
-        _compute_discount_return,
-        discount_return,
-        (rewards, dones),
-        reverse=True,
-        unroll=16,
-    )
-
-    # case: add first episode's discount_return if it is complete:
-    # i.e. prev_dones = 1
-    discount_return_sum += discount_return * prev_dones
-
-    discount_return = discount_return_sum / dones.sum(axis=0)
 
     return discount_return  # [B]
 

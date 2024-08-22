@@ -12,6 +12,9 @@ src = ["evorl", "tests"]
 [tool.ruff.lint]
 ignore = ["F401"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [build-system]
 requires = ["setuptools >= 62.6"] # to support `file` directive
 build-backend = "setuptools.build_meta"

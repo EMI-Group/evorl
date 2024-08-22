@@ -352,11 +352,13 @@ def fast_eval_rollout_episode(
             env_state, agent_state, sample_batch, current_key
         )
 
+        prev_dones = env_state.done
+
         metrics = PyTreeDict(
             episode_returns=prev_metrics.episode_returns
-            + (1 - transition.dones) * transition.rewards,
+            + (1 - prev_dones) * transition.rewards,
             episode_lengths=prev_metrics.episode_lengths
-            + (1 - transition.dones),  # this will miss counting the last step
+            + (1 - prev_dones).astype(jnp.int32),
         )
 
         return env_nstate, next_key, metrics
@@ -371,11 +373,9 @@ def fast_eval_rollout_episode(
             key,
             PyTreeDict(
                 episode_returns=jnp.zeros(batch_shape),
-                episode_lengths=jnp.zeros(batch_shape),
+                episode_lengths=jnp.zeros(batch_shape, dtype=jnp.int32),
             ),
         ),
     )
-
-    metrics = metrics.replace(episode_lengths=metrics.episode_lengths + 1)
 
     return metrics, env_state

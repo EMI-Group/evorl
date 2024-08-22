@@ -23,14 +23,6 @@ class Evaluator(PyTreeNode):
     def evaluate(
         self, agent_state, num_episodes: int, key: chex.PRNGKey
     ) -> EvaluateMetric:
-        if self.discount == 1.0:
-            return self._fast_evaluate(agent_state, num_episodes, key)
-        else:
-            return self._evaluate(agent_state, num_episodes, key)
-
-    def _evaluate(
-        self, agent_state, num_episodes: int, key: chex.PRNGKey
-    ) -> EvaluateMetric:
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
         if num_episodes % num_envs != 0:
@@ -39,10 +31,20 @@ class Evaluator(PyTreeNode):
                 f"set new num_episodes={self.num_iters*num_envs}"
             )
 
+        if self.discount == 1.0:
+            return self._fast_evaluate(agent_state, num_iters, key)
+        else:
+            return self._evaluate(agent_state, num_iters, key)
+
+    def _evaluate(
+        self, agent_state, num_iters: int, key: chex.PRNGKey
+    ) -> EvaluateMetric:
         def _evaluate_fn(key, unused_t):
             next_key, init_env_key = jax.random.split(key, 2)
             env_state = self.env.reset(init_env_key)
 
+            # Note: be careful when self.max_episode_steps < env.max_episode_steps,
+            # where dones could all be zeros.
             episode_trajectory, env_state = eval_rollout_episode(
                 self.env.step,
                 self.agent.evaluate_actions,
@@ -71,16 +73,8 @@ class Evaluator(PyTreeNode):
         )
 
     def _fast_evaluate(
-        self, agent_state, num_episodes: int, key: chex.PRNGKey
+        self, agent_state, num_iters: int, key: chex.PRNGKey
     ) -> EvaluateMetric:
-        num_envs = self.env.num_envs
-        num_iters = math.ceil(num_episodes / num_envs)
-        if num_episodes % num_envs != 0:
-            logger.warn(
-                f"num_episode ({num_episodes}) cannot be divided by parallel_envs ({num_envs}),"
-                f"set new num_episodes={self.num_iters*num_envs}"
-            )
-
         def _evaluate_fn(key, unused_t):
             next_key, init_env_key = jax.random.split(key, 2)
             env_state = self.env.reset(init_env_key)

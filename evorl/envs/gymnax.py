@@ -142,10 +142,16 @@ def create_wrapped_gymnax_env(
     **kwargs,
 ) -> Env:
     env = create_gymnax_env(env_name, flatten_obs, **kwargs)
-
+    record_last_obs = (
+        autoreset_mode == AutoresetMode.NORMAL or autoreset_mode == AutoresetMode.FAST
+    )
     if autoreset_mode != AutoresetMode.DISABLED:
         env = EpisodeWrapper(
-            env, episode_length, record_episode_return=True, discount=discount
+            env,
+            episode_length,
+            record_last_obs=record_last_obs,
+            record_episode_return=True,
+            discount=discount,
         )
         if autoreset_mode == AutoresetMode.FAST:
             env = FastVmapAutoResetWrapper(env, num_envs=parallel)

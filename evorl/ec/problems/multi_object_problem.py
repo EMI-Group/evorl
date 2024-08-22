@@ -85,7 +85,7 @@ class MultiObjectiveBraxProblem(Problem):
     ) -> tuple[chex.ArrayTree, State]:
         pop_size = jax.tree_leaves(pop_agent_state)[0].shape[0]
 
-        metric_names = copy.copy(self.metric_names)
+        metric_names = copy.deepcopy(self.metric_names)
         if "episode_length" not in metric_names:
             metric_names = metric_names + ("episode_length",)
 
@@ -312,15 +312,16 @@ def fast_eval_rollout_episode(
             env_state, agent_state, sample_batch, current_key
         )
 
+        prev_dones = env_state.done
+
         metrics = PyTreeDict()
         for name in metric_names:
             if "reward" in name:
                 metrics[name] = (
-                    prev_metrics[name]
-                    + (1 - transition.dones) * transition.rewards[name]
+                    prev_metrics[name] + (1 - prev_dones) * transition.rewards[name]
                 )
             elif "episode_length" == name:
-                metrics[name] = prev_metrics[name] + (1 - transition.dones)
+                metrics[name] = prev_metrics[name] + (1 - prev_dones)
             elif name in metrics:
                 metrics[name] = transition.rewards[name]
 
@@ -336,15 +337,15 @@ def fast_eval_rollout_episode(
             key,
             PyTreeDict(
                 {
-                    name: jnp.zeros(batch_shape, dtype=jnp.float32)
+                    name: (
+                        jnp.zeros(batch_shape, dtype=jnp.int32)
+                        if "episode_length" == name
+                        else jnp.zeros(batch_shape, dtype=jnp.float32)
+                    )
                     for name in metric_names
                 }
             ),
         ),
     )
-
-    if "episode_length" in metrics:
-        # note: here we use `episode_length` instead of `episode_lengths`
-        metrics = metrics.replace(episode_length=metrics.episode_length + 1)
 
     return metrics, env_state
