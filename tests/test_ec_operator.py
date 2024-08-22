@@ -1,5 +1,3 @@
-import math
-from functools import partial
 from evorl.ec.operations import mlp_crossover, mlp_mutate, MLPCrossover, MLPMutation
 import jax
 import jax.numpy as jnp

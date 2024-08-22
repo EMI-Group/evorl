@@ -41,7 +41,7 @@ from evorl.utils.rl_toolkits import (
 )
 from evorl.workflows import OnPolicyWorkflow
 
-from .agent import Agent, AgentState
+from evorl.agent import Agent, AgentState
 
 logger = logging.getLogger(__name__)
 

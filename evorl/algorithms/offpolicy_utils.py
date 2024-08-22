@@ -14,9 +14,8 @@ from evorl.types import State, PyTreeDict
 from evorl.rollout import rollout
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, tree_last, tree_has_nan
-
-from .random_agent import RandomAgent
+from evorl.utils.jax_utils import tree_stop_gradient, tree_last
+from evorl.agent import RandomAgent
 
 logger = logging.getLogger(__name__)
 

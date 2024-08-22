@@ -1,16 +1,11 @@
 import os
 import jax
 import jax.numpy as jnp
-import chex
 from evorl.algorithms.impala import compute_vtrace, IMPALAAgent
 from evorl.rollout import rollout
-from evorl.algorithms.random_agent import RandomAgent
 from evorl.envs import create_wrapped_brax_env, AutoresetMode
-from evorl.utils.rl_toolkits import compute_gae, flatten_rollout_trajectory
+from evorl.utils.rl_toolkits import compute_gae
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-
-from hydra import compose, initialize
-from omegaconf import OmegaConf
 
 
 def setup_trajectory():

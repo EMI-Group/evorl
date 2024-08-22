@@ -1,10 +1,11 @@
 import os
-import jax
 import jax.numpy as jnp
 import chex
 
-from evorl.envs import Env, Box, Discrete, EnvState
-from evorl.types import PyTreeDict
+from evorl.agent import Agent, AgentState
+from evorl.envs import Env, Box, Discrete, EnvState, Space
+from evorl.sample_batch import SampleBatch
+from evorl.types import PolicyExtraInfo, PyTreeDict, Action
 
 
 def disable_gpu_preallocation():
@@ -68,3 +69,28 @@ class FakeVmapEnv(Env):
     @property
     def action_space(self):
         return Discrete(5)
+
+
+class DebugRandomAgent(Agent):
+    """
+    An agent that takes random actions.
+    Used for testing and debugging.
+    """
+
+    def init(
+        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
+    ) -> AgentState:
+        return AgentState(params={}, obs_space=obs_space, action_space=action_space)
+
+    def compute_actions(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> tuple[Action, PolicyExtraInfo]:
+        batch_shapes = sample_batch.obs.shape[: -len(agent_state.obs_space.shape)]
+        actions = agent_state.action_space.sample(key)
+        actions = jnp.broadcast_to(actions, batch_shapes + actions.shape)
+        return actions, PyTreeDict()
+
+    def evaluate_actions(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> tuple[Action, PolicyExtraInfo]:
+        return self.compute_actions(agent_state, sample_batch, key)

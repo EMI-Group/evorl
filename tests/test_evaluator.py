@@ -1,14 +1,11 @@
-from functools import partial
-
 import jax
 import jax.numpy as jnp
 import chex
 
 from evorl.evaluator import Evaluator
-from evorl.algorithms.random_agent import DebugRandomAgent
-from evorl.envs import create_wrapped_brax_env, create_wrapped_gymnax_env, AutoresetMode
+from .utils import DebugRandomAgent
+from evorl.envs import create_wrapped_brax_env, AutoresetMode
 from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_length
-from evorl.utils.jax_utils import rng_split
 from evorl.types import PyTreeDict
 
 from .utils import FakeVmapEnv

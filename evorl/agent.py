@@ -2,7 +2,9 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
+import jax
 import chex
+import numpy as np
 
 from evorl.envs import Space
 from evorl.sample_batch import SampleBatch
@@ -14,7 +16,6 @@ from evorl.types import (
     PyTreeData,
     PyTreeNode,
     PyTreeDict,
-    pytree_field,
 )
 from evorl.utils import running_statistics
 
@@ -85,3 +86,35 @@ class LossFn(Protocol):
         In some case, a single loss function is not enough. For example, DDPG has two loss functions: actor_loss and critic_loss.
         """
         pass
+
+
+class RandomAgent(Agent):
+    """
+    An agent that takes random actions.
+    """
+
+    def init(
+        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
+    ) -> AgentState:
+        return AgentState(params={}, obs_space=obs_space, action_space=action_space)
+
+    def compute_actions(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> tuple[Action, PolicyExtraInfo]:
+        batch_shapes = sample_batch.obs.shape[: -len(agent_state.obs_space.shape)]
+
+        action_sample_fn = agent_state.action_space.sample
+        for _ in range(len(batch_shapes)):
+            action_sample_fn = jax.vmap(action_sample_fn)
+
+        action_keys = jax.random.split(key, np.prod(batch_shapes)).reshape(
+            *batch_shapes, 2
+        )
+
+        actions = action_sample_fn(action_keys)
+        return actions, PyTreeDict()
+
+    def evaluate_actions(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> tuple[Action, PolicyExtraInfo]:
+        return self.compute_actions(agent_state, sample_batch, key)

@@ -1,11 +1,8 @@
 import jax
-import jax.numpy as jnp
-import chex
-from evorl.algorithms.a2c import A2CWorkflow, A2CAgent, rollout
+from evorl.algorithms.a2c import A2CWorkflow, A2CAgent
 
 from hydra import compose, initialize
 from evorl.envs import create_wrapped_brax_env
-from omegaconf import OmegaConf
 
 
 def setup_a2c():

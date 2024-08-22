@@ -36,7 +36,7 @@ from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import average_episode_discount_return, approximate_kl
 from evorl.workflows import OnPolicyWorkflow
 
-from .agent import Agent, AgentState
+from evorl.agent import Agent, AgentState
 
 logger = logging.getLogger(__name__)
 

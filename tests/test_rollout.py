@@ -1,11 +1,10 @@
 import jax
-import chex
 
 from evorl.rollout import (
     rollout,
 )
 
-from evorl.algorithms.random_agent import DebugRandomAgent
+from .utils import DebugRandomAgent
 from evorl.envs import create_env
 
 

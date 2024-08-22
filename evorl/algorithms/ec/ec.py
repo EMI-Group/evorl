@@ -15,7 +15,7 @@ from evorl.types import Action, Params, PolicyExtraInfo, PyTreeDict, pytree_fiel
 from evorl.utils import running_statistics
 from evorl.envs import Space
 
-from ..agent import Agent, AgentState
+from evorl.agent import Agent, AgentState
 
 logger = logging.getLogger(__name__)
 

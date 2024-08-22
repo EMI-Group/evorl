@@ -1,5 +1,4 @@
 import logging
-import math
 from collections.abc import Callable
 from typing import Any
 
@@ -9,10 +8,9 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
-import orbax.checkpoint as ocp
 from omegaconf import DictConfig
 
-from evorl.distributed import agent_gradient_update, psum, tree_pmean, tree_unpmap
+from evorl.distributed import agent_gradient_update, psum, tree_pmean
 from evorl.distribution import get_tanh_norm_dist
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluator import Evaluator
@@ -33,13 +31,11 @@ from evorl.types import (
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import (
     scan_and_mean,
-    tree_last,
     tree_stop_gradient,
-    tree_has_nan,
 )
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
-from .agent import Agent, AgentState
+from evorl.agent import Agent, AgentState
 from .offpolicy_utils import OffPolicyWorkflowTemplate, clean_trajectory
 
 logger = logging.getLogger(__name__)

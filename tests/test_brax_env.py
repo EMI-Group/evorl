@@ -1,6 +1,3 @@
-import jax
-import jax.numpy as jnp
-import chex
 from evorl.envs import (
     create_wrapped_brax_env,
     AutoresetMode,
