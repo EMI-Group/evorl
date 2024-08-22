@@ -5,7 +5,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from .algorithms import AgentActionFn, AgentState
+from .agent import AgentActionFn, AgentState
 from .envs import EnvState, EnvStepFn
 from .sample_batch import SampleBatch
 from .types import PyTreeDict, Reward, RewardDict

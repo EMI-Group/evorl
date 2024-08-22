@@ -4,7 +4,7 @@ import math
 import chex
 import jax
 import jax.numpy as jnp
-from evorl.algorithms import Agent
+from evorl.agent import Agent
 from evorl.envs import Env
 from evorl.rollout import eval_rollout_episode, fast_eval_rollout_episode
 from evorl.types import ReductionFn

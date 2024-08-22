@@ -4,7 +4,7 @@ from functools import partial
 import chex
 import jax
 
-from evorl.algorithms import Agent, AgentState
+from evorl.agent import Agent, AgentState
 from evorl.envs import EnvState, MultiAgentEnv
 from evorl.sample_batch import SampleBatch
 from evorl.types import AgentID, PyTreeDict
