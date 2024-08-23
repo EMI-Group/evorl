@@ -44,14 +44,17 @@ def train(config: DictConfig) -> None:
 
     output_dir = get_output_dir()
     wandb_project = config.wandb.project
+    cfg_wandb_tags = OmegaConf.to_container(config.wandb.tags)
     wandb_tags = [
         workflow_cls.name(),
         config.env.env_name,
         config.env.env_type,
-    ] + OmegaConf.to_container(config.wandb.tags)
-    wandb_name = "-".join(
+    ] + cfg_wandb_tags
+    wandb_name = "_".join(
         [workflow_cls.name(), config.env.env_name, config.env.env_type]
     )
+    if len(cfg_wandb_tags) > 0:
+        wandb_name = wandb_name + "|" + ",".join(cfg_wandb_tags)
     wandb_mode = None if config.wandb.enable and not config.debug else "disabled"
 
     wandb_recorder = WandbRecorder(
