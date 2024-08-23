@@ -22,7 +22,7 @@ reward_scale: 1.0
 tau: 0.005
 adaptive_alpha: false
 alpha: 0.2 # used as initial alpha value if adaptive_alpha is true
-actor_update_interval: 2
+actor_update_interval: 1
 num_updates_per_iter: 1 # #updates per rollout, usually use: num_envs * rollout_length // actor_update_interval
 
 loss_weights:
