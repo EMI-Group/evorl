@@ -1,0 +1,21 @@
+# @package _global_
+
+defaults:
+  - /agent/td3
+  - _self_
+
+num_envs: 64
+normalize_obs: false
+rollout_length: 1
+discount: 0.99
+total_timesteps: 10000000
+fold_iters: 512
+
+num_eval_envs: 16
+eval_episodes: 16 # should be divided by num_eval_envs
+eval_interval: 512 # unit: num of iterations
+
+num_updates_per_iter: 4 # each update contains 1 actor update & actor_update_interval critic updates
+
+checkpoint:
+  save_interval_steps: 5120

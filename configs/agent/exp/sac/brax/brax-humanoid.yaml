@@ -8,7 +8,7 @@ num_envs: 64
 normalize_obs: true
 rollout_length: 1
 discount: 0.99
-total_timesteps: 5000000
+total_timesteps: 10000000
 fold_iters: 512
 
 adaptive_alpha: true
