@@ -11,3 +11,9 @@ pip install -U "jax[cuda12]"
 # install pip packages
 pip install -r requirements/requirements-contrib.txt
 ```
+
+This repo is configured with pre-commit, to setup:
+
+```shell
+pre-commit install
+```
