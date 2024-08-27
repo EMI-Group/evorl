@@ -47,7 +47,9 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def init(self, obs_space: Space, action_space: Space, key) -> AgentState:
+    def init(
+        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
+    ) -> AgentState:
         pass
 
     @abstractmethod

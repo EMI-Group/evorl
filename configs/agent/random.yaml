@@ -1,0 +1,9 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.random_agent.RandomAgentWorkflow
+
+num_eval_envs: 512
+eval_episodes: 512 # should be divided by num_eval_envs
+
+checkpoint:
+  enable: false

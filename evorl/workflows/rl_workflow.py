@@ -76,7 +76,7 @@ class RLWorkflow(Workflow):
         """
         pass
 
-    def step(self, key: chex.PRNGKey) -> tuple[MetricBase, State]:
+    def step(self, state: State) -> tuple[MetricBase, State]:
         raise NotImplementedError
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:

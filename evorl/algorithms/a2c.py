@@ -405,7 +405,6 @@ class A2CWorkflow(OnPolicyWorkflow):
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write({"eval": eval_metrics.to_local_dict()}, iters)
-                logger.debug(eval_metrics)
 
             self.checkpoint_manager.save(
                 iters,
