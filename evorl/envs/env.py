@@ -29,9 +29,9 @@ class EnvState(PyTreeData):
     reward: Reward
     done: Done
     info: PyTreeDict = pytree_field(default_factory=PyTreeDict)  # info from env
-    extra: PyTreeDict = pytree_field(
+    _internal: PyTreeDict = pytree_field(
         default_factory=PyTreeDict
-    )  # extra info for interal use
+    )  # extra data for interal use
 
 
 EnvStepFn = Callable[[EnvState, Action], EnvState]

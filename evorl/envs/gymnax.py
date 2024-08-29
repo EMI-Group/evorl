@@ -37,7 +37,6 @@ class GymnaxAdapter(EnvAdapter):
             discount=jnp.ones(()),
             env_params=self.env_params,
         )
-        extra = PyTreeDict(step_key=key)
 
         return EnvState(
             env_state=env_state,
@@ -45,11 +44,11 @@ class GymnaxAdapter(EnvAdapter):
             reward=jnp.zeros(()),
             done=jnp.zeros(()),
             info=info,
-            extra=extra,
+            _internal=PyTreeDict(step_key=key),
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        key, step_key = jax.random.split(state.extra.step_key)
+        key, step_key = jax.random.split(state._internal.step_key)
 
         # call step_env() instead of step() to disable autoreset
         # we handle the autoreset at AutoResetWrapper
@@ -62,7 +61,7 @@ class GymnaxAdapter(EnvAdapter):
         info = state.info.replace(
             discount=info["discount"].astype(jnp.float32),
         )
-        extra = state.extra.replace(step_key=key)
+        extra = state._internal.replace(step_key=key)
 
         return state.replace(
             env_state=env_state,

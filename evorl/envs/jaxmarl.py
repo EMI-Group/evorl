@@ -58,11 +58,11 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
             reward=tree_zeros_like(dummy_reward, dtype=jnp.float32),
             done=tree_zeros_like(dummy_done, dtype=jnp.float32),
             info=info,
-            extra=extra,
+            _internal=extra,
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        key, step_key = jax.random.split(state.extra.step_key)
+        key, step_key = jax.random.split(state._internal.step_key)
 
         # call step_env() instead of step() to disable autoreset
         # we handle the autoreset at AutoResetWrapper
@@ -73,7 +73,7 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
         done = tree_astype(done, jnp.float32)
 
         info = state.info.replace(**info)
-        extra = state.extra.replace(step_key=key)
+        extra = state._internal.replace(step_key=key)
 
         return state.replace(
             env_state=env_state,
