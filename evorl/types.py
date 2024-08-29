@@ -47,11 +47,6 @@ class ReductionFn(Protocol):
         pass
 
 
-class ObsPreprocessorFn(Protocol):
-    def __call__(self, obs: chex.Array, *args: Any, **kwds: Any) -> chex.Array:
-        return obs
-
-
 @jtu.register_pytree_node_class
 class PyTreeDict(dict):
     """

@@ -79,6 +79,11 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
         raise NotImplementedError()
 
 
+class ObsPreprocessorFn(Protocol):
+    def __call__(self, obs: chex.Array, *args: Any, **kwds: Any) -> chex.Array:
+        return obs
+
+
 class LossFn(Protocol):
     def __call__(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
