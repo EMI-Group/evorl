@@ -79,29 +79,31 @@ class EpisodeWrapper(Wrapper):
             steps >= self.episode_length, jnp.ones_like(state.done), state.done
         )
 
-        state.info.steps = steps
-        state.info.termination = state.done
-        # Note: here we also consider the case:
-        # when termination and truncation are both happened
-        # at the last step, we set truncation=0
-        state.info.truncation = jnp.where(
-            steps >= self.episode_length, 1 - state.done, jnp.zeros_like(state.done)
+        info = state.info.replace(
+            steps=steps,
+            termination=state.done,
+            # Note: here we also consider the case:
+            # when termination and truncation are both happened
+            # at the last step, we set truncation=0
+            truncation=jnp.where(
+                steps >= self.episode_length, 1 - state.done, jnp.zeros_like(state.done)
+            ),
         )
 
         if self.record_last_obs:
             # the real next_obs at the end of episodes, where
-            # state.obs could be changed in VmapAutoResetWrapper
-            # by the next episode's inital state
-            state.info.last_obs = state.obs
+            # state.obs could be changed to the next episode's inital state
+            # by VmapAutoResetWrapper
+            info.last_obs = state.obs  # i.e. obs at t+1
 
         if self.record_episode_return:
             if self.discount == 1.0:  # a shortcut for discount=1.0
                 episode_return += state.reward
             else:
                 episode_return += jnp.power(self.discount, steps - 1) * state.reward
-            state.info.episode_return = episode_return
+            info.episode_return = episode_return
 
-        return state.replace(done=done)
+        return state.replace(done=done, info=info)
 
 
 class OneEpisodeWrapper(EpisodeWrapper):
@@ -184,7 +186,7 @@ class VmapAutoResetWrapper(Wrapper):
 
         reset_key, key = vmap_rng_split(key)
         state = jax.vmap(self.env.reset)(key)
-        state.extra.reset_key = reset_key  # for autoreset
+        state._internal.reset_key = reset_key  # for autoreset
 
         return state
 
@@ -204,7 +206,7 @@ class VmapAutoResetWrapper(Wrapper):
             Note: run on single env
         """
         # Make sure that the random key in the environment changes at each call to reset.
-        new_key, reset_key = jax.random.split(state.extra.reset_key)
+        new_key, reset_key = jax.random.split(state._internal.reset_key)
         reset_state = self.env.reset(reset_key)
 
         state = state.replace(
@@ -212,7 +214,7 @@ class VmapAutoResetWrapper(Wrapper):
             obs=reset_state.obs,
         )
 
-        state.extra.reset_key = new_key
+        state._internal.reset_key = new_key
 
         return state
 
@@ -255,8 +257,8 @@ class FastVmapAutoResetWrapper(Wrapper):
             )
 
         state = jax.vmap(self.env.reset)(key)
-        state.extra.first_env_state = state.env_state
-        state.extra.first_obs = state.obs
+        state._internal.first_env_state = state.env_state
+        state._internal.first_obs = state.obs
 
         return state
 
@@ -270,9 +272,9 @@ class FastVmapAutoResetWrapper(Wrapper):
             return jnp.where(done, x, y)
 
         env_state = jax.tree_map(
-            where_done, state.extra.first_env_state, state.env_state
+            where_done, state._internal.first_env_state, state.env_state
         )
-        obs = where_done(state.extra.first_obs, state.obs)
+        obs = where_done(state._internal.first_obs, state.obs)
 
         return state.replace(env_state=env_state, obs=obs)
 
@@ -303,18 +305,12 @@ class VmapEnvPoolAutoResetWrapper(Wrapper):
         reset_key, key = vmap_rng_split(key)
         state = jax.vmap(self.env.reset)(key)
         state.info.autoreset = jnp.zeros_like(state.done)  # for autoreset flag
-        state.extra.reset_key = reset_key  # for autoreset
+        state._internal.reset_key = reset_key  # for autoreset
 
         return state
 
     def step(self, state: EnvState, action: jax.Array) -> EnvState:
-        def _step(state: EnvState, action: jax.Array) -> EnvState:
-            # on single env
-            new_state = self.env.step(state, action)
-            new_state.info.autoreset = state.done
-            return new_state
-
-        autoreset = state.done
+        autoreset = state.done  # i.e. prev_done
 
         def _where_done(x, y):
             done = autoreset
@@ -322,8 +318,8 @@ class VmapEnvPoolAutoResetWrapper(Wrapper):
                 done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))
             return jnp.where(done, x, y)
 
-        reset_state = self.reset(state.extra.reset_key)
-        new_state = new_state = jax.vmap(self.env.step)(state, action)
+        reset_state = self.reset(state._internal.reset_key)
+        new_state = jax.vmap(self.env.step)(state, action)
         new_state.info.autoreset = autoreset
 
         # Map heterogeneous computation (non-parallelizable).
