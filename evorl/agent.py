@@ -1,5 +1,5 @@
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Any, Protocol
 
 import jax
@@ -30,11 +30,6 @@ class AgentState(PyTreeData):
     action_space: Space | None = None
     obs_space: Space | None = None
     extra_state: Any = None
-
-
-AgentActionFn = Callable[
-    [AgentState, SampleBatch, chex.PRNGKey], tuple[Action, PolicyExtraInfo]
-]
 
 
 class Agent(PyTreeNode, metaclass=ABCMeta):
@@ -92,6 +87,13 @@ class LossFn(Protocol):
         The type for the loss function for the model.
         In some case, a single loss function is not enough. For example, DDPG has two loss functions: actor_loss and critic_loss.
         """
+        pass
+
+
+class AgentActionFn(Protocol):
+    def __call__(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> tuple[Action, PolicyExtraInfo]:
         pass
 
 
