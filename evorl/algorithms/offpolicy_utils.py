@@ -96,7 +96,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         replay_buffer_state = state.replay_buffer_state
         agent_state = state.agent_state
 
-        def _fill(agent, agent_state, key, rollout_length):
+        def _rollout(agent, agent_state, key, rollout_length):
             env_key, rollout_key = jax.random.split(key)
 
             env_state = self.env.reset(env_key)
@@ -141,7 +141,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         )
         rollout_length = config.random_timesteps // config.num_envs
 
-        trajectory = _fill(
+        trajectory = _rollout(
             random_agent,
             random_agent_state,
             key=random_rollout_key,
@@ -161,7 +161,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             (config.learning_start_timesteps - rollout_timesteps) / config.num_envs
         )
 
-        trajectory = _fill(
+        trajectory = _rollout(
             self.agent,
             agent_state,
             key=rollout_key,

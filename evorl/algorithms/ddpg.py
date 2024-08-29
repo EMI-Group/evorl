@@ -80,7 +80,7 @@ class DDPGAgent(Agent):
 
         key, q_key, actor_key, obs_preprocessor_key = jax.random.split(key, num=4)
 
-        # the output of the q_network is b*n_critics, n_critics is the number of critics, b is the batch size
+        # the output of the q_network is (b, n_critics), n_critics is the number of critics, b is the batch size
         critic_network, critic_init_fn = make_q_network(
             obs_size=obs_size,
             action_size=action_size,
@@ -89,7 +89,7 @@ class DDPGAgent(Agent):
         critic_params = critic_init_fn(q_key)
         target_critic_params = critic_params
 
-        # the output of the actor_network is b, b is the batch size
+        # the output of the actor_network is (b,), b is the batch size
         actor_network, actor_init_fn = make_policy_network(
             action_size=action_size,
             obs_size=obs_size,
