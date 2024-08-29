@@ -10,7 +10,7 @@ from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.workflows import ECWorkflow
 from omegaconf import DictConfig
 
-from ..ec import DeterministicECAgent
+from ..ec_agent import DeterministicECAgent
 
 
 class CSOWorkflow(ECWorkflow):

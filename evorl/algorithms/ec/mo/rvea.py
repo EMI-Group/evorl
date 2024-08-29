@@ -11,7 +11,7 @@ from evorl.workflows import ECWorkflow
 from evox.operators import non_dominated_sort
 from omegaconf import DictConfig
 
-from ..ec import DeterministicECAgent
+from ..ec_agent import DeterministicECAgent
 
 
 class RVEAWorkflow(ECWorkflow):

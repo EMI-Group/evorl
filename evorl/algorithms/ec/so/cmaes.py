@@ -12,7 +12,7 @@ from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
 from omegaconf import DictConfig
 
-from ..ec import DeterministicECAgent
+from ..ec_agent import DeterministicECAgent
 from .es_base import ESBaseWorkflow
 
 logger = logging.getLogger(__name__)
