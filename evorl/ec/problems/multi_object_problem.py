@@ -176,10 +176,12 @@ def eval_env_step(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
-    sample_batch: SampleBatch,
     key: chex.PRNGKey,
     metric_names: tuple[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
+    # sample_batch: [#envs, ...]
+    sample_batch = SampleBatch(obs=env_state.obs)
+
     actions, policy_extras = action_fn(agent_state, sample_batch, key)
     env_nstate = env_fn(env_state, actions)
 
@@ -235,17 +237,12 @@ def eval_rollout_episode(
         # next_key, current_key = jax.random.split(current_key, 2)
         next_key, current_key = rng_split(current_key, 2)
 
-        sample_batch = SampleBatch(
-            obs=env_state.obs,
-        )
-
         transition, env_nstate = jax.lax.cond(
             env_state.done.all(),
             lambda *x: (env_state.replace(), prev_transition.replace()),
             _eval_env_step,
             env_state,
             agent_state,
-            sample_batch,
             current_key,
         )
 
@@ -254,9 +251,7 @@ def eval_rollout_episode(
     # run one-step rollout first to get bootstrap transition
     # it will not include in the trajectory when env_state is from env.reset()
     # this is manually controlled by user.
-    bootstrap_transition, _ = _eval_env_step(
-        env_state, agent_state, SampleBatch(obs=env_state.obs), key
-    )
+    bootstrap_transition, _ = _eval_env_step(env_state, agent_state, key)
 
     (env_state, _, _), trajectory = jax.lax.scan(
         _one_step_rollout,
@@ -304,13 +299,7 @@ def fast_eval_rollout_episode(
         env_state, current_key, prev_metrics = carry
         next_key, current_key = rng_split(current_key, 2)
 
-        sample_batch = SampleBatch(
-            obs=env_state.obs,
-        )
-
-        transition, env_nstate = _eval_env_step(
-            env_state, agent_state, sample_batch, current_key
-        )
+        transition, env_nstate = _eval_env_step(env_state, agent_state, current_key)
 
         prev_dones = env_state.done
 

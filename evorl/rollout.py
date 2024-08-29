@@ -19,13 +19,14 @@ def env_step(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
-    sample_batch: SampleBatch,
     key: chex.PRNGKey,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
     """
     Collect one-step data.
     """
+    # sample_batch: [#envs, ...]
+    sample_batch = SampleBatch(obs=env_state.obs)
 
     actions, policy_extras = action_fn(agent_state, sample_batch, key)
     env_nstate = env_fn(env_state, actions)
@@ -50,12 +51,13 @@ def eval_env_step(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
-    sample_batch: SampleBatch,
     key: chex.PRNGKey,
 ) -> tuple[SampleBatch, EnvState]:
     """
     Collect one-step data in evaluation mode.
     """
+    # sample_batch: [#envs, ...]
+    sample_batch = SampleBatch(obs=env_state.obs)
 
     actions, policy_extras = action_fn(agent_state, sample_batch, key)
     env_nstate = env_fn(env_state, actions)
@@ -97,16 +99,12 @@ def rollout(
         env_state, current_key = carry
         next_key, current_key = rng_split(current_key, 2)
 
-        # sample_batch: [#envs, ...]
-        sample_batch = SampleBatch(obs=env_state.obs)
-
         # transition: [#envs, ...]
         transition, env_nstate = env_step(
             env_fn,
             action_fn,
             env_state,
             agent_state,
-            sample_batch,
             current_key,
             env_extra_fields,
         )
@@ -236,14 +234,9 @@ def eval_rollout(
         env_state, current_key = carry
         next_key, current_key = rng_split(current_key, 2)
 
-        # sample_batch: [#envs, ...]
-        sample_batch = SampleBatch(
-            obs=env_state.obs,
-        )
-
         # transition: [#envs, ...]
         transition, env_nstate = eval_env_step(
-            env_fn, action_fn, env_state, agent_state, sample_batch, current_key
+            env_fn, action_fn, env_state, agent_state, current_key
         )
 
         return (env_nstate, next_key), transition
@@ -281,17 +274,12 @@ def eval_rollout_episode(
         env_state, current_key, prev_transition = carry
         next_key, current_key = rng_split(current_key, 2)
 
-        sample_batch = SampleBatch(
-            obs=env_state.obs,
-        )
-
         transition, env_nstate = jax.lax.cond(
             env_state.done.all(),
             lambda *x: (prev_transition.replace(), env_state.replace()),
             _eval_env_step,
             env_state,
             agent_state,
-            sample_batch,
             current_key,
         )
 
@@ -344,13 +332,7 @@ def fast_eval_rollout_episode(
         env_state, current_key, prev_metrics = carry
         next_key, current_key = rng_split(current_key, 2)
 
-        sample_batch = SampleBatch(
-            obs=env_state.obs,
-        )
-
-        transition, env_nstate = _eval_env_step(
-            env_state, agent_state, sample_batch, current_key
-        )
+        transition, env_nstate = _eval_env_step(env_state, agent_state, current_key)
 
         prev_dones = env_state.done
 

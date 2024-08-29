@@ -34,6 +34,9 @@ def decentralized_env_step(
     actions = {}
     policy_extras = {}
 
+    # sample_batch: [#envs, ...]
+    sample_batch = SampleBatch(obs=env_state.obs)
+
     # assume agents have different models, non-parallel
     for (agent_id, agent), env_key in zip(agents.items(), env_keys):
         agent_sample_batch = SampleBatch(obs=sample_batch.obs[agent_id])
@@ -87,16 +90,12 @@ def decentralized_rollout(
         env_state, current_key = carry
         next_key, current_key = jax.random.split(current_key, 2)
 
-        # sample_batch: [#envs, ...]
-        sample_batch = SampleBatch(obs=env_state.obs)
-
         # transition: [#envs, ...]
         env_nstate, transition = decentralized_env_step(
             env,
             agents,
             env_state,
             agent_states,
-            sample_batch,
             current_key,
             env_extra_fields,
         )
@@ -116,7 +115,6 @@ def decentralized_env_step_with_shared_model(
     agent: Agent,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
-    sample_batch: SampleBatch,
     key: chex.PRNGKey,
     obs_batchify_fn: Callable[[jax.Array], Mapping[AgentID, jax.Array]],
     action_unbatchify_fn: Callable[[jax.Array], Mapping[AgentID, jax.Array]],
@@ -125,10 +123,11 @@ def decentralized_env_step_with_shared_model(
     """
     Collect one-step data.
     """
-    obs = obs_batchify_fn(sample_batch.obs)
+    # sample_batch: [#envs, ...]
+    sample_batch = SampleBatch(obs=obs_batchify_fn(env_state.obs))
 
     batched_actions, policy_extras = agent.compute_actions(
-        agent_state, SampleBatch(obs=obs), key
+        agent_state, sample_batch, key
     )
     actions = action_unbatchify_fn(batched_actions)
 
@@ -189,16 +188,12 @@ def decentralized_rollout_with_shared_model(
         env_state, current_key = carry
         next_key, current_key = jax.random.split(current_key, 2)
 
-        # sample_batch: [#envs, ...]
-        sample_batch = SampleBatch(obs=env_state.obs)
-
         # transition: [#envs, ...]
         env_nstate, transition = decentralized_env_step_with_shared_model(
             env,
             agent,
             env_state,
             agent_state,
-            sample_batch,
             current_key,
             obs_batchify_fn,
             action_unbatchify_fn,
