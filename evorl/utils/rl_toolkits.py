@@ -21,9 +21,9 @@ def compute_episode_length(
 
 
 def compute_discount_return(
-    rewards: chex.Array,
-    dones: chex.Array,
-    discount: float = 1.0,  # [T, B]  # [T, B]
+    rewards: chex.Array,  # [T, B]
+    dones: chex.Array,  # [T, B]
+    discount: float = 1.0,
 ) -> chex.Array:
     """
     For episodic trajectory

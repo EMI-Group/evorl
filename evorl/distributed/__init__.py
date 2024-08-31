@@ -11,7 +11,7 @@ from .comm import (
     tree_unpmap,
     unpmap,
 )
-from .gradients import agent_gradient_update
+from .gradients import agent_gradient_update, gradient_update
 from .sharding import parallel_map, tree_device_get, tree_device_put
 
 PMAP_AXIS_NAME = "P"

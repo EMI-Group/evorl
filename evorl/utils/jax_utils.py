@@ -94,6 +94,14 @@ def tree_last(tree):
     return jtu.tree_map(lambda x: x[-1], tree)
 
 
+def tree_get(tree, indices):
+    return jtu.tree_map(lambda x: x[indices], tree)
+
+
+def tree_set(src, target, indices):
+    return jtu.tree_multimap(lambda x, y: x.at[indices].set(y), src, target)
+
+
 def scan_and_mean(*args, **kwargs):
     """
     usage: same like `jax.lax.scan`, bug the scan results will be averaged.
@@ -153,13 +161,13 @@ def pmap_method(
 _vmap_rng_split_fn = jax.vmap(jax.random.split, in_axes=(0, None), out_axes=1)
 
 
-def vmap_rng_split(key: jax.Array, num: int = 2) -> jax.Array:
+def vmap_rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
     # batched_key [B, 2] -> batched_keys [num, B, 2]
     chex.assert_shape(key, (None, 2))
     return _vmap_rng_split_fn(key, num)
 
 
-def rng_split(key: jax.Array, num: int = 2) -> jax.Array:
+def rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
     """
     Unified Version of `jax.random.split` for both single key and batched keys.
     """
@@ -168,6 +176,12 @@ def rng_split(key: jax.Array, num: int = 2) -> jax.Array:
         return jax.random.split(key, num)
     else:
         return vmap_rng_split(key, num)
+
+
+def rng_split_like_tree(key: chex.PRNGKey, target: chex.ArrayTree) -> chex.ArrayTree:
+    treedef = jax.tree_structure(target)
+    keys = jax.random.split(key, treedef.num_leaves)
+    return jax.tree_unflatten(treedef, keys)
 
 
 def is_jitted(func):

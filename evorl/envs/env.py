@@ -35,6 +35,7 @@ class EnvState(PyTreeData):
 
 
 EnvStepFn = Callable[[EnvState, Action], EnvState]
+EnvResetFn = Callable[[chex.PRNGKey], EnvState]
 
 
 class Env(ABC):

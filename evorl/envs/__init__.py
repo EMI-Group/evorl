@@ -1,7 +1,7 @@
 import importlib
 
 from .brax import create_brax_env, create_wrapped_brax_env
-from .env import Env, EnvState, EnvStepFn
+from .env import Env, EnvState, EnvStepFn, EnvResetFn
 from .multi_agent_env import MultiAgentEnv
 from .space import Space, Box, Discrete
 from .wrappers.wrapper import get_wrapper
