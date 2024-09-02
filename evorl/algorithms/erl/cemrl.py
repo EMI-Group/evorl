@@ -719,7 +719,7 @@ class CEMRLWorkflow(Workflow):
 
         # adding debug info for CEM
         if td3_metrics is None:
-            elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
+            elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
             elites_from_rl = jnp.isin(
                 jnp.arange(self.config.num_learning_offspring), elites_indices
             )
