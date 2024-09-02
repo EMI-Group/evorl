@@ -50,7 +50,8 @@ logger = logging.getLogger(__name__)
 class POPTrainMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
-    td3_metrics: MetricBase = None
+    td3_metrics: MetricBase | None = None
+    ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
 
 
 class WorkflowMetric(MetricBase):
@@ -715,6 +716,18 @@ class CEMRLWorkflow(Workflow):
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             td3_metrics=td3_metrics,
         )
+
+        # adding debug info for CEM
+        if td3_metrics is None:
+            elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
+            elites_from_rl = jnp.isin(
+                jnp.arange(self.config.num_learning_offspring), elites_indices
+            )
+            ec_info = PyTreeDict(
+                elites_from_rl=elites_from_rl.sum(),
+                elites_from_rl_ratio=elites_from_rl.mean(),
+            )
+            train_metrics = train_metrics.replace(ec_info=ec_info)
 
         # calculate the numbner of timestep
         sampled_timesteps = psum(

@@ -77,10 +77,10 @@ class DiagCEM(EvolutionOptimizer):
         )
 
     def update(
-        self, state: DiagCEMState, offsprings: chex.ArrayTree, fitness: chex.Array
+        self, state: DiagCEMState, offsprings: chex.ArrayTree, fitnesses: chex.Array
     ) -> DiagCEMState:
         # fitness: episode_return, higher is better
-        elites_indices = jax.lax.top_k(fitness, self.num_elites)[1]
+        elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
         cov_noise = optax.incremental_update(
             self.final_diagonal_variance, state.cov_noise, self.diagonal_variance_decay
