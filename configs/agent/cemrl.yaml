@@ -4,16 +4,13 @@ workflow_cls: evorl.algorithms.erl.cemrl.CEMRLWorkflow
 
 num_envs: 1
 normalize_obs: false
-rollout_length: 2
 discount: 0.99
-total_timesteps: 5000000
+total_episodes: 100000
 
-num_eval_envs: 16
-eval_episodes: 16 # should be divided by num_eval_envs
-eval_interval: 8192 # unit: num of RL updates
-
-random_timesteps: 25600 # steps filled into the replay buffer
-learning_start_timesteps: 25600 # steps before training starts
+# random_timesteps: 25600 # steps filled into the replay buffer
+# learning_start_timesteps: 25600 # steps before training starts
+random_timesteps: 0 # steps filled into the replay buffer
+learning_start_timesteps: 0 # steps before training starts
 batch_size: 256
 replay_buffer_capacity: 1000000
 
@@ -22,16 +19,25 @@ exploration_epsilon: 0.1
 policy_noise: 0.2
 clip_policy_noise: 0.5
 actor_update_interval: 2
-num_updates_per_iter: 1 # #updates per rollout, usually use: num_envs * rollout_length // actor_update_interval
 
-# cemrl only hyperparams:
+# cem hyperparams:
+warmup_iters: 100 # steps that only learn by CEM
+
 pop_size: 32
 num_learning_offspring: 16 # number of offspring to learn from RL(TD3)
 
-cemrl_update_interval: 8192 # unit: num of RL updates per CEMRL iteration
-fitness_with_exploration: true
+num_elites: 8
+diagonal_variance:
+  init: 0.01
+  final: 1e-5
+  decay: 0.05 # Polyak averaging step-size
+weighted_update: true
+mirror_sampling: false
 
-
+fitness_with_exploration: false
+episodes_for_fitness: 1 # must be devided by num_envs
+# cemrl_update_interval: 8192 # unit: num of RL updates per CEMRL iteration
+num_updates_per_iter: 512 # #updates per rollout, usually use: num_envs * rollout_length // actor_update_interval
 
 loss_weights:
   actor_loss: 1.0
@@ -44,5 +50,10 @@ optimizer:
 agent_network:
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
+
+
+num_eval_envs: 16
+eval_episodes: 16 # should be divided by num_eval_envs
+eval_interval: 1
 
 save_replay_buffer: true
