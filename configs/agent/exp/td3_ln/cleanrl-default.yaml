@@ -1,0 +1,19 @@
+# @package _global_
+
+defaults:
+  - /agent/contrib/td3_ln
+  - _self_
+
+num_envs: 1
+normalize_obs: false
+rollout_length: 2
+discount: 0.99
+total_timesteps: 5000000
+fold_iters: 8192
+
+num_eval_envs: 16
+eval_episodes: 16 # should be divided by num_eval_envs
+eval_interval: 8192 # unit: num of iterations
+
+checkpoint:
+  save_interval_steps: 81920
