@@ -32,12 +32,13 @@ diagonal_variance:
   final: 1e-5
   decay: 0.001 # Polyak averaging step-size, 0.001 is suitable for 1000 iters
 weighted_update: true
+rank_weight_shift: 1.0 # CEM-RL use 1.0; CMA-ES use 0.5; not significant diff when num_elites is large
 mirror_sampling: false
 
 fitness_with_exploration: false
 episodes_for_fitness: 1 # must be devided by num_envs
 # cemrl_update_interval: 8192 # unit: num of RL updates per CEMRL iteration
-num_updates_per_iter: 512 # #updates per rollout, usually use: num_envs * rollout_length // actor_update_interval
+num_updates_per_iter: 512 # num of RL updates per iter
 
 loss_weights:
   actor_loss: 1.0
@@ -52,8 +53,8 @@ agent_network:
   actor_hidden_layer_sizes: [256, 256]
 
 
-num_eval_envs: 16
-eval_episodes: 16 # should be divided by num_eval_envs
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
 eval_interval: 1
 
 save_replay_buffer: true

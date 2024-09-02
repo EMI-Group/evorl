@@ -17,12 +17,6 @@ from evorl.utils.jax_utils import (
 )
 
 
-class CEMState(PyTreeData):
-    mean: chex.ArrayTree
-    variance: chex.ArrayTree
-    cov_noise: chex.ArrayTree
-
-
 class EvolutionOptimizer(PyTreeNode, metaclass=ABCMeta):
     @abstractmethod
     def init(self, *args, **kwargs) -> chex.ArrayTree:
@@ -30,23 +24,30 @@ class EvolutionOptimizer(PyTreeNode, metaclass=ABCMeta):
 
     @abstractmethod
     def update(
-        self, state: CEMState, offsprings, fitness: chex.Array
+        self, state: chex.ArrayTree, offsprings: chex.ArrayTree, fitness: chex.Array
     ) -> chex.ArrayTree:
         pass
 
     @abstractmethod
     def sample(
-        self, state: CEMState, pop_size: int, key: chex.PRNGKey
+        self, state: chex.ArrayTree, pop_size: int, key: chex.PRNGKey
     ) -> chex.ArrayTree:
         pass
 
 
-class CEM(EvolutionOptimizer):
+class DiagCEMState(PyTreeData):
+    mean: chex.ArrayTree
+    variance: chex.ArrayTree
+    cov_noise: chex.ArrayTree
+
+
+class DiagCEM(EvolutionOptimizer):
     num_elites: int  # number of good offspring to update the pop
     init_diagonal_variance: float = 1e-2
     final_diagonal_variance: float = 1e-5
-    diagonal_variance_decay: float = 0.95
+    diagonal_variance_decay: float = 0.05
     weighted_update: bool = True
+    rank_weight_shift: float = 1.0
     mirror_sampling: bool = False
     elite_weights: chex.Array = pytree_field(lazy_init=True)
 
@@ -54,7 +55,8 @@ class CEM(EvolutionOptimizer):
         if self.weighted_update:
             # this logarithmic rank-based weighting is from CEM-RL
             elite_weights = jnp.log(
-                (self.num_elites + 1) / jnp.arange(1, self.num_elites + 1)
+                (self.num_elites + self.rank_weight_shift)
+                / jnp.arange(1, self.num_elites + 1)
             )
         else:
             elite_weights = jnp.ones((self.num_elites,))
@@ -63,20 +65,20 @@ class CEM(EvolutionOptimizer):
 
         self.set_frozen_attr("elite_weights", elite_weights)
 
-    def init(self, init_actor_params: Params) -> CEMState:
+    def init(self, init_actor_params: Params) -> DiagCEMState:
         variance = jtu.tree_map(
             lambda x: jnp.full_like(x, self.init_diagonal_variance), init_actor_params
         )
 
-        return CEMState(
+        return DiagCEMState(
             mean=init_actor_params,
             variance=variance,
             cov_noise=jnp.float32(self.init_diagonal_variance),
         )
 
     def update(
-        self, state: CEMState, offsprings: chex.ArrayTree, fitness: chex.Array
-    ) -> CEMState:
+        self, state: DiagCEMState, offsprings: chex.ArrayTree, fitness: chex.Array
+    ) -> DiagCEMState:
         # fitness: episode_return, higher is better
         elites_indices = jax.lax.top_k(fitness, self.num_elites)[1]
 
@@ -106,7 +108,7 @@ class CEM(EvolutionOptimizer):
         return state.replace(mean=mean, variance=variance, cov_noise=cov_noise)
 
     def sample(
-        self, state: CEMState, pop_size: int, key: chex.PRNGKey
+        self, state: DiagCEMState, pop_size: int, key: chex.PRNGKey
     ) -> chex.ArrayTree:
         keys = rng_split_like_tree(key, state.mean)
 

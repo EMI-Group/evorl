@@ -42,7 +42,7 @@ from ..td3 import TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from .poptd3 import PopTD3Agent
 from .trajectory_evaluator import TrajectoryEvaluator
-from .cem import CEM, EvolutionOptimizer
+from .cem import DiagCEM, EvolutionOptimizer
 
 logger = logging.getLogger(__name__)
 
@@ -189,12 +189,13 @@ class CEMRLWorkflow(Workflow):
         else:
             optimizer = optax.adam(config.optimizer.lr)
 
-        ec_optimizer = CEM(
+        ec_optimizer = DiagCEM(
             num_elites=config.num_elites,
             init_diagonal_variance=config.diagonal_variance.init,
             final_diagonal_variance=config.diagonal_variance.final,
             diagonal_variance_decay=config.diagonal_variance.decay,
             weighted_update=config.weighted_update,
+            rank_weight_shift=config.rank_weight_shift,
             mirror_sampling=config.mirror_sampling,
         )
 
