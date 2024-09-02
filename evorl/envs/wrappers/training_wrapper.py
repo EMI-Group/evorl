@@ -117,8 +117,18 @@ class OneEpisodeWrapper(EpisodeWrapper):
 
     """
 
-    def __init__(self, env: Env, episode_length: int):
-        super().__init__(env, episode_length, False)
+    def __init__(
+        self,
+        env: Env,
+        episode_length: int,
+        record_last_obs: bool = False,
+    ):
+        super().__init__(
+            env,
+            episode_length,
+            record_last_obs=record_last_obs,
+            record_episode_return=False,
+        )
 
     def _dummy_step(self, state: EnvState, action: jax.Array) -> EnvState:
         return state.replace()

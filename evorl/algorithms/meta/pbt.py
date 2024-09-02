@@ -267,7 +267,7 @@ class PBTWorkflow(Workflow):
         )
 
     def learn(self, state: State) -> State:
-        for i in range(self.config.num_iters):
+        for i in range(state.metrics.iterations, self.config.num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 

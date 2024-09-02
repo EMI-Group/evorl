@@ -99,7 +99,7 @@ def tree_get(tree, indices):
 
 
 def tree_set(src, target, indices):
-    return jtu.tree_multimap(lambda x, y: x.at[indices].set(y), src, target)
+    return jtu.tree_map(lambda x, y: x.at[indices].set(y), src, target)
 
 
 def scan_and_mean(*args, **kwargs):

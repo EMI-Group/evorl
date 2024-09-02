@@ -16,7 +16,7 @@ from evorl.distributed import agent_gradient_update, psum, tree_unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.envs import AutoresetMode, create_env, Space
 from evorl.evaluator import Evaluator
-from evorl.metrics import TrainMetric
+from evorl.metrics import TrainMetric, MetricBase
 from evorl.networks import make_policy_network, make_v_network
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
@@ -35,7 +35,6 @@ from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import average_episode_discount_return, approximate_kl
 from evorl.workflows import OnPolicyWorkflow
-
 from evorl.agent import Agent, AgentState
 
 logger = logging.getLogger(__name__)
@@ -48,8 +47,8 @@ class IMPALANetworkParams(PyTreeData):
     value_params: Params
 
 
-class IMPALATrainMetric(TrainMetric):
-    rho: chex.Array = jnp.zeros((), dtype=jnp.float32)
+# class IMPALATrainMetric(TrainMetric):
+#     rho: chex.Array = jnp.zeros((), dtype=jnp.float32)
 
 
 class IMPALAAgent(Agent):
@@ -340,7 +339,7 @@ class IMPALAWorkflow(OnPolicyWorkflow):
 
         return cls(env, agent, optimizer, evaluator, config)
 
-    def step(self, state: State) -> tuple[IMPALATrainMetric, State]:
+    def step(self, state: State) -> tuple[MetricBase, State]:
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         trajectory, env_state = rollout(
