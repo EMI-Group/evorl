@@ -30,7 +30,7 @@ num_elites: 8
 diagonal_variance:
   init: 0.01
   final: 1e-5
-  decay: 0.05 # Polyak averaging step-size
+  decay: 0.001 # Polyak averaging step-size, 0.001 is suitable for 1000 iters
 weighted_update: true
 mirror_sampling: false
 

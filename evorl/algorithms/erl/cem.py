@@ -52,6 +52,7 @@ class CEM(EvolutionOptimizer):
 
     def __post_init__(self):
         if self.weighted_update:
+            # this logarithmic rank-based weighting is from CEM-RL
             elite_weights = jnp.log(
                 (self.num_elites + 1) / jnp.arange(1, self.num_elites + 1)
             )
@@ -84,9 +85,9 @@ class CEM(EvolutionOptimizer):
         )
 
         mean = jtu.tree_map(
-            lambda mean, x: mean
-            + jnp.average(x[elites_indices], axis=0, weights=self.elite_weights),
-            state.mean,
+            lambda x: jnp.average(
+                x[elites_indices], axis=0, weights=self.elite_weights
+            ),
             offsprings,
         )
 

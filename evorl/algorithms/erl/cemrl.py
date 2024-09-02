@@ -17,7 +17,7 @@ import optax
 import orbax.checkpoint as ocp
 
 from evorl.distributed import psum, agent_gradient_update
-from evorl.metrics import MetricBase, metricfield
+from evorl.metrics import MetricBase, metricfield, EvaluateMetric
 from evorl.types import (
     PyTreeDict,
     State,
@@ -36,6 +36,7 @@ from evorl.agent import Agent, AgentState, RandomAgent
 from evorl.envs import create_env, AutoresetMode, Box, Env
 from evorl.workflows import Workflow
 from evorl.rollout import rollout
+from evorl.recorders import add_prefix
 
 from ..td3 import TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
@@ -50,11 +51,6 @@ class POPTrainMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
     td3_metrics: MetricBase = None
-
-
-class POPMeanEvaluateMetric(MetricBase):
-    pop_mean_episode_returns: chex.Array
-    pop_mean_episode_lengths: chex.Array
 
 
 class WorkflowMetric(MetricBase):
@@ -771,9 +767,9 @@ class CEMRLWorkflow(Workflow):
             pop_mean_agent_state, num_episodes=self.config.eval_episodes, key=eval_key
         )
 
-        eval_metrics = POPMeanEvaluateMetric(
-            pop_mean_episode_returns=raw_eval_metrics.episode_returns.mean(),
-            pop_mean_episode_lengths=raw_eval_metrics.episode_lengths.mean(),
+        eval_metrics = EvaluateMetric(
+            episode_returns=raw_eval_metrics.episode_returns.mean(),
+            episode_lengths=raw_eval_metrics.episode_lengths.mean(),
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         state = state.replace(key=key)
@@ -802,6 +798,7 @@ class CEMRLWorkflow(Workflow):
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
+            # add info of CEM
             train_metrics_dict["cov_noise"] = state.ec_opt_state.cov_noise.tolist()
 
             if train_metrics_dict["td3_metrics"] is not None:
@@ -815,10 +812,17 @@ class CEMRLWorkflow(Workflow):
 
             self.recorder.write(train_metrics_dict, iters)
 
+            variance_statistics = _get_variance_statistics(
+                state.ec_opt_state.variance["params"]
+            )
+            self.recorder.write({"ec/variance": variance_statistics}, iters)
+
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
 
-                self.recorder.write({"eval": eval_metrics.to_local_dict()}, iters)
+                self.recorder.write(
+                    add_prefix(eval_metrics.to_local_dict(), "eval"), iters
+                )
 
             saved_state = state
             if not self.config.save_replay_buffer:
@@ -894,7 +898,12 @@ def _get_pop_statistics(pop_metric, histogram=False):
     return data
 
 
-def _convert_pop_to_df(pop):
-    df = pd.DataFrame.from_dict(pop)
-    df.insert(0, "pop_id", range(len(df)))
-    return df
+def _get_variance_statistics(variance):
+    def _get_stats(x):
+        return dict(
+            min=np.min(x).tolist(),
+            max=np.max(x).tolist(),
+            mean=np.mean(x).tolist(),
+        )
+
+    return jtu.tree_map(_get_stats, variance)
