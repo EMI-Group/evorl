@@ -138,12 +138,16 @@ def create_wrapped_gymnax_env(
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
     discount: float = 1.0,
+    record_last_obs: None | bool = None,
     **kwargs,
 ) -> Env:
     env = create_gymnax_env(env_name, flatten_obs, **kwargs)
-    record_last_obs = (
-        autoreset_mode == AutoresetMode.NORMAL or autoreset_mode == AutoresetMode.FAST
-    )
+
+    if record_last_obs is None:
+        record_last_obs = (
+            autoreset_mode == AutoresetMode.NORMAL
+            or autoreset_mode == AutoresetMode.FAST
+        )
     if autoreset_mode != AutoresetMode.DISABLED:
         env = EpisodeWrapper(
             env,
@@ -159,7 +163,7 @@ def create_wrapped_gymnax_env(
         elif autoreset_mode == AutoresetMode.ENVPOOL:
             env = VmapEnvPoolAutoResetWrapper(env, num_envs=parallel)
     else:
-        env = OneEpisodeWrapper(env, episode_length)
+        env = OneEpisodeWrapper(env, episode_length, record_last_obs=record_last_obs)
         env = VmapWrapper(env, num_envs=parallel, vmap_step=True)
 
     return env
