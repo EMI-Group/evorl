@@ -802,7 +802,9 @@ class CEMRLWorkflow(Workflow):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            self.recorder.write(workflow_metrics.to_local_dict(), iters)
+            workflow_metrics_dict = workflow_metrics.to_local_dict()
+            del workflow_metrics_dict["warmup_stage"]
+            self.recorder.write(workflow_metrics_dict, iters)
 
             train_metrics_dict = train_metrics.to_local_dict()
             train_metrics_dict["pop_episode_returns"] = _get_pop_statistics(
