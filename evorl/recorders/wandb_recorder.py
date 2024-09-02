@@ -34,7 +34,7 @@ class WandbRecorder(Recorder):
         wandb.finish()
 
 
-def _convert_data(val):
+def _convert_data(val: Any):
     """
     Special handling of pandas objects for wandb logging
     """
@@ -44,3 +44,7 @@ def _convert_data(val):
         return wandb.Table(dataframe=val)
     else:
         return val
+
+
+def add_prefix(data: dict, prefix: str):
+    return {f"{prefix}/{k}": v for k, v in data.items()}

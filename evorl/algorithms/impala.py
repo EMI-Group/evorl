@@ -36,6 +36,8 @@ from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import average_episode_discount_return, approximate_kl
 from evorl.workflows import OnPolicyWorkflow
 from evorl.agent import Agent, AgentState
+from evorl.recorders import add_prefix
+
 
 logger = logging.getLogger(__name__)
 
@@ -481,7 +483,9 @@ class IMPALAWorkflow(OnPolicyWorkflow):
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write({"eval": eval_metrics.to_local_dict()}, iters)
+                self.recorder.write(
+                    add_prefix(eval_metrics.to_local_dict(), "eval"), iters
+                )
 
             self.checkpoint_manager.save(
                 iters,

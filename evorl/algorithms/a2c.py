@@ -37,6 +37,8 @@ from evorl.utils.rl_toolkits import (
     flatten_rollout_trajectory,
 )
 from evorl.workflows import OnPolicyWorkflow
+from evorl.recorders import add_prefix
+
 
 from evorl.agent import Agent, AgentState
 
@@ -404,7 +406,9 @@ class A2CWorkflow(OnPolicyWorkflow):
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write({"eval": eval_metrics.to_local_dict()}, iters)
+                self.recorder.write(
+                    add_prefix(eval_metrics.to_local_dict(), "eval"), iters
+                )
 
             self.checkpoint_manager.save(
                 iters,

@@ -16,6 +16,8 @@ from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient, tree_last
 from evorl.agent import RandomAgent
+from evorl.recorders import add_prefix
+
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +231,9 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             if iterations % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write({"eval": eval_metrics.to_local_dict()}, iterations)
+                self.recorder.write(
+                    add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
+                )
 
             saved_state = tree_unpmap(state, self.pmap_axis_name)
             if not self.config.save_replay_buffer:

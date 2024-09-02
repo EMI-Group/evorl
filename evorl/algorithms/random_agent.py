@@ -10,6 +10,7 @@ from evorl.metrics import MetricBase, EvaluateMetric
 from evorl.types import State
 from evorl.envs import create_env, AutoresetMode
 from evorl.evaluator import Evaluator
+from evorl.recorders import add_prefix
 
 
 class RandomTrainMetric(MetricBase):
@@ -82,7 +83,7 @@ class RandomAgentWorkflow(RLWorkflow):
         """
         eval_metrics, state = self.evaluate(state)
         eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-        self.recorder.write({"eval": eval_metrics.to_local_dict()}, 0)
+        self.recorder.write(add_prefix(eval_metrics.to_local_dict(), "eval"), 0)
         return state.replace()
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:

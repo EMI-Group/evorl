@@ -9,6 +9,7 @@ import orbax.checkpoint as ocp
 from evorl.distributed import tree_unpmap
 from evorl.types import MISSING_REWARD, State
 from evorl.utils.rl_toolkits import fold_multi_steps
+from evorl.recorders import add_prefix
 
 from .a2c import A2CWorkflow as _A2CWorkflow
 
@@ -51,7 +52,7 @@ class A2CWorkflow(_A2CWorkflow):
 
             eval_metrics, state = self.evaluate(state)
             eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-            self.recorder.write({"eval": eval_metrics.to_local_dict()}, iters)
+            self.recorder.write(add_prefix(eval_metrics.to_local_dict(), "eval"), iters)
 
             self.checkpoint_manager.save(
                 iters,
