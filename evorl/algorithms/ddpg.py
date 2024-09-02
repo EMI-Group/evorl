@@ -276,7 +276,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
 
         replay_buffer = flashbax.make_item_buffer(
             max_length=config.replay_buffer_capacity,
-            min_length=config.learning_start_timesteps,
+            min_length=max(config.batch_size, config.learning_start_timesteps),
             sample_batch_size=config.batch_size,
             add_batches=True,
         )

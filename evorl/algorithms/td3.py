@@ -290,7 +290,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
 
         replay_buffer = flashbax.make_item_buffer(
             max_length=config.replay_buffer_capacity,
-            min_length=config.learning_start_timesteps,
+            min_length=max(config.batch_size, config.learning_start_timesteps),
             sample_batch_size=config.batch_size,
             add_batches=True,
         )
@@ -321,10 +321,8 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = PyTreeDict(
-            dict(
-                actor=self.optimizer.init(agent_state.params.actor_params),
-                critic=self.optimizer.init(agent_state.params.critic_params),
-            )
+            actor=self.optimizer.init(agent_state.params.actor_params),
+            critic=self.optimizer.init(agent_state.params.critic_params),
         )
         return agent_state, opt_state
 

@@ -178,6 +178,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
+            iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         return state.replace(
@@ -210,7 +211,9 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             / (one_step_timesteps * self.config.fold_iters)
         )
 
-        for i in range(num_iters):
+        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
+
+        for i in range(start_iteration, num_iters):
             train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
 
