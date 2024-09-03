@@ -105,7 +105,9 @@ def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
         checkpoint_manager = ocp.CheckpointManager(
             ckpt_path,
             options=ckpt_options,
-            metadata=OmegaConf.to_container(config),  # rescaled real config
+            metadata=OmegaConf.to_container(
+                config, resolve=True
+            ),  # rescaled real config
         )
     else:
         checkpoint_manager = DummyCheckpointManager()

@@ -1,25 +1,25 @@
 import logging
 
 import hydra
-import jax
 from omegaconf import DictConfig, OmegaConf
 
-from evorl.recorders import LogRecorder, WandbRecorder
 from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
-from evorl.utils.jax_utils import optimize_gpu_utilization
 from evorl.workflows import Workflow
 
 logger = logging.getLogger("train")
 
-optimize_gpu_utilization()
-jax.config.update("jax_compilation_cache_dir", "../jax-cache")
-jax.config.update("jax_threefry_partitionable", True)
 set_omegaconf_resolvers()
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train(config: DictConfig) -> None:
-    logger.info("config:\n" + OmegaConf.to_yaml(config))
+    import jax
+    from evorl.recorders import LogRecorder, WandbRecorder
+
+    jax.config.update("jax_compilation_cache_dir", "../jax-cache")
+    jax.config.update("jax_threefry_partitionable", True)
+
+    logger.info("config:\n" + OmegaConf.to_yaml(config, resolve=True))
 
     if config.debug:
         from jax import config as jax_config
@@ -44,7 +44,7 @@ def train(config: DictConfig) -> None:
 
     output_dir = get_output_dir()
     wandb_project = config.wandb.project
-    cfg_wandb_tags = OmegaConf.to_container(config.wandb.tags)
+    cfg_wandb_tags = OmegaConf.to_container(config.wandb.tags, resolve=True)
     wandb_tags = [
         workflow_cls.name(),
         config.env.env_name,
@@ -60,7 +60,9 @@ def train(config: DictConfig) -> None:
     wandb_recorder = WandbRecorder(
         project=wandb_project,
         name=wandb_name,
-        config=OmegaConf.to_container(config),  # save the unrescaled config
+        config=OmegaConf.to_container(
+            config, resolve=True
+        ),  # save the unrescaled config
         tags=wandb_tags,
         path=output_dir,
         mode=wandb_mode,

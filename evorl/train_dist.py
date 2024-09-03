@@ -3,20 +3,12 @@ import subprocess
 
 import os
 import hydra
-import jax
 from omegaconf import DictConfig, OmegaConf
 from hydra.core.hydra_config import HydraConfig
-
-from evorl.recorders import LogRecorder, WandbRecorder
 from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
-from evorl.utils.jax_utils import optimize_gpu_utilization
-from evorl.workflows import Workflow
 
-logger = logging.getLogger("train")
+logger = logging.getLogger("train_dist")
 
-optimize_gpu_utilization()
-jax.config.update("jax_compilation_cache_dir", "../jax-cache")
-jax.config.update("jax_threefry_partitionable", True)
 set_omegaconf_resolvers()
 
 """
@@ -42,11 +34,11 @@ def set_gpu_id():
         num_gpus = len(gpus_info)
         gpu_ids = list(range(num_gpus))
 
-    if HydraConfig.initialized():
-        job_id = HydraConfig.get().job.num
-        gpu_idx = job_id % num_gpus
-    else:
-        gpu_idx = 0
+    job_id = HydraConfig.get().job.num
+    gpu_idx = job_id % num_gpus
+
+    if job_id >= num_gpus:
+        logger.warn("It's not recommended to run multiple jobs on a single device.")
 
     gpu_id = gpu_ids[gpu_idx]
 
@@ -58,7 +50,14 @@ def set_gpu_id():
 def train_dist(config: DictConfig) -> None:
     set_gpu_id()
 
-    logger.info("config:\n" + OmegaConf.to_yaml(config))
+    import jax
+    from evorl.recorders import LogRecorder, WandbRecorder
+    from evorl.workflows import Workflow
+
+    jax.config.update("jax_compilation_cache_dir", "../jax-cache")
+    jax.config.update("jax_threefry_partitionable", True)
+
+    logger.info("config:\n" + OmegaConf.to_yaml(config, resolve=True))
 
     if config.debug:
         from jax import config as jax_config
@@ -69,10 +68,6 @@ def train_dist(config: DictConfig) -> None:
 
     workflow_cls = hydra.utils.get_class(config.workflow_cls)
     workflow_cls = type(workflow_cls.__name__, (workflow_cls,), {})
-
-    from evorl.utils.jax_utils import is_jitted
-
-    print(f"Jitted step: {is_jitted(workflow_cls.step)}")
 
     devices = jax.local_devices()
     if len(devices) > 1:
@@ -86,7 +81,7 @@ def train_dist(config: DictConfig) -> None:
 
     output_dir = get_output_dir()
     wandb_project = config.wandb.project
-    cfg_wandb_tags = OmegaConf.to_container(config.wandb.tags)
+    cfg_wandb_tags = OmegaConf.to_container(config.wandb.tags, resolve=True)
     wandb_tags = [
         workflow_cls.name(),
         config.env.env_name,
@@ -103,7 +98,9 @@ def train_dist(config: DictConfig) -> None:
         project=wandb_project,
         name=wandb_name,
         group=wandb_name,
-        config=OmegaConf.to_container(config),  # save the unrescaled config
+        config=OmegaConf.to_container(
+            config, resolve=True
+        ),  # save the unrescaled config
         tags=wandb_tags,
         path=output_dir,
         mode=wandb_mode,
