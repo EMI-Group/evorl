@@ -6,8 +6,8 @@ flashbax
 gymnax
 hydra-core
 
-jax
-jaxlib
+jax>=0.4.28
+jaxlib>=0.4.28
 jaxmarl
 jumanji
 numpy
