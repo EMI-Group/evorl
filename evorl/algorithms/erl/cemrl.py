@@ -29,7 +29,10 @@ from evorl.utils.jax_utils import (
     tree_get,
     tree_set,
 )
-from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajectory
+from evorl.utils.rl_toolkits import (
+    soft_target_update,
+    flatten_rollout_trajectory,
+)
 from evorl.evaluator import Evaluator
 from evorl.sample_batch import SampleBatch
 from evorl.agent import Agent, AgentState, RandomAgent
@@ -40,7 +43,7 @@ from evorl.recorders import add_prefix
 
 from ..td3 import TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from .poptd3 import PopTD3Agent
+from .poptd3_agent import PopTD3Agent
 from .trajectory_evaluator import TrajectoryEvaluator
 from .cem import DiagCEM, EvolutionOptimizer
 
@@ -59,13 +62,6 @@ class WorkflowMetric(MetricBase):
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     warmup_stage: bool = metricfield(default=True, pytree_node=False)
-
-
-def flatten_rollout_pop_trajectory(trajectory: SampleBatch):
-    """
-    Flatten the trajectory from [#pop, T, B, ...] to [T, #pop*B, ...]
-    """
-    return jtu.tree_map(lambda x: jax.lax.collapse(x.swapaxes(0, 1), 1, 3), trajectory)
 
 
 class CEMRLWorkflow(Workflow):
@@ -124,7 +120,7 @@ class CEMRLWorkflow(Workflow):
     def build_from_config(
         cls,
         config: DictConfig,
-        enable_multi_devices: bool = True,
+        enable_multi_devices: bool = False,
         enable_jit: bool = True,
     ) -> Self:
         config = copy.deepcopy(config)  # avoid in-place modification
@@ -135,6 +131,9 @@ class CEMRLWorkflow(Workflow):
 
         # with read_write_cfg(config):
         #     cls._rescale_config(config)
+
+        if enable_multi_devices:
+            raise NotImplementedError("Multi-devices is not supported yet.")
 
         if enable_jit:
             cls.enable_jit()
@@ -691,7 +690,7 @@ class CEMRLWorkflow(Workflow):
 
         trajectory = clean_trajectory(trajectory)
         # [#pop, T, B, ...] -> [T, #pop*B, ...]
-        trajectory = flatten_rollout_pop_trajectory(trajectory)
+        trajectory = flatten_pop_rollout_episode(trajectory)
         trajectory = tree_stop_gradient(trajectory)
 
         replay_buffer_state = jax.pure_callback(
@@ -883,6 +882,13 @@ def replace_actor_params(
             target_actor_params=pop_actor_params,
         )
     )
+
+
+def flatten_pop_rollout_episode(trajectory: SampleBatch):
+    """
+    Flatten the trajectory from [#pop, T, B, ...] to [T, #pop*B, ...]
+    """
+    return jtu.tree_map(lambda x: jax.lax.collapse(x.swapaxes(0, 1), 1, 3), trajectory)
 
 
 def nojit_replay_buffer_add(

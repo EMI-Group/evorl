@@ -1,0 +1,12 @@
+# @package _global_
+
+defaults:
+  - /agent/td3
+  - _self_
+
+random_timesteps: 256 # steps filled into the replay buffer
+learning_start_timesteps: 256 # steps before training starts
+
+workflow_cls: evorl.algorithms.contrib.pop_independent_td3.PopTD3Workflow
+
+pop_size: 16

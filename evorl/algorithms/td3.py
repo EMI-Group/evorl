@@ -326,7 +326,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
         )
         return agent_state, opt_state
 
-    def step(self, state: State) -> tuple[TD3TrainMetric, State]:
+    def step(self, state: State) -> tuple[MetricBase, State]:
         """
         the basic step function for the workflow to update agent
         """

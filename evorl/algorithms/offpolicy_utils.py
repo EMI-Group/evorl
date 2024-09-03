@@ -150,8 +150,8 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             rollout_length=rollout_length,
         )
 
-        replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
         agent_state = _update_obs_preprocessor(agent_state, trajectory)
+        replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
 
         rollout_timesteps = rollout_length * config.num_envs
         sampled_timesteps = psum(
@@ -170,8 +170,8 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             rollout_length=rollout_length,
         )
 
-        replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
         agent_state = _update_obs_preprocessor(agent_state, trajectory)
+        replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
 
         rollout_timesteps = rollout_length * config.num_envs
         sampled_timesteps = sampled_timesteps + psum(

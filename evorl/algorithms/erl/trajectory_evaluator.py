@@ -43,48 +43,48 @@ class TrajectoryEvaluator(PyTreeNode):
 
         return self._evaluate(agent_state, num_iters, key)
 
-    def _batch_evaluate(
-        self, agent_state, num_iters: int, key: chex.PRNGKey
-    ) -> tuple[EvaluateMetric, SampleBatch]:
-        def _evaluate_fn(key, unused_t):
-            next_key, init_env_key = rng_split(key, 2)
-            env_state = self.env_reset_fn(init_env_key)
+    # def _batch_evaluate(
+    #     self, agent_state, num_iters: int, key: chex.PRNGKey
+    # ) -> tuple[EvaluateMetric, SampleBatch]:
+    #     def _evaluate_fn(key, unused_t):
+    #         next_key, init_env_key = rng_split(key, 2)
+    #         env_state = self.env_reset_fn(init_env_key)
 
-            # Note: be careful when self.max_episode_steps < env.max_episode_steps,
-            # where dones could all be zeros.
-            episode_trajectory, env_state = rollout(
-                self.env_step_fn,
-                self.action_fn,
-                env_state,
-                agent_state,
-                key,
-                self.max_episode_steps,
-                self.env_extra_fields,
-            )
+    #         # Note: be careful when self.max_episode_steps < env.max_episode_steps,
+    #         # where dones could all be zeros.
+    #         episode_trajectory, env_state = rollout(
+    #             self.env_step_fn,
+    #             self.action_fn,
+    #             env_state,
+    #             agent_state,
+    #             key,
+    #             self.max_episode_steps,
+    #             self.env_extra_fields,
+    #         )
 
-            return next_key, episode_trajectory
+    #         return next_key, episode_trajectory
 
-        # [#iters, T, #pop, #envs, ...]
-        _, episode_trajectory = jax.lax.scan(_evaluate_fn, key, (), length=num_iters)
+    #     # [#iters, T, #pop, #envs, ...]
+    #     _, episode_trajectory = jax.lax.scan(_evaluate_fn, key, (), length=num_iters)
 
-        # [#iters, T, #pop, #envs] -> [#pop, T, #iters, #envs] -> [#pop, T, #envs * #iters]
-        episode_trajectory = jtu.tree_map(
-            lambda x: jax.lax.collapse(x.swapaxes(0, 2), 2, 4), episode_trajectory
-        )
+    #     # [#iters, T, #pop, #envs] -> [#pop, T, #iters, #envs] -> [#pop, T, #envs * #iters]
+    #     episode_trajectory = jtu.tree_map(
+    #         lambda x: jax.lax.collapse(x.swapaxes(0, 2), 2, 4), episode_trajectory
+    #     )
 
-        # [#pop, #envs * #iters]
-        discount_returns = jax.vmap(compute_discount_return)(
-            episode_trajectory.rewards, episode_trajectory.dones
-        )
+    #     # [#pop, #envs * #iters]
+    #     discount_returns = jax.vmap(compute_discount_return)(
+    #         episode_trajectory.rewards, episode_trajectory.dones
+    #     )
 
-        episode_lengths = jax.vmap(compute_episode_length)(episode_trajectory.dones)
+    #     episode_lengths = jax.vmap(compute_episode_length)(episode_trajectory.dones)
 
-        eval_metrics = EvaluateMetric(
-            episode_returns=discount_returns.mean(axis=-1),
-            episode_lengths=episode_lengths.mean(axis=-1),
-        )
+    #     eval_metrics = EvaluateMetric(
+    #         episode_returns=discount_returns.mean(axis=-1),
+    #         episode_lengths=episode_lengths.mean(axis=-1),
+    #     )
 
-        return eval_metrics, episode_trajectory
+    #     return eval_metrics, episode_trajectory
 
     def _evaluate(
         self, agent_state, num_iters: int, key: chex.PRNGKey
