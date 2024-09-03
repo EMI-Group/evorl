@@ -1,4 +1,5 @@
 import logging
+import subprocess
 
 import os
 import hydra
@@ -18,16 +19,38 @@ jax.config.update("jax_compilation_cache_dir", "../jax-cache")
 jax.config.update("jax_threefry_partitionable", True)
 set_omegaconf_resolvers()
 
+"""
+Note: this script currently only support Nvidia GPUs.
+"""
+
+
+def get_gpus_info():
+    # Run the nvidia-smi command to list GPUs and count the lines
+    output = subprocess.check_output("nvidia-smi --list-gpus", shell=True)
+    # Decode the output from bytes to a string and count lines
+    return output.decode().splitlines()
+
 
 def set_gpu_id():
+    gpus_info = get_gpus_info()
+
+    cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if len(cuda_visible_devices) > 0:
+        gpu_ids = [int(i) for i in cuda_visible_devices.split(",")]
+        num_gpus = len(gpu_ids)
+    else:
+        num_gpus = len(gpus_info)
+        gpu_ids = list(range(num_gpus))
+
     if HydraConfig.initialized():
         job_id = HydraConfig.get().job.num
-        num_gpus = jax.device_count()
-        gpu_id = job_id % num_gpus
+        gpu_idx = job_id % num_gpus
     else:
-        gpu_id = 0
+        gpu_idx = 0
 
-    logger.info(f"Using GPU {gpu_id}")
+    gpu_id = gpu_ids[gpu_idx]
+
+    logger.info(f"Using {gpus_info[gpu_id]}")
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
 
