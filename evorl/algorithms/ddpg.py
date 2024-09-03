@@ -391,18 +391,18 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             critic_opt_state = opt_state.critic
             actor_opt_state = opt_state.actor
 
-            sampled_batch = self.replay_buffer.sample(
+            sample_batch = self.replay_buffer.sample(
                 replay_buffer_state, rb_key
             ).experience
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                 critic_update_fn(
-                    opt_state.critic, agent_state, sampled_batch, critic_key
+                    opt_state.critic, agent_state, sample_batch, critic_key
                 )
             )
 
             (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
-                actor_update_fn(opt_state.actor, agent_state, sampled_batch, actor_key)
+                actor_update_fn(opt_state.actor, agent_state, sample_batch, actor_key)
             )
 
             target_actor_params = soft_target_update(

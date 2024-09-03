@@ -306,7 +306,7 @@ class PopTD3Workflow(TD3Workflow):
 
                     key, rb_key, critic_key = jax.random.split(key, num=3)
                     # it's safe to use read-only replay_buffer_state here.
-                    sampled_batch = self.replay_buffer.sample(
+                    sample_batch = self.replay_buffer.sample(
                         replay_buffer_state, rb_key
                     ).experience
 
@@ -314,7 +314,7 @@ class PopTD3Workflow(TD3Workflow):
 
                     (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                         critic_update_fn(
-                            critic_opt_state, agent_state, sampled_batch, critic_key
+                            critic_opt_state, agent_state, sample_batch, critic_key
                         )
                     )
 
@@ -329,7 +329,7 @@ class PopTD3Workflow(TD3Workflow):
                     length=self.config.actor_update_interval - 1,
                 )
 
-            sampled_batch = self.replay_buffer.sample(
+            sample_batch = self.replay_buffer.sample(
                 replay_buffer_state, rb_key
             ).experience
 
@@ -338,12 +338,12 @@ class PopTD3Workflow(TD3Workflow):
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                 critic_update_fn(
-                    critic_opt_state, agent_state, sampled_batch, critic_key
+                    critic_opt_state, agent_state, sample_batch, critic_key
                 )
             )
 
             (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
-                actor_update_fn(actor_opt_state, agent_state, sampled_batch, actor_key)
+                actor_update_fn(actor_opt_state, agent_state, sample_batch, actor_key)
             )
 
             target_actor_params = soft_target_update(

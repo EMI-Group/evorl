@@ -331,12 +331,12 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
 
             key, rb_key, q_key = jax.random.split(key, 3)
 
-            sampled_batch = self.replay_buffer.sample(
+            sample_batch = self.replay_buffer.sample(
                 replay_buffer_state, rb_key
             ).experience
 
             (q_loss, loss_dict), agent_state, opt_state = q_update_fn(
-                opt_state, agent_state, sampled_batch, q_key
+                opt_state, agent_state, sample_batch, q_key
             )
 
             wf_metrics = wf_metrics.replace(

@@ -438,13 +438,13 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
 
                     key, rb_key, critic_key = jax.random.split(key, num=3)
                     # it's safe to use read-only replay_buffer_state here.
-                    sampled_batch = self.replay_buffer.sample(
+                    sample_batch = self.replay_buffer.sample(
                         replay_buffer_state, rb_key
                     ).experience
 
                     (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                         critic_update_fn(
-                            critic_opt_state, agent_state, sampled_batch, critic_key
+                            critic_opt_state, agent_state, sample_batch, critic_key
                         )
                     )
 
@@ -459,18 +459,18 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
                     length=self.config.actor_update_interval - 1,
                 )
 
-            sampled_batch = self.replay_buffer.sample(
+            sample_batch = self.replay_buffer.sample(
                 replay_buffer_state, rb_key
             ).experience
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                 critic_update_fn(
-                    critic_opt_state, agent_state, sampled_batch, critic_key
+                    critic_opt_state, agent_state, sample_batch, critic_key
                 )
             )
 
             (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
-                actor_update_fn(actor_opt_state, agent_state, sampled_batch, actor_key)
+                actor_update_fn(actor_opt_state, agent_state, sample_batch, actor_key)
             )
 
             opt_state = opt_state.replace(
@@ -481,7 +481,7 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
                 alpha_opt_state = opt_state.alpha
                 (alpha_loss, alpha_loss_dict), agent_state, alpha_opt_state = (
                     alpha_update_fn(
-                        alpha_opt_state, agent_state, sampled_batch, alpha_key
+                        alpha_opt_state, agent_state, sample_batch, alpha_key
                     )
                 )
                 opt_state = opt_state.replace(alpha=alpha_opt_state)
