@@ -437,7 +437,9 @@ class PopTD3Workflow(TD3Workflow):
 
     def learn(self, state: State) -> State:
         num_devices = jax.device_count()
-        one_step_timesteps = self.config.rollout_length * self.config.num_envs
+        one_step_timesteps = (
+            self.config.rollout_length * self.config.num_envs * self.config.pop_size
+        )
         sampled_timesteps = tree_unpmap(state.metrics.sampled_timesteps).tolist()
         num_iters = math.ceil(
             (self.config.total_timesteps - sampled_timesteps)
