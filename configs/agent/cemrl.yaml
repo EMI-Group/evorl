@@ -37,8 +37,7 @@ mirror_sampling: false
 
 fitness_with_exploration: false
 episodes_for_fitness: 1 # must be devided by num_envs
-# cemrl_update_interval: 8192 # unit: num of RL updates per CEMRL iteration
-num_updates_per_iter: 512 # num of RL updates per iter
+num_rl_updates_per_iter: 512 # num of RL updates per iter
 
 loss_weights:
   actor_loss: 1.0
@@ -52,7 +51,6 @@ agent_network:
   static_layer_norm: true
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
-
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs

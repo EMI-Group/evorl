@@ -95,7 +95,7 @@ class DiagCEM(EvolutionOptimizer):
 
         def var_update(mean, x):
             t1 = jnp.square(x[elites_indices] - mean)
-            # TODO: do we need extra t2 /= num_elites mentioned CEM-RL?
+            # TODO: do we need extra division by num_elites mentioned CEM-RL?
             t2 = jnp.average(t1, axis=0, weights=self.elite_weights) + cov_noise
             return t2
 

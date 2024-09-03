@@ -648,7 +648,7 @@ class CEMRLWorkflow(Workflow):
                 _sample_and_update_fn,
                 (learn_key, learning_agent_state, opt_state),
                 (),
-                length=self.config.num_updates_per_iter,
+                length=self.config.num_rl_updates_per_iter,
             )
 
             pop_actor_params = tree_set(
