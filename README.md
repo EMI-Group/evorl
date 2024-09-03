@@ -26,6 +26,16 @@ python -m evorl.train agent=exp/ppo/brax/ant env=gymnax/CartPole-v1 agent_networ
 python -m evorl.train -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514
 ```
 
+Train multiple agents in parallel:
+```shell
+# need to install joblib plugin before the first run
+pip install -U hydra-joblib-launcher
+
+# sweep over multiple config values in parallel (for multi-GPU case)
+# Note: it's recommended to run every job on a single device. By default, the script will use all detected GPUs and run every job on a dedicated GPU.
+XLA_PYTHON_CLIENT_MEM_FRACTION=.10 python -m evorl.train_dist -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514 hydra/launcher=joblib
+```
+
 ## Acknowledgement
 
 - brax
