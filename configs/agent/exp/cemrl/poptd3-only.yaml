@@ -1,0 +1,23 @@
+# @package _global_
+
+# Note:
+# this config is similar as pop_td3.yaml
+# except the rollout is based on episodes + use shared critic network.
+
+defaults:
+  - /agent/cemrl
+  - _self_
+
+actor_update_interval: 2
+
+pop_size: 10
+num_learning_offspring: 10
+disable_cem_update: true
+
+fitness_with_exploration: true
+episodes_for_fitness: 1 # must be devided by num_envs
+num_rl_updates_per_iter: 50 # num of RL updates per iter
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 1

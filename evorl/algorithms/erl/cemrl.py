@@ -701,33 +701,34 @@ class CEMRLWorkflow(Workflow):
             eval_metrics.episode_lengths.flatten(),  # [#pop*B]
         )
 
-        ec_opt_state = self.ec_optimizer.update(
-            state.ec_opt_state, pop_actor_params, fitnesses
-        )
-
-        # generate new actor params
-        new_pop_actor_params = self.ec_optimizer.sample(
-            ec_opt_state, pop_size, cem_sample_key
-        )
-        agent_state = replace_actor_params(agent_state, new_pop_actor_params)
-
         train_metrics = POPTrainMetric(
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             td3_metrics=td3_metrics,
         )
 
-        # adding debug info for CEM
-        if td3_metrics is not None:
-            elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
-            elites_from_rl = jnp.isin(
-                jnp.arange(self.config.num_learning_offspring), elites_indices
+        if not self.config.disable_cem_update:
+            ec_opt_state = self.ec_optimizer.update(
+                state.ec_opt_state, pop_actor_params, fitnesses
             )
-            ec_info = PyTreeDict(
-                elites_from_rl=elites_from_rl.sum(),
-                elites_from_rl_ratio=elites_from_rl.mean(),
+
+            # generate new actor params
+            new_pop_actor_params = self.ec_optimizer.sample(
+                ec_opt_state, pop_size, cem_sample_key
             )
-            train_metrics = train_metrics.replace(ec_info=ec_info)
+            agent_state = replace_actor_params(agent_state, new_pop_actor_params)
+
+            # adding debug info for CEM
+            if td3_metrics is not None:
+                elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
+                elites_from_rl = jnp.isin(
+                    jnp.arange(self.config.num_learning_offspring), elites_indices
+                )
+                ec_info = PyTreeDict(
+                    elites_from_rl=elites_from_rl.sum(),
+                    elites_from_rl_ratio=elites_from_rl.mean(),
+                )
+                train_metrics = train_metrics.replace(ec_info=ec_info)
 
         # calculate the numbner of timestep
         sampled_timesteps = psum(

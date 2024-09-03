@@ -20,6 +20,8 @@ policy_noise: 0.2
 clip_policy_noise: 0.5
 actor_update_interval: 2
 
+disable_cem_update: false
+
 # cem hyperparams:
 warmup_iters: 100 # steps that only learn by CEM
 
