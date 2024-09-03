@@ -191,6 +191,7 @@ class TD3LayerNormWorkflow(TD3Workflow):
         ), "Only continue action space is supported."
 
         agent = TD3LayerNormAgent(
+            static_layer_norm=config.agent_network.static_layer_norm,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             discount=config.discount,
