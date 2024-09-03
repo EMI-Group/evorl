@@ -7,6 +7,6 @@ defaults:
 workflow_cls: evorl.algorithms.contrib.td3_layer_norm.TD3LayerNormWorkflow
 
 agent_network:
-  static_layer_norm: true
+  static_layer_norm: false
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
