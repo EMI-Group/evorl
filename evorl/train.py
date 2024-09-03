@@ -4,7 +4,6 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
-from evorl.workflows import Workflow
 
 logger = logging.getLogger("train")
 
@@ -15,6 +14,7 @@ set_omegaconf_resolvers()
 def train(config: DictConfig) -> None:
     import jax
     from evorl.recorders import LogRecorder, WandbRecorder
+    from evorl.workflows import Workflow
 
     jax.config.update("jax_compilation_cache_dir", "../jax-cache")
     jax.config.update("jax_threefry_partitionable", True)
