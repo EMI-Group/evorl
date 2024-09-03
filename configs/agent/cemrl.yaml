@@ -39,7 +39,7 @@ mirror_sampling: false
 
 fitness_with_exploration: false
 episodes_for_fitness: 1 # must be devided by num_envs
-num_rl_updates_per_iter: 512 # num of RL updates per iter
+num_rl_updates_per_iter: 256 # num of RL updates per iter
 
 loss_weights:
   actor_loss: 1.0

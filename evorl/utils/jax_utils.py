@@ -94,12 +94,12 @@ def tree_last(tree):
     return jtu.tree_map(lambda x: x[-1], tree)
 
 
-def tree_get(tree, indices):
-    return jtu.tree_map(lambda x: x[indices], tree)
+def tree_get(tree, idx_or_slice):
+    return jtu.tree_map(lambda x: x[idx_or_slice], tree)
 
 
-def tree_set(src, target, indices):
-    return jtu.tree_map(lambda x, y: x.at[indices].set(y), src, target)
+def tree_set(src, target, idx_or_slice):
+    return jtu.tree_map(lambda x, y: x.at[idx_or_slice].set(y), src, target)
 
 
 def scan_and_mean(*args, **kwargs):
