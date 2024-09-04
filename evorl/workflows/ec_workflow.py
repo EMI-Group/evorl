@@ -24,7 +24,7 @@ from .workflow import Workflow
 
 class ECWorkflowMetric(MetricBase):
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
@@ -133,7 +133,9 @@ class ECWorkflow(Workflow):
 
         problem_state = state.evox_state.get_child_state("problem")
         sampled_episodes = psum(problem_state.sampled_episodes, self.pmap_axis_name)
-        sampled_timesteps = psum(problem_state.sampled_timesteps, self.pmap_axis_name)
+        sampled_timesteps_m = (
+            psum(problem_state.sampled_timesteps, self.pmap_axis_name) / 1e6
+        )
         # turn back to the original objectives
         # Note: train_info['fitness'] is already all-gathered in evox
         train_metrics = TrainMetric(
@@ -142,7 +144,7 @@ class ECWorkflow(Workflow):
 
         workflow_metrics = ECWorkflowMetric(
             sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
-            sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
+            sampled_timesteps_m=state.metrics.sampled_timesteps_m + sampled_timesteps_m,
             iterations=state.metrics.iterations + 1,
         )
 
