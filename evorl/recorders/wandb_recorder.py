@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import jax.tree_util as jtu
+import numpy as np
 import pandas as pd
 import wandb
 
@@ -48,3 +49,16 @@ def _convert_data(val: Any):
 
 def add_prefix(data: dict, prefix: str):
     return {f"{prefix}/{k}": v for k, v in data.items()}
+
+
+def get_2d_array_statistics(data, histogram=False):
+    data = dict(
+        min=np.min(data).tolist(),
+        max=np.max(data).tolist(),
+        mean=np.mean(data).tolist(),
+    )
+
+    if histogram:
+        data["val"] = pd.Series(data)
+
+    return data

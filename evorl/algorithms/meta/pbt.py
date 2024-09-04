@@ -2,16 +2,21 @@ import copy
 import logging
 import math
 from functools import partial
+import pandas as pd
+from omegaconf import DictConfig, OmegaConf, open_dict, read_write
 
 import chex
 import hydra
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import numpy as np
 import optax
+from optax.schedules import InjectStatefulHyperparamsState
 import orbax.checkpoint as ocp
-import pandas as pd
+from jax.sharding import Mesh, NamedSharding
+from jax.sharding import PartitionSpec as P
+
+
 from evorl.distributed import (
     POP_AXIS_NAME,
     parallel_map,
@@ -22,10 +27,7 @@ from evorl.metrics import MetricBase
 from evorl.types import MISSING_REWARD, PyTreeDict, State
 from evorl.utils.jax_utils import tree_last
 from evorl.workflows import RLWorkflow, Workflow
-from jax.sharding import Mesh, NamedSharding
-from jax.sharding import PartitionSpec as P
-from omegaconf import DictConfig, OmegaConf, open_dict, read_write
-from optax.schedules import InjectStatefulHyperparamsState
+from evorl.recorders import get_2d_array_statistics
 
 from .pbt_operations import explore, select
 
@@ -283,17 +285,17 @@ class PBTWorkflow(Workflow):
                     train_episode_return[train_episode_return != MISSING_REWARD]
                 )
 
-            train_metrics_dict["pop_episode_returns"] = _get_pop_statistics(
+            train_metrics_dict["pop_episode_returns"] = get_2d_array_statistics(
                 train_metrics_dict["pop_episode_returns"], histogram=True
             )
-            train_metrics_dict["pop_episode_lengths"] = _get_pop_statistics(
+            train_metrics_dict["pop_episode_lengths"] = get_2d_array_statistics(
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
             train_metrics_dict["pop"] = _convert_pop_to_df(train_metrics_dict["pop"])
 
             train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
-                _get_pop_statistics, train_metrics_dict["pop_train_metrics"]
+                get_2d_array_statistics, train_metrics_dict["pop_train_metrics"]
             )
 
             self.recorder.write(train_metrics_dict, i)
@@ -391,19 +393,6 @@ def _pop_read(indices, pop):
 
 def _pop_write(indices, pop, new):
     return jtu.tree_map(lambda x, y: x.at[indices].set(y), pop, new)
-
-
-def _get_pop_statistics(pop_metric, histogram=False):
-    data = dict(
-        min=np.min(pop_metric).tolist(),
-        max=np.max(pop_metric).tolist(),
-        mean=np.mean(pop_metric).tolist(),
-    )
-
-    if histogram:
-        data["val"] = pd.Series(pop_metric)
-
-    return data
 
 
 def _convert_pop_to_df(pop):

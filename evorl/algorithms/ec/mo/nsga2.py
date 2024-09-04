@@ -1,15 +1,21 @@
+from omegaconf import DictConfig
+from functools import partial
+
 import evox.algorithms
+from evox.operators import non_dominated_sort
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import orbax.checkpoint as ocp
+
 from evorl.distributed import tree_unpmap
 from evorl.ec import MultiObjectiveBraxProblem
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
 from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.workflows import ECWorkflow
-from evox.operators import non_dominated_sort
-from omegaconf import DictConfig
+from evorl.recorders import get_2d_array_statistics
+
 
 from ..ec_agent import DeterministicECAgent
 
@@ -85,11 +91,15 @@ class NSGA2Workflow(ECWorkflow):
                 fitnesses = train_metrics.objectives * self._workflow.opt_direction
                 pf_rank = non_dominated_sort(fitnesses, "scan")
                 pf_objectives = train_metrics.objectives[pf_rank == 0]
-                _train_metrics = train_metrics.to_local_dict()
-                _train_metrics["pf_objectives"] = pf_objectives.tolist()
-                _train_metrics["num_pf"] = pf_objectives.shape[0]
 
-            self.recorder.write(_train_metrics, i)
+            train_metrics_dict = jtu.tree_map(
+                partial(get_2d_array_statistics, histogram=True),
+                train_metrics.to_local_dict(),
+            )
+            train_metrics_dict["pf_objectives"] = pf_objectives.tolist()
+            train_metrics_dict["num_pf"] = pf_objectives.shape[0]
+
+            self.recorder.write(train_metrics_dict, i)
 
             self.checkpoint_manager.save(
                 i,

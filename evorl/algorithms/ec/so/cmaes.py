@@ -2,23 +2,19 @@ import logging
 
 import evox.algorithms
 import jax
-import orbax.checkpoint as ocp
-from evorl.distributed import tree_unpmap
 from evorl.ec import GeneralRLProblem
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
 from evorl.evaluator import Evaluator
-from evorl.metrics import EvaluateMetric
-from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
 from omegaconf import DictConfig
 
 from ..ec_agent import DeterministicECAgent
-from .es_base import ESBaseWorkflow
+from .es_base import ESWorkflowTemplate
 
 logger = logging.getLogger(__name__)
 
 
-class CMAESWorkflow(ESBaseWorkflow):
+class CMAESWorkflow(ESWorkflowTemplate):
     @classmethod
     def name(cls):
         return "CMAES"
@@ -83,58 +79,3 @@ class CMAESWorkflow(ESBaseWorkflow):
         workflow._candidate_transform = _candidate_transform
 
         return workflow
-
-    @staticmethod
-    def _rescale_config(config: DictConfig) -> None:
-        num_devices = jax.device_count()
-
-        if config.num_envs % num_devices != 0:
-            logging.warning(
-                f"num_envs ({config.num_envs}) must be divisible by the number of devices ({num_devices}), "
-                f"rescale eval_episodes to {config.eval_episodes // num_devices}"
-            )
-
-        config.eval_episodes = config.eval_episodes // num_devices
-
-    def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
-        """Evaluate the policy with the mean of CMAES"""
-        key, eval_key = jax.random.split(state.key, num=2)
-
-        flat_pop_center = state.evox_state.query_state("algorithm").mean
-        agent_state = self._candidate_transform(flat_pop_center)
-
-        # [#episodes]
-        raw_eval_metrics = self.evaluator.evaluate(
-            agent_state, num_episodes=self.config.eval_episodes, key=eval_key
-        )
-
-        eval_metrics = EvaluateMetric(
-            episode_returns=raw_eval_metrics.episode_returns.mean(),
-            episode_lengths=raw_eval_metrics.episode_lengths.mean(),
-        ).all_reduce(self.pmap_axis_name)
-
-        return eval_metrics, state.replace(key=key)
-
-    def learn(self, state: State) -> State:
-        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
-
-        for i in range(start_iteration, self.config.num_iters):
-            train_metrics, state = self.step(state)
-            workflow_metrics = state.metrics
-
-            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
-
-            self.recorder.write(workflow_metrics.to_local_dict(), i)
-            self.recorder.write(train_metrics.to_local_dict(), i)
-
-            eval_metrics, state = self.evaluate(state)
-            eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-            self.recorder.write({"eval_pop_center": eval_metrics.to_local_dict()}, i)
-
-            self.checkpoint_manager.save(
-                i,
-                args=ocp.args.StandardSave(
-                    tree_unpmap(state, self.pmap_axis_name),
-                ),
-            )

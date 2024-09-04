@@ -1,8 +1,6 @@
 import logging
 from functools import partial
 import math
-import numpy as np
-import pandas as pd
 
 import chex
 import jax
@@ -26,7 +24,7 @@ from evorl.utils.rl_toolkits import (
     flatten_rollout_trajectory,
     flatten_pop_rollout_trajectory,
 )
-from evorl.recorders import add_prefix
+from evorl.recorders import add_prefix, get_2d_array_statistics
 
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from ..td3 import TD3TrainMetric, TD3Workflow
@@ -459,7 +457,7 @@ class PopTD3Workflow(TD3Workflow):
             self.recorder.write(workflow_metrics.to_local_dict(), iterations)
 
             train_metrics_dict = jtu.tree_map(
-                partial(_get_pop_statistics, histogram=True),
+                partial(get_2d_array_statistics, histogram=True),
                 train_metrics.to_local_dict(),
             )
 
@@ -470,7 +468,7 @@ class PopTD3Workflow(TD3Workflow):
                 eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
 
                 eval_metrics_dict = jtu.tree_map(
-                    partial(_get_pop_statistics, histogram=True),
+                    partial(get_2d_array_statistics, histogram=True),
                     eval_metrics.to_local_dict(),
                 )
 
@@ -485,16 +483,3 @@ class PopTD3Workflow(TD3Workflow):
             )
 
         return state
-
-
-def _get_pop_statistics(pop_metric, histogram=False):
-    data = dict(
-        min=np.min(pop_metric).tolist(),
-        max=np.max(pop_metric).tolist(),
-        mean=np.mean(pop_metric).tolist(),
-    )
-
-    if histogram:
-        data["val"] = pd.Series(pop_metric)
-
-    return data

@@ -2,7 +2,6 @@ import copy
 import logging
 import math
 import numpy as np
-import pandas as pd
 from typing import Any
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
 from functools import partial
@@ -39,7 +38,7 @@ from evorl.agent import Agent, AgentState, RandomAgent
 from evorl.envs import create_env, AutoresetMode, Box, Env
 from evorl.workflows import Workflow
 from evorl.rollout import rollout
-from evorl.recorders import add_prefix
+from evorl.recorders import add_prefix, get_2d_array_statistics
 
 from ..td3 import TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
@@ -868,11 +867,11 @@ class CEMRLWorkflow(Workflow):
             self.recorder.write(workflow_metrics_dict, iters)
 
             train_metrics_dict = train_metrics.to_local_dict()
-            train_metrics_dict["pop_episode_returns"] = _get_pop_statistics(
+            train_metrics_dict["pop_episode_returns"] = get_2d_array_statistics(
                 train_metrics_dict["pop_episode_returns"], histogram=True
             )
 
-            train_metrics_dict["pop_episode_lengths"] = _get_pop_statistics(
+            train_metrics_dict["pop_episode_lengths"] = get_2d_array_statistics(
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
@@ -884,7 +883,7 @@ class CEMRLWorkflow(Workflow):
                     self.config.num_learning_offspring
                 )
                 train_metrics_dict["td3_metrics"]["raw_loss_dict"] = jtu.tree_map(
-                    _get_pop_statistics,
+                    get_2d_array_statistics,
                     train_metrics_dict["td3_metrics"]["raw_loss_dict"],
                 )
 
@@ -959,19 +958,6 @@ def flatten_pop_rollout_episode(trajectory: SampleBatch):
     Flatten the trajectory from [#pop, T, B, ...] to [T, #pop*B, ...]
     """
     return jtu.tree_map(lambda x: jax.lax.collapse(x.swapaxes(0, 1), 1, 3), trajectory)
-
-
-def _get_pop_statistics(pop_metric, histogram=False):
-    data = dict(
-        min=np.min(pop_metric).tolist(),
-        max=np.max(pop_metric).tolist(),
-        mean=np.mean(pop_metric).tolist(),
-    )
-
-    if histogram:
-        data["val"] = pd.Series(pop_metric)
-
-    return data
 
 
 def _get_variance_statistics(variance):

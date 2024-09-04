@@ -1,14 +1,19 @@
+from omegaconf import DictConfig
+from functools import partial
+
 import evox.algorithms
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import orbax.checkpoint as ocp
+
 from evorl.distributed import tree_unpmap
 from evorl.ec import GeneralRLProblem
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
 from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.workflows import ECWorkflow
-from omegaconf import DictConfig
+from evorl.recorders import get_2d_array_statistics
 
 from ..ec_agent import DeterministicECAgent
 
@@ -74,11 +79,16 @@ class CSOWorkflow(ECWorkflow):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
             workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
-
             self.recorder.write(workflow_metrics.to_local_dict(), i)
-            self.recorder.write(train_metrics.to_local_dict(), i)
+
+            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+            train_metrics_dict = train_metrics.to_local_dict()
+            train_metrics_dict = jtu.tree_map(
+                partial(get_2d_array_statistics, histogram=True),
+                train_metrics.to_local_dict(),
+            )
+            self.recorder.write(train_metrics_dict, i)
 
             self.checkpoint_manager.save(
                 i,
