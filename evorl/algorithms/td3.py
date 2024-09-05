@@ -65,6 +65,7 @@ class TD3Agent(Agent):
     exploration_epsilon: float = 0.5
     policy_noise: float = 0.2
     clip_policy_noise: float = 0.5
+    critics_in_actor_loss: str = "first"  #  or "min"
 
     normalize_obs: bool = False
     critic_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
@@ -242,11 +243,17 @@ class TD3Agent(Agent):
 
         # TODO: handle redundant computation
         # Note: what about using min_Q, like SAC?
-        actor_loss = -jnp.mean(
-            self.critic_network.apply(agent_state.params.critic_params, obs, actions)[
-                ..., 0
-            ]  # here, we use q1
-        )
+        qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions)
+
+        if self.critics_in_actor_loss == "first":
+            actor_loss = -jnp.mean(qs[..., 0])
+        elif self.critics_in_actor_loss == "min":
+            actor_loss = -jnp.mean(qs.min(-1))
+        else:
+            raise ValueError(
+                f"Invalid value for critics_in_actor_loss: {self.critics_in_actor_loss}, should be 'first' or 'mean'"
+            )
+
         return PyTreeDict(actor_loss=actor_loss)
 
 
@@ -279,6 +286,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             exploration_epsilon=config.exploration_epsilon,
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
+            critics_in_actor_loss=config.critics_in_actor_loss,
         )
 
         # one optimizer, two opt_states (in setup function) for both actor and critic
