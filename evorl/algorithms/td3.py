@@ -194,6 +194,10 @@ class TD3Agent(Agent):
             -self.clip_policy_noise,
             self.clip_policy_noise,
         )
+        # Note: when calculating the critic loss, we also clip the actions to the action space
+        actions_next = jnp.clip(
+            actions_next, agent_state.action_space.low, agent_state.action_space.high
+        )
 
         # [B, 2]
         qs_next = self.critic_network.apply(
@@ -233,6 +237,7 @@ class TD3Agent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # [T*B, A]
+        # Note: when calculating the actor loss, we don't clip the actions to the action space. It follows the impl of SB3 and CleanRL
         actions = self.actor_network.apply(agent_state.params.actor_params, obs)
 
         # TODO: handle redundant computation
