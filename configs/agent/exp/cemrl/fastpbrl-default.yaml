@@ -1,16 +1,20 @@
 # @package _global_
 
 defaults:
-  - /agent/cemrl
+  - /agent/erl/cemrl
   - _self_
 
 actor_update_interval: 1 # not needed since we apply it over #num_learning_offspring actors
+
+warmup_iters: 10 # steps that only learn by CEM
 
 pop_size: 10
 num_learning_offspring: 5
 
 num_elites: 5
 diagonal_variance:
+  init: 1e-2
+  final: 1e-5
   decay: 0.05
 
 fitness_with_exploration: false
