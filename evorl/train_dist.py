@@ -26,8 +26,8 @@ def get_gpus_info():
 def set_gpu_id():
     gpus_info = get_gpus_info()
 
-    cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-    if len(cuda_visible_devices) > 0:
+    cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "all")
+    if cuda_visible_devices != "all" and len(cuda_visible_devices) > 0:
         gpu_ids = [int(i) for i in cuda_visible_devices.split(",")]
         num_gpus = len(gpu_ids)
     else:
