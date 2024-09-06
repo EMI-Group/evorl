@@ -132,9 +132,9 @@ class SACAgent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
-        action_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
-        action = action_dist.sample(seed=key)
-        return action, PyTreeDict()
+        actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
+        actions = actions_dist.sample(seed=key)
+        return actions, PyTreeDict()
 
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
@@ -144,9 +144,9 @@ class SACAgent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
-        action_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
-        action = action_dist.mode()
-        return jax.lax.stop_gradient(action), PyTreeDict()
+        actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
+        actions = actions_dist.mode()
+        return actions, PyTreeDict()
 
     def alpha_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
@@ -238,7 +238,7 @@ class SACAgent(Agent):
         )
         q_target = jnp.repeat(q_target[..., None], 2, axis=-1)
 
-        q_loss = optax.squared_error(q_t, q_target).mean()
+        q_loss = optax.squared_error(q_t, q_target).sum(-1).mean()
         return PyTreeDict(critic_loss=q_loss)
 
 
@@ -478,6 +478,8 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
             )
 
             if self.config.adaptive_alpha:
+                # we follow the update order of the official implementation:
+                # critic -> actor -> alpha
                 alpha_opt_state = opt_state.alpha
                 (alpha_loss, alpha_loss_dict), agent_state, alpha_opt_state = (
                     alpha_update_fn(

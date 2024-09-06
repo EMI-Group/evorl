@@ -214,8 +214,8 @@ class TD3Agent(Agent):
 
         qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions)
 
-        # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
-        q_loss = optax.squared_error(qs, qs_target).mean()
+        # q_loss = optax.huber_loss(qs, qs_target).sum(-1).mean()
+        q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
 
         return PyTreeDict(critic_loss=q_loss, q_value=qs.mean())
 
