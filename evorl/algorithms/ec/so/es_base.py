@@ -2,13 +2,13 @@ from collections.abc import Callable, Sequence
 import logging
 from functools import partial
 
-from evox import Algorithm, Problem
+from evox import Algorithm, Problem, State as EvoXState
 import jax
 import jax.tree_util as jtu
 import orbax.checkpoint as ocp
 
 from evorl.distributed import tree_unpmap
-from evorl.agent import Agent
+from evorl.agent import Agent, AgentState
 from evorl.evaluator import Evaluator
 from evorl.metrics import EvaluateMetric
 from evorl.types import State
@@ -74,12 +74,14 @@ class ESWorkflowTemplate(ESBaseWorkflow):
 
         config.eval_episodes = config.eval_episodes // num_devices
 
+    def _get_pop_center(self, evox_state: EvoXState) -> AgentState:
+        raise NotImplementedError
+
     def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
         """Evaluate the policy with the mean of CMAES"""
         key, eval_key = jax.random.split(state.key, num=2)
 
-        flat_pop_center = state.evox_state.query_state("algorithm").center
-        agent_state = self._candidate_transform(flat_pop_center)
+        agent_state = self._get_pop_center(state.evox_state)
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(

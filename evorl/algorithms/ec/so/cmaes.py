@@ -1,11 +1,14 @@
 import logging
 
 import evox.algorithms
+from evox import State as EvoXState
 import jax
+
 from evorl.ec import GeneralRLProblem
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
 from evorl.evaluator import Evaluator
 from evorl.utils.ec_utils import ParamVectorSpec
+from evorl.agent import AgentState
 from omegaconf import DictConfig
 
 from ..ec_agent import DeterministicECAgent
@@ -79,3 +82,8 @@ class CMAESWorkflow(ESWorkflowTemplate):
         workflow._candidate_transform = _candidate_transform
 
         return workflow
+
+    def _get_pop_center(self, evox_state: EvoXState) -> AgentState:
+        flat_pop_center = evox_state.query_state("algorithm").mean
+        agent_state = self._candidate_transform(flat_pop_center)
+        return agent_state
