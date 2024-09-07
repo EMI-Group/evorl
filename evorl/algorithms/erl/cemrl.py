@@ -919,6 +919,9 @@ class CEMRLWorkflow(Workflow):
         cls._cem_update_and_sample = jax.jit(
             cls._cem_update_and_sample, static_argnums=(0,)
         )
+        cls._sample_from_replay_buffer = jax.jit(
+            cls._sample_from_replay_buffer, static_argnums=(0,)
+        )
 
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls._postsetup_replaybuffer = jax.jit(
