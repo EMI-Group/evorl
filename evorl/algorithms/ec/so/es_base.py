@@ -81,7 +81,7 @@ class ESWorkflowTemplate(ESBaseWorkflow):
         """Evaluate the policy with the mean of CMAES"""
         key, eval_key = jax.random.split(state.key, num=2)
 
-        agent_state = self._get_pop_center(state.evox_state)
+        agent_state = self._get_pop_center(state)
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(
