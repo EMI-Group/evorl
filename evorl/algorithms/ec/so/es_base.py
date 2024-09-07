@@ -2,7 +2,7 @@ from collections.abc import Callable, Sequence
 import logging
 from functools import partial
 
-from evox import Algorithm, Problem, State as EvoXState
+from evox import Algorithm, Problem
 import jax
 import jax.tree_util as jtu
 import orbax.checkpoint as ocp
@@ -74,7 +74,7 @@ class ESWorkflowTemplate(ESBaseWorkflow):
 
         config.eval_episodes = config.eval_episodes // num_devices
 
-    def _get_pop_center(self, evox_state: EvoXState) -> AgentState:
+    def _get_pop_center(self, state: State) -> AgentState:
         raise NotImplementedError
 
     def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:

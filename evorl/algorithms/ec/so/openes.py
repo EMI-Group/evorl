@@ -1,9 +1,9 @@
 import logging
 
 import evox.algorithms
-from evox import State as EvoXState
 import jax
 
+from evorl.types import State
 from evorl.ec import GeneralRLProblem
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
 from evorl.evaluator import Evaluator
@@ -87,7 +87,7 @@ class OpenESWorkflow(ESWorkflowTemplate):
 
         return workflow
 
-    def _get_pop_center(self, evox_state: EvoXState) -> AgentState:
-        flat_pop_center = evox_state.query_state("algorithm").center
+    def _get_pop_center(self, state: State) -> AgentState:
+        flat_pop_center = state.evox_state.query_state("algorithm").center
         agent_state = self._candidate_transform(flat_pop_center)
         return agent_state
