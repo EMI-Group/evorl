@@ -2,6 +2,7 @@ import logging
 
 import evox.algorithms
 import jax
+import jax.numpy as jnp
 
 from evorl.types import State
 from evorl.ec import GeneralRLProblem
@@ -49,10 +50,17 @@ class CMAESWorkflow(ESWorkflowTemplate):
         agent_state = agent.init(env.obs_space, env.action_space, agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
+        num_elites = config.num_elites
+        recombination_weights = jnp.log(num_elites + 0.5) - jnp.log(
+            jnp.arange(1, num_elites + 1)
+        )
+        recombination_weights /= jnp.sum(recombination_weights)
+
         algorithm = evox.algorithms.CMAES(
             center_init=param_vec_spec.to_vector(agent_state.params.policy_params),
             init_stdev=config.init_stdev,
             pop_size=config.pop_size,
+            recombination_weights=recombination_weights,
         )
 
         def _candidate_transform(flat_cand):

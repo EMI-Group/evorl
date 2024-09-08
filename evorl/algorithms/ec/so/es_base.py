@@ -10,7 +10,7 @@ import orbax.checkpoint as ocp
 from evorl.distributed import tree_unpmap
 from evorl.agent import Agent, AgentState
 from evorl.evaluator import Evaluator
-from evorl.metrics import EvaluateMetric
+from evorl.metrics import EvaluateMetric, MetricBase
 from evorl.types import State
 from evorl.workflows import ECWorkflow
 from evorl.recorders import get_2d_array_statistics
@@ -95,6 +95,18 @@ class ESWorkflowTemplate(ESBaseWorkflow):
 
         return eval_metrics, state.replace(key=key)
 
+    def _record_callback(
+        self,
+        state: State,
+        train_metrics: MetricBase,
+        eval_metrics: MetricBase = None,
+        i: int = 0,
+    ):
+        """
+        Add some customized metrics
+        """
+        pass
+
     def learn(self, state: State) -> State:
         start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
 
@@ -116,6 +128,8 @@ class ESWorkflowTemplate(ESBaseWorkflow):
             eval_metrics, state = self.evaluate(state)
             eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
             self.recorder.write({"eval/pop_center": eval_metrics.to_local_dict()}, i)
+
+            self._record_callback(state, train_metrics, eval_metrics, i)
 
             self.checkpoint_manager.save(
                 i,
