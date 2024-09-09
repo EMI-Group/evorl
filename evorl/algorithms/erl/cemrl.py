@@ -889,10 +889,8 @@ class CEMRLWorkflow(Workflow):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            variance_statistics = _get_variance_statistics(
-                state.ec_opt_state.variance["params"]
-            )
-            self.recorder.write({"ec/variance": variance_statistics}, iters)
+            std_statistics = _get_std_statistics(state.ec_opt_state.variance["params"])
+            self.recorder.write({"ec/std": std_statistics}, iters)
 
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
@@ -963,8 +961,9 @@ def flatten_pop_rollout_episode(trajectory: SampleBatch):
     return jtu.tree_map(lambda x: jax.lax.collapse(x.swapaxes(0, 1), 1, 3), trajectory)
 
 
-def _get_variance_statistics(variance):
+def _get_std_statistics(variance):
     def _get_stats(x):
+        x = np.sqrt(x)
         return dict(
             min=np.min(x).tolist(),
             max=np.max(x).tolist(),
