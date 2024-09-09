@@ -1,9 +1,12 @@
 import logging
+import numpy as np
 
 import evox.algorithms
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 
+from evorl.metrics import MetricBase
 from evorl.types import State
 from evorl.ec import GeneralRLProblem
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
@@ -88,6 +91,7 @@ class CMAESWorkflow(ESWorkflowTemplate):
             candidate_transforms=(jax.vmap(_candidate_transform),),
         )
         workflow._candidate_transform = _candidate_transform
+        workflow._param_vec_spec = param_vec_spec
 
         return workflow
 
@@ -95,3 +99,31 @@ class CMAESWorkflow(ESWorkflowTemplate):
         flat_pop_center = state.evox_state.query_state("algorithm").mean
         agent_state = self._candidate_transform(flat_pop_center)
         return agent_state
+
+    def _record_callback(
+        self,
+        state: State,
+        train_metrics: MetricBase,
+        eval_metrics: MetricBase = None,
+        iters: int = 0,
+    ):
+        cov = state.evox_state.query_state("algorithm").C
+        diag_cov = jnp.diagonal(cov)
+
+        # recover to the network shapes
+        diag_cov = self._param_vec_spec.to_tree(diag_cov)
+        std_statistics = _get_std_statistics(diag_cov)
+        self.recorder.write({"ec/std": std_statistics}, iters)
+
+
+def _get_std_statistics(variance):
+    def _get_stats(x):
+        x = np.asarray(x)
+        x = np.sqrt(x)
+        return dict(
+            min=np.min(x).tolist(),
+            max=np.max(x).tolist(),
+            mean=np.mean(x).tolist(),
+        )
+
+    return jtu.tree_map(_get_stats, variance)

@@ -100,8 +100,8 @@ class ESWorkflowTemplate(ESBaseWorkflow):
         state: State,
         train_metrics: MetricBase,
         eval_metrics: MetricBase = None,
-        i: int = 0,
-    ):
+        iters: int = 0,
+    ) -> None:
         """
         Add some customized metrics
         """
