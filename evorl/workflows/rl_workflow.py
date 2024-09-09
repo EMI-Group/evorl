@@ -17,9 +17,6 @@ from evorl.types import State
 
 from .workflow import Workflow
 
-# from evorl.types import State
-
-
 logger = logging.getLogger(__name__)
 
 
