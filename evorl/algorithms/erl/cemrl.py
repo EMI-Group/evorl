@@ -12,10 +12,12 @@ import flashbax
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+from jax.sharding import Mesh, NamedSharding
+from jax.sharding import PartitionSpec as P
 import optax
 import orbax.checkpoint as ocp
 
-from evorl.distributed import psum, agent_gradient_update
+from evorl.distributed import psum, agent_gradient_update, POP_AXIS_NAME
 from evorl.metrics import MetricBase, metricfield, EvaluateMetric
 from evorl.types import (
     PyTreeDict,
@@ -89,19 +91,12 @@ class CEMRLWorkflow(Workflow):
         self.evaluator = evaluator
         self.replay_buffer = replay_buffer
 
-        self.pmap_axis_name = None
         self.devices = jax.local_devices()[:1]
+        self.sharding = None  # training sharding
 
     @classmethod
     def name(cls):
         return "CEM-RL"
-
-    @classmethod
-    def enable_pmap(cls, axis_name) -> None:
-        """
-        Use shard_map instead
-        """
-        pass
 
     @staticmethod
     def _rescale_config(config) -> None:
@@ -124,14 +119,14 @@ class CEMRLWorkflow(Workflow):
     ) -> Self:
         config = copy.deepcopy(config)  # avoid in-place modification
 
-        # devices = jax.local_devices()
+        devices = jax.local_devices()
 
         # always enable multi-devices
 
         # with read_write_cfg(config):
         #     cls._rescale_config(config)
 
-        if enable_multi_devices:
+        if enable_multi_devices or len(devices) > 1:
             raise NotImplementedError("Multi-devices is not supported yet.")
 
         if enable_jit:
@@ -139,10 +134,9 @@ class CEMRLWorkflow(Workflow):
 
         workflow = cls._build_from_config(config)
 
-        # mesh = Mesh(devices, axis_names=(POP_AXIS_NAME,))
-
-        # workflow.devices = devices
-        # workflow.sharding = NamedSharding(mesh, P(POP_AXIS_NAME))
+        mesh = Mesh(devices, axis_names=(POP_AXIS_NAME,))
+        workflow.devices = devices
+        workflow.sharding = NamedSharding(mesh, P(POP_AXIS_NAME))
 
         return workflow
 

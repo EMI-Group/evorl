@@ -65,10 +65,6 @@ class PBTWorkflow(Workflow):
     def name(cls):
         return "PBT"
 
-    @property
-    def enable_multi_devices(self) -> bool:
-        return self.sharding is not None
-
     @staticmethod
     def _rescale_config(config) -> None:
         num_devices = jax.device_count()
@@ -102,7 +98,6 @@ class PBTWorkflow(Workflow):
         mesh = Mesh(devices, axis_names=(POP_AXIS_NAME,))
         workflow.devices = devices
         workflow.sharding = NamedSharding(mesh, P(POP_AXIS_NAME))
-        # workflow.pbt_update_sharding = PositionalSharding(devices[0])
 
         return workflow
 
