@@ -13,7 +13,7 @@ from evorl.envs import AutoresetMode, create_wrapped_brax_env
 from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.workflows import ECWorkflow
-from evorl.recorders import get_2d_array_statistics
+from evorl.recorders import get_1d_array_statistics
 
 from ..ec_agent import DeterministicECAgent
 
@@ -76,22 +76,23 @@ class CSOWorkflow(ECWorkflow):
         start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
 
         for i in range(start_iteration, self.config.num_iters):
+            iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
             workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
-            self.recorder.write(workflow_metrics.to_local_dict(), i)
+            self.recorder.write(workflow_metrics.to_local_dict(), iters)
 
             train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
             train_metrics_dict = train_metrics.to_local_dict()
             train_metrics_dict = jtu.tree_map(
-                partial(get_2d_array_statistics, histogram=True),
+                partial(get_1d_array_statistics, histogram=True),
                 train_metrics.to_local_dict(),
             )
-            self.recorder.write(train_metrics_dict, i)
+            self.recorder.write(train_metrics_dict, iters)
 
             self.checkpoint_manager.save(
-                i,
+                iters,
                 args=ocp.args.StandardSave(
                     tree_unpmap(state, self.pmap_axis_name),
                 ),

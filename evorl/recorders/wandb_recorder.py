@@ -51,7 +51,7 @@ def add_prefix(data: dict, prefix: str):
     return {f"{prefix}/{k}": v for k, v in data.items()}
 
 
-def get_2d_array_statistics(data, histogram=False):
+def get_1d_array_statistics(data, histogram=False):
     data = dict(
         min=np.min(data).tolist(),
         max=np.max(data).tolist(),

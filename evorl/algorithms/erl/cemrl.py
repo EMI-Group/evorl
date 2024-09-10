@@ -38,7 +38,7 @@ from evorl.agent import Agent, AgentState, RandomAgent
 from evorl.envs import create_env, AutoresetMode, Box, Env
 from evorl.workflows import Workflow
 from evorl.rollout import rollout
-from evorl.recorders import add_prefix, get_2d_array_statistics
+from evorl.recorders import add_prefix, get_1d_array_statistics
 
 from ..td3 import TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
@@ -867,11 +867,11 @@ class CEMRLWorkflow(Workflow):
             self.recorder.write(workflow_metrics_dict, iters)
 
             train_metrics_dict = train_metrics.to_local_dict()
-            train_metrics_dict["pop_episode_returns"] = get_2d_array_statistics(
+            train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
                 train_metrics_dict["pop_episode_returns"], histogram=True
             )
 
-            train_metrics_dict["pop_episode_lengths"] = get_2d_array_statistics(
+            train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
@@ -883,7 +883,7 @@ class CEMRLWorkflow(Workflow):
                     self.config.num_learning_offspring
                 )
                 train_metrics_dict["td3_metrics"]["raw_loss_dict"] = jtu.tree_map(
-                    get_2d_array_statistics,
+                    get_1d_array_statistics,
                     train_metrics_dict["td3_metrics"]["raw_loss_dict"],
                 )
 

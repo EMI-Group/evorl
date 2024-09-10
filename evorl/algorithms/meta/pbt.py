@@ -27,7 +27,7 @@ from evorl.metrics import MetricBase
 from evorl.types import MISSING_REWARD, PyTreeDict, State
 from evorl.utils.jax_utils import tree_last
 from evorl.workflows import RLWorkflow, Workflow
-from evorl.recorders import get_2d_array_statistics
+from evorl.recorders import get_1d_array_statistics
 
 from .pbt_operations import explore, select
 
@@ -285,17 +285,17 @@ class PBTWorkflow(Workflow):
                     train_episode_return[train_episode_return != MISSING_REWARD]
                 )
 
-            train_metrics_dict["pop_episode_returns"] = get_2d_array_statistics(
+            train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
                 train_metrics_dict["pop_episode_returns"], histogram=True
             )
-            train_metrics_dict["pop_episode_lengths"] = get_2d_array_statistics(
+            train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
             train_metrics_dict["pop"] = _convert_pop_to_df(train_metrics_dict["pop"])
 
             train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
-                get_2d_array_statistics, train_metrics_dict["pop_train_metrics"]
+                get_1d_array_statistics, train_metrics_dict["pop_train_metrics"]
             )
 
             self.recorder.write(train_metrics_dict, i)

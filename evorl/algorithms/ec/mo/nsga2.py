@@ -1,26 +1,18 @@
 from omegaconf import DictConfig
-from functools import partial
 
 import evox.algorithms
-from evox.operators import non_dominated_sort
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
-import orbax.checkpoint as ocp
 
-from evorl.distributed import tree_unpmap
 from evorl.ec import MultiObjectiveBraxProblem
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
-from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
-from evorl.workflows import ECWorkflow
-from evorl.recorders import get_2d_array_statistics
 
-
+from .mo_base import MOECWorkflowTemplate
 from ..ec_agent import DeterministicECAgent
 
 
-class NSGA2Workflow(ECWorkflow):
+class NSGA2Workflow(MOECWorkflowTemplate):
     @classmethod
     def name(cls):
         return "NSGA2"
@@ -74,36 +66,3 @@ class NSGA2Workflow(ECWorkflow):
             opt_direction=config.opt_directions,
             candidate_transforms=(jax.vmap(_candidate_transform),),
         )
-
-    def learn(self, state: State) -> State:
-        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
-
-        for i in range(start_iteration, self.config.num_iters):
-            train_metrics, state = self.step(state)
-            workflow_metrics = state.metrics
-
-            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
-            self.recorder.write(workflow_metrics.to_local_dict(), i)
-
-            cpu_device = jax.devices("cpu")[0]
-            with jax.default_device(cpu_device):
-                fitnesses = train_metrics.objectives * self._workflow.opt_direction
-                pf_rank = non_dominated_sort(fitnesses, "scan")
-                pf_objectives = train_metrics.objectives[pf_rank == 0]
-
-            train_metrics_dict = jtu.tree_map(
-                partial(get_2d_array_statistics, histogram=True),
-                train_metrics.to_local_dict(),
-            )
-            train_metrics_dict["pf_objectives"] = pf_objectives.tolist()
-            train_metrics_dict["num_pf"] = pf_objectives.shape[0]
-
-            self.recorder.write(train_metrics_dict, i)
-
-            self.checkpoint_manager.save(
-                i,
-                args=ocp.args.StandardSave(
-                    tree_unpmap(state, self.pmap_axis_name),
-                ),
-            )
