@@ -6,7 +6,7 @@ import chex
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig, OmegaConf
 
-from evorl.utils.cfg_utils import get_output_dir
+from evorl.utils.hydra_utils import get_output_dir
 
 logger = logging.getLogger(__name__)
 

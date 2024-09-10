@@ -4,6 +4,8 @@ from pathlib import Path
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf
 
+from absl import logging
+
 
 def set_omegaconf_resolvers():
     OmegaConf.register_new_resolver(
@@ -21,3 +23,16 @@ def get_output_dir(default_path: str = "./debug"):
             output_dir.mkdir(parents=True)
 
     return output_dir
+
+
+absl_log_level_map = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+    "fatal": logging.FATAL,
+}
+
+
+def set_absl_log_level(level: str = "warning"):
+    logging.set_verbosity(absl_log_level_map[level])

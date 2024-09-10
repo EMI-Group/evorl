@@ -3,10 +3,15 @@ import logging
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-from evorl.utils.cfg_utils import get_output_dir, set_omegaconf_resolvers
+from evorl.utils.hydra_utils import (
+    get_output_dir,
+    set_omegaconf_resolvers,
+    set_absl_log_level,
+)
 
 logger = logging.getLogger("train")
 
+set_absl_log_level("warning")
 set_omegaconf_resolvers()
 
 
