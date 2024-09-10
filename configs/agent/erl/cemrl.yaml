@@ -50,7 +50,7 @@ optimizer:
   grad_clip_norm: 0 # set 0 or none to turn-off
 
 agent_network:
-  static_layer_norm: true
+  static_layer_norm: false
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
 
