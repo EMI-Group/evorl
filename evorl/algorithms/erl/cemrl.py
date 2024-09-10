@@ -40,7 +40,7 @@ from evorl.agent import Agent, AgentState, RandomAgent
 from evorl.envs import create_env, AutoresetMode, Box, Env
 from evorl.workflows import Workflow
 from evorl.rollout import rollout
-from evorl.recorders import add_prefix, get_1d_array_statistics
+from evorl.recorders import get_1d_array_statistics
 
 from ..td3 import TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
@@ -890,7 +890,7 @@ class CEMRLWorkflow(Workflow):
                 eval_metrics, state = self.evaluate(state)
 
                 self.recorder.write(
-                    add_prefix(eval_metrics.to_local_dict(), "eval"), iters
+                    {"eval/pop_center": eval_metrics.to_local_dict()}, iters
                 )
 
             saved_state = state
