@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import optax
 from omegaconf import DictConfig
 
-from evorl.networks import MLP, ActivationFn, Initializer
+from evorl.networks import MLP, ActivationFn, Initializer, StaticLayerNorm
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluator import Evaluator
 from evorl.utils import running_statistics
@@ -19,11 +19,6 @@ from evorl.agent import AgentState
 from ..td3 import TD3Agent, TD3NetworkParams, TD3Workflow
 
 logger = logging.getLogger(__name__)
-
-
-class StaticLayerNorm(nn.LayerNorm):
-    use_bias: bool = False
-    use_scale: bool = False
 
 
 def make_policy_network(

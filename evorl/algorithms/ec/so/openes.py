@@ -34,6 +34,7 @@ class OpenESWorkflow(ESWorkflowTemplate):
         agent = DeterministicECAgent(
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,  # use linear model
             normalize_obs=False,
+            norm_layer_type=config.agent_network.norm_layer_type,
         )
 
         problem = GeneralRLProblem(

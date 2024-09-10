@@ -20,3 +20,4 @@ agent_network:
   lb: -10.0
   ub: 10.0
   actor_hidden_layer_sizes: [16, 16]
+  norm_layer_type: 'none'

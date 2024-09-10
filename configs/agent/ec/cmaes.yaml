@@ -19,3 +19,4 @@ discount: 1.0
 agent_network:
   # actor_hidden_layer_sizes: [] # linear network
   actor_hidden_layer_sizes: [16, 16]
+  norm_layer_type: 'none'

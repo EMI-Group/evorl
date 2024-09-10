@@ -9,7 +9,7 @@ import jax.numpy as jnp
 from flax import struct
 
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.networks.linear import MLP, ActivationFn
+from evorl.networks import MLP, ActivationFn, StaticLayerNorm
 from evorl.sample_batch import SampleBatch
 from evorl.types import Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field
 from evorl.utils import running_statistics
@@ -32,13 +32,24 @@ def make_policy_network(
     obs_size: int,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
+    norm_layer_type: str = "layer_norm",
 ) -> nn.Module:
+    match norm_layer_type:
+        case "layer_norm":
+            norm_layer = nn.LayerNorm
+        case "static_layer_norm":
+            norm_layer = StaticLayerNorm
+        case "none":
+            norm_layer = None
+        case _:
+            raise ValueError(f"Invalid norm_layer_type: {norm_layer_type}")
+
     """Creates a policy network w/ LayerNorm."""
     policy_model = MLP(
         layer_sizes=list(hidden_layer_sizes) + [action_size],
         activation=activation,
         kernel_init=jax.nn.initializers.lecun_uniform(),
-        norm_layer=nn.LayerNorm,
+        norm_layer=norm_layer,
     )
 
     def init_fn(rng):
@@ -51,6 +62,7 @@ class StochasticECAgent(Agent):
     actor_hidden_layer_sizes: tuple[int] = (256, 256)
     normalize_obs: bool = False
     continuous_action: bool = False
+    norm_layer_type: str = "none"
     policy_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
@@ -70,6 +82,7 @@ class StochasticECAgent(Agent):
             action_size=action_size,
             obs_size=obs_size,
             hidden_layer_sizes=self.actor_hidden_layer_sizes,
+            norm_layer_type=self.norm_layer_type,
         )
         policy_params = policy_init_fn(policy_key)
 
@@ -145,6 +158,7 @@ class StochasticECAgent(Agent):
 class DeterministicECAgent(Agent):
     actor_hidden_layer_sizes: tuple[int] = (256, 256)
     normalize_obs: bool = False
+    norm_layer_type: str = "none"
     policy_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
     obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
@@ -161,6 +175,7 @@ class DeterministicECAgent(Agent):
             action_size=action_size,
             obs_size=obs_size,
             hidden_layer_sizes=self.actor_hidden_layer_sizes,
+            norm_layer_type=self.norm_layer_type,
         )
         policy_params = policy_init_fn(policy_key)
 

@@ -27,6 +27,11 @@ ActivationFn = Callable[[jax.Array], jax.Array]
 Initializer = Callable[..., Any]
 
 
+class StaticLayerNorm(nn.LayerNorm):
+    use_bias: bool = False
+    use_scale: bool = False
+
+
 class MLP(nn.Module):
     """MLP module."""
 
