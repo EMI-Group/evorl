@@ -8,11 +8,16 @@ defaults:
   - /agent/cemrl
   - _self_
 
-actor_update_interval: 2
+actor_update_interval: 1
 
 pop_size: 10
 num_learning_offspring: 10
 disable_cem_update: true
+
+diagonal_variance:
+  init: 1e-2
+  final: 1e-5
+  decay: 0.05
 
 fitness_with_exploration: true
 episodes_for_fitness: 1 # must be devided by num_envs
