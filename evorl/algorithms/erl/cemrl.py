@@ -651,17 +651,14 @@ class CEMRLWorkflow(Workflow):
 
         return td3_metrics, agent_state, opt_state
 
-    def _cem_update_and_sample(self, ec_opt_state, pop_actor_params, fitnesses, key):
+    def _cem_update(self, ec_opt_state, pop_actor_params, fitnesses):
         ec_opt_state = self.ec_optimizer.update(
             ec_opt_state, pop_actor_params, fitnesses
         )
+        return ec_opt_state
 
-        # generate new actor params
-        new_pop_actor_params = self.ec_optimizer.sample(
-            ec_opt_state, self.config.pop_size, key
-        )
-
-        return new_pop_actor_params, ec_opt_state
+    def _cem_sample(self, ec_opt_state, key):
+        return self.ec_optimizer.sample(ec_opt_state, self.config.pop_size, key)
 
     def _sample_from_replay_buffer(self, replay_buffer_state, key):
         def _sample(key):
@@ -775,10 +772,12 @@ class CEMRLWorkflow(Workflow):
             td3_metrics=td3_metrics,
         )
 
+        # In fact, we always update the cem ec_opt_state to trace the pop_center
+        # But we control whether get new sample from cem
+        ec_opt_state = self._cem_update(ec_opt_state, pop_actor_params, fitnesses)
+
         if not self.config.disable_cem_update:
-            new_pop_actor_params, ec_opt_state = self._cem_update_and_sample(
-                state.ec_opt_state, pop_actor_params, fitnesses, cem_key
-            )
+            new_pop_actor_params = self._cem_sample(ec_opt_state, cem_key)
 
             agent_state = replace_actor_params(agent_state, new_pop_actor_params)
 
@@ -912,9 +911,8 @@ class CEMRLWorkflow(Workflow):
         """
         cls._rollout = jax.jit(cls._rollout, static_argnums=(0,))
         cls._rl_update = jax.jit(cls._rl_update, static_argnums=(0,))
-        cls._cem_update_and_sample = jax.jit(
-            cls._cem_update_and_sample, static_argnums=(0,)
-        )
+        cls._cem_sample = jax.jit(cls._cem_sample, static_argnums=(0,))
+        cls._cem_update = jax.jit(cls._cem_update, static_argnums=(0,))
         cls._sample_from_replay_buffer = jax.jit(
             cls._sample_from_replay_buffer, static_argnums=(0,)
         )
