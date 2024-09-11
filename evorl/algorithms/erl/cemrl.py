@@ -884,8 +884,11 @@ class CEMRLWorkflow(Workflow):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            std_statistics = _get_std_statistics(state.ec_opt_state.variance["params"])
-            self.recorder.write({"ec/std": std_statistics}, iters)
+            if not self.config.disable_cem_update:
+                std_statistics = _get_std_statistics(
+                    state.ec_opt_state.variance["params"]
+                )
+                self.recorder.write({"ec/std": std_statistics}, iters)
 
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
