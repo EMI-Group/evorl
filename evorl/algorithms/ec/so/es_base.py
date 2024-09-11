@@ -126,11 +126,14 @@ class ESWorkflowTemplate(ESBaseWorkflow):
             )
             self.recorder.write(train_metrics_dict, iters)
 
-            eval_metrics, state = self.evaluate(state)
-            eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
-            self.recorder.write(
-                {"eval/pop_center": eval_metrics.to_local_dict()}, iters
-            )
+            if iters % self.config.eval_interval == 0:
+                eval_metrics, state = self.evaluate(state)
+                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                self.recorder.write(
+                    {"eval/pop_center": eval_metrics.to_local_dict()}, iters
+                )
+            else:
+                eval_metrics = None
 
             self._record_callback(state, train_metrics, eval_metrics, iters)
 

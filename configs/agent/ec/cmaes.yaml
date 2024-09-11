@@ -11,12 +11,12 @@ init_stdev: 1.0
 num_envs: 16
 episodes: 16 # episodes per individual for fitness
 
-num_eval_envs: 8
-eval_episodes: 8
+num_eval_envs: 128
+eval_episodes: 128
+eval_interval: 10
 
 discount: 1.0
 
 agent_network:
-  # actor_hidden_layer_sizes: [] # linear network
   actor_hidden_layer_sizes: [16, 16]
   norm_layer_type: 'none'
