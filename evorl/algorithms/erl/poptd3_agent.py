@@ -1,104 +1,16 @@
-from collections.abc import Sequence
 import chex
 import jax
-import jax.numpy as jnp
 import flax.linen as nn
 
 from evorl.agent import AgentState
 from evorl.envs import Space
-from evorl.networks import MLP, ActivationFn, Initializer
+from evorl.networks import make_policy_network, make_q_network
 from evorl.types import (
     pytree_field,
 )
 from evorl.utils import running_statistics
 
 from ..td3 import TD3Agent, TD3NetworkParams
-
-
-class StaticLayerNorm(nn.LayerNorm):
-    use_bias: bool = False
-    use_scale: bool = False
-
-
-def make_policy_network(
-    action_size: int,
-    obs_size: int,
-    hidden_layer_sizes: Sequence[int] = (256, 256),
-    activation: ActivationFn = nn.relu,
-    activation_final: ActivationFn | None = None,
-    static_layer_norm: bool = False,
-) -> nn.Module:
-    norm_layer = StaticLayerNorm if static_layer_norm else nn.LayerNorm
-
-    """Creates a batched policy network."""
-    policy_model = MLP(
-        layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
-        activation=activation,
-        kernel_init=jax.nn.initializers.lecun_uniform(),
-        activation_final=activation_final,
-        norm_layer=norm_layer,
-    )
-
-    def init_fn(rng):
-        return policy_model.init(rng, jnp.zeros((1, obs_size)))
-
-    return policy_model, init_fn
-
-
-def make_q_network(
-    obs_size: int,
-    action_size: int,
-    n_stack: int = 1,
-    hidden_layer_sizes: Sequence[int] = (256, 256),
-    activation: ActivationFn = nn.relu,
-    kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
-    static_layer_norm: bool = False,
-) -> nn.Module:
-    """Creates a Q network with LayerNorm: (obs, action) -> value"""
-    norm_layer = StaticLayerNorm if static_layer_norm else nn.LayerNorm
-
-    class QModule(nn.Module):
-        """Q Module."""
-
-        n: int
-
-        @nn.compact
-        def __call__(self, obs: jax.Array, actions: jax.Array):
-            hidden = jnp.concatenate([obs, actions], axis=-1)
-            if self.n == 1:
-                qs = MLP(
-                    layer_sizes=tuple(hidden_layer_sizes) + (1,),
-                    activation=activation,
-                    kernel_init=kernel_init,
-                    norm_layer=norm_layer,
-                )(hidden)
-            elif self.n > 1:
-                hidden = jnp.broadcast_to(hidden, (self.n,) + hidden.shape)
-                qs = nn.vmap(
-                    MLP,
-                    out_axes=-2,
-                    variable_axes={"params": 0},
-                    split_rngs={"params": True},
-                )(
-                    layer_sizes=tuple(hidden_layer_sizes) + (1,),
-                    activation=activation,
-                    kernel_init=kernel_init,
-                    norm_layer=norm_layer,
-                )(hidden)
-            else:
-                raise ValueError("n should be greater than 0")
-
-            return qs.squeeze(-1)
-
-    q_module = QModule(n=n_stack)
-
-    dummy_obs = jnp.zeros((1, obs_size))
-    dummy_action = jnp.zeros((1, action_size))
-
-    def init_fn(rng):
-        return q_module.init(rng, dummy_obs, dummy_action)
-
-    return q_module, init_fn
 
 
 def _create_agent_state_pytree_axes():
@@ -115,8 +27,11 @@ def _create_agent_state_pytree_axes():
 
 
 class PopTD3Agent(TD3Agent):
+    """
+    TD3 agent with multiple actors and one shared critic.
+    """
+
     pop_size: int = 1
-    static_layer_norm: bool = True
 
     agent_state_pytree_axes: chex.ArrayTree = pytree_field(
         default_factory=_create_agent_state_pytree_axes, pytree_node=False
@@ -135,9 +50,9 @@ class PopTD3Agent(TD3Agent):
         critic_network, critic_init_fn = make_q_network(
             obs_size=obs_size,
             action_size=action_size,
-            n_stack=2,
+            n_stack=self.num_critics,
             hidden_layer_sizes=self.critic_hidden_layer_sizes,
-            static_layer_norm=self.static_layer_norm,
+            norm_layer_type=self.norm_layer_type,
         )
         critic_params = critic_init_fn(critic_key)
         target_critic_params = critic_params
@@ -149,7 +64,7 @@ class PopTD3Agent(TD3Agent):
             obs_size=obs_size,
             hidden_layer_sizes=self.actor_hidden_layer_sizes,
             activation_final=nn.tanh,
-            static_layer_norm=self.static_layer_norm,
+            norm_layer_type=self.norm_layer_type,
         )
 
         pop_actor_params = jax.vmap(actor_init_fn)(

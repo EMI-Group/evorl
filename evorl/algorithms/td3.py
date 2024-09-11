@@ -59,6 +59,8 @@ class TD3Agent(Agent):
     The Agnet for DDPG
     """
 
+    norm_layer_type: str = "none"
+    num_critics: int = 2
     critic_hidden_layer_sizes: tuple[int] = (256, 256)
     actor_hidden_layer_sizes: tuple[int] = (256, 256)
     discount: float = 0.99
@@ -84,8 +86,9 @@ class TD3Agent(Agent):
         critic_network, critic_init_fn = make_q_network(
             obs_size=obs_size,
             action_size=action_size,
-            n_stack=2,
+            n_stack=self.num_critics,
             hidden_layer_sizes=self.critic_hidden_layer_sizes,
+            norm_layer_type=self.norm_layer_type,
         )
         critic_params = critic_init_fn(critic_key)
         target_critic_params = critic_params
@@ -96,6 +99,7 @@ class TD3Agent(Agent):
             obs_size=obs_size,
             hidden_layer_sizes=self.actor_hidden_layer_sizes,
             activation_final=nn.tanh,
+            norm_layer_type=self.norm_layer_type,
         )
 
         actor_params = actor_init_fn(actor_key)
@@ -200,7 +204,7 @@ class TD3Agent(Agent):
             actions_next, agent_state.action_space.low, agent_state.action_space.high
         )
 
-        # [B, 2]
+        # [B, num_critics]
         qs_next = self.critic_network.apply(
             agent_state.params.target_critic_params, next_obs, actions_next
         )
@@ -280,6 +284,8 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
         ), "Only continue action space is supported."
 
         agent = TD3Agent(
+            norm_layer_type=config.agent_network.norm_layer_type,
+            num_critics=config.agent_network.num_critics,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             discount=config.discount,

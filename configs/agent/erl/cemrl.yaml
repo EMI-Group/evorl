@@ -5,20 +5,21 @@ workflow_cls: evorl.algorithms.erl.cemrl.CEMRLWorkflow
 num_envs: 1
 normalize_obs: false
 discount: 0.99
-total_episodes: 100000
+total_episodes: 100000 # iters = total_episodes / (episodes_for_fitness * pop_size), e.g: 3125 iters here
 
 # random_timesteps: 25600 # steps filled into the replay buffer
 # learning_start_timesteps: 25600 # steps before training starts
 random_timesteps: 0 # steps filled into the replay buffer
 learning_start_timesteps: 0 # steps before training starts
 batch_size: 256
-replay_buffer_capacity: 1000000
+replay_buffer_capacity: 10000
 
 tau: 0.005 # soft update rate
 exploration_epsilon: 0.1
 policy_noise: 0.2
 clip_policy_noise: 0.5
 actor_update_interval: 2
+critics_in_actor_loss: first # first or min
 
 disable_cem_update: false
 
@@ -50,12 +51,13 @@ optimizer:
   grad_clip_norm: 0 # set 0 or none to turn-off
 
 agent_network:
-  static_layer_norm: false
+  norm_layer_type: "layer_norm"
+  num_critics: 2
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs
-eval_interval: 1
+eval_interval: 10
 
 save_replay_buffer: true

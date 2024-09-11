@@ -163,7 +163,7 @@ class CEMRLWorkflow(Workflow):
 
         agent = PopTD3Agent(
             pop_size=config.pop_size,
-            static_layer_norm=config.agent_network.static_layer_norm,
+            norm_layer_type=config.agent_network.norm_layer_type,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             discount=config.discount,

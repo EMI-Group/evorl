@@ -1,5 +1,4 @@
 import logging
-from collections.abc import Sequence
 from typing import Any
 
 import chex
@@ -9,7 +8,7 @@ import jax.numpy as jnp
 from flax import struct
 
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.networks import MLP, ActivationFn, StaticLayerNorm
+from evorl.networks import make_policy_network
 from evorl.sample_batch import SampleBatch
 from evorl.types import Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field
 from evorl.utils import running_statistics
@@ -27,38 +26,11 @@ class ECNetworkParams:
     policy_params: Params
 
 
-def make_policy_network(
-    action_size: int,
-    obs_size: int,
-    hidden_layer_sizes: Sequence[int] = (256, 256),
-    activation: ActivationFn = nn.relu,
-    norm_layer_type: str = "layer_norm",
-) -> nn.Module:
-    match norm_layer_type:
-        case "layer_norm":
-            norm_layer = nn.LayerNorm
-        case "static_layer_norm":
-            norm_layer = StaticLayerNorm
-        case "none":
-            norm_layer = None
-        case _:
-            raise ValueError(f"Invalid norm_layer_type: {norm_layer_type}")
-
-    """Creates a policy network w/ LayerNorm."""
-    policy_model = MLP(
-        layer_sizes=list(hidden_layer_sizes) + [action_size],
-        activation=activation,
-        kernel_init=jax.nn.initializers.lecun_uniform(),
-        norm_layer=norm_layer,
-    )
-
-    def init_fn(rng):
-        return policy_model.init(rng, jnp.zeros((1, obs_size)))
-
-    return policy_model, init_fn
-
-
 class StochasticECAgent(Agent):
+    """
+    Stochastic Agent for continuous action space in [-1, 1] via TanhNormal distribution or discrete action space via Softmax distribution
+    """
+
     actor_hidden_layer_sizes: tuple[int] = (256, 256)
     normalize_obs: bool = False
     continuous_action: bool = False
@@ -96,7 +68,6 @@ class StochasticECAgent(Agent):
             obs_preprocessor = running_statistics.normalize
             self.set_frozen_attr("obs_preprocessor", obs_preprocessor)
             dummy_obs = obs_space.sample(obs_preprocessor_key)
-            # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
             obs_preprocessor_state = None
@@ -156,6 +127,10 @@ class StochasticECAgent(Agent):
 
 
 class DeterministicECAgent(Agent):
+    """
+    Deterministic Agent for continuous action space in [-1, 1]
+    """
+
     actor_hidden_layer_sizes: tuple[int] = (256, 256)
     normalize_obs: bool = False
     norm_layer_type: str = "none"
@@ -175,6 +150,7 @@ class DeterministicECAgent(Agent):
             action_size=action_size,
             obs_size=obs_size,
             hidden_layer_sizes=self.actor_hidden_layer_sizes,
+            activation_final=nn.tanh,
             norm_layer_type=self.norm_layer_type,
         )
         policy_params = policy_init_fn(policy_key)
@@ -189,7 +165,6 @@ class DeterministicECAgent(Agent):
             obs_preprocessor = running_statistics.normalize
             self.set_frozen_attr("obs_preprocessor", obs_preprocessor)
             dummy_obs = obs_space.sample(obs_preprocessor_key)
-            # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
             obs_preprocessor_state = None
@@ -209,11 +184,7 @@ class DeterministicECAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
-
-        actions = jnp.tanh(raw_actions)
-
-        # Note: ECAgent always output best action w/o exploration noise
+        actions = self.policy_network.apply(agent_state.params.policy_params, obs)
 
         return actions, PyTreeDict()
 
