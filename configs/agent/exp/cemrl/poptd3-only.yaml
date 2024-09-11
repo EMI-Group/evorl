@@ -5,7 +5,7 @@
 # except the rollout is based on episodes + use shared critic network.
 
 defaults:
-  - /agent/cemrl
+  - /agent/erl/cemrl
   - _self_
 
 actor_update_interval: 1
