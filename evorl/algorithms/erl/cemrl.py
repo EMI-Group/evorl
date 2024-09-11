@@ -93,6 +93,7 @@ class CEMRLWorkflow(Workflow):
 
         self.devices = jax.local_devices()[:1]
         self.sharding = None  # training sharding
+        self.pmap_axis_name = None
 
     @classmethod
     def name(cls):
