@@ -907,7 +907,7 @@ class CEMRLWorkflow(Workflow):
     @classmethod
     def enable_jit(cls) -> None:
         """
-        Do not jit replay buffer add and sample
+        Do not jit replay buffer add
         """
         cls._rollout = jax.jit(cls._rollout, static_argnums=(0,))
         cls._rl_update = jax.jit(cls._rl_update, static_argnums=(0,))
