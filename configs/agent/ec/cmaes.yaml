@@ -6,7 +6,7 @@ pop_size: 1024
 num_iters: 1000
 num_elites: 512
 
-init_stdev: 1.0
+init_stdev: 0.1
 
 num_envs: 16
 episodes: 16 # episodes per individual for fitness
