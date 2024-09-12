@@ -7,11 +7,11 @@ import orbax.checkpoint as ocp
 
 from evorl.distributed import tree_unpmap
 from evorl.types import State
-from evorl.workflows import ECWorkflow
+from evorl.algorithms.ec.evox_workflow import EvoXWorkflowWrapper
 from evorl.recorders import get_1d_array_statistics
 
 
-class MOECWorkflowTemplate(ECWorkflow):
+class MOECWorkflowTemplate(EvoXWorkflowWrapper):
     def learn(self, state: State) -> State:
         start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
 

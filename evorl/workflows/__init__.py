@@ -1,4 +1,4 @@
-from .ec_workflow import ECWorkflow
+from ..algorithms.ec.evox_workflow import EvoXWorkflowWrapper
 from .rl_workflow import (
     OffPolicyWorkflow,
     OnPolicyWorkflow,

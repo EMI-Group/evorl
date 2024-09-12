@@ -12,7 +12,7 @@ from evorl.agent import Agent, AgentState
 from evorl.evaluator import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase
 from evorl.types import State
-from evorl.workflows import ECWorkflow
+from evorl.algorithms.ec.evox_workflow import EvoXWorkflowWrapper
 from evorl.recorders import get_1d_array_statistics
 
 from omegaconf import DictConfig
@@ -20,7 +20,7 @@ from omegaconf import DictConfig
 logger = logging.getLogger(__name__)
 
 
-class ESBaseWorkflow(ECWorkflow):
+class ESBaseWorkflow(EvoXWorkflowWrapper):
     def __init__(
         self,
         config: DictConfig,
