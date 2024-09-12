@@ -23,6 +23,7 @@ from .workflow import Workflow
 
 
 class ECWorkflowMetric(MetricBase):
+    best_objective: chex.Array
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
@@ -105,7 +106,12 @@ class ECWorkflow(Workflow):
         """
         Customize the workflow metrics.
         """
-        return ECWorkflowMetric()
+        return ECWorkflowMetric(
+            best_objective=jnp.full(
+                (self._workflow.problem.num_objectives,), jnp.finfo(jnp.float32).min
+            )
+            * self._workflow.opt_direction
+        )
 
     def setup(self, key: chex.PRNGKey) -> State:
         key, evox_key = jax.random.split(key, 2)
@@ -129,6 +135,8 @@ class ECWorkflow(Workflow):
         return State(key=key, evox_state=evox_state, metrics=workflow_metrics)
 
     def step(self, state: State) -> tuple[TrainMetric, State]:
+        opt_direction = self._workflow.opt_direction
+
         train_info, evox_state = self._workflow.step(state.evox_state)
 
         problem_state = state.evox_state.get_child_state("problem")
@@ -138,14 +146,18 @@ class ECWorkflow(Workflow):
         )
         # turn back to the original objectives
         # Note: train_info['fitness'] is already all-gathered in evox
-        train_metrics = TrainMetric(
-            objectives=train_info["fitness"] * self._workflow.opt_direction
-        )
+        fitnesses = train_info["fitness"]
 
-        workflow_metrics = ECWorkflowMetric(
+        train_metrics = TrainMetric(objectives=fitnesses * opt_direction)
+
+        workflow_metrics = state.metrics.replace(
             sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
             sampled_timesteps_m=state.metrics.sampled_timesteps_m + sampled_timesteps_m,
             iterations=state.metrics.iterations + 1,
+            best_objective=jnp.minimum(
+                state.metrics.best_objective * opt_direction, jnp.min(fitnesses, axis=0)
+            )
+            * opt_direction,
         )
 
         state = state.replace(evox_state=evox_state, metrics=workflow_metrics)

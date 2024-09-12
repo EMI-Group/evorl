@@ -58,6 +58,10 @@ class GeneralRLProblem(Problem):
         self.env_reset = jax.vmap(self.env.reset)
         self.env_step = jax.vmap(self.env.step)
 
+    @property
+    def num_objectives(self):
+        return 1
+
     def setup(self, key: chex.PRNGKey):
         return State(
             key=key,

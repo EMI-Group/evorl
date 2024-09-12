@@ -26,7 +26,7 @@ class MultiObjectiveBraxProblem(Problem):
         num_episodes: int = 10,
         max_episode_steps: int = 1000,
         discount: float = 1.0,
-        metric_names: tuple[str] = ("reward",),
+        metric_names: tuple[str] = ("reward", "episode_length"),
         flatten_objectives: bool = True,
         reduce_fn: ReductionFn | dict[str, ReductionFn] = jnp.mean,
     ):
@@ -38,7 +38,6 @@ class MultiObjectiveBraxProblem(Problem):
             max_episode_steps: maximum steps for each episode
             discount: discount factor for episode return calculation
             metric_names: names of the metrics to record as objectives.
-                By default, only original reward is recorded.
             flatten_objectives: whether flatten the objectives or keep the dict structure.
             reduce_fn: function or function dict to reduce each objective over episodes.
         """
@@ -72,6 +71,10 @@ class MultiObjectiveBraxProblem(Problem):
         self.env_reset = jax.vmap(self.env.reset)
         self.env_step = jax.vmap(self.env.step)
 
+    @property
+    def num_objectives(self):
+        return len(self.metric_names)
+
     def setup(self, key: chex.PRNGKey):
         return State(
             key=key,
@@ -87,6 +90,7 @@ class MultiObjectiveBraxProblem(Problem):
 
         metric_names = copy.deepcopy(self.metric_names)
         if "episode_length" not in metric_names:
+            # we also need episode_length to calculate the sampled_timesteps
             metric_names = metric_names + ("episode_length",)
 
         def _evaluate_fn(key, unused_t):
@@ -154,9 +158,11 @@ class MultiObjectiveBraxProblem(Problem):
                 jnp.swapaxes(objectives[k], 0, 1), 1, 3
             )  # [#pop, num_episodes]
             # by default, we use the mean value over different episodes.
+            # [#pop]
             objectives[k] = self.reduce_fn[k](objective, axis=-1)
 
         if self.flatten_objectives:
+            # [#pop, #objs]
             objectives = jnp.stack(list(objectives.values()), axis=-1)
 
         sampled_episodes = pop_size * self.num_episodes * self.env.num_envs
