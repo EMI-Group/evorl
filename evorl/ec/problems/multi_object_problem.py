@@ -99,7 +99,7 @@ class MultiObjectiveBraxProblem(Problem):
 
             if self.discount == 1.0:
                 # use fast undiscount evaluation
-                metrics, env_state = fast_eval_rollout_episode(
+                metrics, env_state = fast_eval_metrics(
                     self.env_step,
                     self.agent_eval_actions,
                     env_state,
@@ -110,32 +110,16 @@ class MultiObjectiveBraxProblem(Problem):
                 )
 
             else:
-                episode_trajectory, env_state = eval_rollout_episode(
+                metrics, env_state = eval_metrics(
                     self.env_step,
                     self.agent_eval_actions,
                     env_state,
                     pop_agent_state,
                     jax.random.split(rollout_key, num=pop_size),
                     self.max_episode_steps,
+                    discount=self.discount,
                     metric_names=self.metric_names,
                 )
-
-                metrics = PyTreeDict()
-                for name in metric_names:
-                    if "reward" in name:
-                        # For metrics like 'reward_forward' and 'reward_ctrl'
-                        metrics[name] = compute_discount_return(
-                            episode_trajectory.rewards[name],
-                            episode_trajectory.dones,
-                            self.discount,
-                        )
-                    elif "episode_length" == name:
-                        metrics[name] = compute_episode_length(episode_trajectory.dones)
-                    else:
-                        # For other metrics like 'x_position', we use the last value as the objective.
-                        # Note: It is ok to use [-1], since wrapper ensures that the last value
-                        # repeats the terminal step value.
-                        metrics[name] = episode_trajectory.rewards[name][-1]
 
             objectives = PyTreeDict(
                 {
@@ -164,6 +148,9 @@ class MultiObjectiveBraxProblem(Problem):
         if self.flatten_objectives:
             # [#pop, #objs]
             objectives = jnp.stack(list(objectives.values()), axis=-1)
+            # special handling for single objective
+            if objectives.shape[-1] == 1:
+                objectives = objectives.squeeze(-1)
 
         sampled_episodes = pop_size * self.num_episodes * self.env.num_envs
         sampled_timesteps = sampled_timesteps.sum()
@@ -269,7 +256,47 @@ def eval_rollout_episode(
     return trajectory, env_state
 
 
-def fast_eval_rollout_episode(
+def eval_metrics(
+    env_fn: Callable[[EnvState, Action], EnvState],
+    action_fn: Callable[
+        [AgentState, SampleBatch, chex.PRNGKey], tuple[Action, PolicyExtraInfo]
+    ],
+    env_state: EnvState,
+    agent_state: AgentState,
+    key: chex.PRNGKey,
+    rollout_length: int,
+    discount: float,
+    metric_names: tuple[str] = (),
+):
+    episode_trajectory, env_state = eval_rollout_episode(
+        env_fn,
+        action_fn,
+        env_state,
+        agent_state,
+        key,
+        rollout_length,
+        metric_names=metric_names,
+    )
+
+    metrics = PyTreeDict()
+    for name in metric_names:
+        if "reward" in name:
+            # For metrics like 'reward_forward' and 'reward_ctrl'
+            metrics[name] = compute_discount_return(
+                episode_trajectory.rewards[name],
+                episode_trajectory.dones,
+                discount,
+            )
+        elif "episode_length" == name:
+            metrics[name] = compute_episode_length(episode_trajectory.dones)
+        else:
+            # For other metrics like 'x_position', we use the last value as the objective.
+            # Note: It is ok to use [-1], since wrapper ensures that the last value
+            # repeats the terminal step value.
+            metrics[name] = episode_trajectory.rewards[name][-1]
+
+
+def fast_eval_metrics(
     env_fn: Callable[[EnvState, Action], EnvState],
     action_fn: Callable[
         [AgentState, SampleBatch, chex.PRNGKey], tuple[Action, PolicyExtraInfo]
@@ -330,16 +357,7 @@ def fast_eval_rollout_episode(
         (
             env_state,
             key,
-            PyTreeDict(
-                {
-                    name: (
-                        jnp.zeros(batch_shape, dtype=jnp.int32)
-                        if "episode_length" == name
-                        else jnp.zeros(batch_shape, dtype=jnp.float32)
-                    )
-                    for name in metric_names
-                }
-            ),
+            PyTreeDict({name: jnp.zeros(batch_shape) for name in metric_names}),
         ),
     )
 

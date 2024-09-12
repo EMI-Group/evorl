@@ -46,10 +46,15 @@ class EvoXWorkflowWrapper(ECWorkflow):
         """
         Customize the workflow metrics.
         """
+        if self._workflow.problem.num_objectives == 1:
+            obj_shape = ()
+        elif self._workflow.problem.num_objectives > 1:
+            obj_shape = (self._workflow.problem.num_objectives,)
+        else:
+            raise ValueError("Invalid num_objectives")
+
         return ECWorkflowMetric(
-            best_objective=jnp.full(
-                (self._workflow.problem.num_objectives,), jnp.finfo(jnp.float32).min
-            )
+            best_objective=jnp.full(obj_shape, jnp.finfo(jnp.float32).min)
             * self._workflow.opt_direction
         )
 
