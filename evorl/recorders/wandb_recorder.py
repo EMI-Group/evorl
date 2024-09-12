@@ -52,13 +52,13 @@ def add_prefix(data: dict, prefix: str):
 
 
 def get_1d_array_statistics(data, histogram=False):
-    data = dict(
+    res = dict(
         min=np.min(data).tolist(),
         max=np.max(data).tolist(),
         mean=np.mean(data).tolist(),
     )
 
     if histogram:
-        data["val"] = pd.Series(data)
+        res["val"] = pd.Series(data)
 
-    return data
+    return res
