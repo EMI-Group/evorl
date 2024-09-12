@@ -1,6 +1,7 @@
 from collections.abc import Callable, Sequence
 import logging
 from functools import partial
+from omegaconf import DictConfig
 
 from evox import Algorithm, Problem
 import jax
@@ -12,10 +13,9 @@ from evorl.agent import Agent, AgentState
 from evorl.evaluator import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase
 from evorl.types import State
-from evorl.algorithms.ec.evox_workflow import EvoXWorkflowWrapper
 from evorl.recorders import get_1d_array_statistics
 
-from omegaconf import DictConfig
+from ..evox_workflow import EvoXWorkflowWrapper
 
 logger = logging.getLogger(__name__)
 

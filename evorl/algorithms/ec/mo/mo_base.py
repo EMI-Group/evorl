@@ -7,8 +7,9 @@ import orbax.checkpoint as ocp
 
 from evorl.distributed import tree_unpmap
 from evorl.types import State
-from evorl.algorithms.ec.evox_workflow import EvoXWorkflowWrapper
 from evorl.recorders import get_1d_array_statistics
+
+from ..evox_workflow import EvoXWorkflowWrapper
 
 
 class MOECWorkflowTemplate(EvoXWorkflowWrapper):

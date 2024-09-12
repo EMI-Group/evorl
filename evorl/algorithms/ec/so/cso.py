@@ -12,9 +12,9 @@ from evorl.ec import GeneralRLProblem
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
 from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
-from evorl.algorithms.ec.evox_workflow import EvoXWorkflowWrapper
 from evorl.recorders import get_1d_array_statistics
 
+from ..evox_workflow import EvoXWorkflowWrapper
 from ..ec_agent import DeterministicECAgent
 
 
