@@ -115,7 +115,7 @@ class CMAESWorkflow(ESWorkflowTemplate):
         std_statistics = _get_std_statistics(diag_cov)
         self.recorder.write({"ec/std": std_statistics}, iters)
 
-        self.record.write({"ec/sigma": algo_state.sigma.tolist()}, iters)
+        self.recorder.write({"ec/sigma": algo_state.sigma.tolist()}, iters)
 
 
 def _get_std_statistics(variance):
