@@ -2,11 +2,11 @@ import logging
 import numpy as np
 
 import evox.algorithms
+from evox import State as EvoXState
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.metrics import MetricBase
 from evorl.types import State
 from evorl.ec import GeneralRLProblem
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
@@ -103,18 +103,19 @@ class CMAESWorkflow(ESWorkflowTemplate):
 
     def _record_callback(
         self,
-        state: State,
-        train_metrics: MetricBase,
-        eval_metrics: MetricBase = None,
+        evox_state: EvoXState,
         iters: int = 0,
     ):
-        cov = state.evox_state.query_state("algorithm").C
+        algo_state = evox_state.query_state("algorithm")
+        cov = algo_state.C
         diag_cov = jnp.diagonal(cov)
 
         # recover to the network shapes
         diag_cov = self._param_vec_spec.to_tree(diag_cov)
         std_statistics = _get_std_statistics(diag_cov)
         self.recorder.write({"ec/std": std_statistics}, iters)
+
+        self.record.write({"ec/sigma": algo_state.sigma.tolist()}, iters)
 
 
 def _get_std_statistics(variance):

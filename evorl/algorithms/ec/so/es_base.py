@@ -3,7 +3,7 @@ import logging
 from functools import partial
 from omegaconf import DictConfig
 
-from evox import Algorithm, Problem
+from evox import Algorithm, Problem, State as EvoXState
 import jax
 import jax.tree_util as jtu
 import orbax.checkpoint as ocp
@@ -11,7 +11,7 @@ import orbax.checkpoint as ocp
 from evorl.distributed import tree_unpmap
 from evorl.agent import Agent, AgentState
 from evorl.evaluator import Evaluator
-from evorl.metrics import EvaluateMetric, MetricBase
+from evorl.metrics import EvaluateMetric
 from evorl.types import State
 from evorl.recorders import get_1d_array_statistics
 
@@ -97,13 +97,11 @@ class ESWorkflowTemplate(ESBaseWorkflow):
 
     def _record_callback(
         self,
-        state: State,
-        train_metrics: MetricBase,
-        eval_metrics: MetricBase = None,
+        evox_state: EvoXState,
         iters: int = 0,
     ) -> None:
         """
-        Add some customized metrics
+        Add some customized metrics on evox_state
         """
         pass
 
@@ -135,7 +133,7 @@ class ESWorkflowTemplate(ESBaseWorkflow):
             else:
                 eval_metrics = None
 
-            self._record_callback(state, train_metrics, eval_metrics, iters)
+            self._record_callback(state.evox_state, iters)
 
             self.checkpoint_manager.save(
                 iters,
