@@ -28,7 +28,7 @@ critics_in_actor_loss: first # first or min
 
 loss_weights:
   actor_loss: 1.0
-  critic_loss: 0.5
+  critic_loss: 1.0
 
 optimizer:
   lr: 0.0003

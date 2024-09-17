@@ -24,7 +24,7 @@ num_updates_per_iter: 1 # #updates per rollout, usually use: num_envs * rollout_
 
 loss_weights:
   actor_loss: 1.0
-  critic_loss: 0.5
+  critic_loss: 1.0
 
 optimizer:
   lr: 0.0003
