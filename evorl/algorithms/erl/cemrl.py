@@ -62,7 +62,6 @@ class WorkflowMetric(MetricBase):
     sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    warmup_stage: bool = metricfield(default=True, pytree_node=False)
 
 
 class CEMRLWorkflow(Workflow):
@@ -163,6 +162,7 @@ class CEMRLWorkflow(Workflow):
 
         agent = PopTD3Agent(
             pop_size=config.pop_size,
+            num_critics=config.agent_network.num_critics,
             norm_layer_type=config.agent_network.norm_layer_type,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
@@ -857,7 +857,6 @@ class CEMRLWorkflow(Workflow):
             workflow_metrics = state.metrics
 
             workflow_metrics_dict = workflow_metrics.to_local_dict()
-            del workflow_metrics_dict["warmup_stage"]
             self.recorder.write(workflow_metrics_dict, iters)
 
             train_metrics_dict = train_metrics.to_local_dict()
