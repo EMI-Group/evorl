@@ -43,7 +43,7 @@ def set_gpu_id():
     gpu_idx = job_id % num_gpus
 
     if job_id >= num_gpus:
-        logger.warn("It's not recommended to run multiple jobs on a single device.")
+        logger.warning("It's not recommended to run multiple jobs on a single device.")
 
     gpu_id = gpu_ids[gpu_idx]
 

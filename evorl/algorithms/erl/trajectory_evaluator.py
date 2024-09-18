@@ -36,7 +36,7 @@ class TrajectoryEvaluator(PyTreeNode):
         num_envs = self.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
         if num_episodes % num_envs != 0:
-            logger.warn(
+            logger.warning(
                 f"num_episode ({num_episodes}) cannot be divided by parallel_envs ({num_envs}),"
                 f"set new num_episodes={num_iters*num_envs}"
             )
