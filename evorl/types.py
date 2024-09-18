@@ -1,10 +1,10 @@
 import dataclasses
 from collections.abc import Mapping, Sequence
-from typing import Any, Protocol, Union
+from typing import Any, Protocol, Union, TypeVar
 
 import chex
+import jax
 import jax.tree_util as jtu
-from flax import struct
 from jax.typing import ArrayLike, DTypeLike
 from typing_extensions import dataclass_transform  # pytype: disable=not-supported-yet
 
@@ -136,10 +136,68 @@ def pytree_field(*, lazy_init=False, pytree_node=True, **kwargs):
     return dataclasses.field(**kwargs)
 
 
+_T = TypeVar("T")
+
+
+@dataclass_transform(field_specifiers=(pytree_field,))  # type: ignore[literal-required]
+def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
+    if "frozen" not in kwargs.keys():
+        kwargs["frozen"] = True
+    data_clz = dataclasses.dataclass(**kwargs)(clz)  # type: ignore
+    meta_fields = []
+    data_fields = []
+    for field_info in dataclasses.fields(data_clz):
+        is_pytree_node = field_info.metadata.get("pytree_node", True)
+        if is_pytree_node:
+            data_fields.append(field_info.name)
+        else:
+            meta_fields.append(field_info.name)
+
+    def replace(self, **updates):
+        """ "Returns a new object replacing the specified fields with new values."""
+        return dataclasses.replace(self, **updates)
+
+    data_clz.replace = replace
+
+    if pure_data and hasattr(jax.tree_util, "register_dataclass"):
+        # use the optimized C++ dataclass builtin (jax>=0.4.26)
+        jax.tree_util.register_dataclass(data_clz, data_fields, meta_fields)
+    else:
+
+        def iterate_clz(x):
+            meta = tuple(getattr(x, name) for name in meta_fields)
+            data = tuple(getattr(x, name) for name in data_fields)
+            return data, meta
+
+        def iterate_clz_with_keys(x):
+            meta = tuple(getattr(x, name) for name in meta_fields)
+            data = tuple(
+                (jax.tree_util.GetAttrKey(name), getattr(x, name))
+                for name in data_fields
+            )
+            return data, meta
+
+        def clz_from_iterable(meta, data):
+            meta_args = tuple(zip(meta_fields, meta))
+            data_args = tuple(zip(data_fields, data))
+            kwargs = dict(meta_args + data_args)
+            return data_clz(**kwargs)
+
+        jax.tree_util.register_pytree_with_keys(
+            data_clz,
+            iterate_clz_with_keys,
+            clz_from_iterable,
+            iterate_clz,
+        )
+
+    return data_clz  # type: ignore
+
+
 @dataclass_transform(field_specifiers=(pytree_field,), kw_only_default=True)
 class PyTreeNode:
     def __init_subclass__(cls, **kwargs):
-        struct.dataclass(cls, **kwargs)
+        # TODO: maintain our impl
+        dataclass(cls, pure_data=False, **kwargs)
 
     def set_frozen_attr(self, name, value):
         """
@@ -162,8 +220,7 @@ class PyTreeNode:
 class PyTreeData:
     """
     Like PyTreeNode, but all fileds must be set at __init__, and not allow set_frozen_attr() method.
-    Additionally, add some useful methods for PyTreeData.
     """
 
     def __init_subclass__(cls, **kwargs):
-        struct.dataclass(cls, **kwargs)
+        dataclass(cls, pure_data=True, **kwargs)
