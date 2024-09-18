@@ -423,7 +423,7 @@ class PopTD3Workflow(TD3Workflow):
 
         # [#pop, #episodes]
         raw_eval_metrics = _vmap_evaluate(
-            state.agent_state, key=jax.random.split(eval_key, self.config.pop_size)
+            state.agent_state, jax.random.split(eval_key, self.config.pop_size)
         )
 
         eval_metrics = EvaluateMetric(

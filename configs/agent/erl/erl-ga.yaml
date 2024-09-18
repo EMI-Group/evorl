@@ -1,0 +1,68 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.erl.erl_ga.ERLWorkflow
+
+num_envs: 32
+normalize_obs: false
+rollout_length: 10
+discount: 0.99
+total_episodes: 100000 # iters = total_episodes / (episodes_for_fitness * pop_size), e.g: 3125 iters here
+
+random_timesteps: 0 # steps filled into the replay buffer
+replay_buffer_capacity: 1000000
+
+# ====== TD3 Params ======
+tau: 0.005 # soft update rate
+exploration_epsilon: 0.1
+policy_noise: 0.2
+clip_policy_noise: 0.5
+actor_update_interval: 2
+critics_in_actor_loss: first # first or min
+
+
+# ====== RL Train Params ======
+num_rl_agents: 1
+warmup_iters: 10 # steps that only learn by EC
+num_rl_updates_per_iter: 50
+
+batch_size: 256
+
+loss_weights:
+  actor_loss: 1.0
+  critic_loss: 1.0
+
+optimizer:
+  lr: 0.0003
+  grad_clip_norm: 0 # set 0 or none to turn-off
+
+ec_num_envs: 1
+episodes_for_fitness: 1 # must be devided by ec_num_envs
+fitness_with_exploration: false
+rl_injection_interval: 1 # replace worst pop agents by rl agents
+
+# ====== GA Params ======
+pop_size: 32
+num_elites: 4
+tournament_size: 3
+weight_max_magnitude: 1e6
+mut_strength: 0.1
+num_mutation_frac: 0.1
+super_mut_strength: 10.0
+super_mut_prob: 0.05
+reset_prob: 0.1
+vec_relative_prob: 0.0 # turnoff 1d-array mutation
+num_crossover_frac: 2
+
+
+
+agent_network:
+  norm_layer_type: "none"
+  num_critics: 2
+  critic_hidden_layer_sizes: [256, 256]
+  actor_hidden_layer_sizes: [256, 256]
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 10
+
+save_replay_buffer: true

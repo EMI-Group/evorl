@@ -21,7 +21,7 @@ class Evaluator(PyTreeNode):
     discount: float = pytree_field(default=1.0, pytree_node=False)
 
     def evaluate(
-        self, agent_state, num_episodes: int, key: chex.PRNGKey
+        self, agent_state, key: chex.PRNGKey, num_episodes: int
     ) -> EvaluateMetric:
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
@@ -32,12 +32,12 @@ class Evaluator(PyTreeNode):
             )
 
         if self.discount == 1.0:
-            return self._fast_evaluate(agent_state, num_iters, key)
+            return self._fast_evaluate(agent_state, key, num_iters)
         else:
-            return self._evaluate(agent_state, num_iters, key)
+            return self._evaluate(agent_state, key, num_iters)
 
     def _evaluate(
-        self, agent_state, num_iters: int, key: chex.PRNGKey
+        self, agent_state, key: chex.PRNGKey, num_iters: int
     ) -> EvaluateMetric:
         def _evaluate_fn(key, unused_t):
             next_key, init_env_key = jax.random.split(key, 2)
@@ -73,7 +73,7 @@ class Evaluator(PyTreeNode):
         )
 
     def _fast_evaluate(
-        self, agent_state, num_iters: int, key: chex.PRNGKey
+        self, agent_state, key: chex.PRNGKey, num_iters: int
     ) -> EvaluateMetric:
         def _evaluate_fn(key, unused_t):
             next_key, init_env_key = jax.random.split(key, 2)

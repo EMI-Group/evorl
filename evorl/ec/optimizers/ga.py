@@ -1,11 +1,11 @@
+from collections.abc import Callable
+
 import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.types import (
-    PyTreeData,
-)
+from evorl.types import PyTreeData, pytree_field
 from evorl.ec.operators import MLPMutation, MLPCrossover, TournamentSelection
 
 from .ec_optimizer import EvoOptimizer, ECState
@@ -35,6 +35,11 @@ class ERLGA(EvoOptimizer):
     # crossover
     num_crossover_frac: float = 2
 
+    # op
+    select_parents: Callable = pytree_field(lazy_init=True)
+    mutate: Callable = pytree_field(lazy_init=True)
+    crossover: Callable = pytree_field(lazy_init=True)
+
     def __post_init__(self):
         assert (
             self.pop_size - self.num_elites
@@ -56,8 +61,8 @@ class ERLGA(EvoOptimizer):
         self.set_frozen_attr("mutate", mutation_op)
         self.set_frozen_attr("crossover", crossover_op)
 
-    def init(self, pop) -> ECState:
-        return ERLGAState(pop=pop)
+    def init(self, pop, key) -> ECState:
+        return ERLGAState(pop=pop, key=key)
 
     def tell(self, state: ECState, xs: chex.ArrayTree, fitnesses: chex.Array):
         # Note: We simplify the update in ERL

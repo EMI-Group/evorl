@@ -72,13 +72,13 @@ class MLPCrossover:
 
     def __call__(self, xs: chex.ArrayTree, key: chex.PRNGKey):
         pop_size = jtu.tree_leaves(xs)[0].shape[0]
-        n = round(pop_size // 2 * 2)
+        assert pop_size % 2 == 0, "pop_size must be even"
         # xs = jtu.tree_map(lambda p: p[:n], xs)
-        parents1 = jtu.tree_map(lambda x: x[0:n:2], xs)
-        parents2 = jtu.tree_map(lambda x: x[1:n:2], xs)
+        parents1 = jtu.tree_map(lambda x: x[0::2], xs)
+        parents2 = jtu.tree_map(lambda x: x[1::2], xs)
 
         if key.ndim <= 1:
-            key = jax.random.split(key, n // 2)
+            key = jax.random.split(key, pop_size // 2)
         else:
             chex.assert_shape(
                 key,
@@ -86,4 +86,7 @@ class MLPCrossover:
                 custom_message=f"Batched key shape {key.shape} must match pop_size: {pop_size}",
             )
 
-        return self.crossover_fn(parents1, parents2, key)
+        offsprings1, offsprings2 = self.crossover_fn(parents1, parents2, key)
+        return jtu.tree_map(
+            lambda x1, x2: jnp.concatenate([x1, x2], axis=0), offsprings1, offsprings2
+        )

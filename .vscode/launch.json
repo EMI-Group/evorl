@@ -159,6 +159,25 @@
             "justMyCode": false
         },
         {
+            "name": "ERL Train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "evorl.train",
+            "args": [
+                "agent=erl/erl-ga",
+                "env=brax/hopper",
+                "debug=true",
+                "checkpoint.enable=false"
+                // "hydra.verbose=true",
+            ],
+            "env": {
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                // "CUDA_VISIBLE_DEVICES": "0,1"
+                // "JAX_DISABLE_JIT": "true"
+            },
+            "justMyCode": false
+        },
+        {
             "name": "EC-SO Train",
             "type": "debugpy",
             "request": "launch",
