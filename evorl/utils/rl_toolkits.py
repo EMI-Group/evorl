@@ -124,14 +124,14 @@ def soft_target_update(target_params, source_params, tau: float):
     )
 
 
-def flatten_rollout_trajectory(trajectory: SampleBatch):
+def flatten_rollout_trajectory(trajectory: SampleBatch) -> SampleBatch:
     """
     Flatten the trajectory from [T, B, ...] to [T*B, ...]
     """
     return jtu.tree_map(lambda x: jax.lax.collapse(x, 0, 2), trajectory)
 
 
-def flatten_pop_rollout_trajectory(trajectory: SampleBatch):
+def flatten_pop_rollout_trajectory(trajectory: SampleBatch) -> SampleBatch:
     """
     Flatten the trajectory from [#pop, T, B, ...] to [#pop*T*B, ...]
     """
