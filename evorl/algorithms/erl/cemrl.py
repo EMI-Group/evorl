@@ -272,7 +272,7 @@ class CEMRLWorkflow(Workflow):
             replay_buffer_state=replay_buffer_state,
         )
 
-        if self.config.learning_start_timesteps > 0:
+        if self.config.random_timesteps > 0:
             logger.info("Start replay buffer post-setup")
             state = self._postsetup_replaybuffer(state)
             logger.info("Complete replay buffer post-setup")
@@ -390,7 +390,9 @@ class CEMRLWorkflow(Workflow):
             jnp.uint32(rollout_length * config.num_envs), axis_name=self.pmap_axis_name
         )
         # Since we sample from autoreset env, this metric might not be accurate:
-        sampled_episodes = psum(trajectory.dones.sum(), axis_name=self.pmap_axis_name)
+        sampled_episodes = psum(
+            trajectory.dones.astype(jnp.uint32).sum(), axis_name=self.pmap_axis_name
+        )
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
@@ -796,13 +798,13 @@ class CEMRLWorkflow(Workflow):
             # add info of CEM
             train_metrics_dict["cov_noise"] = state.ec_opt_state.cov_noise.tolist()
 
-            if train_metrics_dict["td3_metrics"] is not None:
-                train_metrics_dict["td3_metrics"]["actor_loss"] /= (
+            if train_metrics_dict["rl_metrics"] is not None:
+                train_metrics_dict["rl_metrics"]["actor_loss"] /= (
                     self.config.num_learning_offspring
                 )
-                train_metrics_dict["td3_metrics"]["raw_loss_dict"] = jtu.tree_map(
+                train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
                     get_1d_array_statistics,
-                    train_metrics_dict["td3_metrics"]["raw_loss_dict"],
+                    train_metrics_dict["rl_metrics"]["raw_loss_dict"],
                 )
 
             self.recorder.write(train_metrics_dict, iters)
