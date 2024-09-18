@@ -3,7 +3,6 @@ import logging
 import math
 from typing import Any
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
-from functools import partial
 from omegaconf import DictConfig
 
 import chex
@@ -337,132 +336,65 @@ class CEMRLWorkflow(Workflow):
         action_space = self.env.action_space
         obs_space = self.env.obs_space
         config = self.config
-        pop_size = config.pop_size
 
         replay_buffer_state = state.replay_buffer_state
         agent_state = state.agent_state
 
-        def _fill_pop(agent, agent_state, key, rollout_length):
-            env_key, rollout_key = jax.random.split(key)
-
-            env_state = jax.vmap(self.env.reset)(jax.random.split(env_key, pop_size))
-
-            if self.config.fitness_with_exploration:
-                action_fn = agent.compute_actions
-            else:
-                action_fn = agent.evaluate_actions
-
-            _rollout = partial(
-                rollout,
-                self.env.step,
-                action_fn,
-                rollout_length=rollout_length,
-                env_extra_fields=("last_obs", "termination"),
-            )
-
-            trajectory, env_state = jax.vmap(
-                _rollout, in_axes=(0, self.agent_state_pytree_axes, 0)
-            )(
-                env_state,
-                agent_state,
-                jax.random.split(rollout_key, pop_size),
-            )
-
-            # [#pop, T, B, ...] -> [#pop*T*B, ...]
-            trajectory = clean_trajectory(trajectory)
-            trajectory = jtu.tree_map(lambda x: jax.lax.collapse(x, 0, 3), trajectory)
-            trajectory = tree_stop_gradient(trajectory)
-
-            return trajectory
-
-        def _fill(agent, agent_state, key, rollout_length):
-            env_key, rollout_key = jax.random.split(key)
-            env_state = self.env.reset(env_key)
-
-            # Note: not needed for random agent
-            if self.config.fitness_with_exploration:
-                action_fn = agent.compute_actions
-            else:
-                action_fn = agent.evaluate_actions
-
-            trajectory, env_state = rollout(
-                env_fn=self.env.step,
-                action_fn=action_fn,
-                env_state=env_state,
-                agent_state=agent_state,
-                key=rollout_key,
-                rollout_length=rollout_length,
-                env_extra_fields=("last_obs", "termination"),
-            )
-
-            # [T, B, ...] -> [T*B, ...]
-            trajectory = clean_trajectory(trajectory)
-            trajectory = flatten_rollout_trajectory(trajectory)
-            trajectory = tree_stop_gradient(trajectory)
-
-            return trajectory
-
-        def _update_obs_preprocessor(agent_state, trajectory):
-            if (
-                agent_state.obs_preprocessor_state is not None
-                and len(trajectory.obs) > 0
-            ):
-                agent_state = agent_state.replace(
-                    obs_preprocessor_state=running_statistics.update(
-                        agent_state.obs_preprocessor_state,
-                        trajectory.obs,
-                        pmap_axis_name=self.pmap_axis_name,
-                    )
-                )
-            return agent_state
+        # We need a separate autoreset env to fill the replay buffer
+        env = create_env(
+            config.env.env_name,
+            config.env.env_type,
+            episode_length=config.env.max_episode_steps,
+            parallel=config.num_envs,
+            autoreset_mode=AutoresetMode.NORMAL,
+            record_last_obs=True,
+        )
 
         # ==== fill random transitions ====
 
-        key, random_rollout_key, rollout_key = jax.random.split(state.key, num=3)
+        key, env_key, rollout_key = jax.random.split(state.key, num=3)
         random_agent = RandomAgent()
         random_agent_state = random_agent.init(
             obs_space, action_space, jax.random.PRNGKey(0)
         )
         rollout_length = config.random_timesteps // config.num_envs
 
-        trajectory = _fill(
-            random_agent,
-            random_agent_state,
-            key=random_rollout_key,
-            rollout_length=rollout_length,
-        )
-
-        replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
-        agent_state = _update_obs_preprocessor(agent_state, trajectory)
-
-        rollout_timesteps = rollout_length * config.num_envs
-        sampled_timesteps = psum(
-            jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
-        )
-
-        # ==== fill tansition state from init agent ====
-        rollout_length = math.ceil(
-            (config.learning_start_timesteps - rollout_timesteps)
-            / (config.pop_size * config.num_envs)
-        )
-
-        trajectory = _fill_pop(
-            self.agent,
-            agent_state,
+        env_state = env.reset(env_key)
+        trajectory, env_state = rollout(
+            env_fn=env.step,
+            action_fn=random_agent.compute_actions,
+            env_state=env_state,
+            agent_state=random_agent_state,
             key=rollout_key,
             rollout_length=rollout_length,
+            env_extra_fields=("last_obs", "termination"),
         )
+
+        # [T, B, ...] -> [T*B, ...]
+        trajectory = clean_trajectory(trajectory)
+        trajectory = flatten_rollout_trajectory(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
 
         replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
-        agent_state = _update_obs_preprocessor(agent_state, trajectory)
 
-        rollout_timesteps = rollout_length * config.num_envs
-        sampled_timesteps = sampled_timesteps + psum(
-            jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
+        if agent_state.obs_preprocessor_state is not None and rollout_length > 0:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    trajectory.obs,
+                    pmap_axis_name=self.pmap_axis_name,
+                )
+            )
+
+        sampled_timesteps = psum(
+            jnp.uint32(rollout_length * config.num_envs), axis_name=self.pmap_axis_name
         )
+        # Since we sample from autoreset env, this metric might not be accurate:
+        sampled_episodes = psum(trajectory.dones.sum(), axis_name=self.pmap_axis_name)
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
+            sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         return state.replace(

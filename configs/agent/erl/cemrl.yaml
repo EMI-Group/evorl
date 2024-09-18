@@ -10,7 +10,6 @@ total_episodes: 100000 # iters = total_episodes / (episodes_for_fitness * pop_si
 # random_timesteps: 25600 # steps filled into the replay buffer
 # learning_start_timesteps: 25600 # steps before training starts
 random_timesteps: 0 # steps filled into the replay buffer
-learning_start_timesteps: 0 # steps before training starts
 batch_size: 256
 replay_buffer_capacity: 1000000
 
