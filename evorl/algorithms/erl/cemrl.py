@@ -1,7 +1,6 @@
 import copy
 import logging
 import math
-import numpy as np
 from typing import Any
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
 from functools import partial
@@ -12,12 +11,10 @@ import flashbax
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from jax.sharding import Mesh, NamedSharding
-from jax.sharding import PartitionSpec as P
 import optax
 import orbax.checkpoint as ocp
 
-from evorl.distributed import psum, agent_gradient_update, POP_AXIS_NAME
+from evorl.distributed import psum, agent_gradient_update
 from evorl.metrics import MetricBase, metricfield, EvaluateMetric
 from evorl.types import (
     PyTreeDict,
@@ -41,12 +38,13 @@ from evorl.envs import create_env, AutoresetMode, Box, Env
 from evorl.workflows import Workflow
 from evorl.rollout import rollout
 from evorl.recorders import get_1d_array_statistics
+from evorl.ec.optimizers.cem import DiagCEM, EvoOptimizer
 
-from ..td3 import TD3TrainMetric
+from ..td3 import TD3TrainMetric, TD3Agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from .poptd3_agent import PopTD3Agent
 from .trajectory_evaluator import TrajectoryEvaluator
-from .cem import DiagCEM, EvolutionOptimizer
+from .utils import flatten_pop_rollout_episode, get_std_statistics
+
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +52,7 @@ logger = logging.getLogger(__name__)
 class POPTrainMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
-    td3_metrics: MetricBase | None = None
+    rl_metrics: MetricBase | None = None
     ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
 
 
@@ -75,7 +73,7 @@ class CEMRLWorkflow(Workflow):
         env: Env,
         agent: Agent,
         optimizer: optax.GradientTransformation,
-        ec_optimizer: EvolutionOptimizer,
+        ec_optimizer: EvoOptimizer,
         ec_evaluator: TrajectoryEvaluator,
         evaluator: Evaluator,  # to evaluate the pop-mean actor
         replay_buffer: Any,
@@ -91,24 +89,24 @@ class CEMRLWorkflow(Workflow):
         self.replay_buffer = replay_buffer
 
         self.devices = jax.local_devices()[:1]
-        self.sharding = None  # training sharding
+        # self.sharding = None  # training sharding
         self.pmap_axis_name = None
 
     @classmethod
     def name(cls):
         return "CEM-RL"
 
-    @staticmethod
-    def _rescale_config(config) -> None:
-        num_devices = jax.device_count()
+    # @staticmethod
+    # def _rescale_config(config) -> None:
+    #     num_devices = jax.device_count()
 
-        if config.pop_size % num_devices != 0:
-            logger.warning(
-                f"pop_size({config.pop_size}) cannot be divided by num_devices({num_devices}), "
-                f"rescale pop_size to {config.pop_size // num_devices * num_devices}"
-            )
+    #     if config.pop_size % num_devices != 0:
+    #         logger.warning(
+    #             f"pop_size({config.pop_size}) cannot be divided by num_devices({num_devices}), "
+    #             f"rescale pop_size to {config.pop_size // num_devices * num_devices}"
+    #         )
 
-        config.pop_size = (config.pop_size // num_devices) * num_devices
+    #     config.pop_size = (config.pop_size // num_devices) * num_devices
 
     @classmethod
     def build_from_config(
@@ -121,11 +119,6 @@ class CEMRLWorkflow(Workflow):
 
         devices = jax.local_devices()
 
-        # always enable multi-devices
-
-        # with read_write_cfg(config):
-        #     cls._rescale_config(config)
-
         if enable_multi_devices or len(devices) > 1:
             raise NotImplementedError("Multi-devices is not supported yet.")
 
@@ -134,9 +127,9 @@ class CEMRLWorkflow(Workflow):
 
         workflow = cls._build_from_config(config)
 
-        mesh = Mesh(devices, axis_names=(POP_AXIS_NAME,))
-        workflow.devices = devices
-        workflow.sharding = NamedSharding(mesh, P(POP_AXIS_NAME))
+        # mesh = Mesh(devices, axis_names=(POP_AXIS_NAME,))
+        # workflow.devices = devices
+        # workflow.sharding = NamedSharding(mesh, P(POP_AXIS_NAME))
 
         return workflow
 
@@ -160,8 +153,7 @@ class CEMRLWorkflow(Workflow):
             env.action_space, Box
         ), "Only continue action space is supported."
 
-        agent = PopTD3Agent(
-            pop_size=config.pop_size,
+        agent = TD3Agent(
             num_critics=config.agent_network.num_critics,
             norm_layer_type=config.agent_network.norm_layer_type,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
@@ -170,9 +162,9 @@ class CEMRLWorkflow(Workflow):
             exploration_epsilon=config.exploration_epsilon,
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
+            critics_in_actor_loss=config.critics_in_actor_loss,
         )
 
-        # one optimizer, two opt_states (in setup function) for both actor and critic
         if (
             config.optimizer.grad_clip_norm is not None
             and config.optimizer.grad_clip_norm > 0
@@ -185,6 +177,7 @@ class CEMRLWorkflow(Workflow):
             optimizer = optax.adam(config.optimizer.lr)
 
         ec_optimizer = DiagCEM(
+            pop_size=config.pop_size,
             num_elites=config.num_elites,
             init_diagonal_variance=config.diagonal_variance.init,
             final_diagonal_variance=config.diagonal_variance.final,
@@ -224,22 +217,13 @@ class CEMRLWorkflow(Workflow):
             autoreset_mode=AutoresetMode.DISABLED,
         )
 
-        # eval_agent = TD3Agent(
-        #     critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-        #     actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-        #     discount=config.discount,
-        #     exploration_epsilon=config.exploration_epsilon,
-        #     policy_noise=config.policy_noise,
-        #     clip_policy_noise=config.clip_policy_noise,
-        # )
-
         evaluator = Evaluator(
             env=eval_env,
             agent=agent,
             max_episode_steps=config.env.max_episode_steps,
         )
 
-        return cls(
+        workflow = cls(
             env,
             agent,
             optimizer,
@@ -249,6 +233,19 @@ class CEMRLWorkflow(Workflow):
             replay_buffer,
             config,
         )
+
+        workflow.agent_state_pytree_axes = AgentState(
+            params=TD3NetworkParams(
+                critic_params=None,
+                actor_params=0,
+                target_critic_params=None,
+                target_actor_params=0,
+            ),
+            obs_preprocessor_state=None,
+            action_space=None,
+        )
+
+        return workflow
 
     def setup(self, key: chex.PRNGKey) -> State:
         """
@@ -287,19 +284,17 @@ class CEMRLWorkflow(Workflow):
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_key, ec_key = jax.random.split(key, 2)
+
+        # one actor + one critic
         agent_state = self.agent.init(
             self.env.obs_space, self.env.action_space, agent_key
         )
 
-        init_actor_params = jtu.tree_map(
-            lambda x: x[0], agent_state.params.actor_params
-        )
+        init_actor_params = agent_state.params.actor_params
         ec_opt_state = self.ec_optimizer.init(init_actor_params)
 
         # replace
-        pop_actor_params = self.ec_optimizer.sample(
-            ec_opt_state, self.config.pop_size, ec_key
-        )
+        pop_actor_params = self.ec_optimizer.ask(ec_opt_state, ec_key)
 
         agent_state = replace_actor_params(agent_state, pop_actor_params)
 
@@ -366,7 +361,7 @@ class CEMRLWorkflow(Workflow):
             )
 
             trajectory, env_state = jax.vmap(
-                _rollout, in_axes=(0, agent.agent_state_pytree_axes, 0)
+                _rollout, in_axes=(0, self.agent_state_pytree_axes, 0)
             )(
                 env_state,
                 agent_state,
@@ -480,7 +475,7 @@ class CEMRLWorkflow(Workflow):
     def _rollout(self, agent_state, key):
         eval_metrics, trajectory = jax.vmap(
             self.ec_evaluator.evaluate,
-            in_axes=(self.agent.agent_state_pytree_axes, None, 0),
+            in_axes=(self.agent_state_pytree_axes, None, 0),
         )(
             agent_state,
             self.config.episodes_for_fitness,
@@ -499,7 +494,7 @@ class CEMRLWorkflow(Workflow):
         sample_batches: (num_rl_updates_per_iter, actor_update_interval, B, ...)
         """
 
-        agent_state_pytree_axes = self.agent.agent_state_pytree_axes
+        agent_state_pytree_axes = self.agent_state_pytree_axes
         num_learning_offspring = self.config.num_learning_offspring
 
         def critic_loss_fn(agent_state, sample_batch, key):
@@ -652,13 +647,11 @@ class CEMRLWorkflow(Workflow):
         return td3_metrics, agent_state, opt_state
 
     def _cem_update(self, ec_opt_state, pop_actor_params, fitnesses):
-        ec_opt_state = self.ec_optimizer.update(
-            ec_opt_state, pop_actor_params, fitnesses
-        )
+        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
         return ec_opt_state
 
     def _cem_sample(self, ec_opt_state, key):
-        return self.ec_optimizer.sample(ec_opt_state, self.config.pop_size, key)
+        return self.ec_optimizer.ask(ec_opt_state, key)
 
     def _sample_from_replay_buffer(self, replay_buffer_state, key):
         def _sample(key):
@@ -769,7 +762,7 @@ class CEMRLWorkflow(Workflow):
         train_metrics = POPTrainMetric(
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
-            td3_metrics=td3_metrics,
+            rl_metrics=td3_metrics,
         )
 
         # In fact, we always update the cem ec_opt_state to trace the pop_center
@@ -883,7 +876,7 @@ class CEMRLWorkflow(Workflow):
             self.recorder.write(train_metrics_dict, iters)
 
             if not self.config.disable_cem_update:
-                std_statistics = _get_std_statistics(
+                std_statistics = get_std_statistics(
                     state.ec_opt_state.variance["params"]
                 )
                 self.recorder.write({"ec/std": std_statistics}, iters)
@@ -922,24 +915,10 @@ class CEMRLWorkflow(Workflow):
         )
 
 
-def replace_actor_params(
-    agent_state: AgentState, pop_actor_params, indices=None
-) -> AgentState:
+def replace_actor_params(agent_state: AgentState, pop_actor_params) -> AgentState:
     """
     reset the actor params and target actor params
     """
-    # chex.assert_trees_all_equal_shapes_and_dtypes(
-    #     agent_state.params.actor_params,
-    #     pop_actor_params,
-    #     "actor_params must have the same shape and dtype as agent_state.params.actor_params",
-    # )
-
-    if indices is not None:
-        pop_actor_params = tree_set(
-            agent_state.params.pop_actor_params,
-            pop_actor_params,
-            idx_or_slice=indices,
-        )
 
     return agent_state.replace(
         params=agent_state.params.replace(
@@ -947,22 +926,3 @@ def replace_actor_params(
             target_actor_params=pop_actor_params,
         )
     )
-
-
-def flatten_pop_rollout_episode(trajectory: SampleBatch):
-    """
-    Flatten the trajectory from [#pop, T, B, ...] to [T, #pop*B, ...]
-    """
-    return jtu.tree_map(lambda x: jax.lax.collapse(x.swapaxes(0, 1), 1, 3), trajectory)
-
-
-def _get_std_statistics(variance):
-    def _get_stats(x):
-        x = np.sqrt(x)
-        return dict(
-            min=np.min(x).tolist(),
-            max=np.max(x).tolist(),
-            mean=np.mean(x).tolist(),
-        )
-
-    return jtu.tree_map(_get_stats, variance)

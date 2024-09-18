@@ -64,6 +64,7 @@ class PopTD3Workflow(TD3Workflow):
             # )(rb_key)
             raise NotImplementedError("multi_devices is not supported yet")
         else:
+            # TODO: what about using shared init env_state?
             env_state = jax.vmap(self.env.reset)(
                 jax.random.split(env_key, self.config.pop_size)
             )

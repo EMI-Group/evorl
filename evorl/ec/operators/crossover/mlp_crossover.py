@@ -1,0 +1,89 @@
+from functools import partial
+
+import chex
+import jax
+import jax.numpy as jnp
+import jax.tree_util as jtu
+
+from ..utils import is_layer_norm_layer
+
+
+def mlp_crossover(
+    x1: chex.ArrayTree,
+    x2: chex.ArrayTree,
+    key: chex.PRNGKey,
+    *,
+    num_crossover_frac: float = 1.0,
+):
+    chex.assert_trees_all_equal_shapes_and_dtypes(x1, x2)
+
+    leaves1, treedef = jtu.tree_flatten_with_path(x1)
+    leaves2 = jtu.tree_leaves(x2)
+
+    assert num_crossover_frac >= 0, "num_crossover_frac must be non-negative"
+
+    params1 = []
+    params2 = []
+    for i, ((path, param1), param2) in enumerate(zip(leaves1, leaves2)):
+        if is_layer_norm_layer(path):
+            # skip layer norm layers
+            params1.append(param1)
+            params2.append(param2)
+            continue
+
+        if param1.ndim <= 2:  # kernel
+            # for 2d array, we exchange the rows
+            # for 1d array, we exchange the elements
+            key, ind_key, choice_key = jax.random.split(key, num=3)
+
+            # we use fixed number of crossover op.
+            # this is different from the original ERL: np.random.randint(num_variables * 2)
+            num_crossover = round(param1.shape[0] * num_crossover_frac)
+
+            ind = jax.random.randint(ind_key, (num_crossover,), 0, param1.shape[0])
+
+            mask = jax.random.uniform(choice_key, (num_crossover,)) < 0.5
+            if param1.ndim > 1:
+                mask = mask[..., None]
+
+            zero_update = jnp.zeros((num_crossover, *param1.shape[1:]))
+
+            param1 = param1.at[ind].add(jnp.where(mask, zero_update, param2[ind]))
+
+            param2 = param2.at[ind].add(
+                jnp.where(jnp.logical_not(mask), zero_update, param1[ind])
+            )
+
+        else:
+            raise ValueError(f"Unsupported parameter shape: {param1.shape}")
+
+        params1.append(param1)
+        params2.append(param2)
+
+    return jtu.tree_unflatten(treedef, params1), jtu.tree_unflatten(treedef, params2)
+
+
+class MLPCrossover:
+    def __init__(self, num_crossover_frac: float = 1.0):
+        self.num_crossover_frac = num_crossover_frac
+        self.crossover_fn = jax.vmap(
+            partial(mlp_crossover, num_crossover_frac=num_crossover_frac),
+        )
+
+    def __call__(self, xs: chex.ArrayTree, key: chex.PRNGKey):
+        pop_size = jtu.tree_leaves(xs)[0].shape[0]
+        n = round(pop_size // 2 * 2)
+        # xs = jtu.tree_map(lambda p: p[:n], xs)
+        parents1 = jtu.tree_map(lambda x: x[0:n:2], xs)
+        parents2 = jtu.tree_map(lambda x: x[1:n:2], xs)
+
+        if key.ndim <= 1:
+            key = jax.random.split(key, n // 2)
+        else:
+            chex.assert_shape(
+                key,
+                (pop_size, 2),
+                custom_message=f"Batched key shape {key.shape} must match pop_size: {pop_size}",
+            )
+
+        return self.crossover_fn(parents1, parents2, key)

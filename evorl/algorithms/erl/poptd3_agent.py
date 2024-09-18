@@ -28,7 +28,7 @@ def _create_agent_state_pytree_axes():
 
 class PopTD3Agent(TD3Agent):
     """
-    TD3 agent with multiple actors and one shared critic.
+    TD3 agent with multiple actors and one shared critic (with optional shared obs_preprocessor)
     """
 
     pop_size: int = 1

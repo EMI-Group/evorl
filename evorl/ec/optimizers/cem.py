@@ -1,5 +1,3 @@
-from abc import ABCMeta, abstractmethod
-
 import chex
 import jax
 import jax.numpy as jnp
@@ -8,7 +6,6 @@ import optax
 
 from evorl.types import (
     PyTreeData,
-    PyTreeNode,
     Params,
     pytree_field,
 )
@@ -16,32 +13,18 @@ from evorl.utils.jax_utils import (
     rng_split_like_tree,
 )
 
-
-class EvolutionOptimizer(PyTreeNode, metaclass=ABCMeta):
-    @abstractmethod
-    def init(self, *args, **kwargs) -> chex.ArrayTree:
-        pass
-
-    @abstractmethod
-    def update(
-        self, state: chex.ArrayTree, offsprings: chex.ArrayTree, fitness: chex.Array
-    ) -> chex.ArrayTree:
-        pass
-
-    @abstractmethod
-    def sample(
-        self, state: chex.ArrayTree, pop_size: int, key: chex.PRNGKey
-    ) -> chex.ArrayTree:
-        pass
+from .ec_optimizer import EvoOptimizer
 
 
 class DiagCEMState(PyTreeData):
     mean: chex.ArrayTree
     variance: chex.ArrayTree
     cov_noise: chex.ArrayTree
+    key: chex.PRNGKey
 
 
-class DiagCEM(EvolutionOptimizer):
+class DiagCEM(EvoOptimizer):
+    pop_size: int
     num_elites: int  # number of good offspring to update the pop
     init_diagonal_variance: float = 1e-2
     final_diagonal_variance: float = 1e-5
@@ -52,6 +35,10 @@ class DiagCEM(EvolutionOptimizer):
     elite_weights: chex.Array = pytree_field(lazy_init=True)
 
     def __post_init__(self):
+        assert self.pop_size > 0, "pop_size must be positive"
+        if self.mirror_sampling:
+            assert self.pop_size % 2 == 0, "pop_size must be even for mirror sampling"
+
         if self.weighted_update:
             # this logarithmic rank-based weighting is from CEM-RL
             elite_weights = jnp.log(
@@ -65,19 +52,20 @@ class DiagCEM(EvolutionOptimizer):
 
         self.set_frozen_attr("elite_weights", elite_weights)
 
-    def init(self, init_actor_params: Params) -> DiagCEMState:
+    def init(self, mean: Params, key: chex.PRNGKey) -> DiagCEMState:
         variance = jtu.tree_map(
-            lambda x: jnp.full_like(x, self.init_diagonal_variance), init_actor_params
+            lambda x: jnp.full_like(x, self.init_diagonal_variance), mean
         )
 
         return DiagCEMState(
-            mean=init_actor_params,
+            mean=mean,
             variance=variance,
             cov_noise=jnp.float32(self.init_diagonal_variance),
+            key=key,
         )
 
-    def update(
-        self, state: DiagCEMState, offsprings: chex.ArrayTree, fitnesses: chex.Array
+    def tell(
+        self, state: DiagCEMState, xs: chex.ArrayTree, fitnesses: chex.Array
     ) -> DiagCEMState:
         # fitness: episode_return, higher is better
         elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
@@ -90,7 +78,7 @@ class DiagCEM(EvolutionOptimizer):
             lambda x: jnp.average(
                 x[elites_indices], axis=0, weights=self.elite_weights
             ),
-            offsprings,
+            xs,
         )
 
         def var_update(mean, x):
@@ -102,20 +90,16 @@ class DiagCEM(EvolutionOptimizer):
         variance = jtu.tree_map(
             var_update,
             state.mean,  # old mean
-            offsprings,
+            xs,
         )
 
         return state.replace(mean=mean, variance=variance, cov_noise=cov_noise)
 
-    def sample(
-        self, state: DiagCEMState, pop_size: int, key: chex.PRNGKey
-    ) -> chex.ArrayTree:
+    def ask(self, state: DiagCEMState, key: chex.PRNGKey) -> chex.ArrayTree:
         keys = rng_split_like_tree(key, state.mean)
+        pop_size = self.pop_size
 
         if self.mirror_sampling:
-            assert (
-                pop_size > 0 and pop_size % 2 == 0
-            ), "pop_size must be even for mirror sampling"
             half_noise = jtu.tree_map(
                 lambda x, var, k: jax.random.normal(k, (pop_size // 2, *x.shape))
                 * jnp.sqrt(var),

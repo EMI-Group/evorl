@@ -145,7 +145,7 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=cemrl",
+                "agent=erl/cemrl",
                 "env=brax/hopper",
                 "debug=true",
                 "checkpoint.enable=false"

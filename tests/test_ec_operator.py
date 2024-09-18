@@ -1,4 +1,4 @@
-from evorl.ec.operations import mlp_crossover, mlp_mutate, MLPCrossover, MLPMutation
+from evorl.ec.operators import mlp_crossover, mlp_mutate, MLPCrossover, MLPMutation
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -16,7 +16,7 @@ def test_mutation():
     state4 = init_fn(key4)
     state = jtu.tree_map(lambda *x: jnp.stack(x), state1, state2, state3, state4)
 
-    mlp_mutate(key5, state1)
+    mlp_mutate(state1, key5)
     jax.jit(
         mlp_mutate,
         static_argnames=(
@@ -28,9 +28,9 @@ def test_mutation():
             "reset_prob",
             "vec_relative_prob",
         ),
-    )(key5, state1)
+    )(state1, key5)
 
-    MLPMutation()(key5, state)
+    MLPMutation()(state, key5)
 
 
 def test_crossover():
@@ -44,7 +44,7 @@ def test_crossover():
     state4 = init_fn(key4)
     state = jtu.tree_map(lambda *x: jnp.stack(x), state1, state2, state3, state4)
 
-    mlp_crossover(key5, state1, state2)
-    jax.jit(mlp_crossover)(key5, state1, state2)
+    mlp_crossover(state1, state2, key5)
+    jax.jit(mlp_crossover, static_argnames=("num_crossover_frac"))(state1, state2, key5)
 
-    MLPCrossover()(key5, state)
+    MLPCrossover()(state, key5)
