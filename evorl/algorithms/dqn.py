@@ -384,7 +384,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             raw_loss_dict=loss_dict,
         )
 
-        # calculate the numbner of timestep
+        # calculate the number of timestep
         sampled_timesteps = psum(
             jnp.uint32(self.config.rollout_length * self.config.num_envs),
             axis_name=self.pmap_axis_name,

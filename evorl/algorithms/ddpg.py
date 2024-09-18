@@ -450,7 +450,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        # calculate the numbner of timestep
+        # calculate the number of timestep
         sampled_timesteps = psum(
             jnp.uint32(self.config.rollout_length * self.config.num_envs),
             axis_name=self.pmap_axis_name,

@@ -747,7 +747,7 @@ class ERLWorkflow(Workflow):
             rl_metrics=td3_metrics,
         )
 
-        # calculate the numbner of timestep
+        # calculate the number of timestep
         sampled_timesteps += psum(
             eval_metrics.episode_lengths.sum().astype(jnp.uint32),
             axis_name=self.pmap_axis_name,

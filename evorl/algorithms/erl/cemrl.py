@@ -720,7 +720,7 @@ class CEMRLWorkflow(Workflow):
                 )
                 train_metrics = train_metrics.replace(ec_info=ec_info)
 
-        # calculate the numbner of timestep
+        # calculate the number of timestep
         sampled_timesteps = psum(
             eval_metrics.episode_lengths.sum().astype(jnp.uint32),
             axis_name=self.pmap_axis_name,
