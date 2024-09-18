@@ -1,9 +1,12 @@
 import logging
+import math
 
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
+import orbax.checkpoint as ocp
 
-from evorl.distributed import psum
+from evorl.distributed import psum, tree_unpmap
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.metrics import MetricBase
 from evorl.rollout import rollout
@@ -14,11 +17,14 @@ from evorl.types import (
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
+from evorl.recorders import add_prefix
 
-from ..offpolicy_utils import clean_trajectory
+from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from ..td3 import TD3TrainMetric, TD3Workflow
 
 logger = logging.getLogger(__name__)
+
+MISSING_LOSS = -1e10
 
 
 class TD3Workflow(TD3Workflow):
@@ -115,11 +121,14 @@ class TD3Workflow(TD3Workflow):
 
             opt_state = opt_state.replace(critic=critic_opt_state)
 
+            actor_loss = jnp.full((), fill_value=MISSING_LOSS)
+            actor_loss_dict = PyTreeDict(actor_loss=actor_loss)
+
             return (
                 critic_loss,
-                None,
+                actor_loss,
                 critic_loss_dict,
-                PyTreeDict(actor_loss=None),
+                actor_loss_dict,
                 agent_state,
                 opt_state,
             )
@@ -217,3 +226,47 @@ class TD3Workflow(TD3Workflow):
             replay_buffer_state=replay_buffer_state,
             opt_state=opt_state,
         )
+
+    def learn(self, state: State) -> State:
+        num_devices = jax.device_count()
+        one_step_timesteps = self.config.rollout_length * self.config.num_envs
+        sampled_timesteps = tree_unpmap(state.metrics.sampled_timesteps).tolist()
+        num_iters = math.ceil(
+            (self.config.total_timesteps - sampled_timesteps)
+            / (one_step_timesteps * self.config.fold_iters * num_devices)
+        )
+
+        for i in range(num_iters):
+            train_metrics, state = self._multi_steps(state)
+            workflow_metrics = state.metrics
+
+            # current iteration
+            iterations = tree_unpmap(
+                state.metrics.iterations, self.pmap_axis_name
+            ).tolist()
+            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
+
+            train_metrics = jtu.tree_map(
+                lambda x: None if x == MISSING_LOSS else x, train_metrics
+            )
+
+            self.recorder.write(train_metrics.to_local_dict(), iterations)
+            self.recorder.write(workflow_metrics.to_local_dict(), iterations)
+
+            if iterations % self.config.eval_interval == 0:
+                eval_metrics, state = self.evaluate(state)
+                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                self.recorder.write(
+                    add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
+                )
+
+            saved_state = tree_unpmap(state, self.pmap_axis_name)
+            if not self.config.save_replay_buffer:
+                saved_state = skip_replay_buffer_state(saved_state)
+            self.checkpoint_manager.save(
+                iterations,
+                args=ocp.args.StandardSave(saved_state),
+            )
+
+        return state
