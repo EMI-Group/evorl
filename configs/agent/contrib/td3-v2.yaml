@@ -23,7 +23,6 @@ exploration_epsilon: 0.1
 policy_noise: 0.2
 clip_policy_noise: 0.5
 actor_update_interval: 2
-num_updates_per_iter: 1 # #updates per rollout, usually use: num_envs * rollout_length // actor_update_interval
 critics_in_actor_loss: first # first or min
 
 loss_weights:
