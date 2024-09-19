@@ -133,7 +133,7 @@ class TD3Workflow(TD3Workflow):
             critic_opt_state = opt_state.critic
             actor_opt_state = opt_state.actor
 
-            critic_key, actor_key = jax.random.split(key, num=4)
+            critic_key, actor_key = jax.random.split(key)
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                 critic_update_fn(
