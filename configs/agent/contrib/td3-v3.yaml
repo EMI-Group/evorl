@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.algorithms.contrib.td3_v2.TD3Workflow
+workflow_cls: evorl.algorithms.contrib.td3_v3.TD3Workflow
 
 num_envs: 1
 normalize_obs: false
@@ -13,8 +13,8 @@ num_eval_envs: 16
 eval_episodes: 16 # should be divided by num_eval_envs
 eval_interval: 16384 # unit: num of iterations
 
-random_timesteps: 256 # steps filled into the replay buffer
-learning_start_timesteps: 256 # steps before training starts
+random_timesteps: 25600 # steps filled into the replay buffer
+learning_start_timesteps: 25600 # steps before training starts
 batch_size: 256
 replay_buffer_capacity: 1000000
 
@@ -23,7 +23,6 @@ exploration_epsilon: 0.1
 policy_noise: 0.2
 clip_policy_noise: 0.5
 actor_update_interval: 2
-critics_in_actor_loss: first # first or min
 
 loss_weights:
   actor_loss: 1.0
@@ -35,7 +34,6 @@ optimizer:
 
 agent_network:
   norm_layer_type: "none"
-  num_critics: 2
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
 
