@@ -138,16 +138,15 @@ def create_wrapped_gymnax_env(
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
     discount: float = 1.0,
-    record_last_obs: None | bool = None,
+    record_last_obs: bool = False,
     **kwargs,
 ) -> Env:
     env = create_gymnax_env(env_name, flatten_obs, **kwargs)
 
-    if record_last_obs is None:
-        record_last_obs = (
-            autoreset_mode == AutoresetMode.NORMAL
-            or autoreset_mode == AutoresetMode.FAST
-        )
+    if autoreset_mode == AutoresetMode.ENVPOOL:
+        # envpool mode will always record last obs
+        record_last_obs = False
+
     if autoreset_mode != AutoresetMode.DISABLED:
         env = EpisodeWrapper(
             env,

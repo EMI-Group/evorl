@@ -277,6 +277,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.NORMAL,
+            record_last_obs=True,
         )
 
         assert isinstance(
