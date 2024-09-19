@@ -241,7 +241,6 @@ class CEMRLWorkflow(Workflow):
                 target_actor_params=0,
             ),
             obs_preprocessor_state=None,
-            action_space=None,
         )
 
         return workflow

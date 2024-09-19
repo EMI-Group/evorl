@@ -234,7 +234,6 @@ class ERLWorkflow(Workflow):
         workflow.agent_state_pytree_axes = AgentState(
             params=0,
             obs_preprocessor_state=None,
-            action_space=None,
         )
 
         return workflow

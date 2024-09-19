@@ -28,6 +28,10 @@ MISSING_LOSS = -1e10
 
 
 class TD3Workflow(TD3Workflow):
+    """
+    The similar impl of TD3 in SB3 and CleanRL
+    """
+
     @classmethod
     def name(cls):
         return "TD3-V2"

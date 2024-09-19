@@ -17,18 +17,17 @@ from evorl.types import (
     PyTreeNode,
     PyTreeDict,
 )
-from evorl.utils import running_statistics
 
 AgentParams = Mapping[str, Params]
 
 
 class AgentState(PyTreeData):
     params: AgentParams
-    obs_preprocessor_state: running_statistics.RunningStatisticsState | None = None
+    obs_preprocessor_state: Any = None
     # TODO: define the action_postprocessor_state
     action_postprocessor_state: Any = None
-    action_space: Space | None = None
-    obs_space: Space | None = None
+    # action_space: Space | None = None
+    # obs_space: Space | None = None
     extra_state: Any = None
 
 
@@ -105,14 +104,21 @@ class RandomAgent(Agent):
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        return AgentState(params={}, obs_space=obs_space, action_space=action_space)
+        extra_state = PyTreeDict(
+            action_space=action_space,
+            obs_space=obs_space,
+        )
+        return AgentState(params={}, extra_state=extra_state)
 
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        batch_shapes = sample_batch.obs.shape[: -len(agent_state.obs_space.shape)]
+        obs_space = agent_state.extra_state.obs_space
+        action_space = agent_state.extra_state.action_space
 
-        action_sample_fn = agent_state.action_space.sample
+        batch_shapes = sample_batch.obs.shape[: -len(obs_space.shape)]
+
+        action_sample_fn = action_space.sample
         for _ in range(len(batch_shapes)):
             action_sample_fn = jax.vmap(action_sample_fn)
 

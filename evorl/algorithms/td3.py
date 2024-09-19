@@ -128,7 +128,6 @@ class TD3Agent(Agent):
         return AgentState(
             params=params_state,
             obs_preprocessor_state=obs_preprocessor_state,
-            action_space=action_space,
         )
 
     def compute_actions(
@@ -147,9 +146,7 @@ class TD3Agent(Agent):
         # add random noise
         noise = jax.random.normal(key, actions.shape) * self.exploration_epsilon
         actions += noise
-        actions = jnp.clip(
-            actions, agent_state.action_space.low, agent_state.action_space.high
-        )
+        actions = jnp.clip(actions, -1.0, 1.0)
 
         return actions, PyTreeDict()
 
@@ -242,7 +239,7 @@ class TD3Agent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # [T*B, A]
-        # Note: when calculating the actor loss, we don't clip the actions to the action space. It follows the impl of SB3 and CleanRL
+        # Note: when calculating the actor loss, we don't clip the actions to the action space, following the impl of SB3 and CleanRL
         actions = self.actor_network.apply(agent_state.params.actor_params, obs)
 
         # TODO: handle redundant computation
