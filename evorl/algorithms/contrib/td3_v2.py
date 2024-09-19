@@ -41,7 +41,7 @@ class TD3Workflow(TD3Workflow):
         the basic step function for the workflow to update agent
         """
         iterations = state.metrics.iterations + 1
-        key, rollout_key, learn_key = jax.random.split(state.key, num=3)
+        key, rollout_key, rb_key, learn_key = jax.random.split(state.key, num=4)
 
         # the trajectory [T, B, ...]
         trajectory, env_state = rollout(
@@ -174,8 +174,6 @@ class TD3Workflow(TD3Workflow):
                 agent_state,
                 opt_state,
             )
-
-        key, learn_key, rb_key = jax.random.split(key, num=4)
 
         sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key).experience
 

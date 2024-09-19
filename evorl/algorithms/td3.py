@@ -30,8 +30,8 @@ from evorl.types import (
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
-
 from evorl.agent import Agent, AgentState
+
 from .offpolicy_utils import OffPolicyWorkflowTemplate, clean_trajectory
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class TD3NetworkParams(PyTreeData):
 
 class TD3Agent(Agent):
     """
-    The Agnet for DDPG
+    The Agnet for TD3
     """
 
     norm_layer_type: str = "none"
