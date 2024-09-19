@@ -187,3 +187,6 @@ def creat_gym_env(
         env = OneEpisodeWrapper(env)
 
     return env
+
+
+# Note: for env of Humanoid and HumanoidStandup, the action sapce is [-0.4, 0.4], we don't explicitly handle it. You need to manually squash the action space to [-1, 1] by using `ActionSquashWrapper`.

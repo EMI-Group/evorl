@@ -59,3 +59,4 @@ Note:
 - gymnax
 - jumanji
 - jaxmarl
+- envpool
