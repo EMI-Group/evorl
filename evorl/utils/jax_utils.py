@@ -98,8 +98,20 @@ def tree_get(tree, idx_or_slice):
     return jtu.tree_map(lambda x: x[idx_or_slice], tree)
 
 
-def tree_set(src, target, idx_or_slice):
-    return jtu.tree_map(lambda x, y: x.at[idx_or_slice].set(y), src, target)
+def tree_set(
+    src,
+    target,
+    idx_or_slice,
+    indices_are_sorted: bool = False,
+    unique_indices: bool = False,
+):
+    return jtu.tree_map(
+        lambda x, y: x.at[idx_or_slice].set(
+            y, indices_are_sorted=indices_are_sorted, unique_indices=unique_indices
+        ),
+        src,
+        target,
+    )
 
 
 def scan_and_mean(*args, **kwargs):

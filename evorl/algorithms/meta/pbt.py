@@ -25,7 +25,7 @@ from evorl.distributed import (
 )
 from evorl.metrics import MetricBase
 from evorl.types import MISSING_REWARD, PyTreeDict, State
-from evorl.utils.jax_utils import tree_last
+from evorl.utils.jax_utils import tree_last, tree_get, tree_set
 from evorl.workflows import RLWorkflow, Workflow
 from evorl.recorders import get_1d_array_statistics
 
@@ -336,8 +336,8 @@ class PBTWorkflow(Workflow):
             tops_num=round(config.pop_size * config.top_ratio),
         )
 
-        parents = _pop_read(tops_indices, pop)
-        parents_wf_state = _pop_read(tops_indices, pop_workflow_state)
+        parents = tree_get(pop, tops_indices)
+        parents_wf_state = tree_get(pop_workflow_state, tops_indices)
 
         # TODO: check sharding issue with vmap under multi-devices.
         offsprings = jax.vmap(
@@ -354,10 +354,13 @@ class PBTWorkflow(Workflow):
         )
 
         # ==== survival | merge population ====
-        pop = _pop_write(bottoms_indices, pop, offsprings)
+        pop = tree_set(pop, offsprings, bottoms_indices, unique_indices=True)
         # we copy wf_state back to offspring wf_state
-        pop_workflow_state = _pop_write(
-            bottoms_indices, pop_workflow_state, offsprings_workflow_state
+        pop_workflow_state = tree_set(
+            pop_workflow_state,
+            offsprings_workflow_state,
+            bottoms_indices,
+            unique_indices=True,
         )
 
         return pop, pop_workflow_state
@@ -380,10 +383,6 @@ class PBTWorkflow(Workflow):
     def enable_jit(cls) -> None:
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls.step = jax.jit(cls.step, static_argnums=(0,))
-
-
-def _pop_read(indices, pop):
-    return jtu.tree_map(lambda x: x[indices], pop)
 
 
 def _pop_write(indices, pop, new):

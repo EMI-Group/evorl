@@ -665,6 +665,7 @@ class CEMRLWorkflow(Workflow):
                 pop_actor_params,
                 learning_agent_state.params.actor_params,
                 learning_actor_slice,
+                unique_indices=True,
             )
             # Note: updated critic_params are stored in learning_agent_state
             # actor_params [num_learning_offspring, ...] -> [pop_size, ...]

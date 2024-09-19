@@ -47,38 +47,41 @@ def mlp_mutate(
 
             (
                 key,
-                ind1_key,
-                ind2_key,
+                ind_key,
                 prob_key,
                 normal_update_key,
-                super_update_key,
                 reset_update_key,
                 ssne_prob_key,
-            ) = jax.random.split(key, 8)
+            ) = jax.random.split(key, 6)
 
-            ind_dim1 = jax.random.randint(ind1_key, (num_mutations,), 0, param.shape[0])
-            ind_dim2 = jax.random.randint(ind2_key, (num_mutations,), 0, param.shape[1])
+            # unlike ERL, we sample elements without replacement
+            num_param = param.shape[0] * param.shape[1]
+            flat_ind = jax.random.choice(
+                ind_key, num_param, (num_mutations,), replace=False
+            )
+            ind = jnp.unravel_index(flat_ind, param.shape)
 
             prob = jax.random.uniform(prob_key, (num_mutations,))
             super_mask = prob < super_mut_prob
             reset_mask = jnp.logical_and(prob >= super_mut_prob, prob < reset_prob)
 
             updates = jax.random.uniform(normal_update_key, (num_mutations,)) * jnp.abs(
-                param[ind_dim1, ind_dim2]
+                param[ind]
             )
             updates = jnp.where(
                 super_mask, updates * super_mut_strength, updates * mut_strength
             )
 
             reset_param = jax.random.normal(reset_update_key, (num_mutations,))
-            new_param = param.at[ind_dim1, ind_dim2].set(
-                jnp.where(reset_mask, reset_param, param[ind_dim1, ind_dim2] + updates)
+            new_param = param.at[ind].set(
+                jnp.where(reset_mask, reset_param, param[ind] + updates),
+                unique_indices=True,
             )
+
+            new_param = jnp.clip(new_param, -weight_max_magnitude, weight_max_magnitude)
 
             ssne_prob = jax.random.uniform(ssne_prob_key)
             param = jnp.where(ssne_prob < ssne_probs[i], new_param, param)
-
-            param = jnp.clip(param, -weight_max_magnitude, weight_max_magnitude)
 
         elif param.ndim == 1:  # bias or layer norm
             if vec_relative_prob > 0:
@@ -86,17 +89,14 @@ def mlp_mutate(
 
                 (
                     key,
-                    ind1_key,
+                    ind_key,
                     prob_key,
                     normal_update_key,
-                    super_update_key,
                     reset_update_key,
                     ssne_prob_key,
-                ) = jax.random.split(key, 7)
+                ) = jax.random.split(key, 6)
 
-                ind_dim1 = jax.random.randint(
-                    ind1_key, (num_mutations,), 0, param.shape[0]
-                )
+                ind = jax.random.choice(ind_key, param.shape[0], (num_mutations,))
 
                 prob = jax.random.uniform(prob_key, (num_mutations,))
                 super_mask = prob < super_mut_prob
@@ -104,24 +104,25 @@ def mlp_mutate(
 
                 updates = jax.random.uniform(
                     normal_update_key, (num_mutations,)
-                ) * jnp.abs(param[ind_dim1, ind_dim2])
+                ) * jnp.abs(param[ind])
                 updates = jnp.where(
                     super_mask, updates * super_mut_strength, updates * mut_strength
                 )
 
                 reset_param = jax.random.normal(reset_update_key, (num_mutations,))
-                new_param = param.at[ind_dim1, ind_dim2].set(
-                    jnp.where(
-                        reset_mask, reset_param, param[ind_dim1, ind_dim2] + updates
-                    )
+                new_param = param.at[ind].set(
+                    jnp.where(reset_mask, reset_param, param[ind] + updates),
+                    unique_indices=True,
+                )
+
+                new_param = jnp.clip(
+                    new_param, -weight_max_magnitude, weight_max_magnitude
                 )
 
                 ssne_prob = jax.random.uniform(ssne_prob_key)
                 param = jnp.where(
                     ssne_prob < ssne_probs[i] * vec_relative_prob, new_param, param
                 )
-
-                param = jnp.clip(param, -weight_max_magnitude, weight_max_magnitude)
 
         else:
             raise ValueError(f"Unsupported parameter shape: {param.shape}")

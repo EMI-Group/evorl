@@ -733,7 +733,12 @@ class ERLWorkflow(Workflow):
                 rl_actor_params = agent_state.params.actor_params
 
                 ec_opt_state = ec_opt_state.replace(
-                    pop=tree_set(pop_actor_params, rl_actor_params, worst_indices)
+                    pop=tree_set(
+                        pop_actor_params,
+                        rl_actor_params,
+                        worst_indices,
+                        unique_indices=True,
+                    )
                 )
 
         else:
