@@ -197,9 +197,7 @@ class TD3Agent(Agent):
             self.clip_policy_noise,
         )
         # Note: when calculating the critic loss, we also clip the actions to the action space
-        actions_next = jnp.clip(
-            actions_next, agent_state.action_space.low, agent_state.action_space.high
-        )
+        actions_next = jnp.clip(actions_next, -1.0, 1.0)
 
         # [B, num_critics]
         qs_next = self.critic_network.apply(
@@ -243,12 +241,12 @@ class TD3Agent(Agent):
         actions = self.actor_network.apply(agent_state.params.actor_params, obs)
 
         # TODO: handle redundant computation
-        # Note: what about using min_Q, like SAC?
         qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions)
 
         if self.critics_in_actor_loss == "first":
             actor_loss = -jnp.mean(qs[..., 0])
         elif self.critics_in_actor_loss == "min":
+            # using min_Q, like SAC
             actor_loss = -jnp.mean(qs.min(-1))
         else:
             raise ValueError(
