@@ -108,19 +108,11 @@ class TD3Workflow(TD3Workflow):
             detach_fn=lambda agent_state: agent_state.params.actor_params,
         )
 
-        def _sample_and_update_critic_fn(agent_state, opt_state, key):
+        def _update_critic_fn(agent_state, opt_state, sample_batch, key):
             critic_opt_state = opt_state.critic
 
-            key, rb_key, critic_key = jax.random.split(key, num=3)
-            # it's safe to use read-only replay_buffer_state here.
-            sample_batch = self.replay_buffer.sample(
-                replay_buffer_state, rb_key
-            ).experience
-
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                critic_update_fn(
-                    critic_opt_state, agent_state, sample_batch, critic_key
-                )
+                critic_update_fn(critic_opt_state, agent_state, sample_batch, key)
             )
 
             opt_state = opt_state.replace(critic=critic_opt_state)
@@ -137,15 +129,11 @@ class TD3Workflow(TD3Workflow):
                 opt_state,
             )
 
-        def _sample_and_update_both_fn(agent_state, opt_state, key):
+        def _update_both_fn(agent_state, opt_state, sample_batch, key):
             critic_opt_state = opt_state.critic
             actor_opt_state = opt_state.actor
 
-            key, critic_key, actor_key, rb_key = jax.random.split(key, num=4)
-
-            sample_batch = self.replay_buffer.sample(
-                replay_buffer_state, rb_key
-            ).experience
+            critic_key, actor_key = jax.random.split(key, num=4)
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                 critic_update_fn(
@@ -187,6 +175,10 @@ class TD3Workflow(TD3Workflow):
                 opt_state,
             )
 
+        key, learn_key, rb_key = jax.random.split(key, num=4)
+
+        sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key).experience
+
         # Note: using cond prohibits the parallel training with vmap
         (
             critic_loss,
@@ -197,10 +189,11 @@ class TD3Workflow(TD3Workflow):
             opt_state,
         ) = jax.lax.cond(
             iterations % self.config.actor_update_interval == 0,
-            _sample_and_update_both_fn,
-            _sample_and_update_critic_fn,
+            _update_both_fn,
+            _update_critic_fn,
             agent_state,
             opt_state,
+            sample_batch,
             learn_key,
         )
 

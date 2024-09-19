@@ -164,6 +164,10 @@ class MLPMutation:
             ),
         )
 
+        assert (
+            num_mutation_frac >= 0 and num_mutation_frac <= 1
+        ), "num_mutation_frac should be in [0, 1]"
+
     def __call__(self, xs: chex.ArrayTree, key: chex.PRNGKey):
         pop_size = jtu.tree_leaves(xs)[0].shape[0]
         if key.ndim <= 1:
