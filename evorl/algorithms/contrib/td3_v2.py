@@ -41,7 +41,9 @@ class TD3Workflow(TD3Workflow):
         the basic step function for the workflow to update agent
         """
         iterations = state.metrics.iterations + 1
-        key, rollout_key, rb_key, learn_key = jax.random.split(state.key, num=4)
+        key, rollout_key, rb_key, critic_key, actor_key = jax.random.split(
+            state.key, num=5
+        )
 
         # the trajectory [T, B, ...]
         trajectory, env_state = rollout(
@@ -117,32 +119,18 @@ class TD3Workflow(TD3Workflow):
 
             opt_state = opt_state.replace(critic=critic_opt_state)
 
-            actor_loss = jnp.full((), fill_value=MISSING_LOSS)
-            actor_loss_dict = PyTreeDict(actor_loss=actor_loss)
-
             return (
                 critic_loss,
-                actor_loss,
                 critic_loss_dict,
-                actor_loss_dict,
                 agent_state,
                 opt_state,
             )
 
-        def _update_both_fn(agent_state, opt_state, sample_batch, key):
-            critic_opt_state = opt_state.critic
+        def _update_actor_fn(agent_state, opt_state, sample_batch, key):
             actor_opt_state = opt_state.actor
 
-            critic_key, actor_key = jax.random.split(key)
-
-            (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                critic_update_fn(
-                    critic_opt_state, agent_state, sample_batch, critic_key
-                )
-            )
-
             (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
-                actor_update_fn(actor_opt_state, agent_state, sample_batch, actor_key)
+                actor_update_fn(actor_opt_state, agent_state, sample_batch, key)
             )
 
             target_actor_params = soft_target_update(
@@ -162,14 +150,21 @@ class TD3Workflow(TD3Workflow):
                 )
             )
 
-            opt_state = opt_state.replace(
-                actor=actor_opt_state, critic=critic_opt_state
-            )
+            opt_state = opt_state.replace(actor=actor_opt_state)
 
             return (
-                critic_loss,
                 actor_loss,
-                critic_loss_dict,
+                actor_loss_dict,
+                agent_state,
+                opt_state,
+            )
+
+        def _dummy_update_actor_fn(agent_state, opt_state, sample_batch, key):
+            actor_loss = jnp.full((), fill_value=MISSING_LOSS)
+            actor_loss_dict = PyTreeDict(actor_loss=actor_loss)
+
+            return (
+                actor_loss,
                 actor_loss_dict,
                 agent_state,
                 opt_state,
@@ -177,22 +172,24 @@ class TD3Workflow(TD3Workflow):
 
         sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key).experience
 
-        # Note: using cond prohibits the parallel training with vmap
+        critic_loss, critic_loss_dict, agent_state, opt_state = _update_critic_fn(
+            agent_state, opt_state, sample_batch, critic_key
+        )
+
+        # Note: using cond prohibits the parallel training by vmap
         (
-            critic_loss,
             actor_loss,
-            critic_loss_dict,
             actor_loss_dict,
             agent_state,
             opt_state,
         ) = jax.lax.cond(
             iterations % self.config.actor_update_interval == 0,
-            _update_both_fn,
-            _update_critic_fn,
+            _update_actor_fn,
+            _dummy_update_actor_fn,
             agent_state,
             opt_state,
             sample_batch,
-            learn_key,
+            actor_key,
         )
 
         train_metrics = TD3TrainMetric(
