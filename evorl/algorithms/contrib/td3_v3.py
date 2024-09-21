@@ -49,8 +49,8 @@ MISSING_LOSS = -1e10
 
 class TD3TrainMetric(MetricBase):
     actor_loss: chex.Array
-    q1_loss: chex.Array
-    q2_loss: chex.Array
+    critic1_loss: chex.Array
+    critic2_loss: chex.Array
     q1: chex.Array
     q2: chex.Array
 
@@ -364,10 +364,10 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
                 has_aux=True,
             )
 
-            (q1_loss, q1), ciritc1_params, critic1_opt_state = critic_update_fn(
+            (critic1_loss, q1), ciritc1_params, critic1_opt_state = critic_update_fn(
                 critic1_opt_state, agent_state.params.critic1_params
             )
-            (q2_loss, q2), ciritc2_params, critic2_opt_state = critic_update_fn(
+            (critic2_loss, q2), ciritc2_params, critic2_opt_state = critic_update_fn(
                 critic2_opt_state, agent_state.params.critic2_params
             )
 
@@ -382,8 +382,8 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             )
 
             train_info = PyTreeDict(
-                q1_loss=q1_loss,
-                q2_loss=q2_loss,
+                critic1_loss=critic1_loss,
+                critic2_loss=critic2_loss,
                 q1=q1,
                 q2=q2,
             )
