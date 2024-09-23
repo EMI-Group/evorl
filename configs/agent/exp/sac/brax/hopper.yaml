@@ -17,6 +17,9 @@ eval_interval: 8192 # unit: num of iterations
 
 num_updates_per_iter: 32
 
+random_timesteps: 0
+learning_start_timesteps: 8192
+
 # Note: unlike brax, corrently we don't change lr & reward_scale
 
 checkpoint:
