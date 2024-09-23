@@ -4,7 +4,7 @@ import evox.algorithms
 import jax
 
 from evorl.types import State
-from evorl.envs import AutoresetMode, create_wrapped_brax_env
+from evorl.envs import AutoresetMode, create_env
 from evorl.evaluator import Evaluator
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.agent import AgentState
@@ -24,8 +24,9 @@ class OpenESWorkflow(ESWorkflowTemplate):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        env = create_wrapped_brax_env(
+        env = create_env(
             config.env.env_name,
+            config.env.env_type,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
@@ -65,8 +66,9 @@ class OpenESWorkflow(ESWorkflowTemplate):
             params = agent_state.params.replace(policy_params=cand)
             return agent_state.replace(params=params)
 
-        eval_env = create_wrapped_brax_env(
+        eval_env = create_env(
             config.env.env_name,
+            config.env.env_type,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,

@@ -8,7 +8,7 @@ import jax.tree_util as jtu
 import orbax.checkpoint as ocp
 
 from evorl.distributed import tree_unpmap
-from evorl.envs import AutoresetMode, create_wrapped_brax_env
+from evorl.envs import AutoresetMode, create_env
 from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.recorders import get_1d_array_statistics
@@ -25,8 +25,9 @@ class CSOWorkflow(EvoXWorkflowWrapper):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        env = create_wrapped_brax_env(
+        env = create_env(
             config.env.env_name,
+            config.env.env_type,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
