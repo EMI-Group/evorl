@@ -8,12 +8,9 @@ hydra-core
 
 jax>=0.4.28
 jaxlib>=0.4.28
-jaxmarl
-jumanji
 numpy
 optax
 orbax-checkpoint
-pgx
 PyYAML
 scipy
 wandb

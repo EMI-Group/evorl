@@ -7,15 +7,24 @@ EvoRL is an efficient Evolutionary Reinforcement Learning Framework integrated w
 For developer: see [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 For normal user:
-```
+
+```shell
 pip install -e .
+```
+
+By default, this will only install envs on brax and gymnax. We also experimentally support other envs, which need to be manually installed:
+
+```shell
+pip install envpool
+pip install jumanji
+pip install jaxmarl
 ```
 
 ## Usage
 
 EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms.
 
-### Train agents from cli:
+### Train agents from cli
 
 ```shell
 python -m evorl.train agent=exp/ppo/brax/ant env=brax/ant
@@ -26,7 +35,7 @@ python -m evorl.train agent=exp/ppo/brax/ant env=gymnax/CartPole-v1 agent_networ
 python -m evorl.train -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514
 ```
 
-### Train multiple agents in parallel:
+### Train multiple agents in parallel
 
 ```shell
 # need to install joblib plugin before the first run
