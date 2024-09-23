@@ -41,7 +41,7 @@ def create_env(env_name: str, env_type: str, **kwargs):
         _env_type = env_type.split("_")[1]
         if _env_type in ["gym", "gymnasium"]:
             env = creat_gym_env(
-                env_name, gymnasium_env=_env_type == "gymnasium", **kwargs
+                env_name, gymnasium_env=(_env_type == "gymnasium"), **kwargs
             )
         else:
             raise ValueError(f"env_type {env_type} not supported")

@@ -164,7 +164,9 @@ def creat_gym_env(
     **kwargs,
 ) -> GymAdapter:
     """
-    Tips: unlike other jax-based env, most wrappers are handled in envpool.
+    Tips:
+    1. unlike other jax-based env, most wrappers are handled in envpool.
+    2. Don't use the env with vmap, eg: vmap(env.step), this could cause undefined behavior.
     """
 
     if autoreset_mode not in [AutoresetMode.ENVPOOL, AutoresetMode.DISABLED]:
