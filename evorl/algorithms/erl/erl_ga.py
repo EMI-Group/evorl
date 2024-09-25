@@ -23,6 +23,7 @@ from evorl.types import (
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient, tree_set
 from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajectory
+from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
 from evorl.sample_batch import SampleBatch
 from evorl.agent import Agent, AgentState, RandomAgent
@@ -42,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 
 class POPTrainMetric(MetricBase):
+    rb_size: int
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
     rl_episode_returns: chex.Array | None = None
@@ -680,6 +682,7 @@ class ERLWorkflow(Workflow):
         sampled_episodes += jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         train_metrics = POPTrainMetric(
+            rb_size=0,  # dummy
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
         )
@@ -722,6 +725,10 @@ class ERLWorkflow(Workflow):
 
         else:
             rl_sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
+
+        train_metrics = train_metrics.replace(
+            rb_size=get_buffer_size(replay_buffer_state),
+        )
 
         # iterations is the number of updates of the agent
         workflow_metrics = state.metrics.replace(

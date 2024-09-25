@@ -30,6 +30,7 @@ from evorl.utils.rl_toolkits import (
     soft_target_update,
     flatten_rollout_trajectory,
 )
+from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
 from evorl.sample_batch import SampleBatch
 from evorl.agent import Agent, AgentState, RandomAgent
@@ -700,6 +701,7 @@ class CEMRLWorkflow(Workflow):
         )
 
         train_metrics = POPTrainMetric(
+            rb_size=get_buffer_size(replay_buffer_state),
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             rl_metrics=td3_metrics,
