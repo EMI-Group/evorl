@@ -80,13 +80,20 @@ class DebugRandomAgent(Agent):
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        return AgentState(params={}, obs_space=obs_space, action_space=action_space)
+        extra_state = PyTreeDict(
+            action_space=action_space,
+            obs_space=obs_space,
+        )
+        return AgentState(params={}, extra_state=extra_state)
 
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        batch_shapes = sample_batch.obs.shape[: -len(agent_state.obs_space.shape)]
-        actions = agent_state.action_space.sample(key)
+        obs_space = agent_state.extra_state.obs_space
+        action_space = agent_state.extra_state.action_space
+
+        batch_shapes = sample_batch.obs.shape[: -len(obs_space.shape)]
+        actions = action_space.sample(key)
         actions = jnp.broadcast_to(actions, batch_shapes + actions.shape)
         return actions, PyTreeDict()
 
