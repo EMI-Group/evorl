@@ -129,7 +129,7 @@ class PopTD3Workflow(TD3Workflow):
                 agent_state=agent_state,
                 key=rollout_key,
                 rollout_length=rollout_length,
-                env_extra_fields=("last_obs", "termination"),
+                env_extra_fields=("ori_obs", "termination"),
             )
 
             # [T, B, ...] -> [T*B, ...]
@@ -227,7 +227,7 @@ class PopTD3Workflow(TD3Workflow):
             self.env.step,
             self.agent.compute_actions,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("last_obs", "termination"),
+            env_extra_fields=("ori_obs", "termination"),
         )
 
         # the trajectory [#pop, T, B, ...]

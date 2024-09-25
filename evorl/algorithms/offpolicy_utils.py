@@ -83,7 +83,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             extras=PyTreeDict(
                 policy_extras=PyTreeDict(),
                 env_extras=PyTreeDict(
-                    {"last_obs": dummy_obs, "termination": dummy_done}
+                    {"ori_obs": dummy_obs, "termination": dummy_done}
                 ),
             ),
         )
@@ -110,7 +110,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
                 agent_state=agent_state,
                 key=rollout_key,
                 rollout_length=rollout_length,
-                env_extra_fields=("last_obs", "termination"),
+                env_extra_fields=("ori_obs", "termination"),
             )
 
             # [T, B, ...] -> [T*B, ...]

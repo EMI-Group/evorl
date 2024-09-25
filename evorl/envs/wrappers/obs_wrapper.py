@@ -19,8 +19,8 @@ class ObsFlattenWrapper(Wrapper):
         start_idx = state.obs.ndim - self.obs_ndim
         state = state.replace(obs=jax.lax.collapse(state.obs, start_idx))
 
-        if "last_obs" in state.info:
-            state.info.last_obs = jax.lax.collapse(state.info.last_obs, start_idx)
+        if "ori_obs" in state.info:
+            state.info.ori_obs = jax.lax.collapse(state.info.ori_obs, start_idx)
 
         return state
 

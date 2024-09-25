@@ -19,13 +19,13 @@ class EpisodeWrapper(Wrapper):
         - steps: the current step count of the episode
         - trunction: whether the episode is truncated
         - termination: whether the episode is terminated
-        - last_obs: the next observation without autoreset
+        - ori_obs: the next observation without autoreset
 
     args:
         env: the wrapped env should be a single un-vectorized environment.
         episode_length: the maxiumum length of each episode for truncation
         action_repeat: the number of times to repeat each action
-        record_last_obs: whether to record the real next observation of each episode
+        record_ori_obs: whether to record the real next observation of each episode
         record_episode_return: whether to record the return of each episode
         discount: the discount factor for computing the return when setting record_episode_return=True
     """
@@ -34,13 +34,13 @@ class EpisodeWrapper(Wrapper):
         self,
         env: Env,
         episode_length: int,
-        record_last_obs: bool = True,
+        record_ori_obs: bool = True,
         record_episode_return: bool = False,
         discount: float = 1.0,
     ):
         super().__init__(env)
         self.episode_length = episode_length
-        self.record_last_obs = record_last_obs
+        self.record_ori_obs = record_ori_obs
         self.record_episode_return = record_episode_return
         self.discount = discount
 
@@ -50,8 +50,8 @@ class EpisodeWrapper(Wrapper):
         state.info.steps = jnp.zeros((), dtype=jnp.int32)
         state.info.termination = jnp.zeros(())
         state.info.truncation = jnp.zeros(())
-        if self.record_last_obs:
-            state.info.last_obs = jnp.zeros_like(state.obs)
+        if self.record_ori_obs:
+            state.info.ori_obs = jnp.zeros_like(state.obs)
         if self.record_episode_return:
             state.info.episode_return = jnp.zeros(())
 
@@ -90,11 +90,11 @@ class EpisodeWrapper(Wrapper):
             ),
         )
 
-        if self.record_last_obs:
+        if self.record_ori_obs:
             # the real next_obs at the end of episodes, where
             # state.obs could be changed to the next episode's inital state
             # by VmapAutoResetWrapper
-            info.last_obs = state.obs  # i.e. obs at t+1
+            info.ori_obs = state.obs  # i.e. obs at t+1
 
         if self.record_episode_return:
             if self.discount == 1.0:  # a shortcut for discount=1.0
@@ -121,12 +121,12 @@ class OneEpisodeWrapper(EpisodeWrapper):
         self,
         env: Env,
         episode_length: int,
-        record_last_obs: bool = False,
+        record_ori_obs: bool = False,
     ):
         super().__init__(
             env,
             episode_length,
-            record_last_obs=record_last_obs,
+            record_ori_obs=record_ori_obs,
             record_episode_return=False,
         )
 

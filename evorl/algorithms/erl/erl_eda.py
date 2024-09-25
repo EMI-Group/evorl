@@ -82,7 +82,7 @@ class ERLWorkflow(_ERLWorkflow):
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
-            record_last_obs=True,
+            record_ori_obs=True,
         )
 
         assert isinstance(
@@ -130,7 +130,7 @@ class ERLWorkflow(_ERLWorkflow):
             action_fn=action_fn,
             num_envs=config.num_envs,
             max_episode_steps=config.env.max_episode_steps,
-            env_extra_fields=("last_obs", "termination"),
+            env_extra_fields=("ori_obs", "termination"),
         )
 
         if config.rl_exploration:
@@ -144,7 +144,7 @@ class ERLWorkflow(_ERLWorkflow):
             action_fn=action_fn,
             num_envs=config.num_envs,
             max_episode_steps=config.env.max_episode_steps,
-            env_extra_fields=("last_obs", "termination"),
+            env_extra_fields=("ori_obs", "termination"),
         )
 
         replay_buffer = flashbax.make_item_buffer(

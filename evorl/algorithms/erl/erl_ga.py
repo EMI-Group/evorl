@@ -127,7 +127,7 @@ class ERLWorkflow(Workflow):
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
-            record_last_obs=True,
+            record_ori_obs=True,
         )
 
         assert isinstance(
@@ -181,7 +181,7 @@ class ERLWorkflow(Workflow):
             action_fn=action_fn,
             num_envs=config.num_envs,
             max_episode_steps=config.env.max_episode_steps,
-            env_extra_fields=("last_obs", "termination"),
+            env_extra_fields=("ori_obs", "termination"),
         )
 
         if config.rl_exploration:
@@ -195,7 +195,7 @@ class ERLWorkflow(Workflow):
             action_fn=action_fn,
             num_envs=config.num_envs,
             max_episode_steps=config.env.max_episode_steps,
-            env_extra_fields=("last_obs", "termination"),
+            env_extra_fields=("ori_obs", "termination"),
         )
 
         replay_buffer = flashbax.make_item_buffer(
@@ -327,7 +327,7 @@ class ERLWorkflow(Workflow):
             extras=PyTreeDict(
                 policy_extras=PyTreeDict(),
                 env_extras=PyTreeDict(
-                    {"last_obs": dummy_obs, "termination": dummy_done}
+                    {"ori_obs": dummy_obs, "termination": dummy_done}
                 ),
             ),
         )
@@ -350,7 +350,7 @@ class ERLWorkflow(Workflow):
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.NORMAL,
-            record_last_obs=True,
+            record_ori_obs=True,
         )
 
         # ==== fill random transitions ====
@@ -370,7 +370,7 @@ class ERLWorkflow(Workflow):
             agent_state=random_agent_state,
             key=rollout_key,
             rollout_length=rollout_length,
-            env_extra_fields=("last_obs", "termination"),
+            env_extra_fields=("ori_obs", "termination"),
         )
 
         # [T, B, ...] -> [T*B, ...]

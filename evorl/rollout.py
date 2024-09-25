@@ -138,7 +138,7 @@ def rollout(
 #         env_fn, action_fn, env_state, agent_state, key, rollout_length, env_extra_fields
 #     )
 
-#     episodes = Episode(trajectory=trajectory, last_obs=env_state.obs)
+#     episodes = Episode(trajectory=trajectory, ori_obs=env_state.obs)
 
 #     return env_state, episodes
 
@@ -201,7 +201,7 @@ def rollout(
 #     )
 
 #     # valid_mask is still ensured
-#     episodes = Episode(trajectory=trajectory, last_obs=env_state.obs)
+#     episodes = Episode(trajectory=trajectory, ori_obs=env_state.obs)
 
 #     return env_state, episodes
 

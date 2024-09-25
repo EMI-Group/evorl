@@ -31,7 +31,7 @@ class EpisodeWrapper(Wrapper):
         state.info.steps = jnp.zeros((), dtype=jnp.int32)
         state.info.termination = jnp.zeros(())
         state.info.truncation = jnp.zeros(())
-        state.info.last_obs = jtu.tree_map(lambda x: jnp.zeros_like(x), state.obs)
+        state.info.ori_obs = jtu.tree_map(lambda x: jnp.zeros_like(x), state.obs)
 
         return state
 
@@ -58,7 +58,7 @@ class EpisodeWrapper(Wrapper):
         )
         # the real next_obs at the end of episodes, where
         # state.obs could be changed in VmapAutoResetWrapper
-        state.info.last_obs = state.obs
+        state.info.ori_obs = state.obs
 
         return state.replace(done=agents_done)
 

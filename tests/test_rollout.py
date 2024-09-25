@@ -24,7 +24,7 @@ def test_rollout():
     env_extra_fields = (
         "termination",
         "truncation",
-        "last_obs",
+        "ori_obs",
         "steps",
         "episode_return",
     )

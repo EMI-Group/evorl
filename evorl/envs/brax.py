@@ -84,20 +84,20 @@ def create_wrapped_brax_env(
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
     discount: float = 1.0,
-    record_last_obs: bool = False,
+    record_ori_obs: bool = False,
     **kwargs,
 ) -> Env:
     env = create_brax_env(env_name, **kwargs)
 
     if autoreset_mode == AutoresetMode.ENVPOOL:
         # envpool mode will always record last obs
-        record_last_obs = False
+        record_ori_obs = False
 
     if autoreset_mode != AutoresetMode.DISABLED:
         env = EpisodeWrapper(
             env,
             episode_length,
-            record_last_obs=record_last_obs,
+            record_ori_obs=record_ori_obs,
             record_episode_return=True,
             discount=discount,
         )
@@ -108,7 +108,7 @@ def create_wrapped_brax_env(
         elif autoreset_mode == AutoresetMode.ENVPOOL:
             env = VmapEnvPoolAutoResetWrapper(env, num_envs=parallel)
     else:
-        env = OneEpisodeWrapper(env, episode_length, record_last_obs=record_last_obs)
+        env = OneEpisodeWrapper(env, episode_length, record_ori_obs=record_ori_obs)
         env = VmapWrapper(env, num_envs=parallel, vmap_step=True)
 
     return env

@@ -126,7 +126,7 @@ def right_shift(arr: chex.Array, shift: int, pad_val=None) -> chex.Array:
 
 class Episode(PyTreeData):
     trajectory: SampleBatch
-    last_obs: chex.ArrayTree
+    ori_obs: chex.ArrayTree
 
     @property
     def valid_mask(self) -> chex.Array:

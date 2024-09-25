@@ -53,7 +53,7 @@ class TD3Workflow(TD3Workflow):
             agent_state=state.agent_state,
             key=rollout_key,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("last_obs", "termination"),
+            env_extra_fields=("ori_obs", "termination"),
         )
 
         trajectory = clean_trajectory(trajectory)

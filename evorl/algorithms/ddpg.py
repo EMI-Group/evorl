@@ -176,7 +176,7 @@ class DDPGAgent(Agent):
             actor_entropy_loss
         ]
         """
-        next_obs = sample_batch.extras.env_extras.last_obs
+        next_obs = sample_batch.extras.env_extras.ori_obs
         obs = sample_batch.obs
         actions = sample_batch.actions
 
@@ -249,7 +249,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.NORMAL,
-            record_last_obs=True,
+            record_ori_obs=True,
         )
 
         assert isinstance(
@@ -329,7 +329,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             agent_state=state.agent_state,
             key=rollout_key,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("last_obs", "termination"),
+            env_extra_fields=("ori_obs", "termination"),
         )
 
         trajectory = clean_trajectory(trajectory)
