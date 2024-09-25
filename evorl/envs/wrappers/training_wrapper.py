@@ -332,8 +332,6 @@ class VmapEnvPoolAutoResetWrapper(Wrapper):
         new_state = jax.vmap(self.env.step)(state, action)
         new_state.info.autoreset = autoreset
 
-        # Map heterogeneous computation (non-parallelizable).
-        # This avoids lax.cond becoming lax.select in vmap
         state = jtu.tree_map(
             _where_done,
             reset_state,
