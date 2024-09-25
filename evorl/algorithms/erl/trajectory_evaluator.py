@@ -18,7 +18,7 @@ from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_len
 logger = logging.getLogger(__name__)
 
 
-class TrajectoryEvaluator(PyTreeNode):
+class EpisodeCollector(PyTreeNode):
     """
     Return eval metrics and trajectory
     """

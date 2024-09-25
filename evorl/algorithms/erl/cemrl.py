@@ -14,7 +14,7 @@ import optax
 import orbax.checkpoint as ocp
 
 from evorl.distributed import psum, agent_gradient_update
-from evorl.metrics import MetricBase, metricfield, EvaluateMetric
+from evorl.metrics import MetricBase, metricfield
 from evorl.types import (
     PyTreeDict,
     State,
@@ -36,12 +36,12 @@ from evorl.agent import Agent, AgentState, RandomAgent
 from evorl.envs import create_env, AutoresetMode, Box, Env
 from evorl.workflows import Workflow
 from evorl.rollout import rollout
-from evorl.recorders import get_1d_array_statistics
+from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers.cem import DiagCEM, EvoOptimizer
 
 from ..td3 import TD3TrainMetric, TD3Agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from .trajectory_evaluator import TrajectoryEvaluator
+from .trajectory_evaluator import EpisodeCollector
 from .utils import flatten_pop_rollout_episode, get_std_statistics
 
 
@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 
 class POPTrainMetric(MetricBase):
+    rb_size: int
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
     rl_metrics: MetricBase | None = None
@@ -59,6 +60,11 @@ class WorkflowMetric(MetricBase):
     sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+
+
+class EvaluateMetric(MetricBase):
+    pop_center_episode_returns: chex.Array
+    pop_center_episode_lengths: chex.Array
 
 
 class CEMRLWorkflow(Workflow):
@@ -73,7 +79,7 @@ class CEMRLWorkflow(Workflow):
         agent: Agent,
         optimizer: optax.GradientTransformation,
         ec_optimizer: EvoOptimizer,
-        ec_evaluator: TrajectoryEvaluator,
+        collector: EpisodeCollector,
         evaluator: Evaluator,  # to evaluate the pop-mean actor
         replay_buffer: Any,
         config: DictConfig,
@@ -83,7 +89,7 @@ class CEMRLWorkflow(Workflow):
         self.agent = agent
         self.optimizer = optimizer
         self.ec_optimizer = ec_optimizer
-        self.ec_evaluator = ec_evaluator
+        self.collector = collector
         self.evaluator = evaluator
         self.replay_buffer = replay_buffer
 
@@ -191,7 +197,7 @@ class CEMRLWorkflow(Workflow):
         else:
             action_fn = agent.evaluate_actions
 
-        ec_evaluator = TrajectoryEvaluator(
+        ec_evaluator = EpisodeCollector(
             env_step_fn=env.step,
             env_reset_fn=env.reset,
             action_fn=action_fn,
@@ -407,7 +413,7 @@ class CEMRLWorkflow(Workflow):
 
     def _rollout(self, agent_state, key):
         eval_metrics, trajectory = jax.vmap(
-            self.ec_evaluator.evaluate,
+            self.collector.evaluate,
             in_axes=(self.agent_state_pytree_axes, None, 0),
         )(
             agent_state,
@@ -764,8 +770,8 @@ class CEMRLWorkflow(Workflow):
         )
 
         eval_metrics = EvaluateMetric(
-            episode_returns=raw_eval_metrics.episode_returns.mean(),
-            episode_lengths=raw_eval_metrics.episode_lengths.mean(),
+            pop_center_episode_returns=raw_eval_metrics.episode_returns.mean(),
+            pop_center_episode_lengths=raw_eval_metrics.episode_lengths.mean(),
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         state = state.replace(key=key)
@@ -819,7 +825,7 @@ class CEMRLWorkflow(Workflow):
                 eval_metrics, state = self.evaluate(state)
 
                 self.recorder.write(
-                    {"eval/pop_center": eval_metrics.to_local_dict()}, iters
+                    add_prefix(eval_metrics.to_local_dict(), "eval"), iters
                 )
 
             saved_state = state

@@ -67,7 +67,7 @@ def _detach_params_to_agent_state(agent_state):
 def agent_gradient_update(
     loss_fn: Callable[..., float],
     optimizer: optax.GradientTransformation,
-    pmap_axis_name: str | None,
+    pmap_axis_name: str | None = None,
     has_aux: bool = False,
     attach_fn: Callable[
         [chex.ArrayTree, chex.ArrayTree], chex.ArrayTree

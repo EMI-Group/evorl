@@ -5,10 +5,8 @@ workflow_cls: evorl.algorithms.erl.cemrl.CEMRLWorkflow
 num_envs: 1
 normalize_obs: false
 discount: 0.99
-total_episodes: 100000 # iters = total_episodes / (episodes_for_fitness * pop_size), e.g: 3125 iters here
+total_episodes: 100000 # iters = total_episodes / (episodes_for_fitness * pop_size), e.g: 3125 iters here; not include random_timesteps.
 
-# random_timesteps: 25600 # steps filled into the replay buffer
-# learning_start_timesteps: 25600 # steps before training starts
 random_timesteps: 0 # steps filled into the replay buffer
 batch_size: 256
 replay_buffer_capacity: 1000000

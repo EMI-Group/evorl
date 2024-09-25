@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.algorithms.erl.erl_ga.ERLWorkflow
+workflow_cls: evorl.algorithms.erl.erl_eda.ERLWorkflow
 
 num_envs: 1
 normalize_obs: false
@@ -29,7 +29,6 @@ rollout_episodes: 1 # must be devided by num_envs
 fitness_with_exploration: false # for EC Agent
 rl_exploration: true # for RL Agent
 
-
 batch_size: 256
 
 loss_weights:
@@ -41,19 +40,20 @@ optimizer:
   grad_clip_norm: 0 # set 0 or none to turn-off
 
 rl_injection_interval: 1 # replace worst pop agents by rl agents
+rl_injection_update_stepsize: 1.0 # 1: replaced by rl weights, 0: do not inject
 
 # ====== GA Params ======
 pop_size: 32
-num_elites: 4
-tournament_size: 3
-weight_max_magnitude: 1e6
-mut_strength: 0.1
-num_mutation_frac: 0.1
-super_mut_strength: 10.0
-super_mut_prob: 0.05
-reset_prob: 0.1
-vec_relative_prob: 0.0 # turnoff 1d-array mutation
-num_crossover_frac: 2
+mirror_sampling: true
+ec_optimizer:
+  noise_stdev:
+    init: 0.03
+    final: 0.001
+    decay: 1.0 # 1.0 means: always use fixed init value
+  lr:
+    init: 0.05
+    final: 0.001
+    decay: 1.0 # 1.0 means: always use fixed init value
 
 
 
