@@ -1,15 +1,13 @@
 # @package _global_
 
 defaults:
-  - /agent/sac
+  - /agent/td3
   - _self_
 
-# Note: unlike brax, we don't change reward_scale
-
 num_envs: 256
-normalize_obs: true
+normalize_obs: false
 rollout_length: 1
-discount: 0.95
+discount: 0.99
 total_timesteps: 10000000
 fold_iters: 128
 
@@ -18,14 +16,14 @@ batch_size: 512
 optimizer:
   lr: 0.0006
 
-num_updates_per_iter: 32
-
-random_timesteps: 0
-learning_start_timesteps: 8192
-
 num_eval_envs: 16
 eval_episodes: 16 # should be divided by num_eval_envs
-eval_interval: 128 # unit: num of iterations
+eval_interval: 512 # unit: num of iterations
+
+num_updates_per_iter: 32 # each update contains 1 actor update + `actor_update_interval` critic updates
 
 checkpoint:
   save_interval_steps: 1280
+
+wandb:
+  tags: ["batch1"]
