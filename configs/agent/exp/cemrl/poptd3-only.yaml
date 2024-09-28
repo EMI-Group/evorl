@@ -8,6 +8,8 @@ defaults:
   - /agent/erl/cemrl
   - _self_
 
+total_episodes: 100000
+
 actor_update_interval: 1
 
 pop_size: 10
