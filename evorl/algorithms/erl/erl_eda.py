@@ -30,7 +30,7 @@ from evorl.ec.optimizers.open_es import OpenES, ScheduleSpec
 from ..td3 import TD3TrainMetric, TD3Agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from .trajectory_evaluator import EpisodeCollector
-from .erl_ga import ERLWorkflow as _ERLWorkflow
+from .erl_ga import ERLGAWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class EvaluateMetric(MetricBase):
     pop_center_episode_lengths: chex.Array
 
 
-class ERLWorkflow(_ERLWorkflow):
+class ERLEDAWorkflow(ERLGAWorkflow):
     """
     EC: n actors
     RL: k actors + k critics + 1 replay buffer.
@@ -443,7 +443,7 @@ class ERLWorkflow(_ERLWorkflow):
 
             if iterations % self.config.rl_injection_interval == 0:
                 # replace the center
-                pass
+                ec_opt_state = self._rl_injection(agent_state, ec_opt_state)
 
             train_metrics = train_metrics.replace(
                 rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),

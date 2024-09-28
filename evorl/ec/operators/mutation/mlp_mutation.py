@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
+from evorl.types import PyTreeNode, pytree_field
 from ..utils import is_layer_norm_layer
 
 
@@ -132,41 +133,36 @@ def mlp_mutate(
     return jtu.tree_unflatten(treedef, params)
 
 
-class MLPMutation:
-    def __init__(
-        self,
-        weight_max_magnitude: float = 1e6,
-        mut_strength: float = 0.1,
-        num_mutation_frac: float = 0.1,
-        super_mut_strength: float = 10.0,
-        super_mut_prob: float = 0.05,
-        reset_prob: float = 0.1,
-        vec_relative_prob: float = 0.0,
-    ):
-        self.weight_max_magnitude = weight_max_magnitude
-        self.mut_strength = mut_strength
-        self.num_mutation_frac = num_mutation_frac
-        self.super_mut_strength = super_mut_strength
-        self.super_mut_prob = super_mut_prob
-        self.reset_prob = reset_prob
-        self.vec_relative_prob = vec_relative_prob
+class MLPMutation(PyTreeNode):
+    weight_max_magnitude: float = 1e6
+    mut_strength: float = 0.1
+    num_mutation_frac: float = 0.1
+    super_mut_strength: float = 10.0
+    super_mut_prob: float = 0.05
+    reset_prob: float = 0.1
+    vec_relative_prob: float = 0.0
 
-        self.mutate_fn = jax.vmap(
+    mutate_fn = pytree_field(lazy_init=True, pytree_node=False)
+
+    def __post_init__(self):
+        assert (
+            self.num_mutation_frac >= 0 and self.num_mutation_frac <= 1
+        ), "num_mutation_frac should be in [0, 1]"
+
+        mutate_fn = jax.vmap(
             partial(
                 mlp_mutate,
-                weight_max_magnitude=weight_max_magnitude,
-                mut_strength=mut_strength,
-                num_mutation_frac=num_mutation_frac,
-                super_mut_strength=super_mut_strength,
-                super_mut_prob=super_mut_prob,
-                reset_prob=reset_prob,
-                vec_relative_prob=vec_relative_prob,
+                weight_max_magnitude=self.weight_max_magnitude,
+                mut_strength=self.mut_strength,
+                num_mutation_frac=self.num_mutation_frac,
+                super_mut_strength=self.super_mut_strength,
+                super_mut_prob=self.super_mut_prob,
+                reset_prob=self.reset_prob,
+                vec_relative_prob=self.vec_relative_prob,
             ),
         )
 
-        assert (
-            num_mutation_frac >= 0 and num_mutation_frac <= 1
-        ), "num_mutation_frac should be in [0, 1]"
+        self.set_frozen_attr("mutate_fn", mutate_fn)
 
     def __call__(self, xs: chex.ArrayTree, key: chex.PRNGKey):
         pop_size = jtu.tree_leaves(xs)[0].shape[0]

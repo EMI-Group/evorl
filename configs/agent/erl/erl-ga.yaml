@@ -1,13 +1,13 @@
 # @package _global_
 
-workflow_cls: evorl.algorithms.erl.erl_ga.ERLWorkflow
+workflow_cls: evorl.algorithms.erl.erl_ga.ERLGAWorkflow
 
 num_envs: 1
 normalize_obs: false
 discount: 0.99
 total_episodes: 100000 # iters = total_episodes / (episodes_for_fitness * pop_size), e.g: 3125 iters here; not include random_timesteps.
 
-random_timesteps: 0 # steps filled into the replay buffer
+random_timesteps: 0 # random steps filled into the replay buffer
 replay_buffer_capacity: 1000000
 
 # ====== TD3 Params ======
@@ -18,7 +18,6 @@ clip_policy_noise: 0.5
 actor_update_interval: 2
 critics_in_actor_loss: first # first or min
 
-
 # ====== RL Train Params ======
 num_rl_agents: 1
 warmup_iters: 10 # steps that only learn by EC
@@ -28,7 +27,6 @@ episodes_for_fitness: 1 # must be devided by num_envs
 rollout_episodes: 1 # must be devided by num_envs
 fitness_with_exploration: false # for EC Agent
 rl_exploration: true # for RL Agent
-
 
 batch_size: 256
 
@@ -55,7 +53,7 @@ reset_prob: 0.1
 vec_relative_prob: 0.0 # turnoff 1d-array mutation
 num_crossover_frac: 2
 
-
+# ================
 
 agent_network:
   norm_layer_type: "none"

@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
+from evorl.types import PyTreeNode, pytree_field
 from ..utils import is_layer_norm_layer
 
 
@@ -63,12 +64,20 @@ def mlp_crossover(
     return jtu.tree_unflatten(treedef, params1), jtu.tree_unflatten(treedef, params2)
 
 
-class MLPCrossover:
-    def __init__(self, num_crossover_frac: float = 1.0):
-        self.num_crossover_frac = num_crossover_frac
-        self.crossover_fn = jax.vmap(
-            partial(mlp_crossover, num_crossover_frac=num_crossover_frac),
+class MLPCrossover(PyTreeNode):
+    num_crossover_frac: float = 1.0
+    crossover_fn = pytree_field(lazy_init=True, pytree_node=False)
+
+    def __post_init__(self):
+        assert (
+            self.num_crossover_frac >= 0 and self.num_crossover_frac <= 1
+        ), "num_crossover_frac should be in [0, 1]"
+
+        crossover_fn = jax.vmap(
+            partial(mlp_crossover, num_crossover_frac=self.num_crossover_frac),
         )
+
+        self.set_frozen_attr("crossover_fn", crossover_fn)
 
     def __call__(self, xs: chex.ArrayTree, key: chex.PRNGKey):
         pop_size = jtu.tree_leaves(xs)[0].shape[0]
