@@ -37,7 +37,7 @@ class ScheduleSpec(PyTreeData):
 
 class OpenESState(PyTreeData):
     mean: chex.ArrayTree
-    opt_state: chex.PRNGKey
+    opt_state: optax.OptState
     noise_stdev: float
 
 
