@@ -1,4 +1,5 @@
 from functools import partial
+from collections.abc import Callable
 
 import chex
 import jax
@@ -66,12 +67,10 @@ def mlp_crossover(
 
 class MLPCrossover(PyTreeNode):
     num_crossover_frac: float = 1.0
-    crossover_fn = pytree_field(lazy_init=True, pytree_node=False)
+    crossover_fn: Callable = pytree_field(lazy_init=True, pytree_node=False)
 
     def __post_init__(self):
-        assert (
-            self.num_crossover_frac >= 0 and self.num_crossover_frac <= 1
-        ), "num_crossover_frac should be in [0, 1]"
+        assert self.num_crossover_frac >= 0, "num_crossover_frac should be >=0"
 
         crossover_fn = jax.vmap(
             partial(mlp_crossover, num_crossover_frac=self.num_crossover_frac),

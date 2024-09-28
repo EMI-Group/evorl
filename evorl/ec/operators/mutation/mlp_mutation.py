@@ -1,4 +1,5 @@
 from functools import partial
+from collections.abc import Callable
 
 import chex
 import jax
@@ -142,7 +143,7 @@ class MLPMutation(PyTreeNode):
     reset_prob: float = 0.1
     vec_relative_prob: float = 0.0
 
-    mutate_fn = pytree_field(lazy_init=True, pytree_node=False)
+    mutate_fn: Callable = pytree_field(lazy_init=True, pytree_node=False)
 
     def __post_init__(self):
         assert (
