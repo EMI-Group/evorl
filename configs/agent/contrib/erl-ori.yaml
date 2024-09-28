@@ -5,7 +5,7 @@ workflow_cls: evorl.algorithms.contrib.erl_origin.ERLWorkflow
 num_envs: 1
 normalize_obs: false
 discount: 0.99
-total_episodes: 1000000 # iters = total_episodes / (episodes_for_fitness * pop_size), e.g: 31250 iters here; not include random_timesteps.
+total_episodes: 100000 # iters = total_episodes / (episodes_for_fitness * pop_size), e.g: 3125 iters here; not include random_timesteps.
 
 random_timesteps: 0 # random steps filled into the replay buffer
 replay_buffer_capacity: 1000000
@@ -65,6 +65,6 @@ agent_network:
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs
-eval_interval: 100
+eval_interval: 10
 
 save_replay_buffer: true
