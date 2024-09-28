@@ -26,4 +26,4 @@ checkpoint:
   save_interval_steps: 1280
 
 wandb:
-  tags: ["batch1"]
+  tags: ["batch2"]

@@ -5,7 +5,7 @@ defaults:
   - _self_
 
 num_envs: 256
-normalize_obs: true
+normalize_obs: false
 rollout_length: 1
 discount: 0.99
 total_timesteps: 10000000
@@ -30,4 +30,4 @@ checkpoint:
   save_interval_steps: 1280
 
 wandb:
-  tags: ["batch1"]
+  tags: ["batch2"]
