@@ -167,6 +167,7 @@ class ERLGAWorkflow(Workflow):
             super_mut_prob=config.super_mut_prob,
             reset_prob=config.reset_prob,
             vec_relative_prob=config.vec_relative_prob,
+            enable_crossover=config.enable_crossover,
             num_crossover_frac=config.num_crossover_frac,
         )
 

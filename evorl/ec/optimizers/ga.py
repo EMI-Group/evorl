@@ -33,6 +33,7 @@ class ERLGA(EvoOptimizer):
     vec_relative_prob: float = 0.0
 
     # crossover
+    enable_crossover: bool = True
     num_crossover_frac: float = 2
 
     # op
@@ -76,8 +77,11 @@ class ERLGA(EvoOptimizer):
         )
         parents = jtu.tree_map(lambda x: x[parents_indices], state.pop)
 
-        offsprings = self.crossover(parents, crossover_key)
-        offsprings = self.mutate(offsprings, mutate_key)
+        if self.enable_crossover:
+            offsprings = self.crossover(parents, crossover_key)
+            offsprings = self.mutate(offsprings, mutate_key)
+        else:
+            offsprings = self.mutate(parents, mutate_key)
 
         new_pop = jtu.tree_map(
             lambda x, y: jnp.concatenate([x, y], axis=0), elites, offsprings
