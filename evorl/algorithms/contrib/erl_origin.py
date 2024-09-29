@@ -718,6 +718,16 @@ class ERLWorkflow(Workflow):
                     train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
                         train_metrics_dict["rl_episode_returns"], histogram=True
                     )
+                    train_metrics_dict["rl_metrics"]["actor_loss"] /= (
+                        self.config.num_rl_agents
+                    )
+                    train_metrics_dict["rl_metrics"]["critic_loss"] /= (
+                        self.config.num_rl_agents
+                    )
+                    train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
+                        get_1d_array_statistics,
+                        train_metrics_dict["rl_metrics"]["raw_loss_dict"],
+                    )
                 else:
                     train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
                         "rl_episode_lengths"
@@ -725,17 +735,6 @@ class ERLWorkflow(Workflow):
                     train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
                         "rl_episode_returns"
                     ].squeeze(-1)
-
-                train_metrics_dict["rl_metrics"]["actor_loss"] /= (
-                    self.config.num_rl_agents
-                )
-                train_metrics_dict["rl_metrics"]["critic_loss"] /= (
-                    self.config.num_rl_agents
-                )
-                train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
-                    get_1d_array_statistics,
-                    train_metrics_dict["rl_metrics"]["raw_loss_dict"],
-                )
 
             self.recorder.write(train_metrics_dict, iters)
 
