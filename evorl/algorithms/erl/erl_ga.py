@@ -35,7 +35,7 @@ from evorl.ec.optimizers import ERLGA, EvoOptimizer, ECState
 
 from ..td3 import TD3TrainMetric, TD3Agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from .trajectory_evaluator import EpisodeCollector
+from .episode_collector import EpisodeCollector
 from .utils import flatten_pop_rollout_episode
 
 

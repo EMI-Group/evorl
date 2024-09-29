@@ -29,7 +29,7 @@ from evorl.ec.optimizers.open_es import OpenES, ScheduleSpec
 
 from ..td3 import TD3Agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from .trajectory_evaluator import EpisodeCollector
+from .episode_collector import EpisodeCollector
 from .erl_ga import ERLGAWorkflow
 
 logger = logging.getLogger(__name__)
