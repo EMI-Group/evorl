@@ -238,7 +238,7 @@ class ERLGAWorkflow(Workflow):
             obs_preprocessor_state=None,
         )
 
-        workflow._sample_and_update_fn = _build_rl_update_fn(
+        workflow._rl_update_fn = _build_rl_update_fn(
             agent, optimizer, config, workflow.agent_state_pytree_axes
         )
 
@@ -446,20 +446,19 @@ class ERLGAWorkflow(Workflow):
         def _sample_fn(key):
             return self.replay_buffer.sample(replay_buffer_state, key).experience
 
-        rb_key = jax.random.split(
-            key, self.config.num_rl_updates_per_iter * self.config.actor_update_interval
-        )
-        sample_batches = jax.vmap(_sample_fn)(rb_key)
+        def _sample_and_update_fn(carry, unused_t):
+            key, agent_state, opt_state = carry
 
-        # (num_rl_updates_per_iter, actor_update_interval, B, ...)
-        sample_batches = jtu.tree_map(
-            lambda x: x.reshape(
-                self.config.num_rl_updates_per_iter,
-                self.config.actor_update_interval,
-                *x.shape[1:],
-            ),
-            sample_batches,
-        )
+            key, rb_key, learn_key = jax.random.split(key, 3)
+
+            rb_key = jax.random.split(key, self.config.actor_update_interval)
+            sample_batches = jax.vmap(_sample_fn)(rb_key)
+
+            (agent_state, opt_state), train_info = self._rl_update_fn(
+                agent_state, opt_state, sample_batches, learn_key
+            )
+
+            return (key, agent_state, opt_state), train_info
 
         (
             (_, agent_state, opt_state),
@@ -470,9 +469,9 @@ class ERLGAWorkflow(Workflow):
                 actor_loss_dict,
             ),
         ) = scan_and_mean(
-            self._sample_and_update_fn,
+            _sample_and_update_fn,
             (key, agent_state, opt_state),
-            sample_batches,
+            (),
             length=self.config.num_rl_updates_per_iter,
         )
 
@@ -801,9 +800,7 @@ def _build_rl_update_fn(
         detach_fn=lambda agent_state: agent_state.params.actor_params,
     )
 
-    def _sample_and_update_fn(carry, sample_batches):
-        key, agent_state, opt_state = carry
-
+    def _update_fn(agent_state, opt_state, sample_batches, key):
         critic_opt_state = opt_state.critic
         actor_opt_state = opt_state.actor
 
@@ -814,7 +811,7 @@ def _build_rl_update_fn(
 
         if config.actor_update_interval - 1 > 0:
 
-            def _sample_and_update_critic_fn(carry, sample_batch):
+            def _update_critic_fn(carry, sample_batch):
                 key, agent_state, critic_opt_state = carry
 
                 key, critic_key = jax.random.split(key)
@@ -830,7 +827,7 @@ def _build_rl_update_fn(
             key, critic_multiple_update_key = jax.random.split(key)
 
             (_, agent_state, critic_opt_state), _ = jax.lax.scan(
-                _sample_and_update_critic_fn,
+                _update_critic_fn,
                 (
                     critic_multiple_update_key,
                     agent_state,
@@ -871,8 +868,8 @@ def _build_rl_update_fn(
         opt_state = opt_state.replace(actor=actor_opt_state, critic=critic_opt_state)
 
         return (
-            (key, agent_state, opt_state),
+            (agent_state, opt_state),
             (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict),
         )
 
-    return _sample_and_update_fn
+    return _update_fn

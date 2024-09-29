@@ -20,7 +20,6 @@ class DiagCEMState(PyTreeData):
     mean: chex.ArrayTree
     variance: chex.ArrayTree
     cov_noise: chex.ArrayTree
-    key: chex.PRNGKey
 
 
 class DiagCEM(EvoOptimizer):
@@ -52,7 +51,7 @@ class DiagCEM(EvoOptimizer):
 
         self.set_frozen_attr("elite_weights", elite_weights)
 
-    def init(self, mean: Params, key: chex.PRNGKey) -> DiagCEMState:
+    def init(self, mean: Params) -> DiagCEMState:
         variance = jtu.tree_map(
             lambda x: jnp.full_like(x, self.init_diagonal_variance), mean
         )
@@ -61,7 +60,6 @@ class DiagCEM(EvoOptimizer):
             mean=mean,
             variance=variance,
             cov_noise=jnp.float32(self.init_diagonal_variance),
-            key=key,
         )
 
     def tell(

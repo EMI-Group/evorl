@@ -209,7 +209,7 @@ class CEMRLWorkflow(Workflow):
 
         replay_buffer = flashbax.make_item_buffer(
             max_length=config.replay_buffer_capacity,
-            min_length=max(config.batch_size, config.learning_start_timesteps),
+            min_length=config.batch_size,
             sample_batch_size=config.batch_size,
             add_batches=True,
         )
@@ -248,6 +248,10 @@ class CEMRLWorkflow(Workflow):
                 target_actor_params=0,
             ),
             obs_preprocessor_state=None,
+        )
+
+        workflow._rl_update_fn = _build_rl_update_fn(
+            agent, optimizer, config, workflow.agent_state_pytree_axes
         )
 
         return workflow
@@ -429,138 +433,27 @@ class CEMRLWorkflow(Workflow):
 
         return eval_metrics, trajectory
 
-    def _rl_update(self, agent_state, opt_state, sample_batches, key):
+    def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
         """
         sample_batches: (num_rl_updates_per_iter, actor_update_interval, B, ...)
         """
 
-        agent_state_pytree_axes = self.agent_state_pytree_axes
-        num_learning_offspring = self.config.num_learning_offspring
+        def _sample_fn(key):
+            return self.replay_buffer.sample(replay_buffer_state, key).experience
 
-        def critic_loss_fn(agent_state, sample_batch, key):
-            # loss on a single critic with multiple actors
-            # sample_batch: (B, ...)
-
-            loss_dict = jax.vmap(
-                self.agent.critic_loss, in_axes=(agent_state_pytree_axes, None, 0)
-            )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
-
-            # mean over the num_learning_offspring
-            loss = self.config.loss_weights.critic_loss * loss_dict.critic_loss.mean()
-
-            return loss, loss_dict
-
-        def actor_loss_fn(agent_state, sample_batch, key):
-            # loss on a single actor
-            # different actor shares same sample_batch (B, ...) input
-            loss_dict = jax.vmap(
-                self.agent.actor_loss, in_axes=(agent_state_pytree_axes, None, 0)
-            )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
-
-            # sum over the num_learning_offspring
-            loss = self.config.loss_weights.actor_loss * loss_dict.actor_loss.sum()
-
-            return loss, loss_dict
-
-        critic_update_fn = agent_gradient_update(
-            critic_loss_fn,
-            self.optimizer,
-            pmap_axis_name=self.pmap_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, critic_params: agent_state.replace(
-                params=agent_state.params.replace(critic_params=critic_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.critic_params,
-        )
-
-        actor_update_fn = agent_gradient_update(
-            actor_loss_fn,
-            self.optimizer,
-            pmap_axis_name=self.pmap_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, actor_params: agent_state.replace(
-                params=agent_state.params.replace(actor_params=actor_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.actor_params,
-        )
-
-        def _sample_and_update_fn(carry, sample_batches):
+        def _sample_and_update_fn(carry, unused_t):
             key, agent_state, opt_state = carry
 
-            critic_opt_state = opt_state.critic
-            actor_opt_state = opt_state.actor
+            key, rb_key, learn_key = jax.random.split(key, 3)
 
-            key, critic_key, actor_key = jax.random.split(key, num=3)
+            rb_key = jax.random.split(key, self.config.actor_update_interval)
+            sample_batches = jax.vmap(_sample_fn)(rb_key)
 
-            critic_sample_batches = jax.tree_map(lambda x: x[:-1], sample_batches)
-            last_sample_batch = jax.tree_map(lambda x: x[-1], sample_batches)
-
-            if self.config.actor_update_interval - 1 > 0:
-
-                def _sample_and_update_critic_fn(carry, sample_batch):
-                    key, agent_state, critic_opt_state = carry
-
-                    key, critic_key = jax.random.split(key)
-
-                    (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                        critic_update_fn(
-                            critic_opt_state, agent_state, sample_batch, critic_key
-                        )
-                    )
-
-                    return (key, agent_state, critic_opt_state), None
-
-                key, critic_multiple_update_key = jax.random.split(key)
-
-                (_, agent_state, critic_opt_state), _ = jax.lax.scan(
-                    _sample_and_update_critic_fn,
-                    (
-                        critic_multiple_update_key,
-                        agent_state,
-                        critic_opt_state,
-                    ),
-                    critic_sample_batches,
-                    length=self.config.actor_update_interval - 1,
-                )
-
-            (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                critic_update_fn(
-                    critic_opt_state, agent_state, last_sample_batch, critic_key
-                )
+            (agent_state, opt_state), train_info = self._rl_update_fn(
+                agent_state, opt_state, sample_batches, learn_key
             )
 
-            (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
-                actor_update_fn(
-                    actor_opt_state, agent_state, last_sample_batch, actor_key
-                )
-            )
-
-            # not need vmap
-            target_actor_params = soft_target_update(
-                agent_state.params.target_actor_params,
-                agent_state.params.actor_params,
-                self.config.tau,
-            )
-            target_critic_params = soft_target_update(
-                agent_state.params.target_critic_params,
-                agent_state.params.critic_params,
-                self.config.tau,
-            )
-            agent_state = agent_state.replace(
-                params=agent_state.params.replace(
-                    target_actor_params=target_actor_params,
-                    target_critic_params=target_critic_params,
-                )
-            )
-
-            opt_state = opt_state.replace(
-                actor=actor_opt_state, critic=critic_opt_state
-            )
-
-            return (
-                (key, agent_state, opt_state),
-                (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict),
-            )
+            return (key, agent_state, opt_state), train_info
 
         (
             (_, agent_state, opt_state),
@@ -573,7 +466,7 @@ class CEMRLWorkflow(Workflow):
         ) = scan_and_mean(
             _sample_and_update_fn,
             (key, agent_state, opt_state),
-            sample_batches,
+            (),
             length=self.config.num_rl_updates_per_iter,
         )
 
@@ -592,26 +485,6 @@ class CEMRLWorkflow(Workflow):
 
     def _cem_sample(self, ec_opt_state, key):
         return self.ec_optimizer.ask(ec_opt_state, key)
-
-    def _sample_from_replay_buffer(self, replay_buffer_state, key):
-        def _sample(key):
-            return self.replay_buffer.sample(replay_buffer_state, key).experience
-
-        rb_key = jax.random.split(
-            key, self.config.num_rl_updates_per_iter * self.config.actor_update_interval
-        )
-        sample_batches = jax.vmap(_sample)(rb_key)
-
-        train_sample_batches = jtu.tree_map(
-            lambda x: x.reshape(
-                self.config.num_rl_updates_per_iter,
-                self.config.actor_update_interval,
-                *x.shape[1:],
-            ),
-            sample_batches,
-        )
-
-        return train_sample_batches
 
     def _add_to_replay_buffer(self, replay_buffer_state, trajectory, episode_lengths):
         # trajectory [T,B,...]
@@ -661,11 +534,8 @@ class CEMRLWorkflow(Workflow):
                 actor=self.optimizer.init(learning_actor_params),
             )
 
-            sample_batches = self._sample_from_replay_buffer(
-                replay_buffer_state, rb_sample_key
-            )
             td3_metrics, learning_agent_state, new_opt_state = self._rl_update(
-                learning_agent_state, new_opt_state, sample_batches, learn_key
+                learning_agent_state, new_opt_state, replay_buffer_state, learn_key
             )
 
             pop_actor_params = tree_set(
@@ -847,9 +717,6 @@ class CEMRLWorkflow(Workflow):
         cls._rl_update = jax.jit(cls._rl_update, static_argnums=(0,))
         cls._cem_sample = jax.jit(cls._cem_sample, static_argnums=(0,))
         cls._cem_update = jax.jit(cls._cem_update, static_argnums=(0,))
-        cls._sample_from_replay_buffer = jax.jit(
-            cls._sample_from_replay_buffer, static_argnums=(0,)
-        )
 
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls._postsetup_replaybuffer = jax.jit(
@@ -868,3 +735,131 @@ def replace_actor_params(agent_state: AgentState, pop_actor_params) -> AgentStat
             target_actor_params=pop_actor_params,
         )
     )
+
+
+def _build_rl_update_fn(
+    agent: Agent,
+    optimizer: optax.GradientTransformation,
+    config: DictConfig,
+    agent_state_pytree_axes: AgentState,
+):
+    num_learning_offspring = config.num_learning_offspring
+
+    def critic_loss_fn(agent_state, sample_batch, key):
+        # loss on a single critic with multiple actors
+        # sample_batch: (B, ...)
+
+        loss_dict = jax.vmap(
+            agent.critic_loss, in_axes=(agent_state_pytree_axes, None, 0)
+        )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
+
+        # mean over the num_learning_offspring
+        loss = config.loss_weights.critic_loss * loss_dict.critic_loss.mean()
+
+        return loss, loss_dict
+
+    def actor_loss_fn(agent_state, sample_batch, key):
+        # loss on a single actor
+        # different actor shares same sample_batch (B, ...) input
+        loss_dict = jax.vmap(
+            agent.actor_loss, in_axes=(agent_state_pytree_axes, None, 0)
+        )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
+
+        # sum over the num_learning_offspring
+        loss = config.loss_weights.actor_loss * loss_dict.actor_loss.sum()
+
+        return loss, loss_dict
+
+    critic_update_fn = agent_gradient_update(
+        critic_loss_fn,
+        optimizer,
+        has_aux=True,
+        attach_fn=lambda agent_state, critic_params: agent_state.replace(
+            params=agent_state.params.replace(critic_params=critic_params)
+        ),
+        detach_fn=lambda agent_state: agent_state.params.critic_params,
+    )
+
+    actor_update_fn = agent_gradient_update(
+        actor_loss_fn,
+        optimizer,
+        has_aux=True,
+        attach_fn=lambda agent_state, actor_params: agent_state.replace(
+            params=agent_state.params.replace(actor_params=actor_params)
+        ),
+        detach_fn=lambda agent_state: agent_state.params.actor_params,
+    )
+
+    def _update_fn(agent_state, opt_state, sample_batches, key):
+        critic_opt_state = opt_state.critic
+        actor_opt_state = opt_state.actor
+
+        key, critic_key, actor_key = jax.random.split(key, num=3)
+
+        critic_sample_batches = jax.tree_map(lambda x: x[:-1], sample_batches)
+        last_sample_batch = jax.tree_map(lambda x: x[-1], sample_batches)
+
+        if config.actor_update_interval - 1 > 0:
+
+            def _update_critic_fn(carry, sample_batch):
+                key, agent_state, critic_opt_state = carry
+
+                key, critic_key = jax.random.split(key)
+
+                (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
+                    critic_update_fn(
+                        critic_opt_state, agent_state, sample_batch, critic_key
+                    )
+                )
+
+                return (key, agent_state, critic_opt_state), None
+
+            key, critic_multiple_update_key = jax.random.split(key)
+
+            (_, agent_state, critic_opt_state), _ = jax.lax.scan(
+                _update_critic_fn,
+                (
+                    critic_multiple_update_key,
+                    agent_state,
+                    critic_opt_state,
+                ),
+                critic_sample_batches,
+                length=config.actor_update_interval - 1,
+            )
+
+        (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
+            critic_update_fn(
+                critic_opt_state, agent_state, last_sample_batch, critic_key
+            )
+        )
+
+        (actor_loss, actor_loss_dict), agent_state, actor_opt_state = actor_update_fn(
+            actor_opt_state, agent_state, last_sample_batch, actor_key
+        )
+
+        # not need vmap
+        target_actor_params = soft_target_update(
+            agent_state.params.target_actor_params,
+            agent_state.params.actor_params,
+            config.tau,
+        )
+        target_critic_params = soft_target_update(
+            agent_state.params.target_critic_params,
+            agent_state.params.critic_params,
+            config.tau,
+        )
+        agent_state = agent_state.replace(
+            params=agent_state.params.replace(
+                target_actor_params=target_actor_params,
+                target_critic_params=target_critic_params,
+            )
+        )
+
+        opt_state = opt_state.replace(actor=actor_opt_state, critic=critic_opt_state)
+
+        return (
+            (agent_state, opt_state),
+            (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict),
+        )
+
+    return _update_fn

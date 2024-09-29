@@ -18,7 +18,7 @@ from evorl.distributed import agent_gradient_update, tree_pmean
 from evorl.metrics import MetricBase, metricfield, EvaluateMetric
 from evorl.types import PyTreeDict, State, LossDict
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient, tree_set
+from evorl.utils.jax_utils import tree_stop_gradient, tree_set
 from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajectory
 from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
@@ -243,7 +243,7 @@ class ERLWorkflow(Workflow):
             obs_preprocessor_state=None,
         )
 
-        workflow._sample_and_update_fn = jax.jit(
+        workflow._rl_update_fn = jax.jit(
             _build_rl_update_fn(
                 agent, optimizer, config, workflow.agent_state_pytree_axes
             )
@@ -453,33 +453,39 @@ class ERLWorkflow(Workflow):
         def _sample_fn(key):
             return self.replay_buffer.sample(replay_buffer_state, key).experience
 
-        rb_key = jax.random.split(key, num_updates * self.config.actor_update_interval)
-        sample_batches = jax.vmap(_sample_fn)(rb_key)
+        def _sample_and_update_fn(carry, unused_t):
+            key, agent_state, opt_state, _ = carry
 
-        # (num_updates, actor_update_interval, B, ...)
-        sample_batches = jtu.tree_map(
-            lambda x: x.reshape(
-                num_updates,
-                self.config.actor_update_interval,
-                *x.shape[1:],
+            key, rb_key, learn_key = jax.random.split(key, 3)
+
+            rb_key = jax.random.split(key, self.config.actor_update_interval)
+            sample_batches = jax.vmap(_sample_fn)(rb_key)
+
+            (agent_state, opt_state), train_info = self._rl_update_fn(
+                agent_state, opt_state, sample_batches, learn_key
+            )
+
+            return (key, agent_state, opt_state, train_info), None
+
+        # unlike erl-ga, since num_updates is large, we only use the last train_info
+        init_train_info = (
+            jnp.zeros(()),
+            jnp.zeros(()),
+            PyTreeDict(
+                critic_loss=jnp.zeros((self.config.num_rl_agents,)),
+                q_value=jnp.zeros((self.config.num_rl_agents,)),
             ),
-            sample_batches,
+            PyTreeDict(actor_loss=jnp.zeros((self.config.num_rl_agents,))),
         )
 
-        (
-            (_, agent_state, opt_state),
-            (
-                critic_loss,
-                actor_loss,
-                critic_loss_dict,
-                actor_loss_dict,
-            ),
-        ) = scan_and_mean(
-            self._sample_and_update_fn,
-            (key, agent_state, opt_state),
-            sample_batches,
+        (_, agent_state, opt_state, train_info), _ = jax.lax.scan(
+            _sample_and_update_fn,
+            (key, agent_state, opt_state, init_train_info),
+            (),
             length=num_updates,
         )
+
+        critic_loss, actor_loss, critic_loss_dict, actor_loss_dict = train_info
 
         # smoothed td3 metrics
         td3_metrics = TD3TrainMetric(
@@ -814,9 +820,7 @@ def _build_rl_update_fn(
         detach_fn=lambda agent_state: agent_state.params.actor_params,
     )
 
-    def _sample_and_update_fn(carry, sample_batches):
-        key, agent_state, opt_state = carry
-
+    def _update_fn(agent_state, opt_state, sample_batches, key):
         critic_opt_state = opt_state.critic
         actor_opt_state = opt_state.actor
 
@@ -827,7 +831,7 @@ def _build_rl_update_fn(
 
         if config.actor_update_interval - 1 > 0:
 
-            def _sample_and_update_critic_fn(carry, sample_batch):
+            def _update_critic_fn(carry, sample_batch):
                 key, agent_state, critic_opt_state = carry
 
                 key, critic_key = jax.random.split(key)
@@ -843,7 +847,7 @@ def _build_rl_update_fn(
             key, critic_multiple_update_key = jax.random.split(key)
 
             (_, agent_state, critic_opt_state), _ = jax.lax.scan(
-                _sample_and_update_critic_fn,
+                _update_critic_fn,
                 (
                     critic_multiple_update_key,
                     agent_state,
@@ -884,8 +888,8 @@ def _build_rl_update_fn(
         opt_state = opt_state.replace(actor=actor_opt_state, critic=critic_opt_state)
 
         return (
-            (key, agent_state, opt_state),
+            (agent_state, opt_state),
             (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict),
         )
 
-    return _sample_and_update_fn
+    return _update_fn
