@@ -44,7 +44,6 @@ class TD3TrainMetric(MetricBase):
     critic_loss: chex.Array
     actor_loss: chex.Array
     num_updates_per_iter: int = 0
-    per_iter_time_cost: float = 0
     raw_loss_dict: LossDict = metricfield(
         default_factory=PyTreeDict, reduce_fn=tree_pmean
     )
@@ -57,6 +56,7 @@ class POPTrainMetric(MetricBase):
     rl_episode_returns: chex.Array | None = None
     rl_episode_lengths: chex.Array | None = None
     rl_metrics: MetricBase | None = None
+    per_iter_time_cost: float = 0.0
     ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
 
 
