@@ -50,7 +50,7 @@ mut_strength: 0.1
 num_mutation_frac: 0.1
 super_mut_strength: 10.0
 super_mut_prob: 0.05
-reset_prob: 0.1
+reset_prob: 0.05
 vec_relative_prob: 0.0 # turnoff 1d-array mutation
 enable_crossover: false
 num_crossover_frac: 2

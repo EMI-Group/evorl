@@ -19,7 +19,7 @@ def mlp_mutate(
     num_mutation_frac: float = 0.1,
     super_mut_strength: float = 10.0,
     super_mut_prob: float = 0.05,
-    reset_prob: float = 0.1,
+    reset_prob: float = 0.05,
     vec_relative_prob: float = 0.0,
 ):
     """
@@ -65,7 +65,9 @@ def mlp_mutate(
 
             prob = jax.random.uniform(prob_key, (num_mutations,))
             super_mask = prob < super_mut_prob
-            reset_mask = jnp.logical_and(prob >= super_mut_prob, prob < reset_prob)
+            reset_mask = jnp.logical_and(
+                prob >= super_mut_prob, prob < reset_prob + super_mut_prob
+            )
 
             updates = jax.random.uniform(normal_update_key, (num_mutations,)) * jnp.abs(
                 param[ind]
@@ -80,10 +82,10 @@ def mlp_mutate(
                 unique_indices=True,
             )
 
-            new_param = jnp.clip(new_param, -weight_max_magnitude, weight_max_magnitude)
-
             ssne_prob = jax.random.uniform(ssne_prob_key)
             param = jnp.where(ssne_prob < ssne_probs[i], new_param, param)
+
+            param = jnp.clip(param, -weight_max_magnitude, weight_max_magnitude)
 
         elif param.ndim == 1:  # bias or layer norm
             if vec_relative_prob > 0:
@@ -117,14 +119,12 @@ def mlp_mutate(
                     unique_indices=True,
                 )
 
-                new_param = jnp.clip(
-                    new_param, -weight_max_magnitude, weight_max_magnitude
-                )
-
                 ssne_prob = jax.random.uniform(ssne_prob_key)
                 param = jnp.where(
                     ssne_prob < ssne_probs[i] * vec_relative_prob, new_param, param
                 )
+
+                param = jnp.clip(param, -weight_max_magnitude, weight_max_magnitude)
 
         else:
             raise ValueError(f"Unsupported parameter shape: {param.shape}")
