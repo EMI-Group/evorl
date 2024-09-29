@@ -5,7 +5,7 @@
 # except the rollout is based on episodes + use shared critic network.
 
 defaults:
-  - /agent/erl/cemrl
+  - /agent/contrib/cemrl-nocem
   - _self_
 
 total_episodes: 100000
@@ -14,7 +14,6 @@ actor_update_interval: 1
 
 pop_size: 10
 num_learning_offspring: 10
-disable_cem_update: true
 
 diagonal_variance:
   init: 1e-2
@@ -23,8 +22,8 @@ diagonal_variance:
 
 fitness_with_exploration: true
 episodes_for_fitness: 1 # must be devided by num_envs
-num_rl_updates_per_iter: 50 # num of RL updates per iter
+num_rl_updates_per_iter: 5 # num of RL updates per iter
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs
-eval_interval: 1
+eval_interval: 50

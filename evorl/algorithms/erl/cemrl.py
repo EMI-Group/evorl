@@ -13,7 +13,7 @@ import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
 
-from evorl.distributed import psum, agent_gradient_update
+from evorl.distributed import agent_gradient_update
 from evorl.metrics import MetricBase, metricfield
 from evorl.types import (
     PyTreeDict,
@@ -95,8 +95,6 @@ class CEMRLWorkflow(Workflow):
         self.replay_buffer = replay_buffer
 
         self.devices = jax.local_devices()[:1]
-        # self.sharding = None  # training sharding
-        self.pmap_axis_name = None
 
     @classmethod
     def name(cls):
@@ -392,22 +390,17 @@ class CEMRLWorkflow(Workflow):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    pmap_axis_name=self.pmap_axis_name,
                 )
             )
 
-        sampled_timesteps = psum(
-            jnp.uint32(rollout_length * config.num_envs), axis_name=self.pmap_axis_name
-        )
+        sampled_timesteps = jnp.uint32(rollout_length * config.num_envs)
         # Since we sample from autoreset env, this metric might not be accurate:
-        sampled_episodes = psum(
-            trajectory.dones.astype(jnp.uint32).sum(), axis_name=self.pmap_axis_name
-        )
+        sampled_episodes = trajectory.dones.astype(jnp.uint32).sum()
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        )
 
         return state.replace(
             key=key,
@@ -475,7 +468,7 @@ class CEMRLWorkflow(Workflow):
             actor_loss=actor_loss,
             critic_loss=critic_loss,
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        )
 
         return td3_metrics, agent_state, opt_state
 
@@ -517,9 +510,7 @@ class CEMRLWorkflow(Workflow):
 
         pop_actor_params = agent_state.params.actor_params
 
-        key, rb_sample_key, rollout_key, cem_key, learn_key = jax.random.split(
-            state.key, num=5
-        )
+        key, rollout_key, cem_key, learn_key = jax.random.split(state.key, num=4)
 
         # ======== RL update ========
         if iterations > self.config.warmup_iters:
@@ -577,36 +568,26 @@ class CEMRLWorkflow(Workflow):
             rl_metrics=td3_metrics,
         )
 
-        # In fact, we always update the cem ec_opt_state to trace the pop_center
-        # But we control whether get new sample from cem
         ec_opt_state = self._cem_update(ec_opt_state, pop_actor_params, fitnesses)
 
-        if not self.config.disable_cem_update:
-            new_pop_actor_params = self._cem_sample(ec_opt_state, cem_key)
+        new_pop_actor_params = self._cem_sample(ec_opt_state, cem_key)
+        agent_state = replace_actor_params(agent_state, new_pop_actor_params)
 
-            agent_state = replace_actor_params(agent_state, new_pop_actor_params)
-
-            # adding debug info for CEM
-            if td3_metrics is not None:
-                elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
-                elites_from_rl = jnp.isin(
-                    jnp.arange(self.config.num_learning_offspring), elites_indices
-                )
-                ec_info = PyTreeDict(
-                    elites_from_rl=elites_from_rl.sum(),
-                    elites_from_rl_ratio=elites_from_rl.mean(),
-                )
-                train_metrics = train_metrics.replace(ec_info=ec_info)
+        # adding debug info for CEM
+        if td3_metrics is not None:
+            elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
+            elites_from_rl = jnp.isin(
+                jnp.arange(self.config.num_learning_offspring), elites_indices
+            )
+            ec_info = PyTreeDict(
+                elites_from_rl=elites_from_rl.sum(),
+                elites_from_rl_ratio=elites_from_rl.mean(),
+            )
+            train_metrics = train_metrics.replace(ec_info=ec_info)
 
         # calculate the number of timestep
-        sampled_timesteps = psum(
-            eval_metrics.episode_lengths.sum().astype(jnp.uint32),
-            axis_name=self.pmap_axis_name,
-        )
-        sampled_episodes = psum(
-            jnp.uint32(self.config.episodes_for_fitness * pop_size),
-            axis_name=self.pmap_axis_name,
-        )
+        sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        sampled_episodes = jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         # iterations is the number of updates of the agent
 
@@ -614,7 +595,7 @@ class CEMRLWorkflow(Workflow):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
             iterations=iterations,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        )
 
         state = state.replace(
             key=key,
@@ -644,7 +625,7 @@ class CEMRLWorkflow(Workflow):
         eval_metrics = EvaluateMetric(
             pop_center_episode_returns=raw_eval_metrics.episode_returns.mean(),
             pop_center_episode_lengths=raw_eval_metrics.episode_lengths.mean(),
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        )
 
         state = state.replace(key=key)
 
@@ -687,11 +668,8 @@ class CEMRLWorkflow(Workflow):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            if not self.config.disable_cem_update:
-                std_statistics = get_std_statistics(
-                    state.ec_opt_state.variance["params"]
-                )
-                self.recorder.write({"ec/std": std_statistics}, iters)
+            std_statistics = get_std_statistics(state.ec_opt_state.variance["params"])
+            self.recorder.write({"ec/std": std_statistics}, iters)
 
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)

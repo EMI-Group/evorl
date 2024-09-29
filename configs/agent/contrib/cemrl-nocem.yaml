@@ -1,0 +1,12 @@
+# @package _global_
+
+defaults:
+  - /agent/erl/cemrl
+  - _self_
+
+workflow_cls: evorl.algorithms.contrib.cemrl_poprl.PopRLWorkflow
+
+warmup_iters: 10
+
+pop_size: 32
+num_learning_offspring: ${pop_size} # number of offspring to learn from RL(TD3)
