@@ -1,6 +1,7 @@
 import copy
 import logging
 import math
+import time
 from typing import Any
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
 from functools import partial
@@ -43,6 +44,7 @@ class TD3TrainMetric(MetricBase):
     critic_loss: chex.Array
     actor_loss: chex.Array
     num_updates_per_iter: int = 0
+    per_iter_time_cost: float = 0
     raw_loss_dict: LossDict = metricfield(
         default_factory=PyTreeDict, reduce_fn=tree_pmean
     )
@@ -689,7 +691,11 @@ class ERLWorkflow(Workflow):
 
         for i in range(state.metrics.iterations, num_iters):
             iters = i + 1
+            start_t = time.perf_counter()
             train_metrics, state = self.step(state)
+            per_iter_time_cost = time.perf_counter() - start_t
+            train_metrics = train_metrics.replace(per_iter_time_cost=per_iter_time_cost)
+
             workflow_metrics = state.metrics
 
             workflow_metrics_dict = workflow_metrics.to_local_dict()
