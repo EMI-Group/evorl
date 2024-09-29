@@ -100,18 +100,6 @@ class CEMRLWorkflow(Workflow):
     def name(cls):
         return "CEM-RL"
 
-    # @staticmethod
-    # def _rescale_config(config) -> None:
-    #     num_devices = jax.device_count()
-
-    #     if config.pop_size % num_devices != 0:
-    #         logger.warning(
-    #             f"pop_size({config.pop_size}) cannot be divided by num_devices({num_devices}), "
-    #             f"rescale pop_size to {config.pop_size // num_devices * num_devices}"
-    #         )
-
-    #     config.pop_size = (config.pop_size // num_devices) * num_devices
-
     @classmethod
     def build_from_config(
         cls,
@@ -130,10 +118,6 @@ class CEMRLWorkflow(Workflow):
             cls.enable_jit()
 
         workflow = cls._build_from_config(config)
-
-        # mesh = Mesh(devices, axis_names=(POP_AXIS_NAME,))
-        # workflow.devices = devices
-        # workflow.sharding = NamedSharding(mesh, P(POP_AXIS_NAME))
 
         return workflow
 
