@@ -43,8 +43,8 @@ class ERLGA(EvoOptimizer):
 
     def __post_init__(self):
         assert (
-            self.pop_size - self.num_elites
-        ) % 2 == 0, "pop_size - num_elites must be even"
+            (self.pop_size - self.num_elites) % 2 == 0 or not self.enable_crossover
+        ), "(pop_size - num_elites) must be even when enable crossover"
 
         selection_op = TournamentSelection(tournament_size=self.tournament_size)
         mutation_op = MLPMutation(
