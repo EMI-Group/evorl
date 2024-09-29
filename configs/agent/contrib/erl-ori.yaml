@@ -65,6 +65,6 @@ agent_network:
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs
-eval_interval: 10
+eval_interval: 1
 
 save_replay_buffer: true
