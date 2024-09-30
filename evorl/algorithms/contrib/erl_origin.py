@@ -15,9 +15,9 @@ import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
 
-from evorl.distributed import agent_gradient_update, tree_pmean
+from evorl.distributed import agent_gradient_update
 from evorl.metrics import MetricBase, metricfield, EvaluateMetric
-from evorl.types import PyTreeDict, State, LossDict
+from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient, tree_set
 from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajectory
@@ -31,7 +31,7 @@ from evorl.rollout import rollout
 from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import ERLGA, EvoOptimizer, ECState
 
-from ..td3 import TD3Agent, TD3NetworkParams
+from ..td3 import TD3Agent, TD3NetworkParams, TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from ..erl.episode_collector import EpisodeCollector
 from ..erl.utils import flatten_pop_rollout_episode
@@ -40,17 +40,9 @@ from ..erl.utils import flatten_pop_rollout_episode
 logger = logging.getLogger(__name__)
 
 
-class TD3TrainMetric(MetricBase):
-    critic_loss: chex.Array
-    actor_loss: chex.Array
-    num_updates_per_iter: int = 0
-    raw_loss_dict: LossDict = metricfield(
-        default_factory=PyTreeDict, reduce_fn=tree_pmean
-    )
-
-
 class POPTrainMetric(MetricBase):
     rb_size: int
+    num_updates_per_iter: int
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
     rl_episode_returns: chex.Array | None = None
@@ -494,7 +486,6 @@ class ERLWorkflow(Workflow):
         td3_metrics = TD3TrainMetric(
             actor_loss=actor_loss,
             critic_loss=critic_loss,
-            num_updates_per_iter=num_updates,
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
         )
 
@@ -538,8 +529,8 @@ class ERLWorkflow(Workflow):
         sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
         sampled_episodes = jnp.zeros((), dtype=jnp.uint32)
 
-        key, rb_sample_key, ec_rollout_key, rl_rollout_key, ec_key, learn_key = (
-            jax.random.split(state.key, num=6)
+        key, ec_rollout_key, rl_rollout_key, learn_key = jax.random.split(
+            state.key, num=4
         )
 
         # ======== EC update ========
@@ -572,9 +563,11 @@ class ERLWorkflow(Workflow):
         sampled_episodes += jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         train_metrics = POPTrainMetric(
-            rb_size=0,  # dummy
+            rb_size=get_buffer_size(replay_buffer_state),  # dummy
+            num_updates_per_iter=jnp.zeros((), dtype=jnp.uint32),
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
+            ec_info=get_ec_pop_statistics(ec_opt_state.pop),
         )
 
         # ======== RL update ========
@@ -612,6 +605,8 @@ class ERLWorkflow(Workflow):
                 ec_opt_state = self._rl_injection(agent_state, ec_opt_state, fitnesses)
 
             train_metrics = train_metrics.replace(
+                rb_size=get_buffer_size(replay_buffer_state),
+                num_updates_per_iter=num_updates,
                 rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
                 rl_episode_returns=rl_eval_metrics.episode_returns.mean(-1),
                 rl_metrics=td3_metrics,
@@ -619,10 +614,6 @@ class ERLWorkflow(Workflow):
 
         else:
             rl_sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
-
-        train_metrics = train_metrics.replace(
-            rb_size=get_buffer_size(replay_buffer_state),
-        )
 
         # iterations is the number of updates of the agent
         workflow_metrics = state.metrics.replace(
@@ -773,6 +764,18 @@ class ERLWorkflow(Workflow):
         cls._postsetup_replaybuffer = jax.jit(
             cls._postsetup_replaybuffer, static_argnums=(0,)
         )
+
+
+def get_ec_pop_statistics(pop):
+    pop = pop["params"]
+
+    def _get_stats(x):
+        return dict(
+            min=jnp.min(x).tolist(),
+            max=jnp.max(x).tolist(),
+        )
+
+    return jtu.tree_map(_get_stats, pop)
 
 
 def _build_rl_update_fn(
