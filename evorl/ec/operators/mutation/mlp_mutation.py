@@ -69,7 +69,7 @@ def mlp_mutate(
                 prob >= super_mut_prob, prob < reset_prob + super_mut_prob
             )
 
-            updates = jax.random.uniform(normal_update_key, (num_mutations,)) * jnp.abs(
+            updates = jax.random.normal(normal_update_key, (num_mutations,)) * jnp.abs(
                 param[ind]
             )
             updates = jnp.where(
@@ -106,7 +106,7 @@ def mlp_mutate(
                 super_mask = prob < super_mut_prob
                 reset_mask = jnp.logical_and(prob >= super_mut_prob, prob < reset_prob)
 
-                updates = jax.random.uniform(
+                updates = jax.random.normal(
                     normal_update_key, (num_mutations,)
                 ) * jnp.abs(param[ind])
                 updates = jnp.where(
@@ -140,7 +140,7 @@ class MLPMutation(PyTreeNode):
     num_mutation_frac: float = 0.1
     super_mut_strength: float = 10.0
     super_mut_prob: float = 0.05
-    reset_prob: float = 0.1
+    reset_prob: float = 0.05
     vec_relative_prob: float = 0.0
 
     mutate_fn: Callable = pytree_field(lazy_init=True, pytree_node=False)

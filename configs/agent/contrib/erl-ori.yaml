@@ -53,7 +53,7 @@ super_mut_prob: 0.05
 reset_prob: 0.05
 vec_relative_prob: 0.0 # turnoff 1d-array mutation
 enable_crossover: false
-num_crossover_frac: 2
+num_crossover_frac: 0.1
 
 # ================
 

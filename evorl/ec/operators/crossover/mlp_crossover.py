@@ -15,14 +15,12 @@ def mlp_crossover(
     x2: chex.ArrayTree,
     key: chex.PRNGKey,
     *,
-    num_crossover_frac: float = 1.0,
+    num_crossover_frac: float = 0.1,
 ):
     chex.assert_trees_all_equal_shapes_and_dtypes(x1, x2)
 
     leaves1, treedef = jtu.tree_flatten_with_path(x1)
     leaves2 = jtu.tree_leaves(x2)
-
-    assert num_crossover_frac >= 0, "num_crossover_frac must be non-negative"
 
     params1 = []
     params2 = []
@@ -38,11 +36,13 @@ def mlp_crossover(
             # for 1d array, we exchange the elements
             key, ind_key, choice_key = jax.random.split(key, num=3)
 
-            # we use fixed number of crossover op.
+            # we use fixed number of crossover op: sampled without replacement
             # this is different from the original ERL: np.random.randint(num_variables * 2)
             num_crossover = round(param1.shape[0] * num_crossover_frac)
 
-            ind = jax.random.randint(ind_key, (num_crossover,), 0, param1.shape[0])
+            ind = jax.random.choice(
+                ind_key, param1.shape[0], (num_crossover,), replace=False
+            )
 
             mask = jax.random.uniform(choice_key, (num_crossover,)) < 0.5
             if param1.ndim > 1:
@@ -50,10 +50,14 @@ def mlp_crossover(
 
             zero_update = jnp.zeros((num_crossover, *param1.shape[1:]))
 
-            param1 = param1.at[ind].add(jnp.where(mask, zero_update, param2[ind]))
+            param1 = param1.at[ind].set(
+                jnp.where(mask, zero_update, param2[ind]),
+                unique_indices=True,
+            )
 
-            param2 = param2.at[ind].add(
-                jnp.where(jnp.logical_not(mask), zero_update, param1[ind])
+            param2 = param2.at[ind].set(
+                jnp.where(jnp.logical_not(mask), zero_update, param1[ind]),
+                unique_indices=True,
             )
 
         else:
@@ -66,11 +70,13 @@ def mlp_crossover(
 
 
 class MLPCrossover(PyTreeNode):
-    num_crossover_frac: float = 1.0
+    num_crossover_frac: float = 0.1
     crossover_fn: Callable = pytree_field(lazy_init=True, pytree_node=False)
 
     def __post_init__(self):
-        assert self.num_crossover_frac >= 0, "num_crossover_frac should be >=0"
+        assert (
+            self.num_crossover_frac >= 0 and self.num_crossover_frac <= 1
+        ), "num_crossover_frac should be in [0, 1]"
 
         crossover_fn = jax.vmap(
             partial(mlp_crossover, num_crossover_frac=self.num_crossover_frac),
