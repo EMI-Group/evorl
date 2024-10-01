@@ -10,9 +10,11 @@ batch_size: 256 # 128 in ERL
 tau: 0.005 # 0.001 in ERL
 
 pop_size: 10
-num_elites: 2 # 1 in ERL
+num_elites: 1
 episodes_for_fitness: 1 # must be devided by num_envs
 rollout_episodes: 1 # must be devided by num_envs
+
+weight_max_magnitude: 10
 
 rl_updates_frac_per_iter: 1.0
 rl_injection_interval: 10
