@@ -5,13 +5,10 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 import orbax.checkpoint as ocp
 
 from evorl.metrics import MetricBase
-from evorl.types import (
-    State,
-)
+from evorl.types import State, PyTreeDict
 from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.recorders import get_1d_array_statistics, add_prefix
 
@@ -89,6 +86,7 @@ class PopRLWorkflow(CEMRLWorkflow):
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             rl_metrics=td3_metrics,
+            ec_info=PyTreeDict(cov_noise=ec_opt_state.cov_noise),
         )
 
         # record pop mean, but do not sample new pop:
@@ -175,16 +173,9 @@ class PopRLWorkflow(CEMRLWorkflow):
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
-            # add info of CEM
-            train_metrics_dict["cov_noise"] = state.ec_opt_state.cov_noise.tolist()
-
             if train_metrics_dict["rl_metrics"] is not None:
                 train_metrics_dict["rl_metrics"]["actor_loss"] /= (
                     self.config.num_learning_offspring
-                )
-                train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
-                    get_1d_array_statistics,
-                    train_metrics_dict["rl_metrics"]["raw_loss_dict"],
                 )
 
             self.recorder.write(train_metrics_dict, iters)

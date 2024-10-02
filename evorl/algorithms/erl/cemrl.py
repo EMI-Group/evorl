@@ -559,16 +559,19 @@ class CEMRLWorkflow(Workflow):
         agent_state = replace_actor_params(agent_state, new_pop_actor_params)
 
         # adding debug info for CEM
+        ec_info = PyTreeDict()
+        ec_info.cov_noise = ec_opt_state.cov_noise
         if td3_metrics is not None:
             elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
             elites_from_rl = jnp.isin(
                 jnp.arange(self.config.num_learning_offspring), elites_indices
             )
-            ec_info = PyTreeDict(
+            ec_info = ec_info.replace(
                 elites_from_rl=elites_from_rl.sum(),
                 elites_from_rl_ratio=elites_from_rl.mean(),
             )
-            train_metrics = train_metrics.replace(ec_info=ec_info)
+
+        train_metrics = train_metrics.replace(ec_info=ec_info)
 
         # calculate the number of timestep
         sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
@@ -638,9 +641,6 @@ class CEMRLWorkflow(Workflow):
             train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
-
-            # add info of CEM
-            train_metrics_dict["cov_noise"] = state.ec_opt_state.cov_noise.tolist()
 
             if train_metrics_dict["rl_metrics"] is not None:
                 train_metrics_dict["rl_metrics"]["actor_loss"] /= (
