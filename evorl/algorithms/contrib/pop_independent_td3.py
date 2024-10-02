@@ -33,6 +33,12 @@ from ..td3 import TD3TrainMetric, TD3Workflow
 logger = logging.getLogger(__name__)
 
 
+class WorkflowMetric(MetricBase):
+    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_per_agent: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+
+
 class PopTD3Workflow(TD3Workflow):
     """
     indepentent TD3 agent with shared replay buffer
@@ -41,6 +47,9 @@ class PopTD3Workflow(TD3Workflow):
     @classmethod
     def name(cls):
         return "PopTD3"
+
+    def _setup_workflow_metrics(self) -> MetricBase:
+        return WorkflowMetric()
 
     def setup(self, key: chex.PRNGKey) -> State:
         key, agent_key, env_key, rb_key = jax.random.split(key, 4)
@@ -394,14 +403,22 @@ class PopTD3Workflow(TD3Workflow):
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         # calculate the number of timestep
-        sampled_timesteps = psum(
+        sampled_timesteps_per_agent = psum(
             jnp.uint32(self.config.rollout_length * self.config.num_envs),
+            axis_name=self.pmap_axis_name,
+        )
+        sampled_timesteps = psum(
+            jnp.uint32(
+                self.config.rollout_length * self.config.num_envs * self.config.pop_size
+            ),
             axis_name=self.pmap_axis_name,
         )
 
         # iterations is the number of updates of the agent
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
+            sampled_timesteps_per_agent=state.metrics.sampled_timesteps_per_agent
+            + sampled_timesteps_per_agent,
             iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
