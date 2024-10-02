@@ -195,9 +195,13 @@ class PopRLWorkflow(CEMRLWorkflow):
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
 
-                eval_metrics_dict = jtu.tree_map(
-                    partial(get_1d_array_statistics, histogram=True),
-                    eval_metrics.to_local_dict(),
+                eval_metrics_dict = eval_metrics.to_local_dict()
+
+                eval_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
+                    eval_metrics_dict["pop_episode_returns"], histogram=True
+                )
+                eval_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
+                    eval_metrics_dict["pop_episode_lengths"], histogram=True
                 )
 
                 self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iters)
