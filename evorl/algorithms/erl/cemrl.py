@@ -456,11 +456,10 @@ class CEMRLWorkflow(Workflow):
 
         return td3_metrics, agent_state, opt_state
 
-    def _cem_update(self, ec_opt_state, pop_actor_params, fitnesses):
-        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
-        return ec_opt_state
+    def _ec_update(self, ec_opt_state, pop_actor_params, fitnesses):
+        return self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
 
-    def _cem_sample(self, ec_opt_state, key):
+    def _ec_sample(self, ec_opt_state, key):
         return self.ec_optimizer.ask(ec_opt_state, key)
 
     def _add_to_replay_buffer(self, replay_buffer_state, trajectory, episode_lengths):
@@ -498,7 +497,9 @@ class CEMRLWorkflow(Workflow):
 
         # ======== RL update ========
         if iterations > self.config.warmup_iters:
-            learning_actor_slice = slice(self.config.num_learning_offspring)
+            learning_actor_slice = slice(
+                self.config.num_learning_offspring
+            )  # [:self.config.num_learning_offspring]
             learning_actor_params = tree_get(pop_actor_params, learning_actor_slice)
             learning_agent_state = replace_actor_params(
                 agent_state, learning_actor_params
@@ -533,7 +534,7 @@ class CEMRLWorkflow(Workflow):
             td3_metrics = None
 
         # ======== CEM update ========
-        # the trajectory [#pop, T, B, ...]
+        # the trajectory [T, #pop*B, ...]
         # metrics: [#pop, B]
         eval_metrics, trajectory = self._rollout(agent_state, rollout_key)
 
@@ -552,9 +553,9 @@ class CEMRLWorkflow(Workflow):
             rl_metrics=td3_metrics,
         )
 
-        ec_opt_state = self._cem_update(ec_opt_state, pop_actor_params, fitnesses)
+        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
 
-        new_pop_actor_params = self._cem_sample(ec_opt_state, cem_key)
+        new_pop_actor_params = self._ec_sample(ec_opt_state, cem_key)
         agent_state = replace_actor_params(agent_state, new_pop_actor_params)
 
         # adding debug info for CEM
@@ -677,8 +678,8 @@ class CEMRLWorkflow(Workflow):
         """
         cls._rollout = jax.jit(cls._rollout, static_argnums=(0,))
         cls._rl_update = jax.jit(cls._rl_update, static_argnums=(0,))
-        cls._cem_sample = jax.jit(cls._cem_sample, static_argnums=(0,))
-        cls._cem_update = jax.jit(cls._cem_update, static_argnums=(0,))
+        cls._ec_sample = jax.jit(cls._ec_sample, static_argnums=(0,))
+        cls._ec_update = jax.jit(cls._ec_update, static_argnums=(0,))
 
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls._postsetup_replaybuffer = jax.jit(

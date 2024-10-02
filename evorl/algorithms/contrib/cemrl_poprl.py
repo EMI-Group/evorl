@@ -92,7 +92,7 @@ class PopRLWorkflow(CEMRLWorkflow):
         )
 
         # record pop mean, but do not sample new pop:
-        ec_opt_state = self._cem_update(ec_opt_state, pop_actor_params, fitnesses)
+        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
 
         # calculate the number of timestep
         sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
