@@ -1,0 +1,28 @@
+# @package _global_
+
+defaults:
+  - /agent/erl/cemrl
+  - _self_
+
+total_episodes: 100000
+
+actor_update_interval: 1 # not needed since we apply it over #num_learning_offspring actors
+
+warmup_iters: 10 # steps that only learn by CEM
+
+pop_size: 32
+num_learning_offspring: 16
+
+num_elites: 8
+diagonal_variance:
+  init: 1e-2
+  final: 1e-5
+  decay: 0.05
+
+fitness_with_exploration: false
+episodes_for_fitness: 1 # must be devided by num_envs
+num_rl_updates_per_iter: 256 # num of RL updates per iter
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 50
