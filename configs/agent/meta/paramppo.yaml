@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.algorithms.meta.param_ppo.ParamPPOWorkflow
+workflow_cls: evorl.algorithms.meta.pbt_ppo.param_ppo.ParamPPOWorkflow
 
 num_envs: 4
 

@@ -6,7 +6,7 @@ from evorl.distributed import (
 )
 from evorl.types import PyTreeDict, State
 
-from .pbt import PBTWorkflow, PBTWorkflowMetric
+from ..pbt import PBTWorkflow, PBTWorkflowMetric
 
 
 class PBTParamPPOWorkflow(PBTWorkflow):

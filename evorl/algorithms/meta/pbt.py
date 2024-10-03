@@ -25,7 +25,7 @@ from evorl.distributed import (
 )
 from evorl.metrics import MetricBase
 from evorl.types import MISSING_REWARD, PyTreeDict, State
-from evorl.utils.jax_utils import tree_last, tree_get, tree_set
+from evorl.utils.jax_utils import tree_last, tree_get, tree_set, is_jitted
 from evorl.workflows import RLWorkflow, Workflow
 from evorl.recorders import get_1d_array_statistics
 
@@ -117,8 +117,9 @@ class PBTWorkflow(Workflow):
 
         OmegaConf.set_readonly(target_workflow_config, True)
 
+        enable_jit = is_jitted(cls.step)
         target_workflow = target_workflow_cls.build_from_config(
-            target_workflow_config, enable_jit=True
+            target_workflow_config, enable_jit=enable_jit
         )
 
         target_workflow.devices = devices

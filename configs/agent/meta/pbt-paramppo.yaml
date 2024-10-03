@@ -1,10 +1,10 @@
 # @package _global_
 
 defaults:
-  - /agent@target_workflow: paramppo
+  - /agent/meta@target_workflow: paramppo
   - _self_
 
-workflow_cls: evorl.algorithms.meta.pbt_param_ppo.PBTParamPPOWorkflow
+workflow_cls: evorl.algorithms.meta.pbt_ppo.pbt_param_ppo.PBTParamPPOWorkflow
 
 pop_size: 8
 

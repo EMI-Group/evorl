@@ -21,7 +21,7 @@ from evorl.utils.rl_toolkits import (
     flatten_rollout_trajectory,
 )
 
-from ..ppo import PPOWorkflow
+from ...ppo import PPOWorkflow
 
 logger = logging.getLogger(__name__)
 
