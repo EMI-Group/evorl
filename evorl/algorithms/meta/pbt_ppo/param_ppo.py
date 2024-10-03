@@ -14,7 +14,7 @@ from evorl.types import (
     State,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import (
     average_episode_discount_return,
     compute_gae,
@@ -134,25 +134,22 @@ class ParamPPOWorkflow(PPOWorkflow):
             opt_state, agent_state, key = carry
             perm_key, learn_key = jax.random.split(key, num=2)
 
-            (opt_state, agent_state, key), (loss_list, loss_dict_list) = jax.lax.scan(
+            (opt_state, agent_state, key), (loss, loss_dict) = scan_and_mean(
                 minibatch_step,
                 (opt_state, agent_state, learn_key),
                 jtu.tree_map(partial(_get_shuffled_minibatch, perm_key), trajectory),
                 length=num_minibatches,
             )
 
-            return (opt_state, agent_state, key), (loss_list, loss_dict_list)
+            return (opt_state, agent_state, key), (loss, loss_dict)
 
         # loss_list: [reuse_rollout_epochs, num_minibatches]
-        (opt_state, agent_state, _), (loss_list, loss_dict_list) = jax.lax.scan(
+        (opt_state, agent_state, _), (loss, loss_dict) = scan_and_mean(
             epoch_step,
             (state.opt_state, agent_state, learn_key),
             None,
             length=self.config.reuse_rollout_epochs,
         )
-
-        loss = loss_list.mean()
-        loss_dict = jtu.tree_map(jnp.mean, loss_dict_list)
 
         # ======== update metrics ========
 
