@@ -10,14 +10,8 @@ import optax
 import orbax.checkpoint as ocp
 
 from evorl.metrics import MetricBase
-from evorl.types import (
-    PyTreeDict,
-    State,
-)
-from evorl.utils.jax_utils import (
-    tree_get,
-    tree_set,
-)
+from evorl.types import PyTreeDict, State
+from evorl.utils.jax_utils import tree_get, tree_set, rng_split_like_tree
 from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
 from evorl.agent import AgentState
@@ -179,6 +173,20 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
         )
 
         return agent_state, opt_state, ec_opt_state
+
+    def _ec_sample(self, ec_opt_state, key):
+        pop_actor_params = self.ec_optimizer.ask(ec_opt_state, key)
+
+        # Note: Avoid always choosing the positve parts for learning
+        if self.config.mirror_sampling:
+            keys = rng_split_like_tree(key, pop_actor_params)
+            pop_actor_params = jtu.tree_map(
+                lambda x, k: jax.random.permutation(k, x, axis=0),
+                pop_actor_params,
+                keys,
+            )
+
+        return pop_actor_params
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         """
