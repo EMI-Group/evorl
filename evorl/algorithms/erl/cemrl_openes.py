@@ -17,7 +17,7 @@ from evorl.evaluator import Evaluator
 from evorl.agent import AgentState
 from evorl.envs import create_env, AutoresetMode, Box
 from evorl.recorders import get_1d_array_statistics, add_prefix
-from evorl.ec.optimizers import OpenES, ExponetialScheduleSpec, ECState
+from evorl.ec.optimizers import OpenES, ExponentialScheduleSpec, ECState
 
 from ..offpolicy_utils import skip_replay_buffer_state
 from ..td3 import TD3Agent, TD3NetworkParams
@@ -81,8 +81,8 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
 
         ec_optimizer = OpenES(
             pop_size=config.pop_size,
-            lr_schedule=ExponetialScheduleSpec(**config.ec_lr),
-            noise_stdev_schedule=ExponetialScheduleSpec(**config.noise_stdev),
+            lr_schedule=ExponentialScheduleSpec(**config.ec_lr),
+            noise_stdev_schedule=ExponentialScheduleSpec(**config.ec_noise_stdev),
             mirror_sampling=config.mirror_sampling,
         )
 

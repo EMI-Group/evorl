@@ -23,8 +23,9 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=ppo",
-                // "agent=exp/td3-v2/cleanrl-default",
+                // "agent=ppo",
+                // "agent=contrib/td3-v3",
+                "agent=exp/pop-td3/cleanrl-default",
                 "env=brax/ant",
                 // "agent=exp/ppo/acrobat",
                 // "env=gymnax/Acrobot-v1",
@@ -108,7 +109,7 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=pbt-paramppo",
+                "agent=meta/pbt-paramppo",
                 "env=brax/ant",
                 "debug=true",
                 "checkpoint.enable=false"
@@ -122,32 +123,15 @@
             "justMyCode": false
         },
         {
-            "name": "PBT Train nGPU",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "evorl.train",
-            "args": [
-                "agent=pbt-ppo",
-                "env=brax/ant",
-                "debug=true",
-                "checkpoint.enable=false"
-                // "hydra.verbose=true",
-            ],
-            "env": {
-                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
-                // "CUDA_VISIBLE_DEVICES": "0,1"
-                // "JAX_DISABLE_JIT": "true"
-            },
-            "justMyCode": false
-        },
-        {
             "name": "CEMRL Train",
             "type": "debugpy",
             "request": "launch",
             "module": "evorl.train",
             "args": [
                 "agent=erl/cemrl",
-                "env=brax/hopper",
+                // "agent=erl/cemrl-openes",
+                // "agent=contrib/cemrl-nocem"
+                "env=brax/ant",
                 "debug=true",
                 "checkpoint.enable=false"
                 // "hydra.verbose=true",
@@ -165,8 +149,11 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=erl/erl-ga",
-                "env=brax/hopper",
+                // "agent=erl/erl-ga",
+                "agent=erl/erl-openes",
+                // "agent=exp/erl-ori/ant",
+                // "agent=exp/erl-ori/ant",
+                "env=brax/ant",
                 "debug=true",
                 "checkpoint.enable=false"
                 // "hydra.verbose=true",

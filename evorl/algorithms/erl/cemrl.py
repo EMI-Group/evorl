@@ -12,7 +12,7 @@ import optax
 import orbax.checkpoint as ocp
 
 from evorl.distributed import agent_gradient_update
-from evorl.ec.optimizers.utils import ExponetialScheduleSpec
+from evorl.ec.optimizers.utils import ExponentialScheduleSpec
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import tree_get, tree_set, rng_split_like_tree
@@ -91,7 +91,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         ec_optimizer = DiagCEM(
             pop_size=config.pop_size,
             num_elites=config.num_elites,
-            diagonal_variance=ExponetialScheduleSpec(**config.diagonal_variance),
+            diagonal_variance=ExponentialScheduleSpec(**config.diagonal_variance),
             weighted_update=config.weighted_update,
             rank_weight_shift=config.rank_weight_shift,
             mirror_sampling=config.mirror_sampling,

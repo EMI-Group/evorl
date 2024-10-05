@@ -29,7 +29,7 @@ ec_lr:
   init: 0.05
   final: 0.001
   decay: 1.0 # 1.0: always use init
-noise_stdev:
+ec_noise_stdev:
   init: 0.03
   final: 0.01
   decay: 1.0 # 1.0: always use init

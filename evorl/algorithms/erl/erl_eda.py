@@ -11,25 +11,20 @@ import orbax.checkpoint as ocp
 
 from evorl.distributed import agent_gradient_update
 from evorl.metrics import MetricBase, metricfield
-from evorl.types import (
-    PyTreeDict,
-    State,
-)
+from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import tree_stop_gradient
-from evorl.utils.rl_toolkits import (
-    soft_target_update,
-)
+from evorl.utils.rl_toolkits import soft_target_update
 from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
 from evorl.agent import AgentState, Agent
 from evorl.envs import create_env, AutoresetMode, Box
 from evorl.recorders import get_1d_array_statistics, add_prefix
-from evorl.ec.optimizers import ECState, OpenES, ExponetialScheduleSpec
+from evorl.ec.optimizers import ECState, OpenES, ExponentialScheduleSpec
 
 from ..td3 import TD3Agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from .episode_collector import EpisodeCollector
-from .erl_ga import ERLGAWorkflow
+from .erl_base import ERLWorkflowBase
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +53,13 @@ class EvaluateMetric(MetricBase):
     pop_center_episode_lengths: chex.Array
 
 
-class ERLEDAWorkflow(ERLGAWorkflow):
+class ERLEDAWorkflow(ERLWorkflowBase):
     """
     EC: n actors
-    RL: k actors + k critics + 1 replay buffer.
+    RL: 1 actors + 1 critics
+    Shared replay buffer
+
+    RL will be injected into the pop mean
     """
 
     @classmethod
@@ -113,10 +111,8 @@ class ERLEDAWorkflow(ERLGAWorkflow):
 
         ec_optimizer = OpenES(
             pop_size=config.pop_size,
-            lr_schedule=ExponetialScheduleSpec(**config.ec_optimizer.lr),
-            noise_stdev_schedule=ExponetialScheduleSpec(
-                **config.ec_optimizer.noise_stdev
-            ),
+            lr_schedule=ExponentialScheduleSpec(**config.ec_lr),
+            noise_stdev_schedule=ExponentialScheduleSpec(**config.ec_noise_stdev),
             mirror_sampling=config.mirror_sampling,
         )
 
@@ -187,9 +183,7 @@ class ERLEDAWorkflow(ERLGAWorkflow):
             obs_preprocessor_state=None,
         )
 
-        workflow._rl_update_fn = _build_rl_update_fn(
-            agent, optimizer, config, workflow.agent_state_pytree_axes
-        )
+        workflow._rl_update_fn = build_rl_update_fn(agent, optimizer, config)
 
         return workflow
 
@@ -215,6 +209,7 @@ class ERLEDAWorkflow(ERLGAWorkflow):
         return agent_state, opt_state, ec_opt_state
 
     def _rl_rollout(self, agent_state, key):
+        # agnet_state: only contains one agent
         eval_metrics, trajectory = self.rl_collector.evaluate(
             agent_state,
             self.config.rollout_episodes,
@@ -240,8 +235,8 @@ class ERLEDAWorkflow(ERLGAWorkflow):
         sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
         sampled_episodes = jnp.zeros((), dtype=jnp.uint32)
 
-        key, rb_sample_key, ec_rollout_key, rl_rollout_key, ec_key, learn_key = (
-            jax.random.split(state.key, num=6)
+        key, ec_rollout_key, rl_rollout_key, ec_key, learn_key = jax.random.split(
+            state.key, num=5
         )
 
         # ======== EC update ========
@@ -345,7 +340,7 @@ class ERLEDAWorkflow(ERLGAWorkflow):
 
         ec_opt_state = ec_opt_state.replace(
             mean=optax.incremental_update(
-                rl_actor_params, pop_mean, self.config.rl_injection_update_stepsize
+                rl_actor_params, pop_mean, self.config.rl_injection_stepsize
             )
         )
 
@@ -435,11 +430,10 @@ def replace_actor_params(agent_state: AgentState, pop_actor_params) -> AgentStat
     )
 
 
-def _build_rl_update_fn(
+def build_rl_update_fn(
     agent: Agent,
     optimizer: optax.GradientTransformation,
     config: DictConfig,
-    agent_state_pytree_axes: AgentState,
 ):
     def critic_loss_fn(agent_state, sample_batch, key):
         # loss on a single critic with multiple actors

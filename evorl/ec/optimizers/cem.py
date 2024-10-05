@@ -13,7 +13,7 @@ from evorl.utils.jax_utils import (
     rng_split_like_tree,
 )
 
-from .utils import ExponetialScheduleSpec
+from .utils import ExponentialScheduleSpec
 from .ec_optimizer import EvoOptimizer
 
 
@@ -26,7 +26,7 @@ class DiagCEMState(PyTreeData):
 class DiagCEM(EvoOptimizer):
     pop_size: int
     num_elites: int  # number of good offspring to update the pop
-    diagonal_variance: ExponetialScheduleSpec
+    diagonal_variance: ExponentialScheduleSpec
 
     weighted_update: bool = True
     rank_weight_shift: float = 1.0

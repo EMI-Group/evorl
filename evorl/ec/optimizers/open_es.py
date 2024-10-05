@@ -9,7 +9,7 @@ import optax
 from evorl.types import PyTreeData, pytree_field, Params
 from evorl.utils.jax_utils import rng_split_like_tree
 
-from .utils import ExponetialScheduleSpec
+from .utils import ExponentialScheduleSpec
 from .ec_optimizer import EvoOptimizer, ECState
 
 
@@ -38,8 +38,8 @@ class OpenESState(PyTreeData):
 
 class OpenES(EvoOptimizer):
     pop_size: int
-    lr_schedule: ExponetialScheduleSpec
-    noise_stdev_schedule: ExponetialScheduleSpec
+    lr_schedule: ExponentialScheduleSpec
+    noise_stdev_schedule: ExponentialScheduleSpec
     mirror_sampling: bool = True
     fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
         pytree_node=False, default=compute_centered_ranks

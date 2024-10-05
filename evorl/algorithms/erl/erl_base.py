@@ -2,6 +2,7 @@ import copy
 import logging
 from typing import Any
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
+from functools import partial
 from omegaconf import DictConfig
 
 import chex
@@ -11,18 +12,10 @@ import jax.tree_util as jtu
 import optax
 
 from evorl.metrics import MetricBase, metricfield
-from evorl.types import (
-    PyTreeDict,
-    State,
-)
+from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import (
-    scan_and_mean,
-    tree_stop_gradient,
-)
-from evorl.utils.rl_toolkits import (
-    flatten_rollout_trajectory,
-)
+from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
+from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.evaluator import Evaluator
 from evorl.sample_batch import SampleBatch
 from evorl.agent import Agent, AgentState, RandomAgent
@@ -44,6 +37,8 @@ class POPTrainMetric(MetricBase):
     rb_size: int
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
+    rl_episode_returns: chex.Array | None = None
+    rl_episode_lengths: chex.Array | None = None
     rl_metrics: MetricBase | None = None
     ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
 
@@ -51,13 +46,19 @@ class POPTrainMetric(MetricBase):
 class WorkflowMetric(MetricBase):
     sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    rl_sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
-class CEMRLWorkflowBase(Workflow):
+class EvaluateMetric(MetricBase):
+    rl_episode_returns: chex.Array
+    rl_episode_lengths: chex.Array
+
+
+class ERLWorkflowBase(Workflow):
     """
-    1 critic + n actors + 1 replay buffer.
-    We use shard_map to split and parallel the population.
+    EC: n actors
+    RL: k actors + k critics + 1 replay buffer.
     """
 
     def __init__(
@@ -66,7 +67,8 @@ class CEMRLWorkflowBase(Workflow):
         agent: Agent,
         optimizer: optax.GradientTransformation,
         ec_optimizer: EvoOptimizer,
-        collector: EpisodeCollector,
+        ec_collector: EpisodeCollector,
+        rl_collector: EpisodeCollector,
         evaluator: Evaluator,  # to evaluate the pop-mean actor
         replay_buffer: Any,
         config: DictConfig,
@@ -76,7 +78,8 @@ class CEMRLWorkflowBase(Workflow):
         self.agent = agent
         self.optimizer = optimizer
         self.ec_optimizer = ec_optimizer
-        self.collector = collector
+        self.ec_collector = ec_collector
+        self.rl_collector = rl_collector
         self.evaluator = evaluator
         self.replay_buffer = replay_buffer
 
@@ -113,12 +116,13 @@ class CEMRLWorkflowBase(Workflow):
         """
         key, agent_key, rb_key = jax.random.split(key, 3)
 
-        # [#pop, ...]
+        # agent_state: [num_rl_agents, ...]
+        # ec_opt_state.pop: [pop_size, ...]
         agent_state, opt_state, ec_opt_state = self._setup_agent_and_optimizer(
             agent_key
         )
 
-        workflow_metrics = self._setup_workflow_metrics()
+        workflow_metrics = WorkflowMetric()
 
         replay_buffer_state = self._setup_replaybuffer(rb_key)
 
@@ -140,13 +144,10 @@ class CEMRLWorkflowBase(Workflow):
 
         return state
 
-    def _setup_workflow_metrics(self) -> MetricBase:
-        return WorkflowMetric()
-
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
-        raise NotImplementedError
+        raise ValueError
 
     def _setup_replaybuffer(self, key: chex.PRNGKey) -> chex.ArrayTree:
         action_space = self.env.action_space
@@ -224,14 +225,13 @@ class CEMRLWorkflowBase(Workflow):
         if agent_state.obs_preprocessor_state is not None and rollout_length > 0:
             agent_state = agent_state.replace(
                 obs_preprocessor_state=running_statistics.update(
-                    agent_state.obs_preprocessor_state,
-                    trajectory.obs,
+                    agent_state.obs_preprocessor_state, trajectory.obs
                 )
             )
 
         sampled_timesteps = jnp.uint32(rollout_length * config.num_envs)
         # Since we sample from autoreset env, this metric might not be accurate:
-        sampled_episodes = trajectory.dones.astype(jnp.uint32).sum()
+        sampled_episodes = trajectory.dones.sum()
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
@@ -245,9 +245,9 @@ class CEMRLWorkflowBase(Workflow):
             replay_buffer_state=replay_buffer_state,
         )
 
-    def _rollout(self, agent_state, key):
+    def _ec_rollout(self, agent_state, key):
         eval_metrics, trajectory = jax.vmap(
-            self.collector.evaluate,
+            self.ec_collector.evaluate,
             in_axes=(self.agent_state_pytree_axes, None, 0),
         )(
             agent_state,
@@ -262,11 +262,24 @@ class CEMRLWorkflowBase(Workflow):
 
         return eval_metrics, trajectory
 
-    def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
-        """
-        sample_batches: (num_rl_updates_per_iter, actor_update_interval, B, ...)
-        """
+    def _rl_rollout(self, agent_state, key):
+        eval_metrics, trajectory = jax.vmap(
+            self.rl_collector.evaluate,
+            in_axes=(self.agent_state_pytree_axes, None, 0),
+        )(
+            agent_state,
+            self.config.rollout_episodes,
+            jax.random.split(key, self.config.num_rl_agents),
+        )
 
+        trajectory = clean_trajectory(trajectory)
+        # [num_rl_agents, T, B, ...] -> [T, num_rl_agents*B, ...]
+        trajectory = flatten_pop_rollout_episode(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
+
+        return eval_metrics, trajectory
+
+    def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
         def _sample_fn(key):
             return self.replay_buffer.sample(replay_buffer_state, key).experience
 
@@ -311,9 +324,6 @@ class CEMRLWorkflowBase(Workflow):
     def _ec_update(self, ec_opt_state, pop_actor_params, fitnesses):
         return self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
 
-    def _ec_sample(self, ec_opt_state, key):
-        return self.ec_optimizer.ask(ec_opt_state, key)
-
     def _add_to_replay_buffer(self, replay_buffer_state, trajectory, episode_lengths):
         # trajectory [T,B,...]
         # episode_lengths [B]
@@ -332,14 +342,35 @@ class CEMRLWorkflowBase(Workflow):
 
         return replay_buffer_state
 
+    def evaluate(self, state: State) -> tuple[MetricBase, State]:
+        key, eval_key = jax.random.split(state.key, num=2)
+
+        _vmap_evaluate = jax.vmap(
+            partial(self.evaluator.evaluate, num_episodes=self.config.eval_episodes),
+            in_axes=(self.agent_state_pytree_axes, 0),
+        )
+
+        # [num_rl_agents, #episodes]
+        raw_eval_metrics = _vmap_evaluate(
+            state.agent_state, jax.random.split(eval_key, self.config.num_rl_agents)
+        )
+
+        eval_metrics = EvaluateMetric(
+            rl_episode_returns=raw_eval_metrics.episode_returns.mean(-1),
+            rl_episode_lengths=raw_eval_metrics.episode_lengths.mean(-1),
+        )
+
+        state = state.replace(key=key)
+        return eval_metrics, state
+
     @classmethod
     def enable_jit(cls) -> None:
         """
         Do not jit replay buffer add
         """
-        cls._rollout = jax.jit(cls._rollout, static_argnums=(0,))
+        cls._rl_rollout = jax.jit(cls._rl_rollout, static_argnums=(0,))
         cls._rl_update = jax.jit(cls._rl_update, static_argnums=(0,))
-        cls._ec_sample = jax.jit(cls._ec_sample, static_argnums=(0,))
+        cls._ec_rollout = jax.jit(cls._ec_rollout, static_argnums=(0,))
         cls._ec_update = jax.jit(cls._ec_update, static_argnums=(0,))
 
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
