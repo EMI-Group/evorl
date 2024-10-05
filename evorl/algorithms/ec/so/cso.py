@@ -15,7 +15,7 @@ from evorl.recorders import get_1d_array_statistics
 
 from ..problems import GeneralRLProblem
 from ..evox_workflow import EvoXWorkflowWrapper
-from ..ec_agent import DeterministicECAgent
+from ..ec_agent import make_deterministic_ec_agent
 
 
 class CSOWorkflow(EvoXWorkflowWrapper):
@@ -33,7 +33,8 @@ class CSOWorkflow(EvoXWorkflowWrapper):
             autoreset_mode=AutoresetMode.DISABLED,
         )
 
-        agent = DeterministicECAgent(
+        agent = make_deterministic_ec_agent(
+            action_space=env.action_space,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,  # use linear model
             normalize_obs=False,
             norm_layer_type=config.agent_network.norm_layer_type,

@@ -21,7 +21,7 @@ from evorl.envs import create_env, AutoresetMode, Box
 from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import ECState, OpenES, ExponentialScheduleSpec
 
-from ..td3 import TD3Agent, TD3NetworkParams
+from ..td3 import make_mlp_td3_agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from .episode_collector import EpisodeCollector
 from .erl_base import ERLWorkflowBase
@@ -86,9 +86,10 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             env.action_space, Box
         ), "Only continue action space is supported."
 
-        agent = TD3Agent(
-            num_critics=config.agent_network.num_critics,
+        agent = make_mlp_td3_agent(
+            action_space=env.action_space,
             norm_layer_type=config.agent_network.norm_layer_type,
+            num_critics=config.agent_network.num_critics,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             discount=config.discount,
@@ -96,6 +97,7 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
             critics_in_actor_loss=config.critics_in_actor_loss,
+            normalize_obs=config.normalize_obs,
         )
 
         if (

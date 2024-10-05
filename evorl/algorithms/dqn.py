@@ -64,41 +64,29 @@ class DQNAgent(Agent):
     Double-DQN
     """
 
-    q_hidden_layer_sizes: tuple[int] = (256, 256)
+    q_network: nn.Module
+    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
     discount: float = 0.99
-    normalize_obs: bool = False
-    q_network: nn.Module = pytree_field(lazy_init=True)
-    obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
+
+    @property
+    def normalize_obs(self):
+        return self.obs_preprocessor is not None
 
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        obs_size = obs_space.shape[0]
-        action_size = action_space.n
+        dummy_obs = obs_space.sample(key)[None, ...]
 
-        q_key, obs_preprocessor_key = jax.random.split(key)
-
-        q_network, q_init_fn = make_discrete_q_network(
-            obs_size=obs_size,
-            action_size=action_size,
-            hidden_layer_sizes=self.q_hidden_layer_sizes,
-        )
-        self.set_frozen_attr("q_network", q_network)
-
-        q_params = q_init_fn(q_key)
+        q_params = self.q_network.init(key, dummy_obs)
         target_q_params = q_params
 
         params_states = DQNNetworkParams(
             q_params=q_params,
             target_q_params=target_q_params,
-            exploration_epsilon=jnp.zeros(()),  # set at workflow
+            exploration_epsilon=jnp.zeros(()),  # handle at workflow
         )
 
-        # obs_preprocessor
         if self.normalize_obs:
-            obs_preprocessor = running_statistics.normalize
-            self.set_frozen_attr("obs_preprocessor", obs_preprocessor)
-            dummy_obs = obs_space.sample(obs_preprocessor_key)
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
@@ -185,6 +173,34 @@ class DQNAgent(Agent):
         return PyTreeDict(q_loss=q_loss)
 
 
+def make_mlp_discrete_dqn_agent(
+    action_space: Space,
+    discount: float = 0.99,
+    q_hidden_layer_sizes: tuple[int] = (256, 256),
+    normalize_obs: bool = False,
+):
+    assert isinstance(
+        action_space, Discrete
+    ), "Only Discrete action space is supported."
+
+    action_size = action_space.n
+    q_network = make_discrete_q_network(
+        action_size=action_size,
+        hidden_layer_sizes=q_hidden_layer_sizes,
+    )
+
+    if normalize_obs:
+        obs_preprocessor = running_statistics.normalize
+    else:
+        obs_preprocessor = None
+
+    return DQNAgent(
+        q_network=q_network,
+        obs_preprocessor=obs_preprocessor,
+        discount=discount,
+    )
+
+
 class DQNWorkflow(OffPolicyWorkflowTemplate):
     @classmethod
     def name(cls):
@@ -205,9 +221,11 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             env.action_space, Discrete
         ), "Only Discrete action space is supported."
 
-        agent = DQNAgent(
+        agent = make_mlp_discrete_dqn_agent(
+            action_space=env.action_space,
             q_hidden_layer_sizes=config.agent_network.q_hidden_layer_sizes,
             discount=config.discount,
+            normalize_obs=config.normalize_obs,
         )
 
         if (

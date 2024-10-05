@@ -9,7 +9,7 @@ from evorl.utils.ec_utils import ParamVectorSpec
 
 from ..problems import MultiObjectiveBraxProblem
 from .mo_base import MOECWorkflowTemplate
-from ..ec_agent import DeterministicECAgent
+from ..ec_agent import make_deterministic_ec_agent
 
 
 class RVEAWorkflow(MOECWorkflowTemplate):
@@ -26,7 +26,8 @@ class RVEAWorkflow(MOECWorkflowTemplate):
             autoreset_mode=AutoresetMode.DISABLED,
         )
 
-        agent = DeterministicECAgent(
+        agent = make_deterministic_ec_agent(
+            action_space=env.action_space,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,  # use linear model
             normalize_obs=False,
             norm_layer_type=config.agent_network.norm_layer_type,

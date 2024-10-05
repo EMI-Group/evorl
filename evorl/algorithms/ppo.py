@@ -14,7 +14,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import agent_gradient_update, psum, tree_unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import AutoresetMode, create_env, Space
+from evorl.envs import AutoresetMode, create_env, Space, Box, Discrete
 from evorl.evaluator import Evaluator
 from evorl.metrics import TrainMetric
 from evorl.networks import make_policy_network, make_v_network
@@ -54,49 +54,33 @@ class PPONetworkParams(PyTreeData):
 
 
 class PPOAgent(Agent):
-    actor_hidden_layer_sizes: tuple[int] = (256, 256)
-    critic_hidden_layer_sizes: tuple[int] = (256, 256)
-    normalize_obs: bool = False
-    continuous_action: bool = False
+    continuous_action: bool
+    policy_network: nn.Module
+    value_network: nn.Module
+    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+
     clip_epsilon: float = 0.2
-    policy_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
-    value_network: nn.Module = pytree_field(lazy_init=True)
-    obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
+
+    @property
+    def normalize_obs(self):
+        return self.obs_preprocessor is not None
 
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        obs_size = obs_space.shape[0]
+        policy_key, value_key = jax.random.split(key, 2)
 
-        if self.continuous_action:
-            action_size = action_space.shape[0] * 2
-        else:
-            action_size = action_space.n
+        dummy_obs = obs_space.sample(key)[None, ...]
 
-        policy_key, value_key, obs_preprocessor_key = jax.random.split(key, 3)
-        policy_network, policy_init_fn = make_policy_network(
-            action_size=action_size,
-            obs_size=obs_size,
-            hidden_layer_sizes=self.actor_hidden_layer_sizes,
-        )
-        policy_params = policy_init_fn(policy_key)
+        policy_params = self.policy_network.init(policy_key, dummy_obs)
 
-        value_network, value_init_fn = make_v_network(
-            obs_size=obs_size, hidden_layer_sizes=self.critic_hidden_layer_sizes
-        )
-        value_params = value_init_fn(value_key)
-
-        self.set_frozen_attr("policy_network", policy_network)
-        self.set_frozen_attr("value_network", value_network)
+        value_params = self.value_network.init(value_key, dummy_obs)
 
         params_state = PPONetworkParams(
             policy_params=policy_params, value_params=value_params
         )
 
         if self.normalize_obs:
-            obs_preprocessor = running_statistics.normalize
-            self.set_frozen_attr("obs_preprocessor", obs_preprocessor)
-            dummy_obs = obs_space.sample(obs_preprocessor_key)
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
@@ -237,6 +221,43 @@ class PPOAgent(Agent):
         return self.value_network.apply(agent_state.params.value_params, obs)
 
 
+def make_mlp_ppo_agent(
+    action_space: Space,
+    clip_epsilon: float = 0.2,
+    actor_hidden_layer_sizes: tuple[int] = (256, 256),
+    critic_hidden_layer_sizes: tuple[int] = (256, 256),
+    normalize_obs: bool = False,
+):
+    if isinstance(action_space, Box):
+        action_size = action_space.shape[0] * 2
+        continuous_action = True
+    elif isinstance(action_space, Discrete):
+        action_size = action_space.n
+        continuous_action = False
+    else:
+        raise NotImplementedError(f"Unsupported action space: {action_space}")
+
+    policy_network = make_policy_network(
+        action_size=action_size,
+        hidden_layer_sizes=actor_hidden_layer_sizes,
+    )
+
+    value_network = make_v_network(hidden_layer_sizes=critic_hidden_layer_sizes)
+
+    if normalize_obs:
+        obs_preprocessor = running_statistics.normalize
+    else:
+        obs_preprocessor = None
+
+    return PPOAgent(
+        continuous_action=continuous_action,
+        policy_network=policy_network,
+        value_network=value_network,
+        obs_preprocessor=obs_preprocessor,
+        clip_epsilon=clip_epsilon,
+    )
+
+
 class PPOWorkflow(OnPolicyWorkflow):
     @classmethod
     def name(cls):
@@ -278,12 +299,12 @@ class PPOWorkflow(OnPolicyWorkflow):
             autoreset_mode=AutoresetMode.ENVPOOL,
         )
 
-        agent = PPOAgent(
+        agent = make_mlp_ppo_agent(
+            action_space=env.action_space,
+            clip_epsilon=config.clip_epsilon,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             normalize_obs=config.normalize_obs,
-            continuous_action=config.agent_network.continuous_action,
-            clip_epsilon=config.clip_epsilon,
         )
 
         if (

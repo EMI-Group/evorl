@@ -97,7 +97,7 @@ def make_mlp(
     activation_final: ActivationFn | None = None,
     use_bias: bool = True,
     norm_layer_type: str = "none",
-):
+) -> nn.Module:
     if norm_layer_type == "spectral_norm":
         mlp = SNMLP(
             layer_sizes=layer_sizes,
@@ -121,7 +121,6 @@ def make_mlp(
 
 def make_policy_network(
     action_size: int,
-    obs_size: int,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
     activation_final: ActivationFn | None = None,
@@ -137,14 +136,10 @@ def make_policy_network(
         norm_layer_type=norm_layer_type,
     )
 
-    def init_fn(rng):
-        return policy_model.init(rng, jnp.zeros((1, obs_size)))
-
-    return policy_model, init_fn
+    return policy_model
 
 
 def make_v_network(
-    obs_size: int,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
@@ -167,17 +162,11 @@ def make_v_network(
             return vs.squeeze(-1)
 
     value_model = VModule()
-    dummy_obs = jnp.zeros((1, obs_size))
 
-    def init_fn(rng):
-        return value_model.init(rng, dummy_obs)
-
-    return value_model, init_fn
+    return value_model
 
 
 def make_q_network(
-    obs_size: int,
-    action_size: int,
     n_stack: int = 1,
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
@@ -254,17 +243,10 @@ def make_q_network(
 
     q_module = QModule(n=n_stack)
 
-    dummy_obs = jnp.zeros((1, obs_size))
-    dummy_action = jnp.zeros((1, action_size))
-
-    def init_fn(rng):
-        return q_module.init(rng, dummy_obs, dummy_action)
-
-    return q_module, init_fn
+    return q_module
 
 
 def make_discrete_q_network(
-    obs_size: int,
     action_size: int,
     n_stack: int = 1,
     hidden_layer_sizes: Sequence[int] = (256, 256),
@@ -306,9 +288,4 @@ def make_discrete_q_network(
 
     q_module = QModule(n=n_stack)
 
-    dummy_obs = jnp.zeros((1, obs_size))
-
-    def init_fn(rng):
-        return q_module.init(rng, dummy_obs)
-
-    return q_module, init_fn
+    return q_module

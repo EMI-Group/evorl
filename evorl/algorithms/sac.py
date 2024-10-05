@@ -60,46 +60,32 @@ class SACNetworkParams(PyTreeData):
 
 
 class SACAgent(Agent):
-    critic_hidden_layer_sizes: tuple[int] = (256, 256)
-    actor_hidden_layer_sizes: tuple[int] = (256, 256)
+    critic_network: nn.Module
+    actor_network: nn.Module
+    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+
     init_alpha: float = 1.0
     discount: float = 0.99
     reward_scale: float = 1.0
-    normalize_obs: bool = False
-    critic_network: nn.Module = pytree_field(lazy_init=True)
-    actor_network: nn.Module = pytree_field(lazy_init=True)
-    obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
+
+    @property
+    def normalize_obs(self):
+        return self.obs_preprocessor is not None
 
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        obs_size = obs_space.shape[0]
-        action_size = action_space.shape[0]
+        key, critic_key, actor_key = jax.random.split(key, num=3)
 
-        key, critic_key, actor_key, obs_preprocessor_key = jax.random.split(key, num=4)
+        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_action = action_space.sample(key)[None, ...]
 
-        critic_network, critic_init_fn = make_q_network(
-            obs_size=obs_size,
-            action_size=action_size,
-            n_stack=2,
-            hidden_layer_sizes=self.critic_hidden_layer_sizes,
-        )
-
-        critic_params = critic_init_fn(critic_key)
+        critic_params = self.critic_network.init(critic_key, dummy_obs, dummy_action)
         target_critic_params = critic_params
 
-        actor_network, actor_init_fn = make_policy_network(
-            action_size=action_size * 2,  # mean+std
-            obs_size=obs_size,
-            hidden_layer_sizes=self.actor_hidden_layer_sizes,
-        )
-
-        actor_params = actor_init_fn(actor_key)
+        actor_params = self.actor_network.init(actor_key, dummy_obs)
 
         log_alpha = jnp.log(jnp.float32(self.init_alpha))
-
-        self.set_frozen_attr("critic_network", critic_network)
-        self.set_frozen_attr("actor_network", actor_network)
 
         params_state = SACNetworkParams(
             critic_params=critic_params,
@@ -109,9 +95,7 @@ class SACAgent(Agent):
         )
 
         if self.normalize_obs:
-            obs_preprocessor = running_statistics.normalize
-            self.set_frozen_attr("obs_preprocessor", obs_preprocessor)
-            dummy_obs = obs_space.sample(obs_preprocessor_key)
+            # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
             obs_preprocessor_state = None
@@ -242,17 +226,53 @@ class SACAgent(Agent):
         return PyTreeDict(critic_loss=q_loss)
 
 
+def make_mlp_sac_agent(
+    action_space: Space,
+    critic_hidden_layer_sizes: tuple[int] = (256, 256),
+    actor_hidden_layer_sizes: tuple[int] = (256, 256),
+    init_alpha: float = 1.0,
+    discount: float = 0.99,
+    reward_scale: float = 1.0,
+    normalize_obs: bool = False,
+):
+    assert isinstance(action_space, Box), "Only continue action space is supported."
+
+    action_size = action_space.shape[0] * 2
+
+    critic_network = make_q_network(
+        n_stack=2,
+        hidden_layer_sizes=critic_hidden_layer_sizes,
+    )
+
+    actor_network = make_policy_network(
+        action_size=action_size,  # mean+std
+        hidden_layer_sizes=actor_hidden_layer_sizes,
+    )
+
+    if normalize_obs:
+        obs_preprocessor = running_statistics.normalize
+    else:
+        obs_preprocessor = None
+
+    return SACAgent(
+        critic_network=critic_network,
+        actor_network=actor_network,
+        obs_preprocessor=obs_preprocessor,
+        init_alpha=init_alpha,
+        discount=discount,
+        reward_scale=reward_scale,
+    )
+
+
 class SACDiscreteAgent(Agent):
-    critic_hidden_layer_sizes: tuple[int] = (256, 256)
-    actor_hidden_layer_sizes: tuple[int] = (256, 256)
+    critic_network: nn.Module
+    actor_network: nn.Module
+    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
     alpha: float = 0.2
     adaptive_alpha: bool = False
     discount: float = 0.99
     # reward_scale: float = 1.0
     normalize_obs: bool = False
-    critic_network: nn.Module = pytree_field(lazy_init=True)
-    actor_network: nn.Module = pytree_field(lazy_init=True)
-    obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
 
 
 class SACWorkflow(OffPolicyWorkflowTemplate):
@@ -275,7 +295,8 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
             env.action_space, Box
         ), "Only continue action space is supported."
 
-        agent = SACAgent(
+        agent = make_mlp_sac_agent(
+            action_space=env.action_space,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             init_alpha=config.alpha,

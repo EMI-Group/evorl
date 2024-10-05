@@ -15,7 +15,7 @@ from evorl.agent import AgentState
 from omegaconf import DictConfig
 
 from ..problems import GeneralRLProblem
-from ..ec_agent import DeterministicECAgent
+from ..ec_agent import make_deterministic_ec_agent
 from .es_base import ESWorkflowTemplate
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,8 @@ class CMAESWorkflow(ESWorkflowTemplate):
             autoreset_mode=AutoresetMode.DISABLED,
         )
 
-        agent = DeterministicECAgent(
+        agent = make_deterministic_ec_agent(
+            action_space=env.action_space,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,  # use linear model
             normalize_obs=False,
             norm_layer_type=config.agent_network.norm_layer_type,

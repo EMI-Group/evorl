@@ -6,7 +6,11 @@ from evorl.networks import make_policy_network
 
 
 def test_mutation():
-    model, init_fn = make_policy_network(3, 5)
+    action_size, obs_size = 3, 5
+    model = make_policy_network(action_size)
+
+    def init_fn(key):
+        return model.init(key, jnp.ones((1, obs_size)))
 
     key1, key2, key3, key4, key5 = jax.random.split(jax.random.PRNGKey(0), num=5)
 
@@ -34,7 +38,11 @@ def test_mutation():
 
 
 def test_crossover():
-    model, init_fn = make_policy_network(3, 5)
+    action_size, obs_size = 3, 5
+    model = make_policy_network(action_size)
+
+    def init_fn(key):
+        return model.init(key, jnp.ones((1, obs_size)))
 
     key1, key2, key3, key4, key5 = jax.random.split(jax.random.PRNGKey(0), num=5)
 

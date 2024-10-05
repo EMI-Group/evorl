@@ -1,6 +1,6 @@
 import logging
-from typing import Any
 import math
+from typing import Any
 
 import chex
 import flashbax
@@ -17,22 +17,22 @@ from evorl.distributed.gradients import gradient_update
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluator import Evaluator
 from evorl.metrics import MetricBase
-from evorl.networks import make_policy_network, make_q_network
 from evorl.rollout import rollout
+from evorl.networks import make_policy_network, make_q_network
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
     Params,
-    PolicyExtraInfo,
     PyTreeData,
     PyTreeDict,
+    PolicyExtraInfo,
     State,
     pytree_field,
 )
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
-from evorl.agent import Agent, AgentState
+from evorl.agent import AgentState, Agent
 from evorl.recorders import add_prefix
 
 from ..offpolicy_utils import (
@@ -47,78 +47,40 @@ logger = logging.getLogger(__name__)
 MISSING_LOSS = -1e10
 
 
-class TD3TrainMetric(MetricBase):
-    actor_loss: chex.Array
-    critic1_loss: chex.Array
-    critic2_loss: chex.Array
-    q1: chex.Array
-    q2: chex.Array
-
-
-class TD3NetworkParams(PyTreeData):
-    """Contains training state for the learner."""
-
-    actor_params: Params
-    critic1_params: Params
-    critic2_params: Params
-    target_actor_params: Params
-    target_critic1_params: Params
-    target_critic2_params: Params
-
-
 class TD3Agent(Agent):
     """
     The Agnet for TD3
     """
 
-    norm_layer_type: str = "none"
-    critic_hidden_layer_sizes: tuple[int] = (256, 256)
-    actor_hidden_layer_sizes: tuple[int] = (256, 256)
+    critic_network: nn.Module
+    actor_network: nn.Module
+    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+
     discount: float = 0.99
     exploration_epsilon: float = 0.5
     policy_noise: float = 0.2
     clip_policy_noise: float = 0.5
-    normalize_obs: bool = False
+    critics_in_actor_loss: str = "first"  #  or "min"
 
-    critic_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
-    actor_network: nn.Module = pytree_field(lazy_init=True)
-    obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
+    @property
+    def normalize_obs(self):
+        return self.obs_preprocessor is not None
 
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        obs_size = obs_space.shape[0]
-        action_size = action_space.shape[0]
+        key, q_key1, q_key2, actor_key = jax.random.split(key, num=4)
 
-        key, critic_key, actor_key, obs_preprocessor_key = jax.random.split(key, num=4)
+        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_action = action_space.sample(key)[None, ...]
 
-        # the output of the q_network is (b, n_critics), n_critics is the number of critics, b is the batch size
-        critic_network, critic_init_fn = make_q_network(
-            obs_size=obs_size,
-            action_size=action_size,
-            n_stack=1,
-            hidden_layer_sizes=self.critic_hidden_layer_sizes,
-            norm_layer_type=self.norm_layer_type,
-        )
-        critic1_params = critic_init_fn(critic_key)
+        critic1_params = self.critic_network.init(q_key1, dummy_obs, dummy_action)
         target_critic1_params = critic1_params
-        critic2_params = critic_init_fn(critic_key)
+        critic2_params = self.critic_network.init(q_key2, dummy_obs, dummy_action)
         target_critic2_params = critic2_params
 
-        # the output of the actor_network is (b,), b is the batch size
-        actor_network, actor_init_fn = make_policy_network(
-            action_size=action_size,
-            obs_size=obs_size,
-            hidden_layer_sizes=self.actor_hidden_layer_sizes,
-            activation_final=nn.tanh,
-            norm_layer_type=self.norm_layer_type,
-        )
-
-        actor_params = actor_init_fn(actor_key)
+        actor_params = self.actor_network.init(actor_key, dummy_obs)
         target_actor_params = actor_params
-
-        self.set_frozen_attr("critic_network", critic_network)
-        self.set_frozen_attr("actor_network", actor_network)
 
         params_state = TD3NetworkParams(
             actor_params=actor_params,
@@ -129,11 +91,7 @@ class TD3Agent(Agent):
             target_critic2_params=target_critic2_params,
         )
 
-        # obs_preprocessor
         if self.normalize_obs:
-            obs_preprocessor = running_statistics.normalize
-            self.set_frozen_attr("obs_preprocessor", obs_preprocessor)
-            dummy_obs = obs_space.sample(obs_preprocessor_key)
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
@@ -180,6 +138,70 @@ class TD3Agent(Agent):
         return actions, PyTreeDict()
 
 
+def make_mlp_td3_agent(
+    action_space: Space,
+    norm_layer_type: str = "none",
+    critic_hidden_layer_sizes: tuple[int] = (256, 256),
+    actor_hidden_layer_sizes: tuple[int] = (256, 256),
+    discount: float = 0.99,
+    exploration_epsilon: float = 0.5,
+    policy_noise: float = 0.2,
+    clip_policy_noise: float = 0.5,
+    critics_in_actor_loss: str = "first",  #  or "min"
+    normalize_obs: bool = False,
+):
+    assert isinstance(action_space, Box), "Only continue action space is supported."
+
+    action_size = action_space.shape[0]
+
+    critic_network = make_q_network(
+        n_stack=1,
+        hidden_layer_sizes=critic_hidden_layer_sizes,
+        norm_layer_type=norm_layer_type,
+    )
+    actor_network = make_policy_network(
+        action_size=action_size,
+        hidden_layer_sizes=actor_hidden_layer_sizes,
+        activation_final=nn.tanh,
+        norm_layer_type=norm_layer_type,
+    )
+
+    if normalize_obs:
+        obs_preprocessor = running_statistics.normalize
+    else:
+        obs_preprocessor = None
+
+    return TD3Agent(
+        critic_network=critic_network,
+        actor_network=actor_network,
+        obs_preprocessor=obs_preprocessor,
+        discount=discount,
+        exploration_epsilon=exploration_epsilon,
+        policy_noise=policy_noise,
+        clip_policy_noise=clip_policy_noise,
+        critics_in_actor_loss=critics_in_actor_loss,
+    )
+
+
+class TD3TrainMetric(MetricBase):
+    actor_loss: chex.Array
+    critic1_loss: chex.Array
+    critic2_loss: chex.Array
+    q1: chex.Array
+    q2: chex.Array
+
+
+class TD3NetworkParams(PyTreeData):
+    """Contains training state for the learner."""
+
+    actor_params: Params
+    critic1_params: Params
+    critic2_params: Params
+    target_actor_params: Params
+    target_critic1_params: Params
+    target_critic2_params: Params
+
+
 class TD3Workflow(OffPolicyWorkflowTemplate):
     """
     The similar impl of TD3 in SB3 and CleanRL
@@ -207,7 +229,8 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             env.action_space, Box
         ), "Only continue action space is supported."
 
-        agent = TD3Agent(
+        agent = make_mlp_td3_agent(
+            action_space=env.action_space,
             norm_layer_type=config.agent_network.norm_layer_type,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
@@ -215,6 +238,8 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             exploration_epsilon=config.exploration_epsilon,
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
+            critics_in_actor_loss=config.critics_in_actor_loss,
+            normalize_obs=config.normalize_obs,
         )
 
         # one optimizer, two opt_states (in setup function) for both actor and critic

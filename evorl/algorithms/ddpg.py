@@ -60,48 +60,30 @@ class DDPGAgent(Agent):
     The Agnet for DDPG
     """
 
-    critic_hidden_layer_sizes: tuple[int] = (256, 256)
-    actor_hidden_layer_sizes: tuple[int] = (256, 256)
+    critic_network: nn.Module
+    actor_network: nn.Module
+    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+
     discount: float = 1
     exploration_epsilon: float = 0.5
-    normalize_obs: bool = False
-    critic_network: nn.Module = pytree_field(lazy_init=True)  # nn.Module is ok
-    actor_network: nn.Module = pytree_field(lazy_init=True)
-    obs_preprocessor: Any = pytree_field(lazy_init=True, pytree_node=False)
+
+    @property
+    def normalize_obs(self):
+        return self.obs_preprocessor is not None
 
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        if not isinstance(action_space, Box):
-            raise ValueError("Only continue action space (Box) is supported.")
+        key, q_key, actor_key = jax.random.split(key, num=3)
 
-        obs_size = obs_space.shape[0]
-        action_size = action_space.shape[0]
+        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_action = action_space.sample(key)[None, ...]
 
-        key, q_key, actor_key, obs_preprocessor_key = jax.random.split(key, num=4)
-
-        # the output of the q_network is (b, n_critics), n_critics is the number of critics, b is the batch size
-        critic_network, critic_init_fn = make_q_network(
-            obs_size=obs_size,
-            action_size=action_size,
-            hidden_layer_sizes=self.critic_hidden_layer_sizes,
-        )
-        critic_params = critic_init_fn(q_key)
+        critic_params = self.critic_network.init(q_key, dummy_obs, dummy_action)
         target_critic_params = critic_params
 
-        # the output of the actor_network is (b,), b is the batch size
-        actor_network, actor_init_fn = make_policy_network(
-            action_size=action_size,
-            obs_size=obs_size,
-            hidden_layer_sizes=self.actor_hidden_layer_sizes,
-            activation_final=nn.tanh,
-        )
-
-        actor_params = actor_init_fn(actor_key)
+        actor_params = self.actor_network.init(actor_key, dummy_obs)
         target_actor_params = actor_params
-
-        self.set_frozen_attr("critic_network", critic_network)
-        self.set_frozen_attr("actor_network", actor_network)
 
         params_state = DDPGNetworkParams(
             critic_params=critic_params,
@@ -110,20 +92,14 @@ class DDPGAgent(Agent):
             target_actor_params=target_actor_params,
         )
 
-        # obs_preprocessor
         if self.normalize_obs:
-            obs_preprocessor = running_statistics.normalize
-            self.set_frozen_attr("obs_preprocessor", obs_preprocessor)
-            dummy_obs = obs_space.sample(obs_preprocessor_key)
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
         else:
             obs_preprocessor_state = None
 
         return AgentState(
-            params=params_state,
-            obs_preprocessor_state=obs_preprocessor_state,
-            action_space=action_space,
+            params=params_state, obs_preprocessor_state=obs_preprocessor_state
         )
 
     def compute_actions(
@@ -142,9 +118,7 @@ class DDPGAgent(Agent):
         # add random noise
         noise = jax.random.normal(key, actions.shape) * self.exploration_epsilon
         actions += noise
-        actions = jnp.clip(
-            actions, agent_state.action_space.low, agent_state.action_space.high
-        )
+        actions = jnp.clip(actions, -1.0, 1.0)
 
         return actions, PyTreeDict()
 
@@ -233,6 +207,41 @@ class DDPGAgent(Agent):
         return PyTreeDict(actor_loss=actor_loss)
 
 
+def make_mlp_ddpg_agent(
+    action_space: Space,
+    critic_hidden_layer_sizes: tuple[int] = (256, 256),
+    actor_hidden_layer_sizes: tuple[int] = (256, 256),
+    discount: float = 1,
+    exploration_epsilon: float = 0.5,
+    normalize_obs: bool = False,
+):
+    assert isinstance(action_space, Box), "Only continue action space is supported."
+
+    action_size = action_space.shape[0]
+
+    critic_network = make_q_network(
+        hidden_layer_sizes=critic_hidden_layer_sizes,
+    )
+    actor_network = make_policy_network(
+        action_size=action_size,
+        hidden_layer_sizes=actor_hidden_layer_sizes,
+        activation_final=nn.tanh,
+    )
+
+    if normalize_obs:
+        obs_preprocessor = running_statistics.normalize
+    else:
+        obs_preprocessor = None
+
+    return DDPGAgent(
+        critic_network=critic_network,
+        actor_network=actor_network,
+        obs_preprocessor=obs_preprocessor,
+        discount=discount,
+        exploration_epsilon=exploration_epsilon,
+    )
+
+
 class DDPGWorkflow(OffPolicyWorkflowTemplate):
     @classmethod
     def name(cls):
@@ -256,11 +265,13 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             env.action_space, Box
         ), "Only continue action space is supported."
 
-        agent = DDPGAgent(
+        agent = make_mlp_ddpg_agent(
+            action_space=env.action_space,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
+            normalize_obs=config.normalize_obs,
         )
 
         # one optimizer, two opt_states (in setup function) for both actor and critic
