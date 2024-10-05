@@ -494,7 +494,7 @@ def build_rl_update_fn(
             agent.critic_loss, in_axes=(agent_state_pytree_axes, None, 0)
         )(agent_state, sample_batch, jax.random.split(key, num_rl_agents))
 
-        loss = config.loss_weights.critic_loss * loss_dict.critic_loss.sum()
+        loss = loss_dict.critic_loss.sum()
 
         return loss, loss_dict
 
@@ -505,7 +505,7 @@ def build_rl_update_fn(
             agent.actor_loss, in_axes=(agent_state_pytree_axes, None, 0)
         )(agent_state, sample_batch, jax.random.split(key, num_rl_agents))
 
-        loss = config.loss_weights.actor_loss * loss_dict.actor_loss.sum()
+        loss = loss_dict.actor_loss.sum()
 
         return loss, loss_dict
 

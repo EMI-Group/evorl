@@ -443,7 +443,7 @@ def build_rl_update_fn(
 
         loss_dict = agent.critic_loss(agent_state, sample_batch, key)
 
-        loss = config.loss_weights.critic_loss * loss_dict.critic_loss.sum()
+        loss = loss_dict.critic_loss.sum()
 
         return loss, loss_dict
 
@@ -452,7 +452,7 @@ def build_rl_update_fn(
         # different actor shares same sample_batch (B, ...) input
         loss_dict = agent.actor_loss(agent_state, sample_batch, key)
 
-        loss = config.loss_weights.actor_loss * loss_dict.actor_loss.sum()
+        loss = loss_dict.actor_loss.sum()
 
         return loss, loss_dict
 

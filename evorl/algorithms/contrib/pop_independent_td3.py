@@ -265,13 +265,13 @@ class PopTD3Workflow(TD3Workflow):
         def critic_loss_fn(agent_state, sample_batch, key):
             loss_dict = self.agent.critic_loss(agent_state, sample_batch, key)
 
-            loss = self.config.loss_weights.critic_loss * loss_dict.critic_loss
+            loss = loss_dict.critic_loss
             return loss, loss_dict
 
         def actor_loss_fn(agent_state, sample_batch, key):
             loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
 
-            loss = self.config.loss_weights.actor_loss * loss_dict.actor_loss
+            loss = loss_dict.actor_loss
             return loss, loss_dict
 
         critic_update_fn = agent_gradient_update(

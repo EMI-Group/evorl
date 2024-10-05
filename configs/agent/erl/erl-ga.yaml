@@ -30,10 +30,6 @@ rl_exploration: true # for RL Agent
 
 batch_size: 256
 
-loss_weights:
-  actor_loss: 1.0
-  critic_loss: 1.0
-
 optimizer:
   lr: 0.0003
   grad_clip_norm: 0 # set 0 or none to turn-off

@@ -380,7 +380,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             def _critic_loss(params):
                 qs = agent.critic_network.apply(params, obs, actions)
                 loss = optax.squared_error(qs, qs_target).mean()
-                return loss * self.config.loss_weights.critic_loss, qs.mean()
+                return loss, qs.mean()
 
             critic_update_fn = gradient_update(
                 _critic_loss,
@@ -433,7 +433,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
                 loss = -agent.critic_network.apply(
                     agent_state.params.critic1_params, obs, actions
                 ).mean()
-                return loss * self.config.loss_weights.actor_loss
+                return loss
 
             actor_update_fn = gradient_update(
                 _actor_loss,

@@ -423,7 +423,7 @@ def build_rl_update_fn(
         )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
 
         # mean over the num_learning_offspring
-        loss = config.loss_weights.critic_loss * loss_dict.critic_loss.mean()
+        loss = loss_dict.critic_loss.mean()
 
         return loss, loss_dict
 
@@ -435,7 +435,7 @@ def build_rl_update_fn(
         )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
 
         # sum over the num_learning_offspring
-        loss = config.loss_weights.actor_loss * loss_dict.actor_loss.sum()
+        loss = loss_dict.actor_loss.sum()
 
         return loss, loss_dict
 
