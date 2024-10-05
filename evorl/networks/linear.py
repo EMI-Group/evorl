@@ -55,8 +55,8 @@ class MLP(nn.Module):
 
                 hidden = self.activation(hidden)
             elif self.activation_final is not None:
-                if self.norm_layer is not None:
-                    hidden = self.norm_layer()(hidden)
+                # if self.norm_layer is not None:
+                #     hidden = self.norm_layer()(hidden)
 
                 hidden = self.activation_final(hidden)
 
