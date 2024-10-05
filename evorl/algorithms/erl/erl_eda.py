@@ -24,8 +24,7 @@ from evorl.evaluator import Evaluator
 from evorl.agent import AgentState, Agent
 from evorl.envs import create_env, AutoresetMode, Box
 from evorl.recorders import get_1d_array_statistics, add_prefix
-from evorl.ec.optimizers import ECState
-from evorl.ec.optimizers.open_es import OpenES, ScheduleSpec
+from evorl.ec.optimizers import ECState, OpenES, ExponetialScheduleSpec
 
 from ..td3 import TD3Agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
@@ -114,8 +113,10 @@ class ERLEDAWorkflow(ERLGAWorkflow):
 
         ec_optimizer = OpenES(
             pop_size=config.pop_size,
-            lr_schedule=ScheduleSpec(**config.ec_optimizer.lr),
-            noise_stdev_schedule=ScheduleSpec(**config.ec_optimizer.noise_stdev),
+            lr_schedule=ExponetialScheduleSpec(**config.ec_optimizer.lr),
+            noise_stdev_schedule=ExponetialScheduleSpec(
+                **config.ec_optimizer.noise_stdev
+            ),
             mirror_sampling=config.mirror_sampling,
         )
 

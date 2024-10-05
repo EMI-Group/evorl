@@ -1,6 +1,4 @@
 import math
-import numpy as np
-from typing_extensions import Self  # pytype: disable=not-supported-yet]
 from omegaconf import DictConfig
 
 import flashbax
@@ -11,8 +9,6 @@ import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
 
-from evorl.distributed import agent_gradient_update
-from evorl.ec.optimizers.utils import ExponetialScheduleSpec
 from evorl.metrics import MetricBase
 from evorl.types import (
     PyTreeDict,
@@ -22,28 +18,21 @@ from evorl.utils.jax_utils import (
     tree_get,
     tree_set,
 )
-from evorl.utils.rl_toolkits import (
-    soft_target_update,
-)
 from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
-from evorl.agent import Agent, AgentState
+from evorl.agent import AgentState
 from evorl.envs import create_env, AutoresetMode, Box
 from evorl.recorders import get_1d_array_statistics, add_prefix
-from evorl.ec.optimizers import DiagCEM
+from evorl.ec.optimizers import OpenES, ExponetialScheduleSpec, ECState
 
 from ..offpolicy_utils import skip_replay_buffer_state
 from ..td3 import TD3Agent, TD3NetworkParams
 from .episode_collector import EpisodeCollector
 from .cemrl_base import CEMRLWorkflowBase, POPTrainMetric
+from .cemrl import build_rl_update_fn, replace_actor_params, EvaluateMetric
 
 
-class EvaluateMetric(MetricBase):
-    pop_center_episode_returns: chex.Array
-    pop_center_episode_lengths: chex.Array
-
-
-class CEMRLWorkflow(CEMRLWorkflowBase):
+class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
     """
     1 critic + n actors + 1 replay buffer.
     We use shard_map to split and parallel the population.
@@ -51,10 +40,10 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
     @classmethod
     def name(cls):
-        return "CEM-RL"
+        return "CEM-RL-OpenES"
 
     @classmethod
-    def _build_from_config(cls, config: DictConfig) -> Self:
+    def _build_from_config(cls, config: DictConfig):
         """
         return workflow
         """
@@ -96,12 +85,10 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         else:
             optimizer = optax.adam(config.optimizer.lr)
 
-        ec_optimizer = DiagCEM(
+        ec_optimizer = OpenES(
             pop_size=config.pop_size,
-            num_elites=config.num_elites,
-            diagonal_variance=ExponetialScheduleSpec(**config.diagonal_variance),
-            weighted_update=config.weighted_update,
-            rank_weight_shift=config.rank_weight_shift,
+            lr_schedule=ExponetialScheduleSpec(**config.ec_lr),
+            noise_stdev_schedule=ExponetialScheduleSpec(**config.noise_stdev),
             mirror_sampling=config.mirror_sampling,
         )
 
@@ -170,7 +157,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
-    ) -> tuple[AgentState, chex.ArrayTree]:
+    ) -> tuple[AgentState, chex.ArrayTree, ECState]:
         agent_key, ec_key = jax.random.split(key, 2)
 
         # one actor + one critic
@@ -273,7 +260,6 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
         # adding debug info for CEM
         ec_info = PyTreeDict()
-        ec_info.cov_noise = ec_opt_state.cov_noise
         if td3_metrics is not None:
             elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
             elites_from_rl = jnp.isin(
@@ -366,9 +352,6 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            std_statistics = get_std_statistics(state.ec_opt_state.variance["params"])
-            self.recorder.write({"ec/std": std_statistics}, iters)
-
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
 
@@ -383,156 +366,3 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(state))
 
         return state
-
-
-def replace_actor_params(agent_state: AgentState, pop_actor_params) -> AgentState:
-    """
-    reset the actor params and target actor params
-    """
-
-    return agent_state.replace(
-        params=agent_state.params.replace(
-            actor_params=pop_actor_params,
-            target_actor_params=pop_actor_params,
-        )
-    )
-
-
-def build_rl_update_fn(
-    agent: Agent,
-    optimizer: optax.GradientTransformation,
-    config: DictConfig,
-    agent_state_pytree_axes: AgentState,
-):
-    num_learning_offspring = config.num_learning_offspring
-
-    def critic_loss_fn(agent_state, sample_batch, key):
-        # loss on a single critic with multiple actors
-        # sample_batch: (B, ...)
-
-        loss_dict = jax.vmap(
-            agent.critic_loss, in_axes=(agent_state_pytree_axes, None, 0)
-        )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
-
-        # mean over the num_learning_offspring
-        loss = config.loss_weights.critic_loss * loss_dict.critic_loss.mean()
-
-        return loss, loss_dict
-
-    def actor_loss_fn(agent_state, sample_batch, key):
-        # loss on a single actor
-        # different actor shares same sample_batch (B, ...) input
-        loss_dict = jax.vmap(
-            agent.actor_loss, in_axes=(agent_state_pytree_axes, None, 0)
-        )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
-
-        # sum over the num_learning_offspring
-        loss = config.loss_weights.actor_loss * loss_dict.actor_loss.sum()
-
-        return loss, loss_dict
-
-    critic_update_fn = agent_gradient_update(
-        critic_loss_fn,
-        optimizer,
-        has_aux=True,
-        attach_fn=lambda agent_state, critic_params: agent_state.replace(
-            params=agent_state.params.replace(critic_params=critic_params)
-        ),
-        detach_fn=lambda agent_state: agent_state.params.critic_params,
-    )
-
-    actor_update_fn = agent_gradient_update(
-        actor_loss_fn,
-        optimizer,
-        has_aux=True,
-        attach_fn=lambda agent_state, actor_params: agent_state.replace(
-            params=agent_state.params.replace(actor_params=actor_params)
-        ),
-        detach_fn=lambda agent_state: agent_state.params.actor_params,
-    )
-
-    def _update_fn(agent_state, opt_state, sample_batches, key):
-        critic_opt_state = opt_state.critic
-        actor_opt_state = opt_state.actor
-
-        key, critic_key, actor_key = jax.random.split(key, num=3)
-
-        critic_sample_batches = jax.tree_map(lambda x: x[:-1], sample_batches)
-        last_sample_batch = jax.tree_map(lambda x: x[-1], sample_batches)
-
-        if config.actor_update_interval - 1 > 0:
-
-            def _update_critic_fn(carry, sample_batch):
-                key, agent_state, critic_opt_state = carry
-
-                key, critic_key = jax.random.split(key)
-
-                (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                    critic_update_fn(
-                        critic_opt_state, agent_state, sample_batch, critic_key
-                    )
-                )
-
-                return (key, agent_state, critic_opt_state), None
-
-            key, critic_multiple_update_key = jax.random.split(key)
-
-            (_, agent_state, critic_opt_state), _ = jax.lax.scan(
-                _update_critic_fn,
-                (
-                    critic_multiple_update_key,
-                    agent_state,
-                    critic_opt_state,
-                ),
-                critic_sample_batches,
-                length=config.actor_update_interval - 1,
-            )
-
-        (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-            critic_update_fn(
-                critic_opt_state, agent_state, last_sample_batch, critic_key
-            )
-        )
-
-        (actor_loss, actor_loss_dict), agent_state, actor_opt_state = actor_update_fn(
-            actor_opt_state, agent_state, last_sample_batch, actor_key
-        )
-
-        # not need vmap
-        target_actor_params = soft_target_update(
-            agent_state.params.target_actor_params,
-            agent_state.params.actor_params,
-            config.tau,
-        )
-        target_critic_params = soft_target_update(
-            agent_state.params.target_critic_params,
-            agent_state.params.critic_params,
-            config.tau,
-        )
-        agent_state = agent_state.replace(
-            params=agent_state.params.replace(
-                target_actor_params=target_actor_params,
-                target_critic_params=target_critic_params,
-            )
-        )
-
-        opt_state = opt_state.replace(actor=actor_opt_state, critic=critic_opt_state)
-
-        return (
-            (agent_state, opt_state),
-            (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict),
-        )
-
-    return _update_fn
-
-
-def get_std_statistics(variance):
-    def _get_stats(x):
-        x = np.sqrt(x)
-        return dict(
-            min=np.min(x).tolist(),
-            max=np.max(x).tolist(),
-            mean=np.mean(x).tolist(),
-        )
-
-    return jtu.tree_map(_get_stats, variance)

@@ -14,8 +14,8 @@ from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.recorders import get_1d_array_statistics, add_prefix
 
 from ..offpolicy_utils import skip_replay_buffer_state
-from ..erl.cemrl import CEMRLWorkflow, POPTrainMetric, replace_actor_params
-from ..erl.utils import get_std_statistics
+from ..erl.cemrl_base import CEMRLWorkflowBase, POPTrainMetric, replace_actor_params
+from ..erl.cemrl import get_std_statistics
 
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ class EvaluateMetric(MetricBase):
     pop_episode_lengths: chex.Array
 
 
-class PopRLWorkflow(CEMRLWorkflow):
+class PopRLWorkflow(CEMRLWorkflowBase):
     @classmethod
     def name(cls):
         return "CEM-RL(nocem)"

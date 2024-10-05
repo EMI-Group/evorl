@@ -13,6 +13,7 @@ from evorl.utils.jax_utils import (
     rng_split_like_tree,
 )
 
+from .utils import ExponetialScheduleSpec
 from .ec_optimizer import EvoOptimizer
 
 
@@ -25,9 +26,8 @@ class DiagCEMState(PyTreeData):
 class DiagCEM(EvoOptimizer):
     pop_size: int
     num_elites: int  # number of good offspring to update the pop
-    init_diagonal_variance: float = 1e-2
-    final_diagonal_variance: float = 1e-5
-    diagonal_variance_decay: float = 0.05
+    diagonal_variance: ExponetialScheduleSpec
+
     weighted_update: bool = True
     rank_weight_shift: float = 1.0
     mirror_sampling: bool = False
@@ -53,13 +53,13 @@ class DiagCEM(EvoOptimizer):
 
     def init(self, mean: Params) -> DiagCEMState:
         variance = jtu.tree_map(
-            lambda x: jnp.full_like(x, self.init_diagonal_variance), mean
+            lambda x: jnp.full_like(x, self.diagonal_variance.init), mean
         )
 
         return DiagCEMState(
             mean=mean,
             variance=variance,
-            cov_noise=jnp.float32(self.init_diagonal_variance),
+            cov_noise=jnp.float32(self.diagonal_variance.init),
         )
 
     def tell(
@@ -69,7 +69,7 @@ class DiagCEM(EvoOptimizer):
         elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
         cov_noise = optax.incremental_update(
-            self.final_diagonal_variance, state.cov_noise, self.diagonal_variance_decay
+            self.diagonal_variance.final, state.cov_noise, self.diagonal_variance.decay
         )
 
         mean = jtu.tree_map(

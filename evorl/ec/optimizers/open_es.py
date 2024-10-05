@@ -9,6 +9,7 @@ import optax
 from evorl.types import PyTreeData, pytree_field, Params
 from evorl.utils.jax_utils import rng_split_like_tree
 
+from .utils import ExponetialScheduleSpec
 from .ec_optimizer import EvoOptimizer, ECState
 
 
@@ -29,12 +30,6 @@ def compute_centered_ranks(x):
     return y
 
 
-class ScheduleSpec(PyTreeData):
-    init: float
-    final: float
-    decay: float
-
-
 class OpenESState(PyTreeData):
     mean: chex.ArrayTree
     opt_state: optax.OptState
@@ -43,8 +38,8 @@ class OpenESState(PyTreeData):
 
 class OpenES(EvoOptimizer):
     pop_size: int
-    lr_schedule: ScheduleSpec
-    noise_stdev_schedule: ScheduleSpec
+    lr_schedule: ExponetialScheduleSpec
+    noise_stdev_schedule: ExponetialScheduleSpec
     mirror_sampling: bool = True
     fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
         pytree_node=False, default=compute_centered_ranks
