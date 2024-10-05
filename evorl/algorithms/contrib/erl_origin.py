@@ -567,7 +567,7 @@ class ERLWorkflow(Workflow):
             num_updates_per_iter=jnp.zeros((), dtype=jnp.uint32),
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
-            ec_info=get_ec_pop_statistics(ec_opt_state.pop),
+            # ec_info=get_ec_pop_statistics(ec_opt_state.pop),
         )
 
         # ======== RL update ========
@@ -729,6 +729,9 @@ class ERLWorkflow(Workflow):
                     ].squeeze(-1)
 
             self.recorder.write(train_metrics_dict, iters)
+
+            pop_statistics = get_ec_pop_statistics(state.ec_opt_state.pop)
+            self.recorder.write(add_prefix(pop_statistics, "ec"), iters)
 
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
