@@ -24,14 +24,14 @@
             "module": "evorl.train",
             "args": [
                 // "agent=ppo",
-                // "agent=contrib/td3-v3",
-                "agent=exp/pop-td3/cleanrl-default",
+                // "agent=exp/a2c/brax/ant",
+                // "agent=exp/td3/brax/batch2",
+                "agent=contrib/td3-onpolicy",
+                // "agent=exp/pop-td3/cleanrl-default",
                 "env=brax/ant",
                 // "agent=exp/ppo/acrobat",
                 // "env=gymnax/Acrobot-v1",
                 "debug=true",
-                "checkpoint.enable=false"
-                // "hydra.verbose=true",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
@@ -51,7 +51,6 @@
                 "env=brax/ant",
                 "seed=0,1",
                 "debug=true",
-                "checkpoint.enable=false"
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
@@ -72,8 +71,6 @@
                 // "agent=exp/ppo/acrobat",
                 // "env=gymnax/Acrobot-v1",
                 "debug=true",
-                "checkpoint.enable=false"
-                // "hydra.verbose=true",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
@@ -93,8 +90,6 @@
                 // "agent=exp/ppo/acrobat",
                 // "env=gymnax/Acrobot-v1",
                 "debug=true",
-                "checkpoint.enable=false"
-                // "hydra.verbose=true",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
@@ -112,8 +107,6 @@
                 "agent=meta/pbt-paramppo",
                 "env=brax/ant",
                 "debug=true",
-                "checkpoint.enable=false"
-                // "hydra.verbose=true",
             ],
             "env": {
                 // "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
@@ -128,13 +121,12 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=erl/cemrl",
+                // "agent=erl/cemrl",
+                // "agent=exp/cemrl/fastpbrl-default",
                 // "agent=erl/cemrl-openes",
-                // "agent=contrib/cemrl-nocem"
+                "agent=contrib/cemrl-ori",
                 "env=brax/ant",
                 "debug=true",
-                "checkpoint.enable=false"
-                // "hydra.verbose=true",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
@@ -150,13 +142,26 @@
             "module": "evorl.train",
             "args": [
                 // "agent=erl/erl-ga",
-                "agent=erl/erl-openes",
-                // "agent=exp/erl-ori/ant",
-                // "agent=exp/erl-ori/ant",
+                "agent=exp/erl-ori/ant",
                 "env=brax/ant",
                 "debug=true",
-                "checkpoint.enable=false"
-                // "hydra.verbose=true",
+            ],
+            "env": {
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                // "CUDA_VISIBLE_DEVICES": "0,1"
+                // "JAX_DISABLE_JIT": "true"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "ERL-EDA Train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "evorl.train",
+            "args": [
+                "agent=erl/erl-openes",
+                "env=brax/ant",
+                "debug=true",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
@@ -174,7 +179,6 @@
                 "agent=ec/cmaes",
                 "env=brax/hopper",
                 "debug=true",
-                "checkpoint.enable=false"
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
@@ -192,7 +196,6 @@
                 "agent=ec/nsga2",
                 "env=brax/hopper",
                 "debug=true",
-                "checkpoint.enable=false"
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
