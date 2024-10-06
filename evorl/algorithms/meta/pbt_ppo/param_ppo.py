@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from evorl.distributed import agent_gradient_update, psum
-from evorl.metrics import TrainMetric
+from evorl.metrics import TrainMetric, MetricBase
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
@@ -43,7 +43,7 @@ class ParamPPOWorkflow(PPOWorkflow):
             )
         )
 
-    def step(self, state: State) -> tuple[TrainMetric, State]:
+    def step(self, state: State) -> tuple[MetricBase, State]:
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # trajectory: [T, #envs, ...]

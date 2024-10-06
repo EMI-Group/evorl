@@ -171,7 +171,7 @@ class PBTWorkflow(Workflow):
             pop=pop,
         )
 
-    def step(self, state: State) -> tuple[TrainMetric, State]:
+    def step(self, state: State) -> tuple[MetricBase, State]:
         pop_workflow_state = state.pop_workflow_state
         pop = state.pop
 

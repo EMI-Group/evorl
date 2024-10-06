@@ -14,7 +14,7 @@ from evorl.distributed import agent_gradient_update, psum, tree_pmean
 from evorl.distribution import get_tanh_norm_dist
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluator import Evaluator
-from evorl.metrics import MetricBase, TrainMetric, metricfield
+from evorl.metrics import MetricBase, metricfield
 from evorl.networks import make_policy_network, make_q_network
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
@@ -358,7 +358,7 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
 
         return agent_state, opt_state
 
-    def step(self, state: State) -> tuple[TrainMetric, State]:
+    def step(self, state: State) -> tuple[MetricBase, State]:
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # the trajectory [T, B, ...]

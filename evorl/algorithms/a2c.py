@@ -14,7 +14,7 @@ from evorl.distributed import agent_gradient_update, psum, tree_unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.envs import AutoresetMode, create_env, Space, Box, Discrete
 from evorl.evaluator import Evaluator
-from evorl.metrics import TrainMetric
+from evorl.metrics import TrainMetric, MetricBase
 from evorl.networks import make_policy_network, make_v_network
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
@@ -308,7 +308,7 @@ class A2CWorkflow(OnPolicyWorkflow):
 
         return cls(env, agent, optimizer, evaluator, config)
 
-    def step(self, state: State) -> tuple[TrainMetric, State]:
+    def step(self, state: State) -> tuple[MetricBase, State]:
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # trajectory: [T, #envs, ...]

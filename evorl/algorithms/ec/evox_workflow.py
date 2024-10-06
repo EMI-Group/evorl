@@ -79,7 +79,7 @@ class EvoXWorkflowWrapper(ECWorkflow):
 
         return State(key=key, evox_state=evox_state, metrics=workflow_metrics)
 
-    def step(self, state: State) -> tuple[TrainMetric, State]:
+    def step(self, state: State) -> tuple[MetricBase, State]:
         opt_direction = self._workflow.opt_direction
 
         train_info, evox_state = self._workflow.step(state.evox_state)
