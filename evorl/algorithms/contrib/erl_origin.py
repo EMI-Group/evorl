@@ -64,8 +64,22 @@ class ERLWorkflow(ERLGAWorkflow):
 
             key, rb_key, learn_key = jax.random.split(key, 3)
 
-            rb_key = jax.random.split(key, config.actor_update_interval)
-            sample_batches = jax.vmap(_sample_fn)(rb_key)
+            rb_keys = jax.random.split(
+                rb_key, config.actor_update_interval * config.num_rl_agents
+            )
+            sample_batches = jax.vmap(_sample_fn)(rb_keys)
+
+            # (actor_update_interval, num_learning_offspring, B, ...)
+            sample_batches = jax.tree_map(
+                lambda x: x.reshape(
+                    (
+                        config.actor_update_interval,
+                        config.num_rl_agents,
+                        *x.shape[1:],
+                    )
+                ),
+                sample_batches,
+            )
 
             (agent_state, opt_state), train_info = workflow._rl_update_fn(
                 agent_state, opt_state, sample_batches, learn_key
@@ -179,12 +193,21 @@ class ERLWorkflow(ERLGAWorkflow):
                 self.config.num_rl_agents * self.config.rollout_episodes
             )
 
-            # new:
-            total_timesteps = state.metrics.sampled_timesteps + sampled_timesteps
-            num_updates = (
-                math.ceil(total_timesteps * self.config.rl_updates_frac_per_iter)
-                // self.config.actor_update_interval
-            )
+            if self.config.rl_updates_mode == "global":  # same as original ERL
+                total_timesteps = state.metrics.sampled_timesteps + sampled_timesteps
+                num_updates = (
+                    math.ceil(total_timesteps * self.config.rl_updates_frac_per_iter)
+                    // self.config.actor_update_interval
+                )
+            elif self.config.rl_updates_mode == "iter":
+                num_updates = (
+                    math.ceil(sampled_timesteps * self.config.rl_updates_frac_per_iter)
+                    // self.config.actor_update_interval
+                )
+            else:
+                raise ValueError(
+                    f"Unknown rl_updates_mode: {self.config.rl_updates_mode}"
+                )
 
             td3_metrics, agent_state, opt_state = self._rl_update(
                 agent_state, opt_state, replay_buffer_state, num_updates, learn_key

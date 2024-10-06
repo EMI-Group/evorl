@@ -430,7 +430,7 @@ def build_rl_update_fn(
         # sample_batch: (n, B, ...)
 
         loss_dict = jax.vmap(
-            agent.critic_loss, in_axes=(agent_state_pytree_axes, None, 0)
+            agent.critic_loss, in_axes=(agent_state_pytree_axes, 0, 0)
         )(agent_state, sample_batch, jax.random.split(key, num_rl_agents))
 
         loss = loss_dict.critic_loss.sum()
@@ -439,9 +439,9 @@ def build_rl_update_fn(
 
     def actor_loss_fn(agent_state, sample_batch, key):
         # loss on a single actor
-        loss_dict = jax.vmap(
-            agent.actor_loss, in_axes=(agent_state_pytree_axes, None, 0)
-        )(agent_state, sample_batch, jax.random.split(key, num_rl_agents))
+        loss_dict = jax.vmap(agent.actor_loss, in_axes=(agent_state_pytree_axes, 0, 0))(
+            agent_state, sample_batch, jax.random.split(key, num_rl_agents)
+        )
 
         loss = loss_dict.actor_loss.sum()
 

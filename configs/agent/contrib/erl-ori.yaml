@@ -15,13 +15,14 @@ tau: 0.005 # soft update rate
 exploration_epsilon: 0.1
 policy_noise: 0.2
 clip_policy_noise: 0.5
-actor_update_interval: 2
+actor_update_interval: 1
 critics_in_actor_loss: first # first or min
 
 # ====== RL Train Params ======
 num_rl_agents: 1
 warmup_iters: 10 # steps that only learn by EC
 # num_rl_updates_per_iter: 50
+rl_updates_mode: "iter" # "iter" or "global"
 rl_updates_frac_per_iter: 1.0 # num_rl_updates_per_iter=total_timesteps*rl_updates_frac_per_iter
 
 episodes_for_fitness: 1 # must be devided by num_envs
