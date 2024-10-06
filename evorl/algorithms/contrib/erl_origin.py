@@ -214,7 +214,7 @@ class ERLWorkflow(ERLGAWorkflow):
             )
 
             if iterations % self.config.rl_injection_interval == 0:
-                ec_opt_state = self._rl_injection(agent_state, ec_opt_state, fitnesses)
+                ec_opt_state = self._rl_injection(ec_opt_state, agent_state, fitnesses)
 
             train_metrics = train_metrics.replace(
                 num_updates_per_iter=num_updates,
