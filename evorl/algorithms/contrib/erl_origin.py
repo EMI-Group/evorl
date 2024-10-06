@@ -28,12 +28,12 @@ logger = logging.getLogger(__name__)
 class POPTrainMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
-    num_updates_per_iter: int = 0
+    num_updates_per_iter: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     rb_size: int = 0
     rl_episode_returns: chex.Array | None = None
     rl_episode_lengths: chex.Array | None = None
     rl_metrics: MetricBase | None = None
-    per_iter_time_cost: float = 0.0
+    time_cost_per_iter: float = 0.0
     ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
 
 
@@ -129,6 +129,7 @@ class ERLWorkflow(ERLGAWorkflow):
         """
         the basic step function for the workflow to update agent
         """
+        start_t = time.perf_counter()
         pop_size = self.config.pop_size
         agent_state = state.agent_state
         opt_state = state.opt_state
@@ -195,12 +196,16 @@ class ERLWorkflow(ERLGAWorkflow):
             if self.config.rl_updates_mode == "global":  # same as original ERL
                 total_timesteps = state.metrics.sampled_timesteps + sampled_timesteps
                 num_updates = (
-                    math.ceil(total_timesteps * self.config.rl_updates_frac)
+                    jnp.ceil(total_timesteps * self.config.rl_updates_frac).astype(
+                        jnp.uint32
+                    )
                     // self.config.actor_update_interval
                 )
             elif self.config.rl_updates_mode == "iter":
                 num_updates = (
-                    math.ceil(sampled_timesteps * self.config.rl_updates_frac)
+                    jnp.ceil(sampled_timesteps * self.config.rl_updates_frac).astype(
+                        jnp.uint32
+                    )
                     // self.config.actor_update_interval
                 )
             else:
@@ -227,6 +232,7 @@ class ERLWorkflow(ERLGAWorkflow):
 
         train_metrics = train_metrics.replace(
             rb_size=get_buffer_size(replay_buffer_state),
+            time_cost_per_iter=time.perf_counter() - start_t,
         )
 
         # iterations is the number of updates of the agent
@@ -257,10 +263,8 @@ class ERLWorkflow(ERLGAWorkflow):
 
         for i in range(state.metrics.iterations, num_iters):
             iters = i + 1
-            start_t = time.perf_counter()
+
             train_metrics, state = self.step(state)
-            per_iter_time_cost = time.perf_counter() - start_t
-            train_metrics = train_metrics.replace(per_iter_time_cost=per_iter_time_cost)
 
             workflow_metrics = state.metrics
 
