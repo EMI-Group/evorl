@@ -11,18 +11,10 @@ import jax.tree_util as jtu
 import optax
 
 from evorl.metrics import MetricBase, metricfield
-from evorl.types import (
-    PyTreeDict,
-    State,
-)
+from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import (
-    scan_and_mean,
-    tree_stop_gradient,
-)
-from evorl.utils.rl_toolkits import (
-    flatten_rollout_trajectory,
-)
+from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.evaluator import Evaluator
 from evorl.sample_batch import SampleBatch
 from evorl.agent import Agent, AgentState, RandomAgent
@@ -31,7 +23,6 @@ from evorl.workflows import Workflow
 from evorl.rollout import rollout
 from evorl.ec.optimizers import EvoOptimizer, ECState
 
-from ..td3 import TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory
 from .episode_collector import EpisodeCollector
 from .utils import flatten_pop_rollout_episode
@@ -56,8 +47,7 @@ class WorkflowMetric(MetricBase):
 
 class CEMRLWorkflowBase(Workflow):
     """
-    1 critic + n actors + 1 replay buffer.
-    We use shard_map to split and parallel the population.
+    Base Class for CEMRL, equipped with many useful methods
     """
 
     def __init__(
@@ -261,52 +251,6 @@ class CEMRLWorkflowBase(Workflow):
         trajectory = tree_stop_gradient(trajectory)
 
         return eval_metrics, trajectory
-
-    def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
-        """
-        sample_batches: (num_rl_updates_per_iter, actor_update_interval, B, ...)
-        """
-
-        def _sample_fn(key):
-            return self.replay_buffer.sample(replay_buffer_state, key).experience
-
-        def _sample_and_update_fn(carry, unused_t):
-            key, agent_state, opt_state = carry
-
-            key, rb_key, learn_key = jax.random.split(key, 3)
-
-            rb_keys = jax.random.split(rb_key, self.config.actor_update_interval)
-            sample_batches = jax.vmap(_sample_fn)(rb_keys)
-
-            (agent_state, opt_state), train_info = self._rl_update_fn(
-                agent_state, opt_state, sample_batches, learn_key
-            )
-
-            return (key, agent_state, opt_state), train_info
-
-        (
-            (_, agent_state, opt_state),
-            (
-                critic_loss,
-                actor_loss,
-                critic_loss_dict,
-                actor_loss_dict,
-            ),
-        ) = scan_and_mean(
-            _sample_and_update_fn,
-            (key, agent_state, opt_state),
-            (),
-            length=self.config.num_rl_updates_per_iter,
-        )
-
-        # smoothed td3 metrics
-        td3_metrics = TD3TrainMetric(
-            actor_loss=actor_loss,
-            critic_loss=critic_loss,
-            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        )
-
-        return td3_metrics, agent_state, opt_state
 
     def _ec_update(self, ec_opt_state, pop_actor_params, fitnesses):
         return self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)

@@ -11,16 +11,16 @@ import orbax.checkpoint as ocp
 
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
-from evorl.utils.jax_utils import tree_get, tree_set, rng_split_like_tree
+from evorl.utils.jax_utils import tree_get, tree_set, rng_split_like_tree, scan_and_mean
 from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
 from evorl.agent import AgentState
-from evorl.envs import create_env, AutoresetMode, Box
+from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import OpenES, ExponentialScheduleSpec, ECState
 
 from ..offpolicy_utils import skip_replay_buffer_state
-from ..td3 import make_mlp_td3_agent, TD3NetworkParams
+from ..td3 import make_mlp_td3_agent, TD3NetworkParams, TD3TrainMetric
 from .episode_collector import EpisodeCollector
 from .cemrl_base import CEMRLWorkflowBase, POPTrainMetric
 from .cemrl import build_rl_update_fn, replace_actor_params, EvaluateMetric
@@ -34,7 +34,7 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
 
     @classmethod
     def name(cls):
-        return "CEM-RL-OpenES"
+        return "CEMRL-OpenES"
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
@@ -51,10 +51,6 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
             autoreset_mode=AutoresetMode.DISABLED,
             record_ori_obs=True,
         )
-
-        assert isinstance(
-            env.action_space, Box
-        ), "Only continue action space is supported."
 
         agent = make_mlp_td3_agent(
             action_space=env.action_space,
@@ -190,6 +186,63 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
 
         return pop_actor_params
 
+    def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
+        def _sample_fn(key):
+            return self.replay_buffer.sample(replay_buffer_state, key).experience
+
+        def _sample_and_update_fn(carry, unused_t):
+            key, agent_state, opt_state = carry
+
+            key, rb_key, learn_key = jax.random.split(key, 3)
+
+            rb_keys = jax.random.split(
+                rb_key,
+                self.config.actor_update_interval * self.config.num_learning_offspring,
+            )
+            sample_batches = jax.vmap(_sample_fn)(rb_keys)
+
+            # (actor_update_interval, num_learning_offspring, B, ...)
+            sample_batches = jax.tree_map(
+                lambda x: x.reshape(
+                    (
+                        self.config.actor_update_interval,
+                        self.config.num_learning_offspring,
+                        *x.shape[1:],
+                    )
+                ),
+                sample_batches,
+            )
+
+            (agent_state, opt_state), train_info = self._rl_update_fn(
+                agent_state, opt_state, sample_batches, learn_key
+            )
+
+            return (key, agent_state, opt_state), train_info
+
+        (
+            (_, agent_state, opt_state),
+            (
+                critic_loss,
+                actor_loss,
+                critic_loss_dict,
+                actor_loss_dict,
+            ),
+        ) = scan_and_mean(
+            _sample_and_update_fn,
+            (key, agent_state, opt_state),
+            (),
+            length=self.config.num_rl_updates_per_iter,
+        )
+
+        # smoothed td3 metrics
+        td3_metrics = TD3TrainMetric(
+            actor_loss=actor_loss,
+            critic_loss=critic_loss,
+            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
+        )
+
+        return td3_metrics, agent_state, opt_state
+
     def step(self, state: State) -> tuple[MetricBase, State]:
         """
         the basic step function for the workflow to update agent
@@ -275,10 +328,8 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
             elites_from_rl = jnp.isin(
                 jnp.arange(self.config.num_learning_offspring), elites_indices
             )
-            ec_info = ec_info.replace(
-                elites_from_rl=elites_from_rl.sum(),
-                elites_from_rl_ratio=elites_from_rl.mean(),
-            )
+            ec_info.elites_from_rl = elites_from_rl.sum()
+            ec_info.elites_from_rl_ratio = elites_from_rl.mean()
 
         train_metrics = train_metrics.replace(ec_info=ec_info)
 

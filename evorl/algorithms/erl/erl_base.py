@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 
 
 class POPTrainMetric(MetricBase):
-    rb_size: int
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
+    rb_size: int = 0
     rl_episode_returns: chex.Array | None = None
     rl_episode_lengths: chex.Array | None = None
     rl_metrics: MetricBase | None = None
@@ -58,7 +58,8 @@ class EvaluateMetric(MetricBase):
 class ERLWorkflowBase(Workflow):
     """
     EC: n actors
-    RL: k actors + k critics + 1 replay buffer.
+    RL: k (actor,critic)
+    Shared replay buffer
     """
 
     def __init__(
@@ -69,7 +70,7 @@ class ERLWorkflowBase(Workflow):
         ec_optimizer: EvoOptimizer,
         ec_collector: EpisodeCollector,
         rl_collector: EpisodeCollector,
-        evaluator: Evaluator,  # to evaluate the pop-mean actor
+        evaluator: Evaluator,
         replay_buffer: Any,
         config: DictConfig,
     ):
@@ -110,6 +111,40 @@ class ERLWorkflowBase(Workflow):
     def _build_from_config(cls, config: DictConfig) -> Self:
         raise NotImplementedError
 
+
+class ERLWorkflowTemplate(ERLWorkflowBase):
+    """
+    EC: n actors
+    RL: k actors + k critics + 1 replay buffer.
+    """
+
+    def __init__(
+        self,
+        env: Env,
+        agent: Agent,
+        agent_state_pytree_axes: AgentState,
+        optimizer: optax.GradientTransformation,
+        ec_optimizer: EvoOptimizer,
+        ec_collector: EpisodeCollector,
+        rl_collector: EpisodeCollector,
+        evaluator: Evaluator,  # to evaluate the pop-mean actor
+        replay_buffer: Any,
+        config: DictConfig,
+    ):
+        super().__init__(
+            env,
+            agent,
+            optimizer,
+            ec_optimizer,
+            ec_collector,
+            rl_collector,
+            evaluator,
+            replay_buffer,
+            config,
+        )
+
+        self.agent_state_pytree_axes = agent_state_pytree_axes
+
     def setup(self, key: chex.PRNGKey) -> State:
         """
         obs_preprocessor_state update strategy: only updated at _postsetup_replaybuffer(), then fixed during the training.
@@ -122,7 +157,7 @@ class ERLWorkflowBase(Workflow):
             agent_key
         )
 
-        workflow_metrics = WorkflowMetric()
+        workflow_metrics = self._setup_workflow_metrics()
 
         replay_buffer_state = self._setup_replaybuffer(rb_key)
 
@@ -144,10 +179,13 @@ class ERLWorkflowBase(Workflow):
 
         return state
 
+    def _setup_workflow_metrics(self) -> MetricBase:
+        return WorkflowMetric()
+
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
-        raise ValueError
+        raise NotImplementedError
 
     def _setup_replaybuffer(self, key: chex.PRNGKey) -> chex.ArrayTree:
         action_space = self.env.action_space
@@ -288,8 +326,22 @@ class ERLWorkflowBase(Workflow):
 
             key, rb_key, learn_key = jax.random.split(key, 3)
 
-            rb_keys = jax.random.split(rb_key, self.config.actor_update_interval)
+            rb_keys = jax.random.split(
+                rb_key, self.config.actor_update_interval * self.config.num_rl_agents
+            )
             sample_batches = jax.vmap(_sample_fn)(rb_keys)
+
+            # (actor_update_interval, num_learning_offspring, B, ...)
+            sample_batches = jax.tree_map(
+                lambda x: x.reshape(
+                    (
+                        self.config.actor_update_interval,
+                        self.config.num_rl_agents,
+                        *x.shape[1:],
+                    )
+                ),
+                sample_batches,
+            )
 
             (agent_state, opt_state), train_info = self._rl_update_fn(
                 agent_state, opt_state, sample_batches, learn_key
@@ -321,8 +373,8 @@ class ERLWorkflowBase(Workflow):
 
         return td3_metrics, agent_state, opt_state
 
-    def _ec_update(self, ec_opt_state, pop_actor_params, fitnesses):
-        return self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
+    def _rl_injection(self, *args, **kwargs):
+        raise NotImplementedError
 
     def _add_to_replay_buffer(self, replay_buffer_state, trajectory, episode_lengths):
         # trajectory [T,B,...]
@@ -371,7 +423,7 @@ class ERLWorkflowBase(Workflow):
         cls._rl_rollout = jax.jit(cls._rl_rollout, static_argnums=(0,))
         cls._rl_update = jax.jit(cls._rl_update, static_argnums=(0,))
         cls._ec_rollout = jax.jit(cls._ec_rollout, static_argnums=(0,))
-        cls._ec_update = jax.jit(cls._ec_update, static_argnums=(0,))
+        cls._rl_injection = jax.jit(cls._rl_injection, static_argnums=(0,))
 
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls._postsetup_replaybuffer = jax.jit(

@@ -10,40 +10,23 @@ import optax
 import orbax.checkpoint as ocp
 
 from evorl.distributed import agent_gradient_update
-from evorl.metrics import MetricBase, metricfield
+from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import soft_target_update
 from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
 from evorl.agent import AgentState, Agent
-from evorl.envs import create_env, AutoresetMode, Box
+from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import ECState, OpenES, ExponentialScheduleSpec
 
 from ..td3 import make_mlp_td3_agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from .episode_collector import EpisodeCollector
-from .erl_base import ERLWorkflowBase
+from .erl_base import ERLWorkflowTemplate, POPTrainMetric
 
 logger = logging.getLogger(__name__)
-
-
-class POPTrainMetric(MetricBase):
-    rb_size: int
-    pop_episode_returns: chex.Array
-    pop_episode_lengths: chex.Array
-    rl_episode_returns: chex.Array | None = None
-    rl_episode_lengths: chex.Array | None = None
-    rl_metrics: MetricBase | None = None
-    ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
-
-
-class WorkflowMetric(MetricBase):
-    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    rl_sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class EvaluateMetric(MetricBase):
@@ -53,10 +36,10 @@ class EvaluateMetric(MetricBase):
     pop_center_episode_lengths: chex.Array
 
 
-class ERLEDAWorkflow(ERLWorkflowBase):
+class ERLEDAWorkflow(ERLWorkflowTemplate):
     """
     EC: n actors
-    RL: 1 actors + 1 critics
+    RL: 1 (actor,critic)
     Shared replay buffer
 
     RL will be injected into the pop mean
@@ -81,10 +64,6 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             autoreset_mode=AutoresetMode.DISABLED,
             record_ori_obs=True,
         )
-
-        assert isinstance(
-            env.action_space, Box
-        ), "Only continue action space is supported."
 
         agent = make_mlp_td3_agent(
             action_space=env.action_space,
@@ -168,9 +147,15 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             max_episode_steps=config.env.max_episode_steps,
         )
 
+        agent_state_pytree_axes = AgentState(
+            params=0,
+            obs_preprocessor_state=None,
+        )
+
         workflow = cls(
             env,
             agent,
+            agent_state_pytree_axes,
             optimizer,
             ec_optimizer,
             ec_collector,
@@ -180,11 +165,6 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             config,
         )
 
-        workflow.agent_state_pytree_axes = AgentState(
-            params=0,
-            obs_preprocessor_state=None,
-        )
-
         workflow._rl_update_fn = build_rl_update_fn(agent, optimizer, config)
 
         return workflow
@@ -192,12 +172,8 @@ class ERLEDAWorkflow(ERLWorkflowBase):
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
-        agent_key = key
-
         # one agent for RL
-        agent_state = self.agent.init(
-            self.env.obs_space, self.env.action_space, agent_key
-        )
+        agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
 
         init_actor_params = agent_state.params.actor_params
 
@@ -223,6 +199,20 @@ class ERLEDAWorkflow(ERLWorkflowBase):
 
         return eval_metrics, trajectory
 
+    def _rl_injection(self, ec_opt_state, agent_state):
+        # update EC pop center with RL weights
+
+        pop_mean = ec_opt_state.mean
+        rl_actor_params = agent_state.params.actor_params
+
+        ec_opt_state = ec_opt_state.replace(
+            mean=optax.incremental_update(
+                rl_actor_params, pop_mean, self.config.rl_injection_stepsize
+            )
+        )
+
+        return ec_opt_state
+
     def step(self, state: State) -> tuple[MetricBase, State]:
         """
         the basic step function for the workflow to update agent
@@ -244,8 +234,9 @@ class ERLEDAWorkflow(ERLWorkflowBase):
         # ======== EC update ========
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
-
-        pop_actor_params = self._ec_generate(ec_opt_state, ec_key)
+        # === diff from ERLGA ===
+        pop_actor_params = self.ec_optimizer.ask(ec_opt_state, ec_key)
+        # =======================
         pop_agent_state = replace_actor_params(agent_state, pop_actor_params)
         ec_eval_metrics, ec_trajectory = self._ec_rollout(
             pop_agent_state, ec_rollout_key
@@ -259,14 +250,13 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             ec_eval_metrics.episode_lengths.flatten(),
         )
 
-        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
+        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
 
         # calculate the number of timestep
         sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
         sampled_episodes += jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         train_metrics = POPTrainMetric(
-            rb_size=0,
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
         )
@@ -284,19 +274,17 @@ class ERLEDAWorkflow(ERLWorkflowBase):
                 rl_eval_metrics.episode_lengths.flatten(),
             )
 
+            rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum()
+            sampled_timesteps += rl_sampled_timesteps.astype(jnp.uint32)
+            sampled_episodes += jnp.uint32(self.config.rollout_episodes)
+
             td3_metrics, agent_state, opt_state = self._rl_update(
                 agent_state, opt_state, replay_buffer_state, learn_key
             )
 
-            rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(
-                jnp.uint32
-            )
-            sampled_timesteps += rl_sampled_timesteps
-            sampled_episodes += jnp.uint32(self.config.rollout_episodes)
-
             if iterations % self.config.rl_injection_interval == 0:
                 # replace the center
-                ec_opt_state = self._rl_injection(agent_state, ec_opt_state)
+                ec_opt_state = self._rl_injection(ec_opt_state, agent_state)
 
             train_metrics = train_metrics.replace(
                 rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
@@ -330,23 +318,6 @@ class ERLEDAWorkflow(ERLWorkflowBase):
         )
 
         return train_metrics, state
-
-    def _ec_generate(self, ec_opt_state, key):
-        return self.ec_optimizer.ask(ec_opt_state, key)
-
-    def _rl_injection(self, agent_state, ec_opt_state):
-        # update EC pop center with RL weights
-
-        pop_mean = ec_opt_state.mean
-        rl_actor_params = agent_state.params.actor_params
-
-        ec_opt_state = ec_opt_state.replace(
-            mean=optax.incremental_update(
-                rl_actor_params, pop_mean, self.config.rl_injection_stepsize
-            )
-        )
-
-        return ec_opt_state
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         key, rl_eval_key, ec_eval_key = jax.random.split(state.key, num=3)
@@ -443,7 +414,7 @@ def build_rl_update_fn(
 
         loss_dict = agent.critic_loss(agent_state, sample_batch, key)
 
-        loss = loss_dict.critic_loss.sum()
+        loss = loss_dict.critic_loss
 
         return loss, loss_dict
 
@@ -452,7 +423,7 @@ def build_rl_update_fn(
         # different actor shares same sample_batch (B, ...) input
         loss_dict = agent.actor_loss(agent_state, sample_batch, key)
 
-        loss = loss_dict.actor_loss.sum()
+        loss = loss_dict.actor_loss
 
         return loss, loss_dict
 

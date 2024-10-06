@@ -12,46 +12,26 @@ import optax
 import orbax.checkpoint as ocp
 
 from evorl.distributed import agent_gradient_update
-from evorl.metrics import MetricBase, metricfield, EvaluateMetric
-from evorl.types import (
-    PyTreeDict,
-    State,
-)
+from evorl.metrics import MetricBase
+from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import tree_set
 from evorl.utils.rl_toolkits import soft_target_update
 from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
 from evorl.agent import Agent, AgentState
-from evorl.envs import create_env, AutoresetMode, Box
+from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import ERLGA, ECState
 
 from ..td3 import make_mlp_td3_agent, TD3NetworkParams
 from ..offpolicy_utils import skip_replay_buffer_state
 from .episode_collector import EpisodeCollector
-from .erl_base import ERLWorkflowBase
+from .erl_base import ERLWorkflowTemplate, POPTrainMetric
 
 logger = logging.getLogger(__name__)
 
 
-class POPTrainMetric(MetricBase):
-    pop_episode_returns: chex.Array
-    pop_episode_lengths: chex.Array
-    rb_size: int = 0
-    rl_episode_returns: chex.Array | None = None
-    rl_episode_lengths: chex.Array | None = None
-    rl_metrics: MetricBase | None = None
-    ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
-
-
-class WorkflowMetric(MetricBase):
-    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    rl_sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-
-
-class ERLGAWorkflow(ERLWorkflowBase):
+class ERLGAWorkflow(ERLWorkflowTemplate):
     """
     EC: n actors
     RL: k actors + k critics
@@ -77,10 +57,6 @@ class ERLGAWorkflow(ERLWorkflowBase):
             autoreset_mode=AutoresetMode.DISABLED,
             record_ori_obs=True,
         )
-
-        assert isinstance(
-            env.action_space, Box
-        ), "Only continue action space is supported."
 
         agent = make_mlp_td3_agent(
             action_space=env.action_space,
@@ -171,9 +147,15 @@ class ERLGAWorkflow(ERLWorkflowBase):
             max_episode_steps=config.env.max_episode_steps,
         )
 
+        agent_state_pytree_axes = AgentState(
+            params=0,
+            obs_preprocessor_state=None,
+        )
+
         workflow = cls(
             env,
             agent,
+            agent_state_pytree_axes,
             optimizer,
             ec_optimizer,
             ec_collector,
@@ -181,11 +163,6 @@ class ERLGAWorkflow(ERLWorkflowBase):
             evaluator,
             replay_buffer,
             config,
-        )
-
-        workflow.agent_state_pytree_axes = AgentState(
-            params=0,
-            obs_preprocessor_state=None,
         )
 
         workflow._rl_update_fn = build_rl_update_fn(
@@ -283,7 +260,7 @@ class ERLGAWorkflow(ERLWorkflowBase):
             ec_eval_metrics.episode_lengths.flatten(),
         )
 
-        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
+        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
 
         # calculate the number of timestep
         sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
@@ -306,16 +283,14 @@ class ERLGAWorkflow(ERLWorkflowBase):
                 rl_eval_metrics.episode_lengths.flatten(),
             )
 
-            td3_metrics, agent_state, opt_state = self._rl_update(
-                agent_state, opt_state, replay_buffer_state, learn_key
-            )
-
-            rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(
-                jnp.uint32
-            )
-            sampled_timesteps += rl_sampled_timesteps
+            rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum()
+            sampled_timesteps += rl_sampled_timesteps.astype(jnp.uint32)
             sampled_episodes += jnp.uint32(
                 self.config.num_rl_agents * self.config.rollout_episodes
+            )
+
+            td3_metrics, agent_state, opt_state = self._rl_update(
+                agent_state, opt_state, replay_buffer_state, learn_key
             )
 
             if iterations % self.config.rl_injection_interval == 0:
@@ -353,27 +328,6 @@ class ERLGAWorkflow(ERLWorkflowBase):
         )
 
         return train_metrics, state
-
-    def evaluate(self, state: State) -> tuple[MetricBase, State]:
-        key, eval_key = jax.random.split(state.key, num=2)
-
-        _vmap_evaluate = jax.vmap(
-            partial(self.evaluator.evaluate, num_episodes=self.config.eval_episodes),
-            in_axes=(self.agent_state_pytree_axes, 0),
-        )
-
-        # [num_rl_agents, #episodes]
-        raw_eval_metrics = _vmap_evaluate(
-            state.agent_state, jax.random.split(eval_key, self.config.num_rl_agents)
-        )
-
-        eval_metrics = EvaluateMetric(
-            episode_returns=raw_eval_metrics.episode_returns.mean(-1),
-            episode_lengths=raw_eval_metrics.episode_lengths.mean(-1),
-        )
-
-        state = state.replace(key=key)
-        return eval_metrics, state
 
     def learn(self, state: State) -> State:
         num_iters = math.ceil(
@@ -447,21 +401,6 @@ class ERLGAWorkflow(ERLWorkflowBase):
 
         return state
 
-    @classmethod
-    def enable_jit(cls) -> None:
-        """
-        Do not jit replay buffer add
-        """
-        cls._rl_rollout = jax.jit(cls._rl_rollout, static_argnums=(0,))
-        cls._rl_update = jax.jit(cls._rl_update, static_argnums=(0,))
-        cls._ec_rollout = jax.jit(cls._ec_rollout, static_argnums=(0,))
-        cls._ec_update = jax.jit(cls._ec_update, static_argnums=(0,))
-
-        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
-        cls._postsetup_replaybuffer = jax.jit(
-            cls._postsetup_replaybuffer, static_argnums=(0,)
-        )
-
 
 def replace_actor_params(agent_state: AgentState, pop_actor_params) -> AgentState:
     """
@@ -488,7 +427,7 @@ def build_rl_update_fn(
 
     def critic_loss_fn(agent_state, sample_batch, key):
         # loss on a single critic with multiple actors
-        # sample_batch: (B, ...)
+        # sample_batch: (n, B, ...)
 
         loss_dict = jax.vmap(
             agent.critic_loss, in_axes=(agent_state_pytree_axes, None, 0)
@@ -500,7 +439,6 @@ def build_rl_update_fn(
 
     def actor_loss_fn(agent_state, sample_batch, key):
         # loss on a single actor
-        # different actor shares same sample_batch (B, ...) input
         loss_dict = jax.vmap(
             agent.actor_loss, in_axes=(agent_state_pytree_axes, None, 0)
         )(agent_state, sample_batch, jax.random.split(key, num_rl_agents))

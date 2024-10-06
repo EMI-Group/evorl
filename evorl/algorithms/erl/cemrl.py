@@ -15,17 +15,17 @@ from evorl.distributed import agent_gradient_update
 from evorl.ec.optimizers.utils import ExponentialScheduleSpec
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
-from evorl.utils.jax_utils import tree_get, tree_set, rng_split_like_tree
+from evorl.utils.jax_utils import tree_get, tree_set, rng_split_like_tree, scan_and_mean
 from evorl.utils.rl_toolkits import soft_target_update
 from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
 from evorl.agent import Agent, AgentState
-from evorl.envs import create_env, AutoresetMode, Box
+from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
-from evorl.ec.optimizers import DiagCEM
+from evorl.ec.optimizers import DiagCEM, ECState
 
 from ..offpolicy_utils import skip_replay_buffer_state
-from ..td3 import make_mlp_td3_agent, TD3NetworkParams
+from ..td3 import make_mlp_td3_agent, TD3NetworkParams, TD3TrainMetric
 from .episode_collector import EpisodeCollector
 from .cemrl_base import CEMRLWorkflowBase, POPTrainMetric
 
@@ -43,7 +43,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
     @classmethod
     def name(cls):
-        return "CEM-RL"
+        return "CEMRL"
 
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:
@@ -60,10 +60,6 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             autoreset_mode=AutoresetMode.DISABLED,
             record_ori_obs=True,
         )
-
-        assert isinstance(
-            env.action_space, Box
-        ), "Only continue action space is supported."
 
         agent = make_mlp_td3_agent(
             action_space=env.action_space,
@@ -164,7 +160,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
-    ) -> tuple[AgentState, chex.ArrayTree]:
+    ) -> tuple[AgentState, chex.ArrayTree, ECState]:
         agent_key, ec_key = jax.random.split(key, 2)
 
         # one actor + one critic
@@ -200,6 +196,63 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             )
 
         return pop_actor_params
+
+    def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
+        def _sample_fn(key):
+            return self.replay_buffer.sample(replay_buffer_state, key).experience
+
+        def _sample_and_update_fn(carry, unused_t):
+            key, agent_state, opt_state = carry
+
+            key, rb_key, learn_key = jax.random.split(key, 3)
+
+            rb_keys = jax.random.split(
+                rb_key,
+                self.config.actor_update_interval * self.config.num_learning_offspring,
+            )
+            sample_batches = jax.vmap(_sample_fn)(rb_keys)
+
+            # (actor_update_interval, num_learning_offspring, B, ...)
+            sample_batches = jax.tree_map(
+                lambda x: x.reshape(
+                    (
+                        self.config.actor_update_interval,
+                        self.config.num_learning_offspring,
+                        *x.shape[1:],
+                    )
+                ),
+                sample_batches,
+            )
+
+            (agent_state, opt_state), train_info = self._rl_update_fn(
+                agent_state, opt_state, sample_batches, learn_key
+            )
+
+            return (key, agent_state, opt_state), train_info
+
+        (
+            (_, agent_state, opt_state),
+            (
+                critic_loss,
+                actor_loss,
+                critic_loss_dict,
+                actor_loss_dict,
+            ),
+        ) = scan_and_mean(
+            _sample_and_update_fn,
+            (key, agent_state, opt_state),
+            (),
+            length=self.config.num_rl_updates_per_iter,
+        )
+
+        # smoothed td3 metrics
+        td3_metrics = TD3TrainMetric(
+            actor_loss=actor_loss,
+            critic_loss=critic_loss,
+            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
+        )
+
+        return td3_metrics, agent_state, opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         """
@@ -287,10 +340,8 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             elites_from_rl = jnp.isin(
                 jnp.arange(self.config.num_learning_offspring), elites_indices
             )
-            ec_info = ec_info.replace(
-                elites_from_rl=elites_from_rl.sum(),
-                elites_from_rl_ratio=elites_from_rl.mean(),
-            )
+            ec_info.elites_from_rl = elites_from_rl.sum()
+            ec_info.elites_from_rl_ratio = elites_from_rl.mean()
 
         train_metrics = train_metrics.replace(ec_info=ec_info)
 
@@ -416,10 +467,10 @@ def build_rl_update_fn(
 
     def critic_loss_fn(agent_state, sample_batch, key):
         # loss on a single critic with multiple actors
-        # sample_batch: (B, ...)
+        # sample_batch: (n, B, ...)
 
         loss_dict = jax.vmap(
-            agent.critic_loss, in_axes=(agent_state_pytree_axes, None, 0)
+            agent.critic_loss, in_axes=(agent_state_pytree_axes, 0, 0)
         )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
 
         # mean over the num_learning_offspring
@@ -429,10 +480,10 @@ def build_rl_update_fn(
 
     def actor_loss_fn(agent_state, sample_batch, key):
         # loss on a single actor
-        # different actor shares same sample_batch (B, ...) input
-        loss_dict = jax.vmap(
-            agent.actor_loss, in_axes=(agent_state_pytree_axes, None, 0)
-        )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
+
+        loss_dict = jax.vmap(agent.actor_loss, in_axes=(agent_state_pytree_axes, 0, 0))(
+            agent_state, sample_batch, jax.random.split(key, num_learning_offspring)
+        )
 
         # sum over the num_learning_offspring
         loss = loss_dict.actor_loss.sum()
