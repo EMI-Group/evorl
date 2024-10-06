@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 MISSING_LOSS = -1e10
 
 
-class TD3Workflow(TD3Workflow):
+class TD3V2Workflow(TD3Workflow):
     """
     The similar impl of TD3 in SB3 and CleanRL
     """

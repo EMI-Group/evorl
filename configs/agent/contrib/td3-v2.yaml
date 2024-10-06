@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.algorithms.contrib.td3_v2.TD3Workflow
+workflow_cls: evorl.algorithms.contrib.td3_v2.TD3V2Workflow
 
 num_envs: 1
 normalize_obs: false

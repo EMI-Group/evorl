@@ -202,7 +202,7 @@ class TD3NetworkParams(PyTreeData):
     target_critic2_params: Params
 
 
-class TD3Workflow(OffPolicyWorkflowTemplate):
+class TD3V3Workflow(OffPolicyWorkflowTemplate):
     """
     The similar impl of TD3 in SB3 and CleanRL
     """
