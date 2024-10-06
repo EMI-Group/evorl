@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 class POPTrainMetric(MetricBase):
-    num_updates_per_iter: int
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
+    num_updates_per_iter: int = 0
     rb_size: int = 0
     rl_episode_returns: chex.Array | None = None
     rl_episode_lengths: chex.Array | None = None
@@ -167,7 +167,6 @@ class ERLWorkflow(ERLGAWorkflow):
         sampled_episodes += jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         train_metrics = POPTrainMetric(
-            num_updates_per_iter=jnp.zeros((), dtype=jnp.uint32),
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
             # ec_info=get_ec_pop_statistics(ec_opt_state.pop),
@@ -196,12 +195,12 @@ class ERLWorkflow(ERLGAWorkflow):
             if self.config.rl_updates_mode == "global":  # same as original ERL
                 total_timesteps = state.metrics.sampled_timesteps + sampled_timesteps
                 num_updates = (
-                    math.ceil(total_timesteps * self.config.rl_updates_frac_per_iter)
+                    math.ceil(total_timesteps * self.config.rl_updates_frac)
                     // self.config.actor_update_interval
                 )
             elif self.config.rl_updates_mode == "iter":
                 num_updates = (
-                    math.ceil(sampled_timesteps * self.config.rl_updates_frac_per_iter)
+                    math.ceil(sampled_timesteps * self.config.rl_updates_frac)
                     // self.config.actor_update_interval
                 )
             else:

@@ -23,7 +23,7 @@ num_rl_agents: 1
 warmup_iters: 10 # steps that only learn by EC
 # num_rl_updates_per_iter: 50
 rl_updates_mode: "iter" # "iter" or "global"
-rl_updates_frac_per_iter: 1.0 # num_rl_updates_per_iter=total_timesteps*rl_updates_frac_per_iter
+rl_updates_frac: 1.0 # num_rl_updates_per_iter=total_timesteps*rl_updates_frac
 
 episodes_for_fitness: 1 # must be devided by num_envs
 rollout_episodes: 1 # must be devided by num_envs
