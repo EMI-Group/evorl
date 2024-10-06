@@ -261,10 +261,6 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             record_ori_obs=True,
         )
 
-        assert isinstance(
-            env.action_space, Box
-        ), "Only continue action space is supported."
-
         agent = make_mlp_ddpg_agent(
             action_space=env.action_space,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,

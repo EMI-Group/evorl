@@ -194,7 +194,7 @@ class OffPolicyWorkflow(RLWorkflow):
         raise NotImplementedError
 
     def _postsetup_replaybuffer(self, state: State) -> State:
-        raise NotImplementedError
+        return state
 
     def setup(self, key: chex.PRNGKey) -> State:
         key, agent_key, env_key, rb_key = jax.random.split(key, 4)
