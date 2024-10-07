@@ -4,7 +4,7 @@ defaults:
   - /agent/erl/cemrl
   - _self_
 
-total_episodes: 100000
+total_episodes: 20000
 
 actor_update_interval: 1 # not needed since we apply it over #num_learning_offspring actors
 
