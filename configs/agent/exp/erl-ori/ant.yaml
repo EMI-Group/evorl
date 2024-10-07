@@ -4,7 +4,7 @@ defaults:
   - /agent/contrib/erl-ori
   - _self_
 
-total_episodes: 100000
+total_episodes: 20000
 
 batch_size: 256 # 128 in ERL
 tau: 0.005 # 0.001 in ERL
