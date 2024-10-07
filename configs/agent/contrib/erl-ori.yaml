@@ -15,7 +15,7 @@ tau: 0.005 # soft update rate
 exploration_epsilon: 0.1
 policy_noise: 0.2
 clip_policy_noise: 0.5
-actor_update_interval: 1
+actor_update_interval: 2
 critics_in_actor_loss: first # first or min
 
 # ====== RL Train Params ======

@@ -1,0 +1,30 @@
+# @package _global_
+
+defaults:
+  - /agent/erl/erl-ga
+  - _self_
+
+total_episodes: 100000
+
+num_rl_agents: 1
+warmup_iters: 10 # steps that only learn by EC
+num_rl_updates_per_iter: 4096
+
+batch_size: 256
+tau: 0.005
+
+pop_size: 32
+num_elites: 2
+episodes_for_fitness: 3 # must be devided by num_envs
+rollout_episodes: 1 # must be devided by num_envs
+
+weight_max_magnitude: 10
+
+rl_updates_frac_per_iter: 1.0
+rl_injection_interval: 1
+
+agent_network:
+  norm_layer_type: "layer_norm"
+  num_critics: 2
+  critic_hidden_layer_sizes: [256, 256]
+  actor_hidden_layer_sizes: [256, 256]
