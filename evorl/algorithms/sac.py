@@ -175,11 +175,9 @@ class SACAgent(Agent):
         actions_logp = actions_dist.log_prob(actions)
 
         # [B, 2]
-        q_values = self.critic_network.apply(
-            agent_state.params.critic_params, obs, actions
-        )
-        min_q = jnp.min(q_values, axis=-1)
-        actor_loss = jnp.mean(alpha * actions_logp - min_q)
+        qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions)
+        qs_min = jnp.min(qs, axis=-1)
+        actor_loss = jnp.mean(alpha * actions_logp - qs_min)
         entropy = actions_dist.entropy(seed=entropy_key).mean()
 
         return PyTreeDict(actor_loss=actor_loss, entropy=entropy)
@@ -228,7 +226,7 @@ class SACDiscreteAgent(Agent):
     actor_network: nn.Module
     obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
 
-    alpha: float = 0.2
+    init_alpha: float = 1.0
     discount: float = 0.99
     reward_scale: float = 1.0
     target_entropy_ratio: float = 0.98
@@ -243,9 +241,8 @@ class SACDiscreteAgent(Agent):
         key, critic_key, actor_key = jax.random.split(key, num=3)
 
         dummy_obs = obs_space.sample(key)[None, ...]
-        dummy_action = action_space.sample(key)[None, ...]
 
-        critic_params = self.critic_network.init(critic_key, dummy_obs, dummy_action)
+        critic_params = self.critic_network.init(critic_key, dummy_obs)
         target_critic_params = critic_params
 
         actor_params = self.actor_network.init(actor_key, dummy_obs)
@@ -313,7 +310,7 @@ class SACDiscreteAgent(Agent):
         entropy_target = agent_state.extra_state.entropy_target
         # official impl:
         alpha = jnp.exp(agent_state.params.log_alpha)
-        alpha_loss = jnp.mean(-alpha * jax.lax.stop_gradient(entropy_target - entropy))
+        alpha_loss = -jnp.mean(alpha * jax.lax.stop_gradient(entropy_target - entropy))
 
         return PyTreeDict(
             alpha_loss=alpha_loss,
@@ -330,18 +327,17 @@ class SACDiscreteAgent(Agent):
         alpha = jnp.exp(agent_state.params.log_alpha)
 
         raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
-
-        actions_logp = nn.log_softmax(raw_actions)
-
-        # [B, 2]
-        q_values = self.critic_network.apply(agent_state.params.critic_params, obs)
-        min_q = jnp.min(q_values, axis=-1)
-        actor_loss = jnp.mean(alpha * actions_logp - min_q)
-
         actions_dist = get_categorical_dist(raw_actions)
-        entropy = actions_dist.entropy().mean()
+        entropy = actions_dist.entropy()
+        actions_prob = nn.softmax(raw_actions)
 
-        return PyTreeDict(actor_loss=actor_loss, entropy=entropy)
+        # [B, 2, n]
+        qs = self.critic_network.apply(agent_state.params.critic_params, obs)
+        qs_min = jnp.min(qs, axis=-2)
+        qs_estimate = jnp.sum(qs_min * actions_prob, axis=-1)
+        actor_loss = -jnp.mean(alpha * entropy + qs_estimate)
+
+        return PyTreeDict(actor_loss=actor_loss, entropy=entropy.mean())
 
     def critic_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
@@ -360,6 +356,11 @@ class SACDiscreteAgent(Agent):
 
         # [B, 2, n]
         qs = self.critic_network.apply(agent_state.params.critic_params, obs)
+        qs = jnp.take_along_axis(
+            qs,
+            sample_batch.actions.reshape(-1, 1, 1),
+            axis=-1,
+        ).squeeze(-1)
 
         next_raw_actions = self.actor_network.apply(
             agent_state.params.actor_params, next_obs
@@ -391,6 +392,7 @@ def make_mlp_sac_agent(
     init_alpha: float = 1.0,
     discount: float = 0.99,
     reward_scale: float = 1.0,
+    target_entropy_ratio: float = 0.98,
     normalize_obs: bool = False,
 ):
     if isinstance(action_space, Box):
@@ -407,31 +409,40 @@ def make_mlp_sac_agent(
         hidden_layer_sizes=actor_hidden_layer_sizes,
     )
 
-    if continuous_action:
-        critic_network = make_q_network(
-            n_stack=2,
-            hidden_layer_sizes=critic_hidden_layer_sizes,
-        )
-    else:
-        critic_network = make_discrete_q_network(
-            n_stack=2,
-            hidden_layer_sizes=critic_hidden_layer_sizes,
-        )
-
     if normalize_obs:
         obs_preprocessor = running_statistics.normalize
     else:
         obs_preprocessor = None
 
-    return SACAgent(
-        continuous_action=continuous_action,
-        critic_network=critic_network,
-        actor_network=actor_network,
-        obs_preprocessor=obs_preprocessor,
-        init_alpha=init_alpha,
-        discount=discount,
-        reward_scale=reward_scale,
-    )
+    if continuous_action:
+        critic_network = make_q_network(
+            n_stack=2,
+            hidden_layer_sizes=critic_hidden_layer_sizes,
+        )
+
+        return SACAgent(
+            critic_network=critic_network,
+            actor_network=actor_network,
+            obs_preprocessor=obs_preprocessor,
+            init_alpha=init_alpha,
+            discount=discount,
+            reward_scale=reward_scale,
+        )
+    else:
+        critic_network = make_discrete_q_network(
+            action_size=action_size,
+            n_stack=2,
+            hidden_layer_sizes=critic_hidden_layer_sizes,
+        )
+        return SACDiscreteAgent(
+            critic_network=critic_network,
+            actor_network=actor_network,
+            obs_preprocessor=obs_preprocessor,
+            init_alpha=init_alpha,
+            discount=discount,
+            reward_scale=reward_scale,
+            target_entropy_ratio=target_entropy_ratio,
+        )
 
 
 class SACWorkflow(OffPolicyWorkflowTemplate):
@@ -458,6 +469,7 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
             discount=config.discount,
             reward_scale=config.reward_scale,
             normalize_obs=config.normalize_obs,
+            target_entropy_ratio=config.target_entropy_ratio,
         )
 
         # TODO: use different lr for critic and actor

@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import chex
 import orbax.checkpoint as ocp
 
-
+from evorl.envs import Discrete
 from evorl.distributed.comm import psum, tree_unpmap
 from evorl.workflows import OffPolicyWorkflow
 from evorl.sample_batch import SampleBatch
@@ -68,7 +68,10 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         obs_space = self.env.obs_space
 
         # create dummy data to initialize the replay buffer
-        dummy_action = jnp.zeros(action_space.shape)
+        if isinstance(action_space, Discrete):
+            dummy_action = jnp.zeros((), dtype=jnp.int32)
+        else:
+            dummy_action = jnp.zeros(action_space.shape)
         dummy_obs = jnp.zeros(obs_space.shape)
 
         dummy_reward = jnp.zeros(())
