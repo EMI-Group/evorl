@@ -30,7 +30,7 @@ class EpisodeCollector(PyTreeNode):
     max_episode_steps: int = pytree_field(pytree_node=False)
     env_extra_fields: Sequence[str] = ()
 
-    def evaluate(
+    def rollout(
         self, agent_state, num_episodes: int, key: chex.PRNGKey
     ) -> tuple[EvaluateMetric, SampleBatch]:
         num_envs = self.num_envs

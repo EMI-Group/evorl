@@ -237,7 +237,7 @@ class CEMRLWorkflowBase(Workflow):
 
     def _rollout(self, agent_state, key):
         eval_metrics, trajectory = jax.vmap(
-            self.collector.evaluate,
+            self.collector.rollout,
             in_axes=(self.agent_state_pytree_axes, None, 0),
         )(
             agent_state,

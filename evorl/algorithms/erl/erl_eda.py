@@ -188,7 +188,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
 
     def _rl_rollout(self, agent_state, key):
         # agnet_state: only contains one agent
-        eval_metrics, trajectory = self.rl_collector.evaluate(
+        eval_metrics, trajectory = self.rl_collector.rollout(
             agent_state,
             self.config.rollout_episodes,
             key,

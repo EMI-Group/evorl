@@ -285,7 +285,7 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
 
     def _ec_rollout(self, agent_state, key):
         eval_metrics, trajectory = jax.vmap(
-            self.ec_collector.evaluate,
+            self.ec_collector.rollout,
             in_axes=(self.agent_state_pytree_axes, None, 0),
         )(
             agent_state,
@@ -302,7 +302,7 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
 
     def _rl_rollout(self, agent_state, key):
         eval_metrics, trajectory = jax.vmap(
-            self.rl_collector.evaluate,
+            self.rl_collector.rollout,
             in_axes=(self.agent_state_pytree_axes, None, 0),
         )(
             agent_state,
