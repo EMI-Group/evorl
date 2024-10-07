@@ -161,7 +161,7 @@ class ERLWorkflow(ERLGAWorkflow):
             ec_eval_metrics.episode_lengths.flatten(),
         )
 
-        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
+        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
 
         # calculate the number of timestep
         sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
