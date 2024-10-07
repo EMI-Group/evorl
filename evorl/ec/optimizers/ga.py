@@ -64,12 +64,12 @@ class GA(EvoOptimizer):
         key, select_key, mutate_key, crossover_key = jax.random.split(state.key, 4)
 
         elite_indices = jnp.argsort(fitnesses, descending=True)[: self.num_elites]
-        elites = jtu.tree_map(lambda x: x[elite_indices], state.pop)
+        elites = jtu.tree_map(lambda x: x[elite_indices], xs)
 
         parents_indices = self.select_parents(
             fitnesses, self.pop_size - self.num_elites, select_key
         )
-        parents = jtu.tree_map(lambda x: x[parents_indices], state.pop)
+        parents = jtu.tree_map(lambda x: x[parents_indices], xs)
 
         if self.enable_crossover:
             offsprings = self.crossover(parents, crossover_key)

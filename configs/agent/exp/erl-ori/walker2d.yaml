@@ -16,5 +16,5 @@ rollout_episodes: 1 # must be devided by num_envs
 
 weight_max_magnitude: 10
 
-rl_updates_frac_per_iter: 1.0
+rl_updates_frac: 1.0
 rl_injection_interval: 10

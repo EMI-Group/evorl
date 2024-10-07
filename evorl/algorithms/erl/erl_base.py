@@ -373,6 +373,12 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
 
         return td3_metrics, agent_state, opt_state
 
+    def _ec_update(self, ec_opt_state, pop_actor_params, fitnesses):
+        return self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
+
+    def _ec_sample(self, ec_opt_state, key):
+        return self.ec_optimizer.ask(ec_opt_state, key)
+
     def _rl_injection(self, *args, **kwargs):
         raise NotImplementedError
 
@@ -424,6 +430,8 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
         cls._rl_update = jax.jit(cls._rl_update, static_argnums=(0,))
         cls._ec_rollout = jax.jit(cls._ec_rollout, static_argnums=(0,))
         cls._rl_injection = jax.jit(cls._rl_injection, static_argnums=(0,))
+        cls._ec_sample = jax.jit(cls._ec_sample, static_argnums=(0,))
+        cls._ec_update = jax.jit(cls._ec_update, static_argnums=(0,))
 
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls._postsetup_replaybuffer = jax.jit(

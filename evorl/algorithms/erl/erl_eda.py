@@ -6,13 +6,14 @@ import chex
 import flashbax
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
 
 from evorl.distributed import agent_gradient_update
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient, rng_split_like_tree
 from evorl.utils.rl_toolkits import soft_target_update
 from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluator import Evaluator
@@ -213,6 +214,20 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
 
         return ec_opt_state
 
+    def _ec_sample(self, ec_opt_state, key):
+        pop_actor_params = self.ec_optimizer.ask(ec_opt_state, key)
+
+        # Note: Avoid always choosing the positve parts for learning
+        if self.config.mirror_sampling:
+            keys = rng_split_like_tree(key, pop_actor_params)
+            pop_actor_params = jtu.tree_map(
+                lambda x, k: jax.random.permutation(k, x, axis=0),
+                pop_actor_params,
+                keys,
+            )
+
+        return pop_actor_params
+
     def step(self, state: State) -> tuple[MetricBase, State]:
         """
         the basic step function for the workflow to update agent
@@ -235,7 +250,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
         # === diff from ERLGA ===
-        pop_actor_params = self.ec_optimizer.ask(ec_opt_state, ec_key)
+        pop_actor_params = self._ec_sample(ec_opt_state, ec_key)
         # =======================
         pop_agent_state = replace_actor_params(agent_state, pop_actor_params)
         ec_eval_metrics, ec_trajectory = self._ec_rollout(
@@ -250,7 +265,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
             ec_eval_metrics.episode_lengths.flatten(),
         )
 
-        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
+        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
 
         # calculate the number of timestep
         sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
