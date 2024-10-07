@@ -61,7 +61,7 @@ class GymnaxAdapter(EnvAdapter):
         info = state.info.replace(
             discount=info["discount"].astype(jnp.float32),
         )
-        extra = state._internal.replace(step_key=key)
+        _internal = state._internal.replace(step_key=key)
 
         return state.replace(
             env_state=env_state,
@@ -69,7 +69,7 @@ class GymnaxAdapter(EnvAdapter):
             reward=reward,
             done=done,
             info=info,
-            extra=extra,
+            _internal=_internal,
         )
 
     @property

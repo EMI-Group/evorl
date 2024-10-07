@@ -73,7 +73,7 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
         done = tree_astype(done, jnp.float32)
 
         info = state.info.replace(**info)
-        extra = state._internal.replace(step_key=key)
+        _internal = state._internal.replace(step_key=key)
 
         return state.replace(
             env_state=env_state,
@@ -81,7 +81,7 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
             reward=reward,
             done=done,
             info=info,
-            extra=extra,
+            _internal=_internal,
         )
 
     @property
