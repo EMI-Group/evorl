@@ -119,6 +119,46 @@ def make_mlp(
     return mlp
 
 
+def make_vmap_mlp(
+    layer_sizes: Sequence[int],
+    activation: ActivationFn = nn.relu,
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
+    activation_final: ActivationFn | None = None,
+    use_bias: bool = True,
+    norm_layer_type: str = "none",
+    out_axes: int = -2,
+):
+    if norm_layer_type == "spectral_norm":
+        mlp = nn.vmap(
+            SNMLP,
+            out_axes=out_axes,
+            variable_axes={"params": 0},
+            split_rngs={"params": True},
+        )(
+            layer_sizes=layer_sizes,
+            activation=activation,
+            kernel_init=kernel_init,
+            activation_final=activation_final,
+            use_bias=use_bias,
+        )
+    else:
+        mlp = nn.vmap(
+            MLP,
+            out_axes=out_axes,
+            variable_axes={"params": 0},
+            split_rngs={"params": True},
+        )(
+            layer_sizes=layer_sizes,
+            activation=activation,
+            kernel_init=kernel_init,
+            activation_final=activation_final,
+            norm_layer=get_norm_layer(norm_layer_type),
+            use_bias=use_bias,
+        )
+
+    return mlp
+
+
 def make_policy_network(
     action_size: int,
     hidden_layer_sizes: Sequence[int] = (256, 256),
@@ -175,44 +215,6 @@ def make_q_network(
 ) -> nn.Module:
     """Creates a Q network: (obs, action) -> value"""
 
-    def make_vmap_mlp(
-        layer_sizes: Sequence[int],
-        activation: ActivationFn = nn.relu,
-        kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
-        activation_final: ActivationFn | None = None,
-        use_bias: bool = True,
-        norm_layer_type: str = "none",
-    ):
-        if norm_layer_type == "spectral_norm":
-            mlp = nn.vmap(
-                SNMLP,
-                out_axes=-2,
-                variable_axes={"params": 0},
-                split_rngs={"params": True},
-            )(
-                layer_sizes=layer_sizes,
-                activation=activation,
-                kernel_init=kernel_init,
-                activation_final=activation_final,
-                use_bias=use_bias,
-            )
-        else:
-            mlp = nn.vmap(
-                MLP,
-                out_axes=-2,
-                variable_axes={"params": 0},
-                split_rngs={"params": True},
-            )(
-                layer_sizes=layer_sizes,
-                activation=activation,
-                kernel_init=kernel_init,
-                activation_final=activation_final,
-                norm_layer=get_norm_layer(norm_layer_type),
-                use_bias=use_bias,
-            )
-
-        return mlp
-
     class QModule(nn.Module):
         """Q Module for continuous action space"""
 
@@ -252,6 +254,7 @@ def make_discrete_q_network(
     hidden_layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.relu,
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
+    norm_layer_type: str = "none",
 ) -> nn.Module:
     """Creates a Q network for discrete action space: (obs) -> q_values"""
 
@@ -262,25 +265,21 @@ def make_discrete_q_network(
 
         @nn.compact
         def __call__(self, obs: jax.Array):
-            x = obs
             if self.n == 1:
-                qs = MLP(
+                qs = make_mlp(
                     layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
                     activation=activation,
                     kernel_init=kernel_init,
-                )(x)
+                    norm_layer_type=norm_layer_type,
+                )(obs)
             elif self.n > 1:
-                x = jnp.broadcast_to(x, (self.n,) + x.shape)
-                qs = nn.vmap(
-                    MLP,
-                    out_axes=-2,
-                    variable_axes={"params": 0},
-                    split_rngs={"params": True},
-                )(
+                obs = jnp.broadcast_to(obs, (self.n,) + obs.shape)
+                qs = make_vmap_mlp(
                     layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
                     activation=activation,
                     kernel_init=kernel_init,
-                )(x)
+                    norm_layer_type=norm_layer_type,
+                )(obs)
             else:
                 raise ValueError("n should be greater than 0")
 

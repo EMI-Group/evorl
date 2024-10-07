@@ -160,17 +160,17 @@ class DDPGAgent(Agent):
             )
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        actions_next = self.actor_network.apply(
+        next_actions = self.actor_network.apply(
             agent_state.params.target_actor_params, next_obs
         )
 
-        qs_next = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, actions_next
+        next_qs = self.critic_network.apply(
+            agent_state.params.target_critic_params, next_obs, next_actions
         )
 
         discounts = self.discount * (1 - sample_batch.extras.env_extras.termination)
 
-        qs_target = sample_batch.rewards + discounts * qs_next
+        qs_target = sample_batch.rewards + discounts * next_qs
         qs_target = jax.lax.stop_gradient(qs_target)
 
         qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions)

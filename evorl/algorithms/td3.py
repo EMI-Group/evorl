@@ -163,26 +163,26 @@ class TD3Agent(Agent):
             )
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        actions_next = self.actor_network.apply(
+        next_actions = self.actor_network.apply(
             agent_state.params.target_actor_params, next_obs
         )
-        actions_next += jnp.clip(
+        next_actions += jnp.clip(
             jax.random.normal(key, actions.shape) * self.policy_noise,
             -self.clip_policy_noise,
             self.clip_policy_noise,
         )
         # Note: when calculating the critic loss, we also clip the actions to the action space
-        actions_next = jnp.clip(actions_next, -1.0, 1.0)
+        next_actions = jnp.clip(next_actions, -1.0, 1.0)
 
         # [B, num_critics]
-        qs_next = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, actions_next
+        next_qs = self.critic_network.apply(
+            agent_state.params.target_critic_params, next_obs, next_actions
         )
-        qs_next_min = qs_next.min(-1)
+        next_qs_min = next_qs.min(-1)
 
         discounts = self.discount * (1 - sample_batch.extras.env_extras.termination)
 
-        qs_target = sample_batch.rewards + discounts * qs_next_min
+        qs_target = sample_batch.rewards + discounts * next_qs_min
         qs_target = jnp.repeat(qs_target[..., None], 2, axis=-1)
         qs_target = jax.lax.stop_gradient(qs_target)
 

@@ -11,11 +11,11 @@ import optax
 from omegaconf import DictConfig
 
 from evorl.distributed import agent_gradient_update, psum, tree_pmean
-from evorl.distribution import get_tanh_norm_dist
-from evorl.envs import AutoresetMode, Box, create_env, Space
+from evorl.distribution import get_tanh_norm_dist, get_categorical_dist
+from evorl.envs import AutoresetMode, Box, create_env, Space, Discrete
 from evorl.evaluator import Evaluator
 from evorl.metrics import MetricBase, metricfield
-from evorl.networks import make_policy_network, make_q_network
+from evorl.networks import make_policy_network, make_q_network, make_discrete_q_network
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
@@ -200,29 +200,187 @@ class SACAgent(Agent):
         alpha = jnp.exp(agent_state.params.log_alpha)
 
         # [B, 2]
-        q_t = self.critic_network.apply(
+        qs = self.critic_network.apply(
             agent_state.params.critic_params, obs, sample_batch.actions
         )
 
-        actions_dist_t_plus_1 = get_tanh_norm_dist(
-            *jnp.split(
-                self.actor_network.apply(agent_state.params.actor_params, next_obs),
-                2,
-                axis=-1,
-            )
+        next_raw_actions = self.actor_network.apply(
+            agent_state.params.actor_params, next_obs
         )
-        actions_t_plus_1 = actions_dist_t_plus_1.sample(seed=key)
-        actions_logp_t_plus_1 = actions_dist_t_plus_1.log_prob(actions_t_plus_1)
+        next_actions_dist = get_tanh_norm_dist(*jnp.split(next_raw_actions, 2, axis=-1))
+        next_actions = next_actions_dist.sample(seed=key)
+        next_actions_logp = next_actions_dist.log_prob(next_actions)
         # [B, 2]
-        q_t_plus_1 = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, actions_t_plus_1
+        next_qs = self.critic_network.apply(
+            agent_state.params.target_critic_params, next_obs, next_actions
         )
-        q_target = sample_batch.rewards * self.reward_scale + discounts * (
-            jnp.min(q_t_plus_1, axis=-1) - alpha * actions_logp_t_plus_1
+        qs_target = sample_batch.rewards * self.reward_scale + discounts * (
+            jnp.min(next_qs, axis=-1) - alpha * next_actions_logp
         )
-        q_target = jnp.repeat(q_target[..., None], 2, axis=-1)
+        qs_target = jnp.repeat(qs_target[..., None], 2, axis=-1)
 
-        q_loss = optax.squared_error(q_t, q_target).sum(-1).mean()
+        q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
+        return PyTreeDict(critic_loss=q_loss)
+
+
+class SACDiscreteAgent(Agent):
+    critic_network: nn.Module
+    actor_network: nn.Module
+    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+
+    alpha: float = 0.2
+    discount: float = 0.99
+    reward_scale: float = 1.0
+    target_entropy_ratio: float = 0.98
+
+    @property
+    def normalize_obs(self):
+        return self.obs_preprocessor is not None
+
+    def init(
+        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
+    ) -> AgentState:
+        key, critic_key, actor_key = jax.random.split(key, num=3)
+
+        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_action = action_space.sample(key)[None, ...]
+
+        critic_params = self.critic_network.init(critic_key, dummy_obs, dummy_action)
+        target_critic_params = critic_params
+
+        actor_params = self.actor_network.init(actor_key, dummy_obs)
+
+        log_alpha = jnp.log(jnp.float32(self.init_alpha))
+
+        params_state = SACNetworkParams(
+            critic_params=critic_params,
+            target_critic_params=target_critic_params,
+            actor_params=actor_params,
+            log_alpha=log_alpha,
+        )
+
+        if self.normalize_obs:
+            # Note: statistics are broadcasted to [T*B]
+            obs_preprocessor_state = running_statistics.init_state(dummy_obs)
+        else:
+            obs_preprocessor_state = None
+
+        entropy_target = self.target_entropy_ratio * jnp.log(
+            jnp.float32(action_space.n)
+        )
+
+        return AgentState(
+            params=params_state,
+            obs_preprocessor_state=obs_preprocessor_state,
+            extra_state=PyTreeDict(entropy_target=entropy_target),  # the constant
+        )
+
+    def compute_actions(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> tuple[Action, PolicyExtraInfo]:
+        obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
+
+        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        actions_dist = get_categorical_dist(raw_actions)
+        actions = actions_dist.sample(seed=key)
+        return actions, PyTreeDict()
+
+    def evaluate_actions(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> tuple[Action, PolicyExtraInfo]:
+        obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
+
+        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        actions_dist = get_categorical_dist(raw_actions)
+        actions = actions_dist.mode()
+        return actions, PyTreeDict()
+
+    def alpha_loss(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> LossDict:
+        obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
+
+        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        actions_dist = get_categorical_dist(raw_actions)
+        entropy = actions_dist.entropy()
+
+        entropy_target = agent_state.extra_state.entropy_target
+        # official impl:
+        alpha = jnp.exp(agent_state.params.log_alpha)
+        alpha_loss = jnp.mean(-alpha * jax.lax.stop_gradient(entropy_target - entropy))
+
+        return PyTreeDict(
+            alpha_loss=alpha_loss,
+        )
+
+    def actor_loss(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> LossDict:
+        actor_key, entropy_key = jax.random.split(key, 2)
+        obs = sample_batch.obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
+
+        alpha = jnp.exp(agent_state.params.log_alpha)
+
+        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+
+        actions_logp = nn.log_softmax(raw_actions)
+
+        # [B, 2]
+        q_values = self.critic_network.apply(agent_state.params.critic_params, obs)
+        min_q = jnp.min(q_values, axis=-1)
+        actor_loss = jnp.mean(alpha * actions_logp - min_q)
+
+        actions_dist = get_categorical_dist(raw_actions)
+        entropy = actions_dist.entropy().mean()
+
+        return PyTreeDict(actor_loss=actor_loss, entropy=entropy)
+
+    def critic_loss(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> LossDict:
+        obs = sample_batch.obs
+        next_obs = sample_batch.extras.env_extras.ori_obs
+        if self.normalize_obs:
+            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
+            next_obs = self.obs_preprocessor(
+                next_obs, agent_state.obs_preprocessor_state
+            )
+
+        discounts = self.discount * (1 - sample_batch.extras.env_extras.termination)
+
+        alpha = jnp.exp(agent_state.params.log_alpha)
+
+        # [B, 2, n]
+        qs = self.critic_network.apply(agent_state.params.critic_params, obs)
+
+        next_raw_actions = self.actor_network.apply(
+            agent_state.params.actor_params, next_obs
+        )
+        next_actions_prob = nn.softmax(next_raw_actions)
+        next_actions_logp = nn.log_softmax(next_raw_actions)
+        # [B, 2, n]
+        next_qs = self.critic_network.apply(
+            agent_state.params.target_critic_params, next_obs
+        )
+        next_qs_min = jnp.min(next_qs, axis=-2)  # [B, n]
+        next_qs_estimate = jnp.sum(
+            next_actions_prob * (next_qs_min - alpha * next_actions_logp), axis=-1
+        )  # [B]
+
+        qs_target = (
+            sample_batch.rewards * self.reward_scale + discounts * next_qs_estimate
+        )
+        qs_target = jnp.repeat(qs_target[..., None], 2, axis=-1)
+
+        q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
         return PyTreeDict(critic_loss=q_loss)
 
 
@@ -235,19 +393,30 @@ def make_mlp_sac_agent(
     reward_scale: float = 1.0,
     normalize_obs: bool = False,
 ):
-    assert isinstance(action_space, Box), "Only continue action space is supported."
-
-    action_size = action_space.shape[0] * 2
-
-    critic_network = make_q_network(
-        n_stack=2,
-        hidden_layer_sizes=critic_hidden_layer_sizes,
-    )
+    if isinstance(action_space, Box):
+        action_size = action_space.shape[0] * 2
+        continuous_action = True
+    elif isinstance(action_space, Discrete):
+        action_size = action_space.n
+        continuous_action = False
+    else:
+        raise NotImplementedError(f"Unsupported action space: {action_space}")
 
     actor_network = make_policy_network(
         action_size=action_size,  # mean+std
         hidden_layer_sizes=actor_hidden_layer_sizes,
     )
+
+    if continuous_action:
+        critic_network = make_q_network(
+            n_stack=2,
+            hidden_layer_sizes=critic_hidden_layer_sizes,
+        )
+    else:
+        critic_network = make_discrete_q_network(
+            n_stack=2,
+            hidden_layer_sizes=critic_hidden_layer_sizes,
+        )
 
     if normalize_obs:
         obs_preprocessor = running_statistics.normalize
@@ -255,6 +424,7 @@ def make_mlp_sac_agent(
         obs_preprocessor = None
 
     return SACAgent(
+        continuous_action=continuous_action,
         critic_network=critic_network,
         actor_network=actor_network,
         obs_preprocessor=obs_preprocessor,
@@ -262,17 +432,6 @@ def make_mlp_sac_agent(
         discount=discount,
         reward_scale=reward_scale,
     )
-
-
-class SACDiscreteAgent(Agent):
-    critic_network: nn.Module
-    actor_network: nn.Module
-    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
-    alpha: float = 0.2
-    adaptive_alpha: bool = False
-    discount: float = 0.99
-    # reward_scale: float = 1.0
-    normalize_obs: bool = False
 
 
 class SACWorkflow(OffPolicyWorkflowTemplate):
@@ -505,6 +664,12 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
                     )
                 )
                 opt_state = opt_state.replace(alpha=alpha_opt_state)
+
+                alpha_loss_dict = alpha_loss_dict.replace(
+                    log_alpha=agent_state.params.log_alpha,
+                    alpha=jnp.exp(agent_state.params.log_alpha),
+                )
+
                 res = (
                     critic_loss,
                     actor_loss,
