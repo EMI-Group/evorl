@@ -25,7 +25,7 @@ num_rl_updates_per_iter: 4096 # fastpbrl use #sampled_timesteps for #updates, he
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs
-eval_interval: 50
+eval_interval: 10
 
 wandb:
   tags: ["fastpbrl"]

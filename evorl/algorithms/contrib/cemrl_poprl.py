@@ -50,7 +50,7 @@ class PopRLWorkflow(CEMRLWorkflow):
 
         pop_actor_params = agent_state.params.actor_params
 
-        key, rollout_key, cem_key, learn_key = jax.random.split(state.key, num=4)
+        key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # ======== RL update ========
         if iterations > self.config.warmup_iters:
