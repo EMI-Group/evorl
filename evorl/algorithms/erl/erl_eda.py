@@ -364,11 +364,11 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
 
     def learn(self, state: State) -> State:
         num_iters = math.ceil(
-            self.config.total_episodes
+            (self.config.total_episodes - state.metrics.sampled_episodes)
             / (self.config.episodes_for_fitness * self.config.pop_size)
         )
 
-        for i in range(state.metrics.iterations, num_iters):
+        for i in range(state.metrics.iterations, num_iters + state.metrics.iterations):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
