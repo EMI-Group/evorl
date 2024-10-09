@@ -331,7 +331,7 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
             )
             sample_batches = jax.vmap(_sample_fn)(rb_keys)
 
-            # (actor_update_interval, num_learning_offspring, B, ...)
+            # (actor_update_interval, num_rl_agents, B, ...)
             sample_batches = jax.tree_map(
                 lambda x: x.reshape(
                     (
