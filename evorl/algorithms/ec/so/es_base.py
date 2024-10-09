@@ -42,7 +42,7 @@ class ESBaseWorkflow(EvoXWorkflowWrapper):
             fitness_transforms=fitness_transforms,
         )
 
-        # An extra evalutor for pop_center
+        # An extra evaluator for pop_center
         self.evaluator = evaluator
 
     def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:

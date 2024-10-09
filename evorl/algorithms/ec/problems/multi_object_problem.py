@@ -1,18 +1,12 @@
-import copy
 import logging
-import math
-from collections.abc import Callable
-from functools import partial
 
 import chex
 import jax
 import jax.numpy as jnp
-from evorl.agent import Agent, AgentState, AgentActionFn
-from evorl.envs import Env, EnvState, EnvStepFn
-from evorl.rollout import SampleBatch
-from evorl.types import Action, PolicyExtraInfo, PyTreeDict, ReductionFn
-from evorl.utils.jax_utils import rng_split
-from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_length
+from evorl.agent import Agent
+from evorl.envs import Env
+from evorl.types import ReductionFn
+from evorl.mo_brax_evaluator import BraxEvaluator
 from evox import Problem, State
 
 logger = logging.getLogger(__name__)
@@ -28,6 +22,7 @@ class MultiObjectiveBraxProblem(Problem):
         discount: float = 1.0,
         metric_names: tuple[str] = ("reward", "episode_length"),
         flatten_objectives: bool = True,
+        explore: bool = False,
         reduce_fn: ReductionFn | dict[str, ReductionFn] = jnp.mean,
     ):
         """
@@ -58,18 +53,14 @@ class MultiObjectiveBraxProblem(Problem):
         else:
             self.reduce_fn = {name: reduce_fn for name in metric_names}
 
-        parallel_envs = env.num_envs
-        self.num_iters = math.ceil(num_episodes / parallel_envs)
-        if num_episodes % parallel_envs != 0:
-            logger.warning(
-                f"num_episode ({num_episodes}) cannot be divided by parallel envs ({parallel_envs}),"
-                f"set new num_episodes={self.num_iters*parallel_envs}"
-            )
+        if explore:
+            action_fn = agent.compute_actions
+        else:
+            action_fn = agent.evaluate_actions
 
-        self.agent_eval_actions = jax.vmap(self.agent.evaluate_actions)
-        # Note: there are two vmap: [#pop, #envs, ...]
-        self.env_reset = jax.vmap(self.env.reset)
-        self.env_step = jax.vmap(self.env.step)
+        self.evaluator = BraxEvaluator(
+            env, action_fn, max_episode_steps, discount, self.metric_names
+        )
 
     @property
     def num_objectives(self):
@@ -88,72 +79,26 @@ class MultiObjectiveBraxProblem(Problem):
     ) -> tuple[chex.ArrayTree, State]:
         pop_size = jax.tree_leaves(pop_agent_state)[0].shape[0]
 
-        metric_names = copy.deepcopy(self.metric_names)
-        if "episode_length" not in metric_names:
-            # we also need episode_length to calculate the sampled_timesteps
-            metric_names = metric_names + ("episode_length",)
+        key, eval_key = jax.random.split(state.key)
+        eval_key = jax.random.split(eval_key, num=pop_size)  # [#pop]
 
-        def _evaluate_fn(key, unused_t):
-            next_key, init_env_key, rollout_key = jax.random.split(key, 3)
-            env_state = self.env_reset(jax.random.split(init_env_key, num=pop_size))
-
-            if self.discount == 1.0:
-                # use fast undiscount evaluation
-                metrics, env_state = fast_eval_metrics(
-                    self.env_step,
-                    self.agent_eval_actions,
-                    env_state,
-                    pop_agent_state,
-                    jax.random.split(rollout_key, num=pop_size),
-                    self.max_episode_steps,
-                    metric_names=metric_names,
-                )
-
-            else:
-                metrics, env_state = eval_metrics(
-                    self.env_step,
-                    self.agent_eval_actions,
-                    env_state,
-                    pop_agent_state,
-                    jax.random.split(rollout_key, num=pop_size),
-                    self.max_episode_steps,
-                    discount=self.discount,
-                    metric_names=self.metric_names,
-                )
-
-            objectives = PyTreeDict(
-                {
-                    name: val
-                    for name, val in metrics.items()
-                    if name in self.metric_names
-                }
-            )
-            sampled_timesteps = metrics.episode_length
-
-            return next_key, (objectives, sampled_timesteps)  # [#envs]
-
-        # [#iters, #pop, #envs]
-        key, (objectives, sampled_timesteps) = jax.lax.scan(
-            _evaluate_fn, state.key, (), length=self.num_iters
+        objectives = self.evaluator.evaluate(
+            pop_agent_state, eval_key, self.num_episodes
         )
 
+        sampled_timesteps = objectives.episode_length.sum()
+        sampled_episodes = jnp.uint32(pop_size * self.num_episodes * self.env.num_envs)
+
         for k in objectives.keys():
-            objective = jax.lax.collapse(
-                jnp.swapaxes(objectives[k], 0, 1), 1, 3
-            )  # [#pop, num_episodes]
-            # by default, we use the mean value over different episodes.
-            # [#pop]
-            objectives[k] = self.reduce_fn[k](objective, axis=-1)
+            objectives[k] = self.reduce_fn[k](objectives[k], axis=-1)
 
         if self.flatten_objectives:
             # [#pop, #objs]
+            # TODO: check key orders
             objectives = jnp.stack(list(objectives.values()), axis=-1)
             # special handling for single objective
             if objectives.shape[-1] == 1:
                 objectives = objectives.squeeze(-1)
-
-        sampled_episodes = pop_size * self.num_episodes * self.env.num_envs
-        sampled_timesteps = sampled_timesteps.sum()
 
         state = state.replace(
             key=key,
@@ -162,203 +107,3 @@ class MultiObjectiveBraxProblem(Problem):
         )
 
         return objectives, state
-
-
-def eval_env_step(
-    env_fn: EnvStepFn,
-    action_fn: AgentActionFn,
-    env_state: EnvState,
-    agent_state: AgentState,  # readonly
-    key: chex.PRNGKey,
-    metric_names: tuple[str] = (),
-) -> tuple[SampleBatch, EnvState]:
-    # sample_batch: [#envs, ...]
-    sample_batch = SampleBatch(obs=env_state.obs)
-
-    actions, policy_extras = action_fn(agent_state, sample_batch, key)
-    env_nstate = env_fn(env_state, actions)
-
-    # info = env_nstate.info
-    # env_extras = {x: info[x] for x in env_extra_fields if x in info}
-
-    rewards = PyTreeDict(
-        {
-            name: val
-            for name, val in env_nstate.info.metrics.items()
-            if name in metric_names
-        }
-    )
-    rewards.reward = env_nstate.reward
-
-    transition = SampleBatch(
-        rewards=rewards,
-        dones=env_nstate.done,
-    )
-
-    return transition, env_nstate
-
-
-def eval_rollout_episode(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[
-        [AgentState, SampleBatch, chex.PRNGKey], tuple[Action, PolicyExtraInfo]
-    ],
-    env_state: EnvState,
-    agent_state: AgentState,
-    key: chex.PRNGKey,
-    rollout_length: int,
-    metric_names: tuple[str] = (),
-) -> tuple[SampleBatch, EnvState]:
-    """
-    Collect given rollout_length trajectory.
-    Avoid unnecessary env_step()
-
-    Args:
-        env: vmapped env w/o autoreset
-    """
-
-    _eval_env_step = partial(
-        eval_env_step, env_fn, action_fn, metric_names=metric_names
-    )
-
-    def _one_step_rollout(carry, unused_t):
-        """
-        sample_batch: one-step obs
-        transition: one-step full info
-        """
-        env_state, current_key, prev_transition = carry
-        # next_key, current_key = jax.random.split(current_key, 2)
-        next_key, current_key = rng_split(current_key, 2)
-
-        transition, env_nstate = jax.lax.cond(
-            env_state.done.all(),
-            lambda *x: (env_state.replace(), prev_transition.replace()),
-            _eval_env_step,
-            env_state,
-            agent_state,
-            current_key,
-        )
-
-        return (env_nstate, next_key, transition), transition
-
-    # run one-step rollout first to get bootstrap transition
-    # it will not include in the trajectory when env_state is from env.reset()
-    # this is manually controlled by user.
-    bootstrap_transition, _ = _eval_env_step(env_state, agent_state, key)
-
-    (env_state, _, _), trajectory = jax.lax.scan(
-        _one_step_rollout,
-        (env_state, key, bootstrap_transition),
-        (),
-        length=rollout_length,
-    )
-
-    return trajectory, env_state
-
-
-def eval_metrics(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[
-        [AgentState, SampleBatch, chex.PRNGKey], tuple[Action, PolicyExtraInfo]
-    ],
-    env_state: EnvState,
-    agent_state: AgentState,
-    key: chex.PRNGKey,
-    rollout_length: int,
-    discount: float,
-    metric_names: tuple[str] = (),
-):
-    episode_trajectory, env_state = eval_rollout_episode(
-        env_fn,
-        action_fn,
-        env_state,
-        agent_state,
-        key,
-        rollout_length,
-        metric_names=metric_names,
-    )
-
-    metrics = PyTreeDict()
-    for name in metric_names:
-        if "reward" in name:
-            # For metrics like 'reward_forward' and 'reward_ctrl'
-            metrics[name] = compute_discount_return(
-                episode_trajectory.rewards[name],
-                episode_trajectory.dones,
-                discount,
-            )
-        elif "episode_length" == name:
-            metrics[name] = compute_episode_length(episode_trajectory.dones)
-        else:
-            # For other metrics like 'x_position', we use the last value as the objective.
-            # Note: It is ok to use [-1], since wrapper ensures that the last value
-            # repeats the terminal step value.
-            metrics[name] = episode_trajectory.rewards[name][-1]
-
-
-def fast_eval_metrics(
-    env_fn: Callable[[EnvState, Action], EnvState],
-    action_fn: Callable[
-        [AgentState, SampleBatch, chex.PRNGKey], tuple[Action, PolicyExtraInfo]
-    ],
-    env_state: EnvState,
-    agent_state: AgentState,
-    key: chex.PRNGKey,
-    rollout_length: int,
-    metric_names: tuple[str] = (),
-) -> tuple[PyTreeDict, EnvState]:
-    """
-    Collect given rollout_length trajectory.
-    Avoid unnecessary env_step()
-    Args:
-        env: vmapped env w/o autoreset
-    """
-
-    _eval_env_step = partial(
-        eval_env_step, env_fn, action_fn, metric_names=metric_names
-    )
-
-    def _terminate_cond(carry):
-        env_state, current_key, prev_metrics = carry
-        return (prev_metrics.episode_length < rollout_length).all() & (
-            ~env_state.done.all()
-        )
-
-    def _one_step_rollout(carry):
-        """
-        sample_batch: one-step obs
-        transition: one-step full info
-        """
-        env_state, current_key, prev_metrics = carry
-        next_key, current_key = rng_split(current_key, 2)
-
-        transition, env_nstate = _eval_env_step(env_state, agent_state, current_key)
-
-        prev_dones = env_state.done
-
-        metrics = PyTreeDict()
-        for name in metric_names:
-            if "reward" in name:
-                metrics[name] = (
-                    prev_metrics[name] + (1 - prev_dones) * transition.rewards[name]
-                )
-            elif "episode_length" == name:
-                metrics[name] = prev_metrics[name] + (1 - prev_dones)
-            elif name in metrics:
-                metrics[name] = transition.rewards[name]
-
-        return env_nstate, next_key, metrics
-
-    batch_shape = env_state.reward.shape
-
-    env_state, _, metrics = jax.lax.while_loop(
-        _terminate_cond,
-        _one_step_rollout,
-        (
-            env_state,
-            key,
-            PyTreeDict({name: jnp.zeros(batch_shape) for name in metric_names}),
-        ),
-    )
-
-    return metrics, env_state

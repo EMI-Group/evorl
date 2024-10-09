@@ -49,12 +49,7 @@ class GeneralRLProblem(Problem):
         else:
             action_fn = agent.evaluate_actions
 
-        self.evalutor = Evaluator(env, action_fn, max_episode_steps, discount)
-
-        # self.agent_eval_actions = jax.vmap(self.agent.evaluate_actions)
-        # # Note: there are two vmap: [#pop, #envs, ...]
-        # self.env_reset = jax.vmap(self.env.reset)
-        # self.env_step = jax.vmap(self.env.step)
+        self.evaluator = Evaluator(env, action_fn, max_episode_steps, discount)
 
     @property
     def num_objectives(self):
@@ -74,21 +69,19 @@ class GeneralRLProblem(Problem):
         pop_size = jax.tree_leaves(pop_agent_state)[0].shape[0]
 
         key, eval_key = jax.random.split(state.key)
+        eval_key = jax.random.split(eval_key, num=pop_size)  # [#pop]
 
         #  [#pop, num_episodes]
-        eval_metrics = self.evalutor.evaluate(
+        eval_metrics = self.evaluator.evaluate(
             pop_agent_state, eval_key, self.num_episodes
         )
 
         objectives = eval_metrics.episode_returns
+        sampled_episodes = jnp.uint32(pop_size * self.num_episodes * self.env.num_envs)
+        sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
 
         # by default, we use the mean value over different episodes.
         objectives = self.reduce_fn(objectives, axis=-1)
-
-        sampled_episodes = jnp.array(
-            pop_size * self.num_episodes * self.env.num_envs, dtype=jnp.uint32
-        )
-        sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
 
         state = state.replace(
             key=key,

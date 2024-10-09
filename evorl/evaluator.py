@@ -43,35 +43,21 @@ class Evaluator(PyTreeNode):
                 env_reset_fn = jax.vmap(env_reset_fn)
                 env_step_fn = jax.vmap(env_step_fn)
 
-        if self.discount == 1.0:
-
-            def _evaluate_fn(key, unused_t):
-                next_key, init_env_key = rng_split(key, 2)
-                env_state = env_reset_fn(init_env_key)
-
+        def _evaluate_fn(key, unused_t):
+            next_key, init_env_key, eval_key = rng_split(key, 3)
+            env_state = env_reset_fn(init_env_key)
+            if self.discount == 1.0:
                 episode_metrics, env_state = fast_eval_rollout_episode(
                     env_step_fn,
                     action_fn,
                     env_state,
                     agent_state,
-                    key,
+                    eval_key,
                     self.max_episode_steps,
                 )
-
-                return next_key, episode_metrics  # [#envs]
-
-            _, episode_metrics = jax.lax.scan(_evaluate_fn, key, (), length=num_iters)
-            discount_returns = episode_metrics.episode_returns
-            episode_lengths = episode_metrics.episode_lengths
-
-        else:
-
-            def _evaluate_fn(key, unused_t):
-                next_key, init_env_key, eval_key = rng_split(key, 3)
-                env_state = env_reset_fn(init_env_key)
-
-                # Note: be careful when self.max_episode_steps < env.max_episode_steps,
-                # where dones could all be zeros.
+                discount_returns = episode_metrics.episode_returns
+                episode_lengths = episode_metrics.episode_lengths
+            else:
                 episode_trajectory, env_state = eval_rollout_episode(
                     env_step_fn,
                     action_fn,
@@ -81,18 +67,19 @@ class Evaluator(PyTreeNode):
                     self.max_episode_steps,
                 )
 
+                # Note: be careful when self.max_episode_steps < env.max_episode_steps,
+                # where dones could all be zeros.
                 discount_returns = compute_discount_return(
                     episode_trajectory.rewards, episode_trajectory.dones, self.discount
                 )
-
                 episode_lengths = compute_episode_length(episode_trajectory.dones)
 
-                return next_key, (discount_returns, episode_lengths)  # [#envs]
+            return next_key, (discount_returns, episode_lengths)  # [..., #envs]
 
-            # [#iters, ..., #envs]
-            _, (discount_returns, episode_lengths) = jax.lax.scan(
-                _evaluate_fn, key, (), length=num_iters
-            )
+        # [#iters, ..., #envs]
+        _, (discount_returns, episode_lengths) = jax.lax.scan(
+            _evaluate_fn, key, (), length=num_iters
+        )
 
         return EvaluateMetric(
             episode_returns=_flatten_metric(discount_returns),  # [..., num_episodes]
