@@ -18,3 +18,7 @@ weight_max_magnitude: 10
 
 rl_updates_frac: 1.0
 rl_injection_interval: 1
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 10
