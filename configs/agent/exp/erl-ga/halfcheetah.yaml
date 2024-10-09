@@ -4,7 +4,7 @@ defaults:
   - /agent/erl/erl-ga
   - _self_
 
-total_episodes: 100000
+total_episodes: 20000
 
 num_rl_agents: 1
 warmup_iters: 10 # steps that only learn by EC

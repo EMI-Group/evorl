@@ -40,7 +40,7 @@ rl_injection_interval: 1 # replace worst pop agents by rl agents
 pop_size: 32
 num_elites: 4
 tournament_size: 3
-weight_max_magnitude: 10 # 1e6 in ERL
+weight_max_magnitude: 1e6
 mut_strength: 0.1
 num_mutation_frac: 0.1
 super_mut_strength: 10.0
