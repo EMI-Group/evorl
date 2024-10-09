@@ -1,6 +1,5 @@
 import logging
 import math
-from functools import partial
 
 import chex
 import jax
@@ -131,17 +130,13 @@ class PopRLWorkflow(CEMRLWorkflow):
 
         # [#episodes]
         pop_center_eval_metrics = self.evaluator.evaluate(
-            pop_mean_agent_state, num_episodes=self.config.eval_episodes, key=eval_key
+            pop_mean_agent_state, eval_key, num_episodes=self.config.eval_episodes
         )
 
-        _vmap_evaluate = jax.vmap(
-            partial(self.evaluator.evaluate, num_episodes=self.config.eval_episodes),
-            in_axes=(self.agent_state_pytree_axes, 0),
-        )
-
-        pop_eval_metrics = _vmap_evaluate(
+        pop_eval_metrics = self.evaluator.evaluate(
             state.agent_state,
             jax.random.split(eval_pop_key, self.config.num_learning_offspring),
+            num_episodes=self.config.eval_episodes,
         )
 
         eval_metrics = EvaluateMetric(

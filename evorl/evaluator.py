@@ -34,91 +34,69 @@ class Evaluator(PyTreeNode):
                 f"set new num_episodes={num_iters*num_envs}"
             )
 
+        action_fn = self.action_fn
+        env_reset_fn = self.env.reset
+        env_step_fn = self.env.step
+        if key.ndim > 1:
+            for _ in range(key.ndim - 1):
+                action_fn = jax.vmap(action_fn)
+                env_reset_fn = jax.vmap(env_reset_fn)
+                env_step_fn = jax.vmap(env_step_fn)
+
         if self.discount == 1.0:
-            return self._fast_evaluate(agent_state, key, num_iters)
+
+            def _evaluate_fn(key, unused_t):
+                next_key, init_env_key = rng_split(key, 2)
+                env_state = env_reset_fn(init_env_key)
+
+                episode_metrics, env_state = fast_eval_rollout_episode(
+                    env_step_fn,
+                    action_fn,
+                    env_state,
+                    agent_state,
+                    key,
+                    self.max_episode_steps,
+                )
+
+                return next_key, episode_metrics  # [#envs]
+
+            _, episode_metrics = jax.lax.scan(_evaluate_fn, key, (), length=num_iters)
+            discount_returns = episode_metrics.episode_returns
+            episode_lengths = episode_metrics.episode_lengths
+
         else:
-            return self._evaluate(agent_state, key, num_iters)
 
-    def _evaluate(
-        self, agent_state: AgentState, key: chex.PRNGKey, num_iters: int
-    ) -> EvaluateMetric:
-        action_fn = self.action_fn
-        env_reset_fn = self.env.reset
-        env_step_fn = self.env.step
-        if key.ndim > 1:
-            for _ in range(key.ndim - 1):
-                action_fn = jax.vmap(action_fn)
-                env_reset_fn = jax.vmap(env_reset_fn)
-                env_step_fn = jax.vmap(env_step_fn)
+            def _evaluate_fn(key, unused_t):
+                next_key, init_env_key, eval_key = rng_split(key, 3)
+                env_state = env_reset_fn(init_env_key)
 
-        def _evaluate_fn(key, unused_t):
-            next_key, init_env_key, eval_key = rng_split(key, 3)
-            env_state = env_reset_fn(init_env_key)
+                # Note: be careful when self.max_episode_steps < env.max_episode_steps,
+                # where dones could all be zeros.
+                episode_trajectory, env_state = eval_rollout_episode(
+                    env_step_fn,
+                    action_fn,
+                    env_state,
+                    agent_state,
+                    eval_key,
+                    self.max_episode_steps,
+                )
 
-            # Note: be careful when self.max_episode_steps < env.max_episode_steps,
-            # where dones could all be zeros.
-            episode_trajectory, env_state = eval_rollout_episode(
-                env_step_fn,
-                action_fn,
-                env_state,
-                agent_state,
-                eval_key,
-                self.max_episode_steps,
+                discount_returns = compute_discount_return(
+                    episode_trajectory.rewards, episode_trajectory.dones, self.discount
+                )
+
+                episode_lengths = compute_episode_length(episode_trajectory.dones)
+
+                return next_key, (discount_returns, episode_lengths)  # [#envs]
+
+            # [#iters, ..., #envs]
+            _, (discount_returns, episode_lengths) = jax.lax.scan(
+                _evaluate_fn, key, (), length=num_iters
             )
-
-            discount_returns = compute_discount_return(
-                episode_trajectory.rewards, episode_trajectory.dones, self.discount
-            )
-
-            episode_lengths = compute_episode_length(episode_trajectory.dones)
-
-            return next_key, (discount_returns, episode_lengths)  # [#envs]
-
-        # [#iters, ..., #envs]
-        _, (discount_returns, episode_lengths) = jax.lax.scan(
-            _evaluate_fn, key, (), length=num_iters
-        )
 
         return EvaluateMetric(
-            episode_returns=_flatten_metric(discount_returns),  # [..., #iters * #envs]
+            episode_returns=_flatten_metric(discount_returns),  # [..., num_episodes]
             episode_lengths=_flatten_metric(episode_lengths),
-        )
-
-    def _fast_evaluate(
-        self, agent_state, key: chex.PRNGKey, num_iters: int
-    ) -> EvaluateMetric:
-        action_fn = self.action_fn
-        env_reset_fn = self.env.reset
-        env_step_fn = self.env.step
-        if key.ndim > 1:
-            for _ in range(key.ndim - 1):
-                action_fn = jax.vmap(action_fn)
-                env_reset_fn = jax.vmap(env_reset_fn)
-                env_step_fn = jax.vmap(env_step_fn)
-
-        def _evaluate_fn(key, unused_t):
-            next_key, init_env_key = rng_split(key, 2)
-            env_state = env_reset_fn(init_env_key)
-
-            episode_metrics, env_state = fast_eval_rollout_episode(
-                env_step_fn,
-                action_fn,
-                env_state,
-                agent_state,
-                key,
-                self.max_episode_steps,
-            )
-
-            return next_key, episode_metrics  # [#envs]
-
-        # [#iters, ..., #envs]
-        _, episode_metrics = jax.lax.scan(_evaluate_fn, key, (), length=num_iters)
-
-        return EvaluateMetric(
-            episode_returns=_flatten_metric(
-                episode_metrics.episode_returns
-            ),  # [..., #iters * #envs]
-            episode_lengths=_flatten_metric(episode_metrics.episode_lengths),
         )
 
 

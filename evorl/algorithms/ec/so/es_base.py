@@ -85,7 +85,7 @@ class ESWorkflowTemplate(ESBaseWorkflow):
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(
-            agent_state, num_episodes=self.config.eval_episodes, key=eval_key
+            agent_state, eval_key, num_episodes=self.config.eval_episodes
         )
 
         eval_metrics = EvaluateMetric(

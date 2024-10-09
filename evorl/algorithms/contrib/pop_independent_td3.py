@@ -434,13 +434,11 @@ class PopTD3Workflow(TD3Workflow):
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         key, eval_key = jax.random.split(state.key, num=2)
 
-        _vmap_evaluate = jax.vmap(
-            partial(self.evaluator.evaluate, num_episodes=self.config.eval_episodes)
-        )
-
         # [#pop, #episodes]
-        raw_eval_metrics = _vmap_evaluate(
-            state.agent_state, jax.random.split(eval_key, self.config.pop_size)
+        raw_eval_metrics = self.evaluator.evaluate(
+            state.agent_state,
+            jax.random.split(eval_key, self.config.pop_size),
+            num_episodes=self.config.eval_episodes,
         )
 
         eval_metrics = EvaluateMetric(

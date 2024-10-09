@@ -2,7 +2,6 @@ import copy
 import logging
 from typing import Any
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
-from functools import partial
 from omegaconf import DictConfig
 
 import chex
@@ -403,14 +402,11 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         key, eval_key = jax.random.split(state.key, num=2)
 
-        _vmap_evaluate = jax.vmap(
-            partial(self.evaluator.evaluate, num_episodes=self.config.eval_episodes),
-            in_axes=(self.agent_state_pytree_axes, 0),
-        )
-
         # [num_rl_agents, #episodes]
-        raw_eval_metrics = _vmap_evaluate(
-            state.agent_state, jax.random.split(eval_key, self.config.num_rl_agents)
+        raw_eval_metrics = self.evaluator.evaluate(
+            state.agent_state,
+            jax.random.split(eval_key, self.config.num_rl_agents),
+            num_episodes=self.config.eval_episodes,
         )
 
         eval_metrics = EvaluateMetric(

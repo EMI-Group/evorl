@@ -150,7 +150,7 @@ class OnPolicyWorkflow(RLWorkflow):
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(
-            state.agent_state, num_episodes=self.config.eval_episodes, key=eval_key
+            state.agent_state, eval_key, num_episodes=self.config.eval_episodes
         )
 
         eval_metrics = EvaluateMetric(
@@ -246,7 +246,7 @@ class OffPolicyWorkflow(RLWorkflow):
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(
-            state.agent_state, num_episodes=self.config.eval_episodes, key=eval_key
+            state.agent_state, eval_key, num_episodes=self.config.eval_episodes
         )
 
         eval_metrics = EvaluateMetric(

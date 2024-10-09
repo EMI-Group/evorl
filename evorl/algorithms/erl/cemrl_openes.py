@@ -367,7 +367,7 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(
-            pop_mean_agent_state, num_episodes=self.config.eval_episodes, key=eval_key
+            pop_mean_agent_state, eval_key, num_episodes=self.config.eval_episodes
         )
 
         eval_metrics = EvaluateMetric(

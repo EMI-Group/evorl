@@ -22,18 +22,19 @@ def test_eval_rollout_epsiode():
 
     agent = DebugRandomAgent()
 
-    evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=0.99)
+    for discount in [0.99, 1.0]:
+        evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=discount)
 
-    key = jax.random.PRNGKey(42)
+        key = jax.random.PRNGKey(42)
 
-    key, rollout_key, agent_key = jax.random.split(key, 3)
+        key, rollout_key, agent_key = jax.random.split(key, 3)
 
-    agent_state = agent.init(env.obs_space, env.action_space, agent_key)
+        agent_state = agent.init(env.obs_space, env.action_space, agent_key)
 
-    metric = evaluator.evaluate(agent_state, rollout_key, 7 * 3)
+        metric = evaluator.evaluate(agent_state, rollout_key, 7 * 3)
 
-    assert metric.episode_returns.shape == (7 * 3,)
-    assert metric.episode_lengths.shape == (7 * 3,)
+        assert metric.episode_returns.shape == (7 * 3,)
+        assert metric.episode_lengths.shape == (7 * 3,)
 
 
 def test_batched_eval_rollout_epsiode():
@@ -45,21 +46,23 @@ def test_batched_eval_rollout_epsiode():
         autoreset_mode=AutoresetMode.DISABLED,
     )
     agent = DebugRandomAgent()
-    evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=0.99)
 
-    num_agents = 5
-    key = jax.random.PRNGKey(42)
-    key, rollout_key, agent_key = jax.random.split(key, 3)
+    for discount in [0.99, 1.0]:
+        evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=discount)
 
-    agent_keys = jax.random.split(agent_key, num_agents)
-    rollout_keys = jax.random.split(rollout_key, num_agents)
-    agent_init = jax.vmap(agent.init, in_axes=(None, None, 0))
-    agent_state = agent_init(env.obs_space, env.action_space, agent_keys)
+        num_agents = 5
+        key = jax.random.PRNGKey(42)
+        key, rollout_key, agent_key = jax.random.split(key, 3)
 
-    metric = evaluator.evaluate(agent_state, rollout_keys, 7 * 3)
+        agent_keys = jax.random.split(agent_key, num_agents)
+        rollout_keys = jax.random.split(rollout_key, num_agents)
+        agent_init = jax.vmap(agent.init, in_axes=(None, None, 0))
+        agent_state = agent_init(env.obs_space, env.action_space, agent_keys)
 
-    assert metric.episode_returns.shape == (num_agents, 7 * 3)
-    assert metric.episode_lengths.shape == (num_agents, 7 * 3)
+        metric = evaluator.evaluate(agent_state, rollout_keys, 7 * 3)
+
+        assert metric.episode_returns.shape == (num_agents, 7 * 3)
+        assert metric.episode_lengths.shape == (num_agents, 7 * 3)
 
 
 def test_multi_batched_eval_rollout_epsiode():
@@ -73,23 +76,24 @@ def test_multi_batched_eval_rollout_epsiode():
 
     agent = DebugRandomAgent()
 
-    evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=0.99)
+    for discount in [0.99, 1.0]:
+        evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=discount)
 
-    key = jax.random.PRNGKey(42)
-    key, rollout_key, agent_key = jax.random.split(key, 3)
-    num_agents = (11, 13)
+        key = jax.random.PRNGKey(42)
+        key, rollout_key, agent_key = jax.random.split(key, 3)
+        num_agents = (11, 13)
 
-    agent_keys = rng_split_by_shape(agent_key, num_agents)
-    rollout_keys = rng_split_by_shape(rollout_key, num_agents)
+        agent_keys = rng_split_by_shape(agent_key, num_agents)
+        rollout_keys = rng_split_by_shape(rollout_key, num_agents)
 
-    agent_init = jax.vmap(agent.init, in_axes=(None, None, 0))
-    agent_init = jax.vmap(agent_init, in_axes=(None, None, 0))
-    agent_state = agent_init(env.obs_space, env.action_space, agent_keys)
+        agent_init = jax.vmap(agent.init, in_axes=(None, None, 0))
+        agent_init = jax.vmap(agent_init, in_axes=(None, None, 0))
+        agent_state = agent_init(env.obs_space, env.action_space, agent_keys)
 
-    metric = evaluator.evaluate(agent_state, rollout_keys, 7 * 3)
+        metric = evaluator.evaluate(agent_state, rollout_keys, 7 * 3)
 
-    assert metric.episode_returns.shape == (num_agents) + (7 * 3,)
-    assert metric.episode_lengths.shape == (num_agents) + (7 * 3,)
+        assert metric.episode_returns.shape == (num_agents) + (7 * 3,)
+        assert metric.episode_lengths.shape == (num_agents) + (7 * 3,)
 
 
 def _normal_eval(rewards, dones, max_length):
