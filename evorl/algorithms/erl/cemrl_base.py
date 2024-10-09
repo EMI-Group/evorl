@@ -204,6 +204,10 @@ class CEMRLWorkflowBase(Workflow):
             env_extra_fields=("ori_obs", "termination"),
         )
 
+        sampled_timesteps = jnp.uint32(rollout_length * config.num_envs)
+        # Since we sample from autoreset env, this metric might not be accurate:
+        sampled_episodes = trajectory.dones.astype(jnp.uint32).sum()
+
         # [T, B, ...] -> [T*B, ...]
         trajectory = clean_trajectory(trajectory)
         trajectory = flatten_rollout_trajectory(trajectory)
@@ -218,10 +222,6 @@ class CEMRLWorkflowBase(Workflow):
                     trajectory.obs,
                 )
             )
-
-        sampled_timesteps = jnp.uint32(rollout_length * config.num_envs)
-        # Since we sample from autoreset env, this metric might not be accurate:
-        sampled_episodes = trajectory.dones.astype(jnp.uint32).sum()
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
