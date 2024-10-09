@@ -16,7 +16,8 @@ from ..evox_workflow import EvoXWorkflowWrapper
 class MOECWorkflowTemplate(EvoXWorkflowWrapper):
     def setup(self, key: chex.PRNGKey) -> State:
         state = super().setup(key)
-        wandb.define_metric("pf_objectives", hidden=True)
+        for metric_name in self.config.obj_names:
+            wandb.define_metric(f"pf_objectives.{metric_name}.val", hidden=True)
 
         return state
 
@@ -42,13 +43,20 @@ class MOECWorkflowTemplate(EvoXWorkflowWrapper):
             train_metrics_dict = {}
             metric_names = self.config.obj_names
             objectives = np.asarray(objectives)
+            pf_objectives = np.asarray(pf_objectives)
             train_metrics_dict["objectives"] = {
                 metric_names[i]: get_1d_array_statistics(
                     objectives[:, i], histogram=True
                 )
                 for i in range(len(metric_names))
             }
-            train_metrics_dict["pf_objectives"] = pf_objectives.tolist()
+
+            train_metrics_dict["pf_objectives"] = {
+                metric_names[i]: get_1d_array_statistics(
+                    pf_objectives[:, i], histogram=True
+                )
+                for i in range(len(metric_names))
+            }
             train_metrics_dict["num_pf"] = pf_objectives.shape[0]
 
             self.recorder.write(train_metrics_dict, iters)
