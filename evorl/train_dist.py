@@ -64,13 +64,6 @@ def train_dist(config: DictConfig) -> None:
 
     logger.info("config:\n" + OmegaConf.to_yaml(config, resolve=True))
 
-    if config.debug:
-        from jax import config as jax_config
-
-        jax_config.update("jax_debug_nans", True)
-        # jax.config.update("jax_transfer_guard", "log")
-        # jax_config.update("jax_debug_infs", True)
-
     workflow_cls = hydra.utils.get_class(config.workflow_cls)
     workflow_cls = type(workflow_cls.__name__, (workflow_cls,), {})
 
