@@ -51,6 +51,8 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         return workflow
         """
 
+        assert config.warmup_iters >= 1, "warmup_iters should be greater than 1"
+
         # env for one actor
         env = create_env(
             config.env.env_name,

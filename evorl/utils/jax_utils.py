@@ -127,7 +127,7 @@ def scan_and_last(*args, **kwargs):
     usage: same like `jax.lax.scan`, but return the last scan iteration results.
     """
     last_carry, ys = jax.lax.scan(*args, **kwargs)
-    return last_carry, jtu.tree_map(lambda x: x[-1], ys)
+    return last_carry, jtu.tree_map(lambda x: x[-1] if x.shape[0] > 0 else x, ys)
 
 
 def jit_method(
