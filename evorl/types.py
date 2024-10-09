@@ -128,7 +128,7 @@ def pytree_field(*, lazy_init=False, pytree_node=True, **kwargs):
         pytree_node: Setting to False will mark the field as static for pytree, that changing data in these fields will cause a re-jit of func.
     """
     if lazy_init:
-        kwargs.update(dict(init=False, repr=False))
+        kwargs.update(init=False, repr=False)
 
     metadata = {"pytree_node": pytree_node, "lazy_init": lazy_init}
     kwargs.setdefault("metadata", {}).update(metadata)
@@ -196,7 +196,6 @@ def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
 @dataclass_transform(field_specifiers=(pytree_field,), kw_only_default=True)
 class PyTreeNode:
     def __init_subclass__(cls, **kwargs):
-        # TODO: maintain our impl
         dataclass(cls, pure_data=False, **kwargs)
 
     def set_frozen_attr(self, name, value):

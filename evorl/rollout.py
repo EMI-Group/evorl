@@ -288,9 +288,7 @@ def eval_rollout_episode(
     # run one-step rollout first to get bootstrap transition
     # it will not include in the trajectory when env_state is from env.reset()
     # this is manually controlled by user.
-    bootstrap_transition, _ = _eval_env_step(
-        env_state, agent_state, SampleBatch(obs=env_state.obs), key
-    )
+    bootstrap_transition, _ = _eval_env_step(env_state, agent_state, key)
 
     (env_state, _, _), trajectory = jax.lax.scan(
         _one_step_rollout,
