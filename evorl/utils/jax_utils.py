@@ -1,6 +1,7 @@
 import os
 from collections.abc import Iterable, Sequence
 from functools import partial
+import math
 
 import chex
 import jax
@@ -178,13 +179,16 @@ def pmap_method(
     )
 
 
-_vmap_rng_split_fn = jax.vmap(jax.random.split, in_axes=(0, None), out_axes=1)
-
-
 def vmap_rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
     # batched_key [B, 2] -> batched_keys [num, B, 2]
-    chex.assert_shape(key, (None, 2))
-    return _vmap_rng_split_fn(key, num)
+    chex.assert_shape(key, (..., 2))
+
+    rng_split_fn = jax.random.split
+
+    for _ in range(key.ndim - 1):
+        rng_split_fn = jax.vmap(rng_split_fn, in_axes=(0, None), out_axes=1)
+
+    return rng_split_fn(key, num)
 
 
 def rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
@@ -198,7 +202,17 @@ def rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
         return vmap_rng_split(key, num)
 
 
+def rng_split_by_shape(key: chex.PRNGKey, shape: tuple[int]) -> chex.PRNGKey:
+    chex.assert_shape(key, (2,))
+    keys = jax.random.split(key, math.prod(shape))
+    return jnp.reshape(keys, shape + (2,))
+
+
 def rng_split_like_tree(key: chex.PRNGKey, target: chex.ArrayTree) -> chex.ArrayTree:
+    """
+    Returns:
+        A tree that each like has a single key.
+    """
     treedef = jax.tree_structure(target)
     keys = jax.random.split(key, treedef.num_leaves)
     return jax.tree_unflatten(treedef, keys)
