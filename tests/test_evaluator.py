@@ -3,12 +3,12 @@ import jax.numpy as jnp
 import chex
 
 from evorl.evaluator import Evaluator
-from .utils import DebugRandomAgent
 from evorl.envs import create_wrapped_brax_env, AutoresetMode
 from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_length
+from evorl.utils.jax_utils import rng_split_by_shape
 from evorl.types import PyTreeDict
 
-from .utils import FakeVmapEnv
+from .utils import DebugRandomAgent, FakeVmapEnv
 
 
 def test_eval_rollout_epsiode():
@@ -22,7 +22,7 @@ def test_eval_rollout_epsiode():
 
     agent = DebugRandomAgent()
 
-    evaluator = Evaluator(env, agent, 1000, discount=0.99)
+    evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=0.99)
 
     key = jax.random.PRNGKey(42)
 
@@ -30,10 +30,66 @@ def test_eval_rollout_epsiode():
 
     agent_state = agent.init(env.obs_space, env.action_space, agent_key)
 
-    metric = evaluator.evaluate(agent_state, 7 * 3, rollout_key)
+    metric = evaluator.evaluate(agent_state, rollout_key, 7 * 3)
 
     assert metric.episode_returns.shape == (7 * 3,)
     assert metric.episode_lengths.shape == (7 * 3,)
+
+
+def test_batched_eval_rollout_epsiode():
+    env_name = "hopper"
+
+    env = create_wrapped_brax_env(
+        env_name,
+        parallel=7,
+        autoreset_mode=AutoresetMode.DISABLED,
+    )
+    agent = DebugRandomAgent()
+    evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=0.99)
+
+    num_agents = 5
+    key = jax.random.PRNGKey(42)
+    key, rollout_key, agent_key = jax.random.split(key, 3)
+
+    agent_keys = jax.random.split(agent_key, num_agents)
+    rollout_keys = jax.random.split(rollout_key, num_agents)
+    agent_init = jax.vmap(agent.init, in_axes=(None, None, 0))
+    agent_state = agent_init(env.obs_space, env.action_space, agent_keys)
+
+    metric = evaluator.evaluate(agent_state, rollout_keys, 7 * 3)
+
+    assert metric.episode_returns.shape == (num_agents, 7 * 3)
+    assert metric.episode_lengths.shape == (num_agents, 7 * 3)
+
+
+def test_multi_batched_eval_rollout_epsiode():
+    env_name = "hopper"
+
+    env = create_wrapped_brax_env(
+        env_name,
+        parallel=7,
+        autoreset_mode=AutoresetMode.DISABLED,
+    )
+
+    agent = DebugRandomAgent()
+
+    evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=0.99)
+
+    key = jax.random.PRNGKey(42)
+    key, rollout_key, agent_key = jax.random.split(key, 3)
+    num_agents = (11, 13)
+
+    agent_keys = rng_split_by_shape(agent_key, num_agents)
+    rollout_keys = rng_split_by_shape(rollout_key, num_agents)
+
+    agent_init = jax.vmap(agent.init, in_axes=(None, None, 0))
+    agent_init = jax.vmap(agent_init, in_axes=(None, None, 0))
+    agent_state = agent_init(env.obs_space, env.action_space, agent_keys)
+
+    metric = evaluator.evaluate(agent_state, rollout_keys, 7 * 3)
+
+    assert metric.episode_returns.shape == (num_agents) + (7 * 3,)
+    assert metric.episode_lengths.shape == (num_agents) + (7 * 3,)
 
 
 def _normal_eval(rewards, dones, max_length):
@@ -210,7 +266,7 @@ def test_fast_eval_rollout_epsiode():
         agent = DebugRandomAgent()
 
         for max_length in max_length_list:
-            evaluator = Evaluator(env, agent, max_length)
+            evaluator = Evaluator(env, agent.evaluate_actions, max_length)
 
             key = jax.random.PRNGKey(42)
 

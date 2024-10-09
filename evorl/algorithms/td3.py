@@ -338,7 +338,9 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
         )
 
         evaluator = Evaluator(
-            env=eval_env, agent=agent, max_episode_steps=config.env.max_episode_steps
+            env=eval_env,
+            action_fn=agent.evaluate_actions,
+            max_episode_steps=config.env.max_episode_steps,
         )
 
         return cls(

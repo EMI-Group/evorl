@@ -209,7 +209,7 @@ def make_mlp_a2c_agent(
     actor_hidden_layer_sizes: tuple[int] = (256, 256),
     critic_hidden_layer_sizes: tuple[int] = (256, 256),
     normalize_obs: bool = False,
-):
+) -> A2CAgent:
     if isinstance(action_space, Box):
         action_size = action_space.shape[0] * 2
         continuous_action = True
@@ -303,7 +303,9 @@ class A2CWorkflow(OnPolicyWorkflow):
         )
 
         evaluator = Evaluator(
-            env=eval_env, agent=agent, max_episode_steps=max_episode_steps
+            env=eval_env,
+            action_fn=agent.evaluate_actions,
+            max_episode_steps=max_episode_steps,
         )
 
         return cls(env, agent, optimizer, evaluator, config)

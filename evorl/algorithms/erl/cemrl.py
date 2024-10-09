@@ -129,7 +129,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
         evaluator = Evaluator(
             env=eval_env,
-            agent=agent,
+            action_fn=agent.evaluate_actions,
             max_episode_steps=config.env.max_episode_steps,
         )
 

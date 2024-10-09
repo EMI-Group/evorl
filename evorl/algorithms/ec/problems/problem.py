@@ -46,12 +46,12 @@ class GeneralRLProblem(Problem):
         self.reduce_fn = reduce_fn
 
         parallel_envs = env.num_envs
-        self.num_iters = math.ceil(num_episodes / parallel_envs)
         if num_episodes % parallel_envs != 0:
             logger.warning(
                 f"num_episode ({num_episodes}) cannot be divided by parallel envs ({parallel_envs}),"
                 f"set new num_episodes={self.num_iters*parallel_envs}"
             )
+        self.num_iters = math.ceil(num_episodes / parallel_envs)
 
         self.agent_eval_actions = jax.vmap(self.agent.evaluate_actions)
         # Note: there are two vmap: [#pop, #envs, ...]

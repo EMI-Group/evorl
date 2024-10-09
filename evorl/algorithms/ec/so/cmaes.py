@@ -82,7 +82,9 @@ class CMAESWorkflow(ESWorkflowTemplate):
             autoreset_mode=AutoresetMode.DISABLED,
         )
         evaluator = Evaluator(
-            env=eval_env, agent=agent, max_episode_steps=config.env.max_episode_steps
+            env=eval_env,
+            action_fn=agent.evaluate_actions,
+            max_episode_steps=config.env.max_episode_steps,
         )
 
         workflow = cls(
