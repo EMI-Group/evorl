@@ -1,18 +1,25 @@
-from functools import partial
+import numpy as np
+import wandb
 
-from evox.operators import non_dominated_sort
+import chex
 import jax
-import jax.tree_util as jtu
 import orbax.checkpoint as ocp
 
 from evorl.distributed import tree_unpmap
 from evorl.types import State
 from evorl.recorders import get_1d_array_statistics
+from evox.operators import non_dominated_sort
 
 from ..evox_workflow import EvoXWorkflowWrapper
 
 
 class MOECWorkflowTemplate(EvoXWorkflowWrapper):
+    def setup(self, key: chex.PRNGKey) -> State:
+        state = super().setup(key)
+        wandb.define_metric("pf_objectives", hidden=True)
+
+        return state
+
     def learn(self, state: State) -> State:
         start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
 
@@ -32,10 +39,15 @@ class MOECWorkflowTemplate(EvoXWorkflowWrapper):
                 pf_rank = non_dominated_sort(fitnesses, "scan")
                 pf_objectives = train_metrics.objectives[pf_rank == 0]
 
-            train_metrics_dict = jtu.tree_map(
-                partial(get_1d_array_statistics, histogram=True),
-                train_metrics.to_local_dict(),
-            )
+            train_metrics_dict = {}
+            metric_names = self.config.obj_names
+            objectives = np.asarray(objectives)
+            train_metrics_dict["objectives"] = {
+                metric_names[i]: get_1d_array_statistics(
+                    objectives[:, i], histogram=True
+                )
+                for i in range(len(metric_names))
+            }
             train_metrics_dict["pf_objectives"] = pf_objectives.tolist()
             train_metrics_dict["num_pf"] = pf_objectives.shape[0]
 

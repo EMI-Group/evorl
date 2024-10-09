@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent/ec/rvea
+  - /agent/ec/nsga2
   - _self_
 
 pop_size: 128

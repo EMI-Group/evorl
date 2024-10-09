@@ -1,11 +1,12 @@
 import logging
+import copy
 
 import chex
 import jax
 import jax.numpy as jnp
 from evorl.agent import Agent
 from evorl.envs import Env
-from evorl.types import ReductionFn
+from evorl.types import ReductionFn, PyTreeDict
 from evorl.mo_brax_evaluator import BraxEvaluator
 from evox import Problem, State
 
@@ -58,8 +59,13 @@ class MultiObjectiveBraxProblem(Problem):
         else:
             action_fn = agent.evaluate_actions
 
+        metric_names = copy.deepcopy(self.metric_names)
+        if "episode_length" not in metric_names:
+            # we also need episode_length to calculate the sampled_timesteps
+            metric_names = metric_names + ("episode_length",)
+
         self.evaluator = BraxEvaluator(
-            env, action_fn, max_episode_steps, discount, self.metric_names
+            env, action_fn, max_episode_steps, discount, metric_names
         )
 
     @property
@@ -82,15 +88,19 @@ class MultiObjectiveBraxProblem(Problem):
         key, eval_key = jax.random.split(state.key)
         eval_key = jax.random.split(eval_key, num=pop_size)  # [#pop]
 
-        objectives = self.evaluator.evaluate(
+        raw_objectives = self.evaluator.evaluate(
             pop_agent_state, eval_key, self.num_episodes
         )
 
-        sampled_timesteps = objectives.episode_length.sum()
+        sampled_timesteps = raw_objectives.episode_length.sum()
         sampled_episodes = jnp.uint32(pop_size * self.num_episodes * self.env.num_envs)
 
-        for k in objectives.keys():
-            objectives[k] = self.reduce_fn[k](objectives[k], axis=-1)
+        objectives = PyTreeDict(
+            {
+                k: self.reduce_fn[k](raw_objectives[k], axis=-1)
+                for k in self.metric_names
+            }
+        )
 
         if self.flatten_objectives:
             # [#pop, #objs]
