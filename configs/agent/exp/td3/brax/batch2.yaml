@@ -18,7 +18,7 @@ optimizer:
 
 num_eval_envs: 16
 eval_episodes: 16 # should be divided by num_eval_envs
-eval_interval: 512 # unit: num of iterations
+eval_interval: 128 # unit: num of iterations
 
 num_updates_per_iter: 32 # each update contains 1 actor update + `actor_update_interval` critic updates
 
