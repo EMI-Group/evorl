@@ -29,13 +29,15 @@ class RunningStatisticsState(NestedMeanStd):
     summed_variance: chex.ArrayTree
 
 
-def init_state(nest: chex.ArrayTree) -> RunningStatisticsState:
+def init_state(
+    nest: chex.ArrayTree, int_counter: bool = False
+) -> RunningStatisticsState:
     """Initializes the running statistics for the given nested structure."""
     dtype_int = jnp.int64 if jax.config.jax_enable_x64 else jnp.int32
     dtype_float = jnp.float64 if jax.config.jax_enable_x64 else jnp.float32
 
     return RunningStatisticsState(
-        count=jnp.zeros((), dtype=dtype_int),
+        count=jnp.zeros((), dtype=dtype_int if int_counter else dtype_float),
         mean=tree_zeros_like(nest, dtype=dtype_float),
         summed_variance=tree_zeros_like(nest, dtype=dtype_float),
         # Initialize with ones to make sure normalization works correctly
@@ -181,7 +183,10 @@ def update(
 
 
 def normalize(
-    batch: chex.Array, mean_std: NestedMeanStd, max_abs_value: float | None = None
+    batch: chex.Array,
+    mean_std: NestedMeanStd,
+    eps: float = 1e-8,
+    max_abs_value: float | None = None,
 ) -> chex.Array:
     """Normalizes data using running statistics."""
 
@@ -191,7 +196,7 @@ def normalize(
         # Only normalize inexact
         if not jnp.issubdtype(data.dtype, jnp.inexact):
             return data
-        data = (data - mean) / std
+        data = (data - mean) / (std + eps)
         if max_abs_value is not None:
             # TODO: remove pylint directive
             data = jnp.clip(data, -max_abs_value, +max_abs_value)
