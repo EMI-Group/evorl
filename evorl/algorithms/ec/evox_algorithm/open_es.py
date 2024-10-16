@@ -70,12 +70,9 @@ class OpenES(Algorithm):
             self.optimizer = None
 
     def setup(self, key):
-        # placeholder
-        population = jnp.tile(self.center_init, (self.pop_size, 1))
-        noise = jnp.tile(self.center_init, (self.pop_size, 1))
-        return State(
-            population=population, center=self.center_init, noise=noise, key=key
-        )
+        # population = jnp.tile(self.center_init, (self.pop_size, 1))
+        noise = jax.random.normal(key, shape=(self.pop_size, self.dim))
+        return State(center=self.center_init, noise=noise, key=key)
 
     def ask(self, state):
         key, noise_key = jax.random.split(state.key)
@@ -86,16 +83,17 @@ class OpenES(Algorithm):
             noise = jax.random.normal(noise_key, shape=(self.pop_size, self.dim))
         population = state.center[jnp.newaxis, :] + self.noise_std * noise
 
-        return population, state.replace(population=population, key=key, noise=noise)
+        return population, state.replace(key=key, noise=noise)
 
     def tell(self, state, fitness):
         # Tips: by default, Algorithm handle minimization problem
         weights = -compute_centered_ranks(-fitness)
-
         grad = state.noise.T @ weights / (self.pop_size * self.noise_std)
+
         if self.optimizer is None:
             center = state.center - self.learning_rate * grad
         else:
             updates, state = use_state(self.optimizer.update)(state, grad)
             center = optax.apply_updates(state.center, updates)
+
         return state.replace(center=center)

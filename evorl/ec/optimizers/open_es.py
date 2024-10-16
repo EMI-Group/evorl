@@ -77,7 +77,8 @@ class OpenES(EvoOptimizer):
         # [pop_size, ...]
         noise = jtu.tree_map(lambda x, m: x - m, xs, state.mean)
         grad = jtu.tree_map(
-            lambda n: jnp.average(n, axis=0, weights=transformed_fitnesses)
+            # Note: we need additional "-1.0" since we are maximizing the fitness
+            lambda n: -jnp.average(n, axis=0, weights=transformed_fitnesses)
             / (self.pop_size * state.noise_stdev),
             noise,
         )
