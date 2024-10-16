@@ -8,8 +8,8 @@ num_iters: 1000
 phi: 0.0
 
 num_envs: 16
-episodes: 16 # episodes per individual for fitness
-
+episodes_for_fitness: 16 # episodes per individual for fitness
+explore: false
 discount: 1.0
 
 agent_network:

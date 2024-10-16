@@ -193,7 +193,7 @@ class ECWorkflowTemplate(ECWorkflow):
         rollout_metrics = self.ec_evaluator.evaluate(
             pop_agent_state,
             jax.random.split(rollout_key, num=slice_size),
-            num_episodes=self.config.fitness_episodes,
+            num_episodes=self.config.episodes_for_fitness,
         )
         fitnesses = jnp.mean(rollout_metrics.episode_returns, axis=-1)
         fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
@@ -201,7 +201,7 @@ class ECWorkflowTemplate(ECWorkflow):
         opt_state = self.optimizer.tell(state.opt_state, pop, fitnesses)
 
         sampled_episodes = psum(
-            jnp.uint32(self.config.pop_size * self.config.fitness_episodes),
+            jnp.uint32(self.config.pop_size * self.config.episodes_for_fitness),
             self.pmap_axis_name,
         )
         sampled_timesteps_m = (

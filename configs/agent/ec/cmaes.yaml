@@ -9,14 +9,14 @@ num_elites: 64
 init_stdev: 0.1
 
 num_envs: 16
-episodes: 16 # episodes per individual for fitness
+episodes_for_fitness: 16 # episodes per individual for fitness
+explore: false
+discount: 1.0
 
 num_eval_envs: 128
 eval_episodes: 128
 eval_interval: 10
 
-discount: 1.0
-
 agent_network:
   actor_hidden_layer_sizes: [16, 16]
-  norm_layer_type: 'none'
+  norm_layer_type: "none"

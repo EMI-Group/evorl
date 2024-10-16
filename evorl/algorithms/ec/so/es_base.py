@@ -11,29 +11,56 @@ import orbax.checkpoint as ocp
 from evorl.distributed import tree_unpmap
 from evorl.agent import Agent, AgentState
 from evorl.evaluator import Evaluator
-from evorl.metrics import EvaluateMetric
+from evorl.metrics import EvaluateMetric, MetricBase
 from evorl.types import State
+from evorl.envs import Env
+from evorl.ec.optimizers import EvoOptimizer
 from evorl.recorders import get_1d_array_statistics
-from evorl.workflows import ECWorkflow, EvoXWorkflowWrapper
+from evorl.workflows import EvoXWorkflowWrapper, ECWorkflowTemplate
 
 logger = logging.getLogger(__name__)
 
 
-class ESBaseWorkflow(ECWorkflow):
-    def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
+class ESWorkflowTemplate(ECWorkflowTemplate):
+    def __init__(
+        self,
+        config: DictConfig,
+        env: Env,
+        agent: Agent,
+        optimizer: EvoOptimizer,
+        ec_evaluator: Evaluator,
+        evaluator: Evaluator,
+    ):
+        super().__init__(
+            config=config,
+            env=env,
+            agent=agent,
+            optimizer=optimizer,
+            ec_evaluator=ec_evaluator,
+        )
+
+        self.evaluator = evaluator  # independent evaluator for pop_center
+
+    def _get_pop_center(self, state: State) -> AgentState:
         raise NotImplementedError
 
-    @classmethod
-    def enable_jit(cls) -> None:
-        super().enable_jit()
-        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
+    def evaluate(self, state: State) -> tuple[MetricBase, State]:
+        """Evaluate the policy with the mean of CMAES"""
+        key, eval_key = jax.random.split(state.key, num=2)
 
-    @classmethod
-    def enable_pmap(cls, axis_name) -> None:
-        super().enable_pmap(axis_name)
-        cls.evaluate = jax.pmap(
-            cls.evaluate, axis_name, static_broadcasted_argnums=(0,)
+        agent_state = self._get_pop_center(state)
+
+        # [#episodes]
+        raw_eval_metrics = self.evaluator.evaluate(
+            agent_state, eval_key, num_episodes=self.config.eval_episodes
         )
+
+        eval_metrics = EvaluateMetric(
+            episode_returns=raw_eval_metrics.episode_returns.mean(),
+            episode_lengths=raw_eval_metrics.episode_lengths.mean(),
+        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+
+        return eval_metrics, state.replace(key=key)
 
 
 class EvoXESWorkflowTemplate(EvoXWorkflowWrapper):
@@ -76,7 +103,7 @@ class EvoXESWorkflowTemplate(EvoXWorkflowWrapper):
     def _get_pop_center(self, state: State) -> AgentState:
         raise NotImplementedError
 
-    def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
+    def evaluate(self, state: State) -> tuple[MetricBase, State]:
         """Evaluate the policy with the mean of CMAES"""
         key, eval_key = jax.random.split(state.key, num=2)
 

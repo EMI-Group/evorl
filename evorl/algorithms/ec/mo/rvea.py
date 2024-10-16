@@ -36,11 +36,12 @@ class RVEAWorkflow(MOECWorkflowTemplate):
         problem = MultiObjectiveBraxProblem(
             agent=agent,
             env=env,
-            num_episodes=config.episodes,
+            num_episodes=config.episodes_for_fitness,
             max_episode_steps=config.env.max_episode_steps,
             discount=config.discount,
             metric_names=config.obj_names,
             flatten_objectives=True,
+            explore=config.explore,
         )
 
         # dummy agent_state

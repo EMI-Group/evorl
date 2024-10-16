@@ -9,8 +9,8 @@ alpha: 2
 fr: 0.1
 
 num_envs: 16
-episodes: 16 # episodes per individual for fitness
-
+episodes_for_fitness: 16 # episodes per individual for fitness
+discount: 1.0
 discount: 1.0
 obj_names: ['reward', 'episode_length']
 opt_directions: ['max', 'max']

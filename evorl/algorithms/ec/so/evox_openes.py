@@ -42,9 +42,10 @@ class OpenESWorkflow(EvoXESWorkflowTemplate):
         problem = GeneralRLProblem(
             agent=agent,
             env=env,
-            num_episodes=config.episodes,
+            num_episodes=config.episodes_for_fitness,
             max_episode_steps=config.env.max_episode_steps,
             discount=config.discount,
+            explore=config.explore,
         )
 
         # dummy agent_state
