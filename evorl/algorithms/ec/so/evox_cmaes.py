@@ -192,6 +192,26 @@ class SepCMAESWorkflow(EvoXESWorkflowTemplate):
 
         return workflow
 
+    def _get_pop_center(self, state: State) -> AgentState:
+        flat_pop_center = state.evox_state.query_state("algorithm").mean
+        agent_state = self._candidate_transform(flat_pop_center)
+        return agent_state
+
+    def _record_callback(
+        self,
+        evox_state: EvoXState,
+        iters: int = 0,
+    ):
+        algo_state = evox_state.query_state("algorithm")
+        cov = algo_state.C
+        std = jnp.sqrt(cov) * algo_state.sigma
+
+        # recover to the network shapes
+        std = self._param_vec_spec.to_tree(std)
+        std_statistics = _get_std_statistics(std)
+        self.recorder.write({"ec/std": std_statistics}, iters)
+        self.recorder.write({"ec/sigma": algo_state.sigma.tolist()}, iters)
+
 
 def _get_std_statistics(variance):
     def _get_stats(x):
