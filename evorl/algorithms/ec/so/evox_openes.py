@@ -60,7 +60,7 @@ class OpenESWorkflow(EvoXESWorkflowTemplate):
             learning_rate=config.optimizer.lr,
             noise_std=config.noise_std,
             optimizer="adam",
-            mirrored_sampling=True,
+            mirror_sampling=config.mirror_sampling,
         )
 
         def _candidate_transform(flat_cand):

@@ -40,7 +40,7 @@ class OpenES(Algorithm):
         learning_rate,
         noise_std,
         optimizer=None,
-        mirrored_sampling=True,
+        mirror_sampling=True,
     ):
         """
         Implement the algorithm described in "Evolution Strategies as a Scalable Alternative to Reinforcement Learning"
@@ -50,7 +50,7 @@ class OpenES(Algorithm):
         assert learning_rate > 0
         assert pop_size > 0
 
-        if mirrored_sampling is True:
+        if mirror_sampling is True:
             assert (
                 pop_size % 2 == 0
             ), "When mirrored_sampling is True, pop_size must be a multiple of 2."
@@ -60,7 +60,7 @@ class OpenES(Algorithm):
         self.pop_size = pop_size
         self.learning_rate = learning_rate
         self.noise_std = noise_std
-        self.mirrored_sampling = mirrored_sampling
+        self.mirror_sampling = mirror_sampling
 
         if optimizer == "adam":
             self.optimizer = utils.OptaxWrapper(
@@ -76,7 +76,7 @@ class OpenES(Algorithm):
 
     def ask(self, state):
         key, noise_key = jax.random.split(state.key)
-        if self.mirrored_sampling:
+        if self.mirror_sampling:
             noise = jax.random.normal(noise_key, shape=(self.pop_size // 2, self.dim))
             noise = jnp.concatenate([noise, -noise], axis=0)
         else:

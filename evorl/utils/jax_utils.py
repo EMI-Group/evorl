@@ -229,5 +229,5 @@ def has_nan(x: jax.Array) -> bool:
     return jnp.isnan(x).any()
 
 
-def tree_has_nan(tree: chex.ArrayTree) -> bool:
+def tree_has_nan(tree: chex.ArrayTree) -> chex.ArrayTree:
     return jtu.tree_map(has_nan, tree)

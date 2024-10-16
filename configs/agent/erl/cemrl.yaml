@@ -31,7 +31,7 @@ diagonal_variance:
   final: 1e-5
   decay: 0.001 # Polyak averaging step-size, 0.001 is suitable for 1000 iters
 weighted_update: true
-rank_weight_shift: 1.0 # CEM-RL use 1.0; CMA-ES use 0.5; not significant diff when num_elites is large
+rank_weight_shift: 1.0 # CEM-RL use 1.0; CMA-ES use 0.5; no significant diff when num_elites is large
 mirror_sampling: false
 
 fitness_with_exploration: false

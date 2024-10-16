@@ -13,7 +13,7 @@ from evorl.utils.jax_utils import (
     rng_split_like_tree,
 )
 
-from .utils import ExponentialScheduleSpec
+from .utils import ExponentialScheduleSpec, weight_sum
 from .ec_optimizer import EvoOptimizer
 
 
@@ -39,15 +39,13 @@ class SepCEM(EvoOptimizer):
             assert self.pop_size % 2 == 0, "pop_size must be even for mirror sampling"
 
         if self.weighted_update:
-            # this logarithmic rank-based weighting is from CEM-RL
-            elite_weights = jnp.log(
-                (self.num_elites + self.rank_weight_shift)
-                / jnp.arange(1, self.num_elites + 1)
+            elite_weights = jnp.log(self.num_elites + self.rank_weight_shift) - jnp.log(
+                jnp.arange(1, self.num_elites + 1)
             )
         else:
             elite_weights = jnp.ones((self.num_elites,))
 
-        # elite_weights = elite_weights / elite_weights.sum()
+        elite_weights = elite_weights / elite_weights.sum()
 
         self.set_frozen_attr("elite_weights", elite_weights)
 
@@ -73,17 +71,14 @@ class SepCEM(EvoOptimizer):
         )
 
         mean = jtu.tree_map(
-            lambda x: jnp.average(
-                x[elites_indices], axis=0, weights=self.elite_weights
-            ),
+            lambda x: weight_sum(x[elites_indices], self.elite_weights),
             xs,
         )
 
-        def var_update(mean, x):
-            t1 = jnp.square(x[elites_indices] - mean)
+        def var_update(m, x):
+            x_norm = jnp.square(x[elites_indices] - m)
             # TODO: do we need extra division by num_elites mentioned CEM-RL?
-            t2 = jnp.average(t1, axis=0, weights=self.elite_weights) + cov_noise
-            return t2
+            return weight_sum(x_norm, self.elite_weights) + cov_noise
 
         variance = jtu.tree_map(
             var_update,

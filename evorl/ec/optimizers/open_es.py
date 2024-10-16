@@ -9,7 +9,7 @@ import optax
 from evorl.types import PyTreeData, pytree_field, Params
 from evorl.utils.jax_utils import rng_split_like_tree
 
-from .utils import ExponentialScheduleSpec
+from .utils import ExponentialScheduleSpec, weight_sum
 from .ec_optimizer import EvoOptimizer, ECState
 
 
@@ -33,7 +33,7 @@ def compute_centered_ranks(x):
 class OpenESState(PyTreeData):
     mean: chex.ArrayTree
     opt_state: optax.OptState
-    noise_stdev: float
+    noise_std: float
 
 
 class OpenES(EvoOptimizer):
@@ -62,7 +62,7 @@ class OpenES(EvoOptimizer):
         return OpenESState(
             mean=mean,
             opt_state=self.optimizer.init(mean),
-            noise_stdev=self.noise_std_schedule.init,
+            noise_std=self.noise_std_schedule.init,
         )
 
     def tell(
@@ -78,8 +78,10 @@ class OpenES(EvoOptimizer):
         noise = jtu.tree_map(lambda x, m: x - m, xs, state.mean)
         grad = jtu.tree_map(
             # Note: we need additional "-1.0" since we are maximizing the fitness
-            lambda n: -jnp.average(n, axis=0, weights=transformed_fitnesses)
-            / (self.pop_size * state.noise_stdev),
+            lambda d: (
+                -weight_sum(d, transformed_fitnesses)
+                / (self.pop_size * state.noise_std)
+            ),
             noise,
         )
         update, opt_state = self.optimizer.update(grad, state.opt_state)
@@ -91,13 +93,13 @@ class OpenES(EvoOptimizer):
             1 - self.lr_schedule.decay,
         )
 
-        noise_stdev = optax.incremental_update(
+        noise_std = optax.incremental_update(
             self.noise_std_schedule.final,
-            state.noise_stdev,
+            state.noise_std,
             1 - self.noise_std_schedule.decay,
         )
 
-        return state.replace(mean=mean, opt_state=opt_state, noise_stdev=noise_stdev)
+        return state.replace(mean=mean, opt_state=opt_state, noise_std=noise_std)
 
     def ask(self, state: ECState, key: chex.PRNGKey) -> chex.ArrayTree:
         "Generate new candidate solutions"
@@ -117,4 +119,6 @@ class OpenES(EvoOptimizer):
                 keys,
             )
 
-        return jtu.tree_map(lambda mean, noise: mean + noise, state.mean, noise)
+        return jtu.tree_map(
+            lambda m, delta: m + state.noise_std * delta, state.mean, noise
+        )
