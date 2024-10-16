@@ -61,7 +61,7 @@ class CMAESWorkflow(EvoXESWorkflowTemplate):
             center_init=param_vec_spec.to_vector(agent_state.params.policy_params),
             init_stdev=config.init_stdev,
             pop_size=config.pop_size,
-            num_elites=config.num_elites,
+            mu=config.num_elites,
         )
 
         def _candidate_transform(flat_cand):
@@ -157,7 +157,7 @@ class SepCMAESWorkflow(EvoXESWorkflowTemplate):
             center_init=param_vec_spec.to_vector(agent_state.params.policy_params),
             init_stdev=config.init_stdev,
             pop_size=config.pop_size,
-            num_elites=config.num_elites,
+            mu=config.num_elites,
         )
 
         def _candidate_transform(flat_cand):

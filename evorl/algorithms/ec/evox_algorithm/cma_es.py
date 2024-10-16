@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 import jax
 import jax.numpy as jnp
@@ -47,9 +48,7 @@ class CMAES(Algorithm):
         if mu is None:
             self.mu = self.pop_size // 2
         else:
-            assert (
-                self.mu <= self.pop_size
-            ), "mu should be less than or equal to pop_size"
+            assert mu <= self.pop_size, "mu should be less than or equal to pop_size"
             self.mu = mu
 
         if recombination_weights is None:
@@ -57,10 +56,10 @@ class CMAES(Algorithm):
 
             # Note: equivalent when mu = pop_size / 2
             # weights = jnp.log(self.mu + 0.5) - jnp.log(jnp.arange(1, self.mu + 1))
-            weights = jnp.log((self.pop_size + 1) / 2) - jnp.log(
-                jnp.arange(1, self.mu + 1)
+            weights = np.log((self.pop_size + 1) / 2) - np.log(
+                np.arange(1, self.mu + 1)
             )
-            self.weights = weights / jnp.sum(weights)
+            self.weights = weights / np.sum(weights)
         else:
             assert (
                 recombination_weights.shape[0] == self.mu
@@ -75,9 +74,11 @@ class CMAES(Algorithm):
             assert (
                 recombination_weights > 0
             ).all(), "recombination_weights must be positive"
-            self.weights = jnp.asarray(recombination_weights, dtype=jnp.float32)
+            self.weights = np.asarray(recombination_weights, dtype=np.float32)
 
-        self.mueff = jnp.sum(jnp.abs(self.weights)) ** 2 / jnp.sum(self.weights**2)
+        self.mueff = (
+            np.sum(np.abs(self.weights)) ** 2 / np.sum(self.weights**2)
+        ).tolist()
 
         # time constant for cumulation for C
         self.cc = (4 + self.mueff / self.dim) / (
@@ -90,7 +91,7 @@ class CMAES(Algorithm):
 
         # learning rate for rank-μ update of C
         # Note: convert self.dim to float first to prevent overflow
-        self.cmu = jnp.min(
+        self.cmu = min(
             1 - self.c1,
             (
                 alpha_cov
@@ -106,8 +107,8 @@ class CMAES(Algorithm):
             1 + 2 * max(0, math.sqrt((self.mueff - 1) / (self.dim + 1)) - 1) + self.cs
         )
 
-        self.chiN = math.sqrt(self.dim) * (
-            1 - 1 / (4 * self.dim) + 1 / (21 * self.dim**2)
+        self.chiN = jnp.float32(
+            math.sqrt(self.dim) * (1 - 1 / (4 * self.dim) + 1 / (21 * self.dim**2))
         )
 
         if delay_decomp:
@@ -115,14 +116,14 @@ class CMAES(Algorithm):
                 1, math.floor(1 / ((self.c1 + self.cmu) * self.dim * 10))
             )
         else:
-            self.delay_decomp_iters = -1
+            self.delay_decomp_iters = 0
 
     def setup(self, key):
         pc = jnp.zeros((self.dim,))
         ps = jnp.zeros((self.dim,))
         B = jnp.eye(self.dim)
         D = jnp.ones((self.dim,))
-        C = B @ D @ D @ B.T
+        C = jnp.eye(self.dim)
         return State(
             pc=pc,  # env path for C
             ps=ps,  # env path for sigma
@@ -149,7 +150,7 @@ class CMAES(Algorithm):
 
         key, sample_key = jax.random.split(state.key)
         noise = jax.random.normal(sample_key, (self.pop_size, self.dim))
-        population = state.mean + state.sigma * (B @ D @ noise)
+        population = state.mean + state.sigma * noise @ (B * D).T
 
         new_state = state.replace(
             B=B,
@@ -217,7 +218,6 @@ class CMAES(Algorithm):
         )
 
     def _decomposition_C(self, C):
-        # C = jnp.triu(C) + jnp.triu(C, 1).T  # enforce symmetry
         C = 0.5 * (C + C.T)
         D2, B = jnp.linalg.eigh(C)
         D = jnp.sqrt(D2)
