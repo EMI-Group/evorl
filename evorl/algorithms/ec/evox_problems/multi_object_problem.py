@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from evorl.agent import Agent
 from evorl.envs import Env
 from evorl.types import ReductionFn, PyTreeDict
-from evorl.evaluators.mo_brax_evaluator import BraxEvaluator
+from evorl.evaluators import BraxEvaluator
 from evox import Problem, State
 
 logger = logging.getLogger(__name__)
