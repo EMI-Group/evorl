@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class OpenESWorkflow(EvoXESWorkflowTemplate):
     @classmethod
     def name(cls):
-        return "OpenES"
+        return "OpenES(EvoX)"
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
