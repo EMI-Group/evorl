@@ -12,7 +12,6 @@ import optax
 import orbax.checkpoint as ocp
 
 from evorl.distributed import agent_gradient_update
-from evorl.ec.optimizers.utils import ExponentialScheduleSpec
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import tree_get, tree_set, rng_split_like_tree, scan_and_mean
@@ -22,7 +21,7 @@ from evorl.evaluator import Evaluator
 from evorl.agent import Agent, AgentState
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
-from evorl.ec.optimizers import DiagCEM, ECState
+from evorl.ec.optimizers import DiagCEM, ECState, ExponentialScheduleSpec
 
 from ..offpolicy_utils import skip_replay_buffer_state
 from ..td3 import make_mlp_td3_agent, TD3NetworkParams, TD3TrainMetric
