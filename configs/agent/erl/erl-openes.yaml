@@ -41,7 +41,7 @@ rl_injection_stepsize: 1.0 # 1: replaced by rl weights, 0: do not inject
 pop_size: 32
 mirror_sampling: true
 
-ec_noise_stdev:
+ec_noise_std:
   init: 0.03
   final: 0.001
   decay: 1.0 # 1.0 means: always use fixed init value

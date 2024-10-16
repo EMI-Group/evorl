@@ -7,16 +7,16 @@ from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
-from evorl.ec.optimizers import SepCEM, ExponentialScheduleSpec, ECState
+from evorl.ec.optimizers import OpenES, ExponentialScheduleSpec, ECState
 
 from .es_base import ESWorkflowTemplate
 from ..ec_agent import make_deterministic_ec_agent
 
 
-class SepCEMWorkflow(ESWorkflowTemplate):
+class OpenESWorkflow(ESWorkflowTemplate):
     @classmethod
     def name(cls):
-        return "SepCEM"
+        return "OpenES"
 
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:
@@ -35,12 +35,10 @@ class SepCEMWorkflow(ESWorkflowTemplate):
             norm_layer_type=config.agent_network.norm_layer_type,
         )
 
-        ec_optimizer = SepCEM(
+        ec_optimizer = OpenES(
             pop_size=config.pop_size,
-            num_elites=config.num_elites,
-            diagonal_variance=ExponentialScheduleSpec(**config.diagonal_variance),
-            weighted_update=config.weighted_update,
-            rank_weight_shift=config.rank_weight_shift,
+            lr_schedule=ExponentialScheduleSpec(**config.ec_lr),
+            noise_std_schedule=ExponentialScheduleSpec(**config.ec_noise_std),
             mirror_sampling=config.mirror_sampling,
         )
 

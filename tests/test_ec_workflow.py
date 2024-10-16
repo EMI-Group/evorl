@@ -1,5 +1,5 @@
 import jax
-from evorl.algorithms.ec.so.cmaes import CMAESWorkflow
+from evorl.algorithms.ec.so.evox_cmaes import CMAESWorkflow
 from hydra import compose, initialize
 
 

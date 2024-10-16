@@ -93,7 +93,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
         ec_optimizer = OpenES(
             pop_size=config.pop_size,
             lr_schedule=ExponentialScheduleSpec(**config.ec_lr),
-            noise_stdev_schedule=ExponentialScheduleSpec(**config.ec_noise_stdev),
+            noise_std_schedule=ExponentialScheduleSpec(**config.ec_noise_std),
             mirror_sampling=config.mirror_sampling,
         )
 

@@ -1,18 +1,3 @@
-# --------------------------------------------------------------------------------------
-# 1. This code implements algorithms described in the following papers:
-#
-# Title: Completely Derandomized Self-Adaptation in Evolution Strategies
-# Link: http://www.cmap.polytechnique.fr/~nikolaus.hansen/cmaartic.pdf
-#
-# Title: A Simple Modification in CMA-ES Achieving Linear Time and Space Complexity (SepCMAES)
-# Link: https://inria.hal.science/inria-00287367/document
-#
-#
-# 2. This code has been inspired by or utilizes the algorithmic implementation from evosax.
-# More information about evosax can be found at the following URL:
-# GitHub Link: https://github.com/RobertTLange/evosax
-# --------------------------------------------------------------------------------------
-
 import math
 
 import jax

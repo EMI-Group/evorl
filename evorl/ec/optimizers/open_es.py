@@ -39,7 +39,7 @@ class OpenESState(PyTreeData):
 class OpenES(EvoOptimizer):
     pop_size: int
     lr_schedule: ExponentialScheduleSpec
-    noise_stdev_schedule: ExponentialScheduleSpec
+    noise_std_schedule: ExponentialScheduleSpec
     mirror_sampling: bool = True
     fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
         pytree_node=False, default=compute_centered_ranks
@@ -62,7 +62,7 @@ class OpenES(EvoOptimizer):
         return OpenESState(
             mean=mean,
             opt_state=self.optimizer.init(mean),
-            noise_stdev=self.noise_stdev_schedule.init,
+            noise_stdev=self.noise_std_schedule.init,
         )
 
     def tell(
@@ -92,9 +92,9 @@ class OpenES(EvoOptimizer):
         )
 
         noise_stdev = optax.incremental_update(
-            self.noise_stdev_schedule.final,
+            self.noise_std_schedule.final,
             state.noise_stdev,
-            1 - self.noise_stdev_schedule.decay,
+            1 - self.noise_std_schedule.decay,
         )
 
         return state.replace(mean=mean, opt_state=opt_state, noise_stdev=noise_stdev)
