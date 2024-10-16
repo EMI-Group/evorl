@@ -91,7 +91,6 @@ def _tree_replace(
     attr: Sequence[str],
     val: jax.typing.ArrayLike | None,
 ) -> PyTreeData:
-    """Sets attributes in a struct.dataclass with values."""
     if not attr:
         return base
 

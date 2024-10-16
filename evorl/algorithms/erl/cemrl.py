@@ -21,7 +21,7 @@ from evorl.evaluator import Evaluator
 from evorl.agent import Agent, AgentState
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
-from evorl.ec.optimizers import DiagCEM, ECState, ExponentialScheduleSpec
+from evorl.ec.optimizers import SepCEM, ECState, ExponentialScheduleSpec
 
 from ..offpolicy_utils import skip_replay_buffer_state
 from ..td3 import make_mlp_td3_agent, TD3NetworkParams, TD3TrainMetric
@@ -87,7 +87,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         else:
             optimizer = optax.adam(config.optimizer.lr)
 
-        ec_optimizer = DiagCEM(
+        ec_optimizer = SepCEM(
             pop_size=config.pop_size,
             num_elites=config.num_elites,
             diagonal_variance=ExponentialScheduleSpec(**config.diagonal_variance),

@@ -18,7 +18,7 @@ from evorl.envs import Env
 from evorl.evaluator import Evaluator
 from evorl.agent import Agent, AgentState
 from evorl.distributed import get_global_ranks, psum, split_key_to_devices
-from evorl.types import State, PyTreeData, pytree_field
+from evorl.types import State, PyTreeData, pytree_field, Params
 
 from .workflow import Workflow
 
@@ -37,11 +37,21 @@ class TrainMetric(MetricBase):
 
 
 class DistributedInfo(PyTreeData):
-    rank: int
-    world_size: int = pytree_field(pytree_node=False)
+    rank: int = jnp.zeros((), dtype=jnp.int32)
+    world_size: int = pytree_field(default=1, pytree_node=False)
 
 
 class ECWorkflow(Workflow):
+    def __init__(self, config: DictConfig):
+        """
+        config:
+        devices: a single device or a list of devices.
+        """
+        super().__init__(config)
+
+        self.pmap_axis_name = None
+        self.devices = jax.local_devices()[:1]
+
     @property
     def enable_multi_devices(self) -> bool:
         return self.pmap_axis_name is not None
@@ -100,14 +110,14 @@ class ECWorkflowTemplate(ECWorkflow):
         config: DictConfig,
         env: Env,
         agent: Agent,
-        optimizer: EvoOptimizer,
+        ec_optimizer: EvoOptimizer,
         ec_evaluator: Evaluator,
     ):
         super().__init__(config)
 
         self.agent = agent
         self.env = env
-        self.optimizer = optimizer
+        self.ec_optimizer = ec_optimizer
         self.ec_evaluator = ec_evaluator
 
     @staticmethod
@@ -132,44 +142,37 @@ class ECWorkflowTemplate(ECWorkflow):
         """
         Customize the workflow metrics.
         """
-        if self._workflow.problem.num_objectives == 1:
-            obj_shape = ()
-        elif self._workflow.problem.num_objectives > 1:
-            obj_shape = (self._workflow.problem.num_objectives,)
-        else:
-            raise ValueError("Invalid num_objectives")
 
-        return ECWorkflowMetric(
-            best_objective=jnp.full(obj_shape, jnp.finfo(jnp.float32).min)
-        )
+        return ECWorkflowMetric(best_objective=jnp.finfo(jnp.float32).min)
 
     def setup(self, key: chex.PRNGKey) -> State:
-        key, agent_key = jax.random.split(key, 3)
+        key, agent_key = jax.random.split(key, 2)
 
-        agent_state, opt_state = self._setup_agent_and_optimizer(agent_key)
+        agent_state, ec_opt_state = self._setup_agent_and_optimizer(agent_key)
         workflow_metrics = self._setup_workflow_metrics()
+        distributed_info = DistributedInfo()
 
         if self.enable_multi_devices:
-            opt_state, workflow_metrics = jax.device_put_replicated(
-                (opt_state, workflow_metrics), self.devices
+            ec_opt_state, workflow_metrics = jax.device_put_replicated(
+                (ec_opt_state, workflow_metrics), self.devices
             )
             key = split_key_to_devices(key, self.devices)
 
-        distributed_info = DistributedInfo(
-            rank=get_global_ranks(),
-            world_size=jax.device_count(),
-        )
+            distributed_info = DistributedInfo(
+                rank=get_global_ranks(),
+                world_size=jax.device_count(),
+            )
 
         return State(
             key=key,
             agent_state=agent_state,
-            opt_state=opt_state,
+            ec_opt_state=ec_opt_state,
             metrics=workflow_metrics,
             distributed_info=distributed_info,
         )
 
     def _replace_actor_params(
-        self, agent_state: AgentState, params: chex.ArrayTree
+        self, agent_state: AgentState, params: Params
     ) -> AgentState:
         raise NotImplementedError
 
@@ -178,7 +181,7 @@ class ECWorkflowTemplate(ECWorkflow):
 
         key, rollout_key, ec_key = jax.random.split(state.key, 3)
 
-        pop = self.optimizer.ask(state.opt_state, ec_key)
+        pop = self.ec_optimizer.ask(state.ec_opt_state, ec_key)
 
         slice_size = pop_size // state.distributed_info.world_size
         eval_pop = jtu.tree_map(
@@ -198,7 +201,7 @@ class ECWorkflowTemplate(ECWorkflow):
         fitnesses = jnp.mean(rollout_metrics.episode_returns, axis=-1)
         fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
 
-        opt_state = self.optimizer.tell(state.opt_state, pop, fitnesses)
+        ec_opt_state = self.ec_optimizer.tell(state.ec_opt_state, pop, fitnesses)
 
         sampled_episodes = psum(
             jnp.uint32(self.config.pop_size * self.config.episodes_for_fitness),
@@ -217,9 +220,11 @@ class ECWorkflowTemplate(ECWorkflow):
             ),
         )
 
-        return state.replace(
+        train_metrics = TrainMetric(objectives=fitnesses)
+
+        return train_metrics, state.replace(
             key=key,
-            opt_state=opt_state,
+            ec_opt_state=ec_opt_state,
             metrics=workflow_metrics,
         )
 

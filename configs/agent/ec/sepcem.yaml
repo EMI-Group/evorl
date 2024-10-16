@@ -1,0 +1,29 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.ec.so.sepcem.SepCEMWorkflow
+
+pop_size: 32
+num_iters: 1000
+
+num_learning_offspring: 16 # number of offspring to learn from RL(TD3)
+num_elites: 8
+diagonal_variance:
+  init: 1e-2
+  final: 1e-5
+  decay: 0.001 # Polyak averaging step-size, 0.001 is suitable for 1000 iters
+weighted_update: true
+rank_weight_shift: 1.0 # CEM-RL use 1.0; CMA-ES use 0.5; not significant diff when num_elites is large
+mirror_sampling: false
+
+num_envs: 16
+episodes_for_fitness: 16 # episodes per individual for fitness
+explore: false
+discount: 1.0
+
+num_eval_envs: 128
+eval_episodes: 128
+eval_interval: 10
+
+agent_network:
+  actor_hidden_layer_sizes: [16, 16]
+  norm_layer_type: "none"

@@ -17,13 +17,13 @@ from .utils import ExponentialScheduleSpec
 from .ec_optimizer import EvoOptimizer
 
 
-class DiagCEMState(PyTreeData):
+class SepCEMState(PyTreeData):
     mean: chex.ArrayTree
     variance: chex.ArrayTree
     cov_noise: chex.ArrayTree
 
 
-class DiagCEM(EvoOptimizer):
+class SepCEM(EvoOptimizer):
     pop_size: int
     num_elites: int  # number of good offspring to update the pop
     diagonal_variance: ExponentialScheduleSpec
@@ -51,20 +51,20 @@ class DiagCEM(EvoOptimizer):
 
         self.set_frozen_attr("elite_weights", elite_weights)
 
-    def init(self, mean: Params) -> DiagCEMState:
+    def init(self, mean: Params) -> SepCEMState:
         variance = jtu.tree_map(
             lambda x: jnp.full_like(x, self.diagonal_variance.init), mean
         )
 
-        return DiagCEMState(
+        return SepCEMState(
             mean=mean,
             variance=variance,
             cov_noise=jnp.float32(self.diagonal_variance.init),
         )
 
     def tell(
-        self, state: DiagCEMState, xs: chex.ArrayTree, fitnesses: chex.Array
-    ) -> DiagCEMState:
+        self, state: SepCEMState, xs: chex.ArrayTree, fitnesses: chex.Array
+    ) -> SepCEMState:
         # fitness: episode_return, higher is better
         elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
@@ -93,7 +93,7 @@ class DiagCEM(EvoOptimizer):
 
         return state.replace(mean=mean, variance=variance, cov_noise=cov_noise)
 
-    def ask(self, state: DiagCEMState, key: chex.PRNGKey) -> chex.ArrayTree:
+    def ask(self, state: SepCEMState, key: chex.PRNGKey) -> chex.ArrayTree:
         keys = rng_split_like_tree(key, state.mean)
         pop_size = self.pop_size
 

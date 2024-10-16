@@ -27,7 +27,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         config: DictConfig,
         env: Env,
         agent: Agent,
-        optimizer: EvoOptimizer,
+        ec_optimizer: EvoOptimizer,
         ec_evaluator: Evaluator,
         evaluator: Evaluator,
     ):
@@ -35,7 +35,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
             config=config,
             env=env,
             agent=agent,
-            optimizer=optimizer,
+            ec_optimizer=ec_optimizer,
             ec_evaluator=ec_evaluator,
         )
 
@@ -61,6 +61,53 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         return eval_metrics, state.replace(key=key)
+
+    def learn(self, state: State) -> State:
+        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
+
+        for i in range(start_iteration, self.config.num_iters):
+            iters = i + 1
+            train_metrics, state = self.step(state)
+            workflow_metrics = state.metrics
+
+            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
+            self.recorder.write(workflow_metrics.to_local_dict(), iters)
+
+            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+            train_metrics_dict = train_metrics.to_local_dict()
+            train_metrics_dict = jtu.tree_map(
+                partial(get_1d_array_statistics, histogram=True),
+                train_metrics.to_local_dict(),
+            )
+            self.recorder.write(train_metrics_dict, iters)
+
+            if iters % self.config.eval_interval == 0:
+                eval_metrics, state = self.evaluate(state)
+                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                self.recorder.write(
+                    {"eval/pop_center": eval_metrics.to_local_dict()}, iters
+                )
+            else:
+                eval_metrics = None
+
+            self.checkpoint_manager.save(
+                iters,
+                args=ocp.args.StandardSave(
+                    tree_unpmap(state, self.pmap_axis_name),
+                ),
+            )
+
+    @classmethod
+    def enable_jit(cls) -> None:
+        super().enable_jit()
+        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
+
+    @classmethod
+    def enable_pmap(cls, axis_name) -> None:
+        super().enable_pmap(axis_name)
+        cls.evaluate = jax.pmap(
+            cls.evaluate, axis_name, static_broadcasted_argnums=(0,)
+        )
 
 
 class EvoXESWorkflowTemplate(EvoXWorkflowWrapper):

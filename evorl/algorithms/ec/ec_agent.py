@@ -4,12 +4,18 @@ from typing import Any
 import chex
 import flax.linen as nn
 import jax.numpy as jnp
-from flax import struct
 
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.networks import make_policy_network
 from evorl.sample_batch import SampleBatch
-from evorl.types import Action, Params, PolicyExtraInfo, PyTreeDict, pytree_field
+from evorl.types import (
+    Action,
+    Params,
+    PolicyExtraInfo,
+    PyTreeDict,
+    pytree_field,
+    PyTreeData,
+)
 from evorl.utils import running_statistics
 from evorl.envs import Space, Box, Discrete
 
@@ -18,8 +24,7 @@ from evorl.agent import Agent, AgentState
 logger = logging.getLogger(__name__)
 
 
-@struct.dataclass
-class ECNetworkParams:
+class ECNetworkParams(PyTreeData):
     """Contains training state for the learner."""
 
     policy_params: Params
