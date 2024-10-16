@@ -10,7 +10,7 @@ from evorl.types import State
 from evorl.recorders import get_1d_array_statistics
 from evox.operators import non_dominated_sort
 
-from ..evox_workflow import EvoXWorkflowWrapper
+from ..ec_workflow import EvoXWorkflowWrapper
 
 
 class MOECWorkflowTemplate(EvoXWorkflowWrapper):

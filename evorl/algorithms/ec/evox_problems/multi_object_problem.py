@@ -93,7 +93,7 @@ class MultiObjectiveBraxProblem(Problem):
         )
 
         sampled_timesteps = raw_objectives.episode_length.sum()
-        sampled_episodes = jnp.uint32(pop_size * self.num_episodes * self.env.num_envs)
+        sampled_episodes = jnp.uint32(pop_size * self.num_episodes)
 
         objectives = PyTreeDict(
             {

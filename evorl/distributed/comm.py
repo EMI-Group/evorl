@@ -45,6 +45,16 @@ def unpmap(x, axis_name: str | None = None):
         return x[0]
 
 
+def all_gather(x, axis_name: str | None = None, **kwargs):
+    """
+    All-gather the data across all devices
+    """
+    if axis_name is None:
+        return x
+    else:
+        return jax.lax.all_gather(x, axis_name, **kwargs)
+
+
 def tree_pmean(tree: chex.ArrayTree, axis_name: str | None = None):
     return jax.tree_map(lambda x: pmean(x, axis_name), tree)
 

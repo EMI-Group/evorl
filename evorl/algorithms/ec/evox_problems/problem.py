@@ -77,7 +77,7 @@ class GeneralRLProblem(Problem):
         )
 
         objectives = eval_metrics.episode_returns
-        sampled_episodes = jnp.uint32(pop_size * self.num_episodes * self.env.num_envs)
+        sampled_episodes = jnp.uint32(pop_size * self.num_episodes)
         sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
 
         # by default, we use the mean value over different episodes.

@@ -5,7 +5,7 @@ workflow_cls: evorl.algorithms.ec.so.openes.OpenESWorkflow
 pop_size: 128
 num_iters: 1000
 
-noise_stdev: 0.1
+noise_std: 0.1
 optimizer:
   lr: 0.01
 

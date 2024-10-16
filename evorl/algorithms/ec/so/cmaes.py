@@ -1,7 +1,7 @@
 import logging
 import numpy as np
+from omegaconf import DictConfig
 
-import evox.algorithms
 from evox import State as EvoXState
 import jax
 import jax.numpy as jnp
@@ -12,16 +12,16 @@ from evorl.envs import AutoresetMode, create_env
 from evorl.evaluator import Evaluator
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.agent import AgentState
-from omegaconf import DictConfig
 
-from ..problems import GeneralRLProblem
+from ..evox_algorithm import CMAES
+from ..evox_problems import GeneralRLProblem
 from ..ec_agent import make_deterministic_ec_agent
-from .es_base import ESWorkflowTemplate
+from .es_base import EvoXESWorkflowTemplate
 
 logger = logging.getLogger(__name__)
 
 
-class CMAESWorkflow(ESWorkflowTemplate):
+class CMAESWorkflow(EvoXESWorkflowTemplate):
     @classmethod
     def name(cls):
         return "CMAES"
@@ -56,17 +56,11 @@ class CMAESWorkflow(ESWorkflowTemplate):
         agent_state = agent.init(env.obs_space, env.action_space, agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
-        num_elites = config.num_elites
-        recombination_weights = jnp.log(num_elites + 0.5) - jnp.log(
-            jnp.arange(1, num_elites + 1)
-        )
-        recombination_weights /= jnp.sum(recombination_weights)
-
-        algorithm = evox.algorithms.CMAES(
+        algorithm = CMAES(
             center_init=param_vec_spec.to_vector(agent_state.params.policy_params),
             init_stdev=config.init_stdev,
             pop_size=config.pop_size,
-            recombination_weights=recombination_weights,
+            num_elites=config.num_elites,
         )
 
         def _candidate_transform(flat_cand):
@@ -113,20 +107,18 @@ class CMAESWorkflow(ESWorkflowTemplate):
     ):
         algo_state = evox_state.query_state("algorithm")
         cov = algo_state.C
-        diag_cov = jnp.diagonal(cov)
+        std = jnp.sqrt(jnp.diagonal(cov)) * algo_state.sigma
 
         # recover to the network shapes
-        diag_cov = self._param_vec_spec.to_tree(diag_cov)
-        std_statistics = _get_std_statistics(diag_cov)
+        std = self._param_vec_spec.to_tree(std)
+        std_statistics = _get_std_statistics(std)
         self.recorder.write({"ec/std": std_statistics}, iters)
-
         self.recorder.write({"ec/sigma": algo_state.sigma.tolist()}, iters)
 
 
 def _get_std_statistics(variance):
     def _get_stats(x):
         x = np.asarray(x)
-        x = np.sqrt(x)
         return dict(
             min=np.min(x).tolist(),
             max=np.max(x).tolist(),

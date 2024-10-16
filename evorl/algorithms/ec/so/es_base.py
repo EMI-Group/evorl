@@ -14,13 +14,29 @@ from evorl.evaluator import Evaluator
 from evorl.metrics import EvaluateMetric
 from evorl.types import State
 from evorl.recorders import get_1d_array_statistics
-
-from ..evox_workflow import EvoXWorkflowWrapper
+from evorl.workflows import ECWorkflow, EvoXWorkflowWrapper
 
 logger = logging.getLogger(__name__)
 
 
-class ESBaseWorkflow(EvoXWorkflowWrapper):
+class ESBaseWorkflow(ECWorkflow):
+    def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
+        raise NotImplementedError
+
+    @classmethod
+    def enable_jit(cls) -> None:
+        super().enable_jit()
+        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
+
+    @classmethod
+    def enable_pmap(cls, axis_name) -> None:
+        super().enable_pmap(axis_name)
+        cls.evaluate = jax.pmap(
+            cls.evaluate, axis_name, static_broadcasted_argnums=(0,)
+        )
+
+
+class EvoXESWorkflowTemplate(EvoXWorkflowWrapper):
     def __init__(
         self,
         config: DictConfig,
@@ -45,23 +61,6 @@ class ESBaseWorkflow(EvoXWorkflowWrapper):
         # An extra evaluator for pop_center
         self.evaluator = evaluator
 
-    def evaluate(self, state: State) -> tuple[EvaluateMetric, State]:
-        raise NotImplementedError
-
-    @classmethod
-    def enable_jit(cls) -> None:
-        super().enable_jit()
-        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
-
-    @classmethod
-    def enable_pmap(cls, axis_name) -> None:
-        super().enable_pmap(axis_name)
-        cls.evaluate = jax.pmap(
-            cls.evaluate, axis_name, static_broadcasted_argnums=(0,)
-        )
-
-
-class ESWorkflowTemplate(ESBaseWorkflow):
     @staticmethod
     def _rescale_config(config: DictConfig) -> None:
         num_devices = jax.device_count()
@@ -141,3 +140,15 @@ class ESWorkflowTemplate(ESBaseWorkflow):
                     tree_unpmap(state, self.pmap_axis_name),
                 ),
             )
+
+    @classmethod
+    def enable_jit(cls) -> None:
+        super().enable_jit()
+        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
+
+    @classmethod
+    def enable_pmap(cls, axis_name) -> None:
+        super().enable_pmap(axis_name)
+        cls.evaluate = jax.pmap(
+            cls.evaluate, axis_name, static_broadcasted_argnums=(0,)
+        )

@@ -13,8 +13,8 @@ from evorl.types import State
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.recorders import get_1d_array_statistics
 
-from ..problems import GeneralRLProblem
-from ..evox_workflow import EvoXWorkflowWrapper
+from ..evox_problems import GeneralRLProblem
+from ..ec_workflow import EvoXWorkflowWrapper
 from ..ec_agent import make_deterministic_ec_agent
 
 

@@ -1,6 +1,5 @@
 import logging
 
-import evox.algorithms
 import jax
 
 from evorl.types import State
@@ -10,14 +9,15 @@ from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.agent import AgentState
 from omegaconf import DictConfig
 
-from ..problems import GeneralRLProblem
+from ..evox_algorithm import OpenES
+from ..evox_problems import GeneralRLProblem
 from ..ec_agent import make_deterministic_ec_agent
-from .es_base import ESWorkflowTemplate
+from .es_base import EvoXESWorkflowTemplate
 
 logger = logging.getLogger(__name__)
 
 
-class OpenESWorkflow(ESWorkflowTemplate):
+class OpenESWorkflow(EvoXESWorkflowTemplate):
     @classmethod
     def name(cls):
         return "OpenES"
@@ -53,11 +53,11 @@ class OpenESWorkflow(ESWorkflowTemplate):
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
         # TODO: impl complete version of OpenES
-        algorithm = evox.algorithms.OpenES(
+        algorithm = OpenES(
             center_init=param_vec_spec.to_vector(agent_state.params.policy_params),
             pop_size=config.pop_size,
             learning_rate=config.optimizer.lr,
-            noise_stdev=config.noise_stdev,
+            noise_std=config.noise_std,
             optimizer="adam",
             mirrored_sampling=True,
         )

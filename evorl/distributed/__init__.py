@@ -6,10 +6,11 @@ from .comm import (
     pmean,
     pmin,
     psum,
+    unpmap,
+    all_gather,
     split_key_to_devices,
     tree_pmean,
     tree_unpmap,
-    unpmap,
 )
 from .gradients import agent_gradient_update, gradient_update
 from .sharding import parallel_map, tree_device_get, tree_device_put

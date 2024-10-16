@@ -402,7 +402,9 @@ class ERLGAWorkflow(ERLWorkflowTemplate):
         return state
 
 
-def replace_actor_params(agent_state: AgentState, pop_actor_params) -> AgentState:
+def replace_actor_params(
+    agent_state: AgentState, pop_actor_params: chex.ArrayTree
+) -> AgentState:
     """
     reset the actor params and target actor params
     """
