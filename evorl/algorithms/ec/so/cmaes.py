@@ -9,7 +9,7 @@ import jax.tree_util as jtu
 
 from evorl.types import State
 from evorl.envs import AutoresetMode, create_env
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.agent import AgentState
 

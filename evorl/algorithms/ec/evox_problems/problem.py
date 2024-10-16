@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 from evorl.agent import Agent, AgentState
 from evorl.envs import Env
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator
 from evorl.types import ReductionFn
 from evox import Problem, State
 

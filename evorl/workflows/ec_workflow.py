@@ -15,7 +15,7 @@ from evorl.distributed import POP_AXIS_NAME, all_gather
 from evorl.metrics import MetricBase
 from evorl.ec.optimizers import EvoOptimizer, ECState
 from evorl.envs import Env
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator
 from evorl.agent import Agent, AgentState
 from evorl.distributed import get_global_ranks, psum, split_key_to_devices
 from evorl.types import State, PyTreeData, pytree_field, Params

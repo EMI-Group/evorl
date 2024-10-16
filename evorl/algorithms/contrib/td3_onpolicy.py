@@ -13,7 +13,7 @@ from omegaconf import DictConfig
 from evorl.distributed import psum, tree_unpmap
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import AutoresetMode, create_env
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase
 from evorl.rollout import rollout
 from evorl.types import (

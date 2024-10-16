@@ -5,7 +5,7 @@ import jax
 
 from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
 from evorl.ec.optimizers import SepCEM, ExponentialScheduleSpec, ECState
 

@@ -10,7 +10,7 @@ import orbax.checkpoint as ocp
 
 from evorl.distributed import tree_unpmap
 from evorl.agent import Agent, AgentState
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase
 from evorl.types import State
 from evorl.envs import Env

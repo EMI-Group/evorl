@@ -14,7 +14,7 @@ from omegaconf import DictConfig
 from evorl.distributed import psum, tree_pmean
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import AutoresetMode, Discrete, create_env, Space
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase, WorkflowMetric, metricfield
 from evorl.networks import make_discrete_q_network
 from evorl.rollout import rollout

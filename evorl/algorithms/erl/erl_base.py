@@ -15,7 +15,7 @@ from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.sample_batch import SampleBatch
 from evorl.agent import Agent, AgentState, RandomAgent
 from evorl.envs import create_env, AutoresetMode, Env
@@ -25,7 +25,6 @@ from evorl.ec.optimizers import EvoOptimizer, ECState
 
 from ..td3 import TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory
-from .episode_collector import EpisodeCollector
 from .utils import flatten_pop_rollout_episode
 
 

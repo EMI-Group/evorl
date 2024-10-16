@@ -16,7 +16,7 @@ from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import tree_stop_gradient, rng_split_like_tree
 from evorl.utils.rl_toolkits import soft_target_update
 from evorl.utils.flashbax_utils import get_buffer_size
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import AgentState, Agent
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
@@ -24,7 +24,6 @@ from evorl.ec.optimizers import ECState, OpenES, ExponentialScheduleSpec
 
 from ..td3 import make_mlp_td3_agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from .episode_collector import EpisodeCollector
 from .erl_base import ERLWorkflowTemplate, POPTrainMetric
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,7 @@ from evorl.agent import RandomAgent, Agent
 from evorl.metrics import MetricBase, EvaluateMetric
 from evorl.types import State
 from evorl.envs import create_env, AutoresetMode
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator
 from evorl.recorders import add_prefix
 
 

@@ -11,7 +11,7 @@ from typing_extensions import Self  # pytype: disable=not-supported-yet
 from evorl.agent import Agent, AgentState
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
 from evorl.envs import Env
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase, WorkflowMetric
 from evorl.types import State
 

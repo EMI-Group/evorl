@@ -12,7 +12,7 @@ from omegaconf import DictConfig
 from evorl.distributed import psum, tree_pmean
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import AutoresetMode, Box, create_env, Space
-from evorl.evaluator import Evaluator
+from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase, metricfield
 from evorl.networks import make_policy_network, make_q_network
 from evorl.rollout import rollout
