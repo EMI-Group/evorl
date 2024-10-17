@@ -34,9 +34,3 @@ class ParamVectorSpec:
             vmap_to_tree = jax.vmap(vmap_to_tree)
 
         return vmap_to_tree(x)
-
-
-def convert_so_train_metrics(train_metrics):
-    train_metrics_dict = train_metrics.to_local_dict()
-
-    train_metrics_dict["objectives"] = train_metrics.objectives.tolist()

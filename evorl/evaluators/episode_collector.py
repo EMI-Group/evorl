@@ -27,6 +27,7 @@ class EpisodeCollector(PyTreeNode):
     action_fn: AgentActionFn
     max_episode_steps: int = pytree_field(pytree_node=False)
     env_extra_fields: Sequence[str] = ()
+    discount: float = 1.0
 
     def __post_init__(self):
         assert hasattr(self.env, "num_envs"), "only parrallel envs are supported"
@@ -75,7 +76,7 @@ class EpisodeCollector(PyTreeNode):
 
         # [#envs * #iters]
         discount_returns = compute_discount_return(
-            episode_trajectory.rewards, episode_trajectory.dones
+            episode_trajectory.rewards, episode_trajectory.dones, self.discount
         )
 
         episode_lengths = compute_episode_length(episode_trajectory.dones)
