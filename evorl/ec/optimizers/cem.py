@@ -77,7 +77,7 @@ class SepCEM(EvoOptimizer):
 
         def var_update(m, x):
             x_norm = jnp.square(x[elites_indices] - m)
-            # TODO: do we need extra division by num_elites mentioned CEM-RL?
+            # TODO: do we need extra division by num_elites mentioned in CEM-RL?
             return weight_sum(x_norm, self.elite_weights) + cov_noise
 
         variance = jtu.tree_map(
