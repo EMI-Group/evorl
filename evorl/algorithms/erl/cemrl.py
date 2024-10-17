@@ -100,11 +100,9 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         else:
             action_fn = agent.evaluate_actions
 
-        ec_evaluator = EpisodeCollector(
-            env_step_fn=env.step,
-            env_reset_fn=env.reset,
+        collector = EpisodeCollector(
+            env=env,
             action_fn=action_fn,
-            num_envs=config.num_envs,
             max_episode_steps=config.env.max_episode_steps,
             env_extra_fields=("ori_obs", "termination"),
         )
@@ -136,7 +134,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             agent,
             optimizer,
             ec_optimizer,
-            ec_evaluator,
+            collector,
             evaluator,
             replay_buffer,
             config,

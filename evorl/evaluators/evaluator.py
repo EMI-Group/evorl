@@ -23,6 +23,9 @@ class Evaluator(PyTreeNode):
     max_episode_steps: int = pytree_field(pytree_node=False)
     discount: float = pytree_field(default=1.0, pytree_node=False)
 
+    def __post_init__(self):
+        assert hasattr(self.env, "num_envs"), "only parrallel envs are supported"
+
     def evaluate(
         self, agent_state: AgentState, key: chex.PRNGKey, num_episodes: int
     ) -> EvaluateMetric:

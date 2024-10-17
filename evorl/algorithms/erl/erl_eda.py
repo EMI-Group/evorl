@@ -103,10 +103,8 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
             action_fn = agent.evaluate_actions
 
         ec_collector = EpisodeCollector(
-            env_step_fn=env.step,
-            env_reset_fn=env.reset,
+            env=env,
             action_fn=action_fn,
-            num_envs=config.num_envs,
             max_episode_steps=config.env.max_episode_steps,
             env_extra_fields=("ori_obs", "termination"),
         )
@@ -117,10 +115,8 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
             action_fn = agent.evaluate_actions
 
         rl_collector = EpisodeCollector(
-            env_step_fn=env.step,
-            env_reset_fn=env.reset,
+            env=env,
             action_fn=action_fn,
-            num_envs=config.num_envs,
             max_episode_steps=config.env.max_episode_steps,
             env_extra_fields=("ori_obs", "termination"),
         )

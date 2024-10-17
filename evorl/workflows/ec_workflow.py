@@ -124,6 +124,8 @@ class ECWorkflowTemplate(ECWorkflow):
     def _rescale_config(config: DictConfig) -> None:
         num_devices = jax.device_count()
 
+        # Note: in some model, the generated number of individuals may not be pop_size,
+        # then adjust accordingly
         if config.pop_size % num_devices != 0:
             logging.warning(
                 f"When enable_multi_devices=True, pop_size ({config.pop_size}) should be divisible by num_devices ({num_devices}),"
@@ -177,11 +179,10 @@ class ECWorkflowTemplate(ECWorkflow):
         raise NotImplementedError
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        pop_size = self.config.pop_size
-
         key, rollout_key, ec_key = jax.random.split(state.key, 3)
 
         pop = self.ec_optimizer.ask(state.ec_opt_state, ec_key)
+        pop_size = jax.tree_leaves(pop)[0].shape[0]
 
         slice_size = pop_size // state.distributed_info.world_size
         eval_pop = jtu.tree_map(
@@ -204,7 +205,7 @@ class ECWorkflowTemplate(ECWorkflow):
         ec_opt_state = self.ec_optimizer.tell(state.ec_opt_state, pop, fitnesses)
 
         sampled_episodes = psum(
-            jnp.uint32(self.config.pop_size * self.config.episodes_for_fitness),
+            jnp.uint32(pop_size * self.config.episodes_for_fitness),
             self.pmap_axis_name,
         )
         sampled_timesteps_m = (

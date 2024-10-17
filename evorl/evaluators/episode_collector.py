@@ -7,7 +7,7 @@ import jax
 import jax.tree_util as jtu
 
 from evorl.agent import AgentActionFn
-from evorl.envs import EnvResetFn, EnvStepFn
+from evorl.envs import Env
 from evorl.metrics import EvaluateMetric
 from evorl.rollout import rollout
 from evorl.types import PyTreeNode, pytree_field
@@ -23,17 +23,18 @@ class EpisodeCollector(PyTreeNode):
     Return eval metrics and trajectory
     """
 
-    env_step_fn: EnvStepFn
-    env_reset_fn: EnvResetFn
+    env: Env
     action_fn: AgentActionFn
-    num_envs: int  # num_envs over env_step_fn
     max_episode_steps: int = pytree_field(pytree_node=False)
     env_extra_fields: Sequence[str] = ()
+
+    def __post_init__(self):
+        assert hasattr(self.env, "num_envs"), "only parrallel envs are supported"
 
     def rollout(
         self, agent_state, num_episodes: int, key: chex.PRNGKey
     ) -> tuple[EvaluateMetric, SampleBatch]:
-        num_envs = self.num_envs
+        num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
         if num_episodes % num_envs != 0:
             logger.warning(
@@ -48,12 +49,12 @@ class EpisodeCollector(PyTreeNode):
     ) -> tuple[EvaluateMetric, SampleBatch]:
         def _evaluate_fn(key, unused_t):
             next_key, init_env_key = rng_split(key, 2)
-            env_state = self.env_reset_fn(init_env_key)
+            env_state = self.env.reset(init_env_key)
 
             # Note: be careful when self.max_episode_steps < env.max_episode_steps,
             # where dones could all be zeros.
             episode_trajectory, env_state = rollout(
-                self.env_step_fn,
+                self.env.step,
                 self.action_fn,
                 env_state,
                 agent_state,

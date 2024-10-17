@@ -5,11 +5,11 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from .agent import AgentActionFn, AgentState
-from .envs import EnvState, EnvStepFn
-from .sample_batch import SampleBatch
-from .types import PyTreeDict, Reward, RewardDict
-from .utils.jax_utils import rng_split
+from evorl.agent import AgentActionFn, AgentState
+from evorl.envs import EnvState, EnvStepFn
+from evorl.sample_batch import SampleBatch
+from evorl.types import PyTreeDict, Reward, RewardDict
+from evorl.utils.jax_utils import rng_split
 
 # TODO: add RNN Policy support
 
