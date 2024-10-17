@@ -58,6 +58,7 @@ def train(config: DictConfig) -> None:
     wandb_recorder = WandbRecorder(
         project=wandb_project,
         name=wandb_name,
+        group="dev",
         config=OmegaConf.to_container(
             config, resolve=True
         ),  # save the unrescaled config
