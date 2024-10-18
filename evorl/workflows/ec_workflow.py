@@ -110,7 +110,7 @@ class ECWorkflowTemplate(ECWorkflow):
         config: DictConfig,
         env: Env,
         agent: Agent,
-        ec_optimizer: EvoOptimizer | Algorithm,
+        ec_optimizer: EvoOptimizer,
         ec_evaluator: Evaluator | EpisodeCollector,
         agent_state_vmap_axes: AgentStateAxis = 0,
     ):
@@ -206,8 +206,7 @@ class ECWorkflowTemplate(ECWorkflow):
 
         pop_agent_state = self._replace_actor_params(agent_state, eval_pop)
 
-        if self.config.normalize_obs:
-            assert isinstance(self.ec_evaluator, EpisodeCollector)
+        if isinstance(self.ec_evaluator, EpisodeCollector):
             # trajectory: [T, pop_size, #episodes]
             rollout_metrics, trajactory = self.ec_evaluator.rollout(
                 pop_agent_state,
@@ -217,8 +216,7 @@ class ECWorkflowTemplate(ECWorkflow):
             )
             agent_state = self._update_obs_preprocessor(agent_state, trajactory.obs)
 
-        else:
-            assert isinstance(self.ec_evaluator, Evaluator)
+        elif isinstance(self.ec_evaluator, Evaluator):
             rollout_metrics = self.ec_evaluator.evaluate(
                 pop_agent_state,
                 jax.random.split(rollout_key, num=slice_size),

@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from functools import partial
+from typing import Protocol
 
 import chex
 import jax
@@ -12,6 +13,21 @@ from evorl.types import PyTreeDict, Reward, RewardDict
 from evorl.utils.jax_utils import rng_split
 
 # TODO: add RNN Policy support
+
+
+class RolloutFn(Protocol):
+    def __call__(
+        self,
+        env_fn: EnvStepFn,
+        action_fn: AgentActionFn,
+        env_state: EnvState,
+        agent_state: AgentState,
+        key: chex.PRNGKey,
+        rollout_length: int,
+        *args,
+        **kwargs,
+    ):
+        pass
 
 
 def env_step(

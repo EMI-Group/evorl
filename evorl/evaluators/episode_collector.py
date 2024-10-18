@@ -10,7 +10,7 @@ import jax.tree_util as jtu
 from evorl.agent import AgentActionFn, AgentStateAxis
 from evorl.envs import Env
 from evorl.metrics import EvaluateMetric
-from evorl.rollout import rollout
+from evorl.rollout import rollout, RolloutFn
 from evorl.types import PyTreeNode, pytree_field
 from evorl.sample_batch import SampleBatch
 from evorl.utils.jax_utils import rng_split
@@ -29,6 +29,8 @@ class EpisodeCollector(PyTreeNode):
     max_episode_steps: int = pytree_field(pytree_node=False)
     env_extra_fields: Sequence[str] = ()
     discount: float = 1.0
+
+    rollout_fn: RolloutFn = pytree_field(default=rollout, pytree_node=False)
 
     def __post_init__(self):
         assert hasattr(self.env, "num_envs"), "only parrallel envs are supported"
@@ -63,7 +65,7 @@ class EpisodeCollector(PyTreeNode):
 
             # Note: be careful when self.max_episode_steps < env.max_episode_steps,
             # where dones could all be zeros.
-            episode_trajectory, env_state = rollout(
+            episode_trajectory, env_state = self.rollout_fn(
                 env_step_fn,
                 action_fn,
                 env_state,

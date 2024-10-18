@@ -180,7 +180,7 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=ec/sepcem",
+                "agent=ec/openes",
                 "env=brax/hopper",
                 "debug=true",
             ],

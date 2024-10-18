@@ -6,16 +6,13 @@ import jax
 
 from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env
-from evorl.evaluators import (
-    Evaluator,
-    EpisodeCollector,
-    init_obs_preprocessor_with_random_timesteps,
-)
+from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
 from evorl.ec.optimizers import OpenES, ExponentialScheduleSpec, ECState
 
 from .es_base import ESWorkflowTemplate
 from ..ec_agent import make_deterministic_ec_agent
+from ..obs_utils import init_obs_preprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +63,7 @@ class OpenESWorkflow(ESWorkflowTemplate):
         else:
             action_fn = agent.evaluate_actions
 
-        ec_evaluator = EpisodeCollector(
+        ec_evaluator = Evaluator(
             env=env,
             action_fn=action_fn,
             max_episode_steps=config.env.max_episode_steps,
@@ -104,34 +101,21 @@ class OpenESWorkflow(ESWorkflowTemplate):
         )
 
     def _setup_agent_and_optimizer(self, key: jax.Array) -> tuple[AgentState, ECState]:
-        agent_key, obs_key = jax.random.split(key)
+        agent_key, ec_key, obs_key = jax.random.split(key, 3)
         agent_state = self.agent.init(
             self.env.obs_space, self.env.action_space, agent_key
         )
 
         init_actor_params = agent_state.params.policy_params
-        ec_opt_state = self.ec_optimizer.init(init_actor_params)
+        ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
         # steup obs_preprocessor_state
         if self.config.normalize_obs:
-            env = create_env(
-                self.config.env.env_name,
-                self.config.env.env_type,
-                episode_length=self.config.env.max_episode_steps,
-                parallel=self.config.num_envs,
-                autoreset_mode=AutoresetMode.NORMAL,
-            )
-
-            obs_preprocessor_state = init_obs_preprocessor_with_random_timesteps(
-                agent_state.obs_preprocessor_state,
-                self.config.random_timesteps,
-                env,
-                obs_key,
+            agent_state = init_obs_preprocessor(
+                agent_state=agent_state,
+                config=self.config,
+                key=obs_key,
                 pmap_axis_name=self.pmap_axis_name,
-            )
-
-            agent_state = agent_state.replace(
-                obs_preprocessor_state=obs_preprocessor_state
             )
 
         # remove params
