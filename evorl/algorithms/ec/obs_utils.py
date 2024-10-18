@@ -30,6 +30,8 @@ class ObsPreprocessor(PyTreeNode):
 
 
 def init_obs_preprocessor(agent_state, config, key, pmap_axis_name=None):
+    assert config.random_timesteps > 0, "random_timesteps should be greater than 0"
+
     env = create_env(
         config.env.env_name,
         config.env.env_type,

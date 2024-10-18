@@ -9,7 +9,7 @@ from evorl.sample_batch import SampleBatch
 from evorl.types import pytree_field
 from evorl.utils.jax_utils import rng_split
 
-from .episode_collector import EpisodeCollector
+from .episode_collector import EpisodeCollector, RolloutFn
 
 
 def env_step(
@@ -86,4 +86,4 @@ def rollout(
 
 
 class EpisodeObsCollector(EpisodeCollector):
-    rollout_fn = pytree_field(default=rollout, pytree_node=False)
+    rollout_fn: RolloutFn = pytree_field(default=rollout, pytree_node=False)

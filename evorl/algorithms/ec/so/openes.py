@@ -109,19 +109,27 @@ class OpenESWorkflow(ESWorkflowTemplate):
         init_actor_params = agent_state.params.policy_params
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
-        # steup obs_preprocessor_state
+        # remove params
+        agent_state = self._replace_actor_params(agent_state, params=None)
+
+        return agent_state, ec_opt_state
+
+    def _postsetup(self, state: State) -> State:
+        key, obs_key = jax.random.split(state.key, 2)
+        # setup obs_preprocessor_state
         if self.config.normalize_obs:
             agent_state = init_obs_preprocessor(
-                agent_state=agent_state,
+                agent_state=state.agent_state,
                 config=self.config,
                 key=obs_key,
                 pmap_axis_name=self.pmap_axis_name,
             )
 
-        # remove params
-        agent_state = self._replace_actor_params(agent_state, params=None)
-
-        return agent_state, ec_opt_state
+        # Note: we don't count these random timesteps in state.metrics
+        return state.replace(
+            agent_state=agent_state,
+            key=key,
+        )
 
     def _replace_actor_params(
         self, agent_state: AgentState, params: Params

@@ -33,7 +33,7 @@ def compute_centered_ranks(x):
 class OpenESState(PyTreeData):
     mean: chex.ArrayTree
     opt_state: optax.OptState
-    noise_std: float
+    noise_std: chex.Array
     key: chex.PRNGKey
 
 
@@ -63,7 +63,7 @@ class OpenES(EvoOptimizer):
         return OpenESState(
             mean=mean,
             opt_state=self.optimizer.init(mean),
-            noise_std=self.noise_std_schedule.init,
+            noise_std=jnp.float32(self.noise_std_schedule.init),
             key=key,
         )
 

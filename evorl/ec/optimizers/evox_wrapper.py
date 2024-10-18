@@ -1,3 +1,6 @@
+from typing import Protocol
+
+
 import chex
 
 from evox import (
@@ -7,9 +10,17 @@ from evox import (
     has_init_tell,
 )
 
-from evorl.types import PyTreeData, pytree_field
+from evorl.types import PyTreeData, pytree_field, Params
 
 from .ec_optimizer import EvoOptimizer, ECState
+
+
+class TransformFn(Protocol):
+    """
+    Convert EvoX's flat individual to Flax Params
+    """
+
+    def __call__(self, flat_x: chex.Array) -> Params: ...
 
 
 class EvoXAlgoState(PyTreeData):
@@ -22,7 +33,13 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
     Adapter class to convert EvoX algorithms to EvoRL optimizers.
     """
 
-    def __init__(self, algorithm: Algorithm):
+    algorithm: Algorithm
+    transform_fn: TransformFn
+
+    def __init__(
+        self,
+        algorithm: Algorithm,
+    ):
         self.algorithm = algorithm
 
     def init(self, key: chex.PRNGKey) -> EvoXAlgoState:
@@ -48,6 +65,8 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
         else:
             ask = self.algorithm.ask
 
-        pop, algo_state = ask(state.algo_state)
+        flat_pop, algo_state = ask(state.algo_state)
+
+        pop = self.transform_fn(flat_pop)
 
         return pop, state.replace(algo_state=algo_state)

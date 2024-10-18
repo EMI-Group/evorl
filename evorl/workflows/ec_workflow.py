@@ -168,13 +168,20 @@ class ECWorkflowTemplate(ECWorkflow):
                 world_size=jax.device_count(),
             )
 
-        return State(
+        state = State(
             key=key,
             agent_state=agent_state,
             ec_opt_state=ec_opt_state,
             metrics=workflow_metrics,
             distributed_info=distributed_info,
         )
+
+        state = self._postsetup(state)
+
+        return state
+
+    def _postsetup(self, state: State) -> State:
+        return state
 
     def _replace_actor_params(
         self, agent_state: AgentState, params: Params
@@ -191,9 +198,9 @@ class ECWorkflowTemplate(ECWorkflow):
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         agent_state = state.agent_state
-        key, rollout_key, ec_key = jax.random.split(state.key, 3)
+        key, rollout_key = jax.random.split(state.key, 2)
 
-        pop = self.ec_optimizer.ask(state.ec_opt_state, ec_key)
+        pop, ec_opt_state = self.ec_optimizer.ask(state.ec_opt_state)
         pop_size = jax.tree_leaves(pop)[0].shape[0]
 
         slice_size = pop_size // state.distributed_info.world_size
@@ -227,7 +234,7 @@ class ECWorkflowTemplate(ECWorkflow):
         fitnesses = jnp.mean(rollout_metrics.episode_returns, axis=-1)
         fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
 
-        ec_opt_state = self.ec_optimizer.tell(state.ec_opt_state, pop, fitnesses)
+        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop, fitnesses)
 
         sampled_episodes = psum(
             jnp.uint32(pop_size * self.config.episodes_for_fitness),
@@ -253,6 +260,18 @@ class ECWorkflowTemplate(ECWorkflow):
             agent_state=agent_state,
             ec_opt_state=ec_opt_state,
             metrics=workflow_metrics,
+        )
+
+    @classmethod
+    def enable_jit(cls) -> None:
+        super().enable_jit()
+        cls._postsetup = jax.jit(cls._postsetup, static_argnums=(0,))
+
+    @classmethod
+    def enable_pmap(cls, axis_name) -> None:
+        super().enable_pmap(axis_name)
+        cls._postsetup = jax.pmap(
+            cls._postsetup, axis_name, static_broadcasted_argnums=(0,)
         )
 
 

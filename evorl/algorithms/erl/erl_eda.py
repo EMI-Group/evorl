@@ -231,7 +231,7 @@ class ERLEDAWorkflow(ERLWorkflowBase):
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
         # === diff from ERLGA ===
-        pop_actor_params = self._ec_sample(ec_opt_state, perm_key)
+        pop_actor_params, ec_opt_state = self._ec_sample(ec_opt_state)
 
         if self.config.mirror_sampling:
             pop_actor_params = jtu.tree_map(

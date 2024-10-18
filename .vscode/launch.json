@@ -181,7 +181,7 @@
             "module": "evorl.train",
             "args": [
                 "agent=ec/openes",
-                "env=brax/hopper",
+                "env=brax/ant",
                 "debug=true",
             ],
             "env": {

@@ -171,7 +171,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
         # replace
-        pop_actor_params = self.ec_optimizer.ask(ec_opt_state)
+        pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
 
         agent_state = replace_actor_params(agent_state, pop_actor_params)
 
