@@ -156,10 +156,10 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
         )
 
         init_actor_params = agent_state.params.actor_params
-        ec_opt_state = self.ec_optimizer.init(init_actor_params)
+        ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
         # replace
-        pop_actor_params = self.ec_optimizer.ask(ec_opt_state, ec_key)
+        pop_actor_params = self.ec_optimizer.ask(ec_opt_state)
 
         agent_state = replace_actor_params(agent_state, pop_actor_params)
 
@@ -169,20 +169,6 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
         )
 
         return agent_state, opt_state, ec_opt_state
-
-    def _ec_sample(self, ec_opt_state, key):
-        pop_actor_params = self.ec_optimizer.ask(ec_opt_state, key)
-
-        # Note: Avoid always choosing the positve parts for learning
-        if self.config.mirror_sampling:
-            keys = rng_split_like_tree(key, pop_actor_params)
-            pop_actor_params = jtu.tree_map(
-                lambda x, k: jax.random.permutation(k, x, axis=0),
-                pop_actor_params,
-                keys,
-            )
-
-        return pop_actor_params
 
     def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
         def _sample_fn(key):
@@ -254,7 +240,7 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
 
         pop_actor_params = agent_state.params.actor_params
 
-        key, rollout_key, cem_key, learn_key = jax.random.split(state.key, num=4)
+        key, rollout_key, perm_key, learn_key = jax.random.split(state.key, num=4)
 
         # ======== RL update ========
         if iterations > self.config.warmup_iters:
@@ -316,7 +302,15 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
 
         ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
 
-        new_pop_actor_params = self._ec_sample(ec_opt_state, cem_key)
+        new_pop_actor_params, ec_opt_state = self._ec_sample(ec_opt_state)
+        # Note: Avoid always choosing the positve parts for learning
+        if self.config.mirror_sampling:
+            pop_actor_params = jtu.tree_map(
+                lambda x, k: jax.random.permutation(k, x, axis=0),
+                pop_actor_params,
+                rng_split_like_tree(perm_key, pop_actor_params),
+            )
+
         agent_state = replace_actor_params(agent_state, new_pop_actor_params)
 
         # adding debug info for CEM

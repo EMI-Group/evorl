@@ -12,7 +12,7 @@ import optax
 
 from evorl.agent import AgentStateAxis
 from evorl.metrics import MetricBase, metricfield
-from evorl.types import PyTreeDict, State
+from evorl.types import PyTreeDict, State, Params
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
@@ -254,11 +254,13 @@ class CEMRLWorkflowBase(Workflow):
 
         return eval_metrics, trajectory
 
-    def _ec_update(self, ec_opt_state, pop_actor_params, fitnesses):
+    def _ec_update(
+        self, ec_opt_state: ECState, pop_actor_params: Params, fitnesses: chex.Array
+    ) -> ECState:
         return self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
 
-    def _ec_sample(self, ec_opt_state, key):
-        return self.ec_optimizer.ask(ec_opt_state, key)
+    def _ec_sample(self, ec_opt_state: ECState) -> tuple[Params, ECState]:
+        return self.ec_optimizer.ask(ec_opt_state)
 
     def _add_to_replay_buffer(self, replay_buffer_state, trajectory, episode_lengths):
         # trajectory [T,B,...]

@@ -14,13 +14,14 @@ from evorl.utils.jax_utils import (
 )
 
 from .utils import ExponentialScheduleSpec, weight_sum
-from .ec_optimizer import EvoOptimizer
+from .ec_optimizer import EvoOptimizer, ECState
 
 
 class SepCEMState(PyTreeData):
     mean: chex.ArrayTree
     variance: chex.ArrayTree
     cov_noise: chex.ArrayTree
+    key: chex.PRNGKey
 
 
 class SepCEM(EvoOptimizer):
@@ -49,7 +50,7 @@ class SepCEM(EvoOptimizer):
 
         self.set_frozen_attr("elite_weights", elite_weights)
 
-    def init(self, mean: Params) -> SepCEMState:
+    def init(self, mean: Params, key: chex.PRNGKey) -> SepCEMState:
         variance = jtu.tree_map(
             lambda x: jnp.full_like(x, self.diagonal_variance.init), mean
         )
@@ -58,6 +59,7 @@ class SepCEM(EvoOptimizer):
             mean=mean,
             variance=variance,
             cov_noise=jnp.float32(self.diagonal_variance.init),
+            key=key,
         )
 
     def tell(
@@ -88,8 +90,9 @@ class SepCEM(EvoOptimizer):
 
         return state.replace(mean=mean, variance=variance, cov_noise=cov_noise)
 
-    def ask(self, state: SepCEMState, key: chex.PRNGKey) -> chex.ArrayTree:
-        keys = rng_split_like_tree(key, state.mean)
+    def ask(self, state: SepCEMState) -> tuple[chex.ArrayTree, ECState]:
+        key, sample_key = jax.random.split(state.key)
+        sample_keys = rng_split_like_tree(sample_key, state.mean)
         pop_size = self.pop_size
 
         if self.mirror_sampling:
@@ -98,7 +101,7 @@ class SepCEM(EvoOptimizer):
                 * jnp.sqrt(var),
                 state.mean,
                 state.variance,
-                keys,
+                sample_keys,
             )
 
             noise = jtu.tree_map(
@@ -112,10 +115,13 @@ class SepCEM(EvoOptimizer):
                 * jnp.sqrt(var),
                 state.mean,
                 state.variance,
-                keys,
+                sample_keys,
             )
 
         # noise: (#pop, ...)
         # mean: (...)
 
-        return jtu.tree_map(lambda mean, noise: mean + noise, state.mean, noise)
+        pop = jtu.tree_map(lambda mean, noise: mean + noise, state.mean, noise)
+        state = state.replace(key=key)
+
+        return pop, state

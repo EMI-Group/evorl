@@ -89,5 +89,5 @@ class ERLGA(EvoOptimizer):
 
         return state.replace(pop=new_pop, key=key)
 
-    def ask(self, state, key):
-        return state.pop
+    def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
+        return state.pop, state

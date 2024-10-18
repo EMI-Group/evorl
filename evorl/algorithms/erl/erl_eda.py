@@ -209,20 +209,6 @@ class ERLEDAWorkflow(ERLWorkflowBase):
 
         return ec_opt_state
 
-    def _ec_sample(self, ec_opt_state, key):
-        pop_actor_params = self.ec_optimizer.ask(ec_opt_state, key)
-
-        # Note: Avoid always choosing the positve parts for learning
-        if self.config.mirror_sampling:
-            keys = rng_split_like_tree(key, pop_actor_params)
-            pop_actor_params = jtu.tree_map(
-                lambda x, k: jax.random.permutation(k, x, axis=0),
-                pop_actor_params,
-                keys,
-            )
-
-        return pop_actor_params
-
     def step(self, state: State) -> tuple[MetricBase, State]:
         """
         the basic step function for the workflow to update agent
@@ -237,7 +223,7 @@ class ERLEDAWorkflow(ERLWorkflowBase):
         sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
         sampled_episodes = jnp.zeros((), dtype=jnp.uint32)
 
-        key, ec_rollout_key, rl_rollout_key, ec_key, learn_key = jax.random.split(
+        key, ec_rollout_key, rl_rollout_key, perm_key, learn_key = jax.random.split(
             state.key, num=5
         )
 
@@ -245,7 +231,14 @@ class ERLEDAWorkflow(ERLWorkflowBase):
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
         # === diff from ERLGA ===
-        pop_actor_params = self._ec_sample(ec_opt_state, ec_key)
+        pop_actor_params = self._ec_sample(ec_opt_state, perm_key)
+
+        if self.config.mirror_sampling:
+            pop_actor_params = jtu.tree_map(
+                lambda x, k: jax.random.permutation(k, x, axis=0),
+                pop_actor_params,
+                rng_split_like_tree(perm_key, pop_actor_params),
+            )
         # =======================
         pop_agent_state = replace_actor_params(agent_state, pop_actor_params)
         ec_eval_metrics, ec_trajectory = self._ec_rollout(

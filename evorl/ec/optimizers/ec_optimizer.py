@@ -25,6 +25,6 @@ class EvoOptimizer(PyTreeNode, metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def ask(self, state: ECState, key: chex.PRNGKey) -> chex.ArrayTree:
+    def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
         "Generate new candidate solutions"
         pass

@@ -4,6 +4,7 @@ from omegaconf import DictConfig
 import chex
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 
 from evorl.metrics import MetricBase, metricfield
 from evorl.types import PyTreeDict, State
@@ -12,6 +13,7 @@ from evorl.utils.jax_utils import (
     tree_set,
     scan_and_last,
     is_jitted,
+    rng_split_like_tree,
 )
 from evorl.utils.flashbax_utils import get_buffer_size
 
@@ -129,7 +131,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
 
         pop_actor_params = agent_state.params.actor_params
 
-        key, rollout_key, cem_key, learn_key = jax.random.split(state.key, num=4)
+        key, rollout_key, perm_key, learn_key = jax.random.split(state.key, num=4)
 
         # ======== RL update ========
         if iterations > self.config.warmup_iters:
@@ -205,7 +207,14 @@ class CEMRLWorkflow(_CEMRLWorkflow):
 
         ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
 
-        new_pop_actor_params = self._ec_sample(ec_opt_state, cem_key)
+        new_pop_actor_params, ec_opt_state = self._ec_sample(ec_opt_state)
+        # Note: Avoid always choosing the positve parts for learning
+        if self.config.mirror_sampling:
+            pop_actor_params = jtu.tree_map(
+                lambda x, k: jax.random.permutation(k, x, axis=0),
+                pop_actor_params,
+                rng_split_like_tree(perm_key, pop_actor_params),
+            )
         agent_state = replace_actor_params(agent_state, new_pop_actor_params)
 
         # adding debug info for CEM

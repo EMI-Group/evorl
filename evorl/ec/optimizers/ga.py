@@ -56,7 +56,7 @@ class GA(EvoOptimizer):
         self.set_frozen_attr("mutate", mutation_op)
         self.set_frozen_attr("crossover", crossover_op)
 
-    def init(self, pop, key) -> ECState:
+    def init(self, pop: chex.ArrayTree, key: chex.PRNGKey) -> ECState:
         return GAState(pop=pop, key=key)
 
     def tell(self, state: ECState, xs: chex.ArrayTree, fitnesses: chex.Array):
@@ -83,5 +83,5 @@ class GA(EvoOptimizer):
 
         return state.replace(pop=new_pop, key=key)
 
-    def ask(self, state, key):
-        return state.pop
+    def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
+        return state.pop, state

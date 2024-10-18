@@ -9,7 +9,7 @@ from evox import (
 
 from evorl.types import PyTreeData, pytree_field
 
-from .ec_optimizer import EvoOptimizer
+from .ec_optimizer import EvoOptimizer, ECState
 
 
 class EvoXAlgoState(PyTreeData):
@@ -42,17 +42,12 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
 
         return state.replace(algo_state=algo_state, first_step=False)
 
-    def ask(self, state: EvoXAlgoState, key: chex.PRNGKey) -> chex.ArrayTree:
+    def ask(self, state: EvoXAlgoState) -> tuple[chex.ArrayTree, ECState]:
         if has_init_ask(self.algorithm) and state.first_step:
             ask = self.algorithm.init_ask
         else:
             ask = self.algorithm.ask
 
-        # algo_state = state.algo_state
-        # try:
-        #     algo_state = algo_state.replace(key=key)
-        # except Exception:
-        #     pass
-        algo_state = ask(state.algo_state)
+        pop, algo_state = ask(state.algo_state)
 
-        return state.replace(algo_state=algo_state)
+        return pop, state.replace(algo_state=algo_state)

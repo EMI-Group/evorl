@@ -34,6 +34,7 @@ class OpenESState(PyTreeData):
     mean: chex.ArrayTree
     opt_state: optax.OptState
     noise_std: float
+    key: chex.PRNGKey
 
 
 class OpenES(EvoOptimizer):
@@ -58,11 +59,12 @@ class OpenES(EvoOptimizer):
         )(learning_rate=self.lr_schedule.init)
         self.set_frozen_attr("optimizer", optimizer)
 
-    def init(self, mean: Params) -> ECState:
+    def init(self, mean: Params, key: chex.PRNGKey) -> ECState:
         return OpenESState(
             mean=mean,
             opt_state=self.optimizer.init(mean),
             noise_std=self.noise_std_schedule.init,
+            key=key,
         )
 
     def tell(
@@ -101,24 +103,29 @@ class OpenES(EvoOptimizer):
 
         return state.replace(mean=mean, opt_state=opt_state, noise_std=noise_std)
 
-    def ask(self, state: ECState, key: chex.PRNGKey) -> chex.ArrayTree:
+    def ask(self, state: ECState, key: chex.PRNGKey) -> tuple[chex.ArrayTree, ECState]:
         "Generate new candidate solutions"
-        keys = rng_split_like_tree(key, state.mean)
+        key, sample_key = jax.random.split(state.key)
+
+        sample_keys = rng_split_like_tree(sample_key, state.mean)
 
         if self.mirror_sampling:
             noise = jtu.tree_map(
                 lambda x, k: jax.random.normal(k, shape=(self.pop_size // 2, *x.shape)),
                 state.mean,
-                keys,
+                sample_keys,
             )
             noise = jtu.tree_map(lambda x: jnp.concatenate([x, -x], axis=0), noise)
         else:
             noise = jtu.tree_map(
                 lambda x, k: jax.random.normal(k, shape=(self.pop_size, *x.shape)),
                 state.mean,
-                keys,
+                sample_keys,
             )
 
-        return jtu.tree_map(
+        pop = jtu.tree_map(
             lambda m, delta: m + state.noise_std * delta, state.mean, noise
         )
+        state = state.replace(key=key)
+
+        return pop, state

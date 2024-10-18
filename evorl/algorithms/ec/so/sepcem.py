@@ -31,7 +31,7 @@ class SepCEMWorkflow(ESWorkflowTemplate):
         agent = make_deterministic_ec_agent(
             action_space=env.action_space,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,  # use linear model
-            normalize_obs=False,
+            normalize_obs=config.normalize_obs,
             norm_layer_type=config.agent_network.norm_layer_type,
         )
 
@@ -71,6 +71,11 @@ class SepCEMWorkflow(ESWorkflowTemplate):
             max_episode_steps=config.env.max_episode_steps,
         )
 
+        agent_state_vmap_axes = AgentState(
+            params=0,
+            obs_preprocessor_state=None,
+        )
+
         return cls(
             config=config,
             env=env,
@@ -78,6 +83,7 @@ class SepCEMWorkflow(ESWorkflowTemplate):
             ec_optimizer=ec_optimizer,
             ec_evaluator=ec_evaluator,
             evaluator=evaluator,
+            agent_state_vmap_axes=agent_state_vmap_axes,
         )
 
     def _setup_agent_and_optimizer(self, key: jax.Array) -> tuple[AgentState, ECState]:
