@@ -79,7 +79,7 @@ class A2CAgent(Agent):
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
-            obs_preprocessor_state = running_statistics.init_state(dummy_obs)
+            obs_preprocessor_state = running_statistics.init_state(dummy_obs[0])
         else:
             obs_preprocessor_state = None
 
