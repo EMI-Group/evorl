@@ -1,0 +1,19 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.contrib.cso_evox.CSOWorkflow
+
+pop_size: 128
+num_iters: 1000
+
+phi: 0.0
+
+num_envs: 16
+episodes_for_fitness: 16 # episodes per individual for fitness
+explore: false
+discount: 1.0
+
+agent_network:
+  lb: -10.0
+  ub: 10.0
+  actor_hidden_layer_sizes: [16, 16]
+  norm_layer_type: 'none'

@@ -10,9 +10,11 @@ from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
 from evorl.ec.optimizers import OpenES, ExponentialScheduleSpec, ECState
 
+
 from .es_base import ESWorkflowTemplate
-from ..ec_agent import make_deterministic_ec_agent
 from ..obs_utils import init_obs_preprocessor
+from ..ec_agent import make_deterministic_ec_agent
+
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +103,7 @@ class OpenESWorkflow(ESWorkflowTemplate):
         )
 
     def _setup_agent_and_optimizer(self, key: jax.Array) -> tuple[AgentState, ECState]:
-        agent_key, ec_key, obs_key = jax.random.split(key, 3)
+        agent_key, ec_key = jax.random.split(key)
         agent_state = self.agent.init(
             self.env.obs_space, self.env.action_space, agent_key
         )
@@ -115,9 +117,9 @@ class OpenESWorkflow(ESWorkflowTemplate):
         return agent_state, ec_opt_state
 
     def _postsetup(self, state: State) -> State:
-        key, obs_key = jax.random.split(state.key, 2)
         # setup obs_preprocessor_state
         if self.config.normalize_obs:
+            key, obs_key = jax.random.split(state.key, 2)
             agent_state = init_obs_preprocessor(
                 agent_state=state.agent_state,
                 config=self.config,
@@ -125,11 +127,13 @@ class OpenESWorkflow(ESWorkflowTemplate):
                 pmap_axis_name=self.pmap_axis_name,
             )
 
-        # Note: we don't count these random timesteps in state.metrics
-        return state.replace(
-            agent_state=agent_state,
-            key=key,
-        )
+            # Note: we don't count these random timesteps in state.metrics
+            return state.replace(
+                agent_state=agent_state,
+                key=key,
+            )
+        else:
+            return state
 
     def _replace_actor_params(
         self, agent_state: AgentState, params: Params

@@ -6,8 +6,8 @@ import jax.numpy as jnp
 
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
 from evorl.utils.ec_utils import ParamVectorSpec
+from evorl.ec.evox_problems import MultiObjectiveBraxProblem
 
-from ..evox_problems import MultiObjectiveBraxProblem
 from .mo_base import MOECWorkflowTemplate
 from ..ec_agent import make_deterministic_ec_agent
 

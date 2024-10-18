@@ -13,9 +13,9 @@ from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.recorders import get_1d_array_statistics
 from evorl.workflows import EvoXWorkflowWrapper
 
-from ..evox_algorithm import CSO
-from ..evox_problems import GeneralRLProblem
-from ..ec_agent import make_deterministic_ec_agent
+from evorl.ec.evox_algorithm import CSO
+from evorl.ec.evox_problems import GeneralRLProblem
+from ..ec.ec_agent import make_deterministic_ec_agent
 
 
 class CSOWorkflow(EvoXWorkflowWrapper):

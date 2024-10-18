@@ -2,6 +2,9 @@
 
 workflow_cls: evorl.algorithms.ec.so.sepcem.SepCEMWorkflow
 
+normalize_obs: true # enable of disable VBN
+random_timesteps: 10000
+
 pop_size: 32
 num_iters: 1000
 

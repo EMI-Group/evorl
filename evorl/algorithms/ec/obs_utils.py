@@ -8,9 +8,7 @@ import jax
 from evorl.agent import AgentState, AgentActionFn, RandomAgent
 from evorl.envs import Env, EnvState, EnvStepFn, create_env, AutoresetMode
 from evorl.sample_batch import SampleBatch
-from evorl.types import (
-    PyTreeNode,
-)
+from evorl.types import PyTreeNode
 from evorl.utils.jax_utils import rng_split
 from evorl.utils import running_statistics
 

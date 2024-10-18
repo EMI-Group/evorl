@@ -1,8 +1,4 @@
-from typing import Protocol
-
-
 import chex
-
 from evox import (
     State as EvoXState,
     Algorithm,
@@ -10,22 +6,15 @@ from evox import (
     has_init_tell,
 )
 
-from evorl.types import PyTreeData, pytree_field, Params
+from evorl.types import PyTreeData, pytree_field
+from evorl.utils.ec_utils import ParamVectorSpec
 
 from .ec_optimizer import EvoOptimizer, ECState
 
 
-class TransformFn(Protocol):
-    """
-    Convert EvoX's flat individual to Flax Params
-    """
-
-    def __call__(self, flat_x: chex.Array) -> Params: ...
-
-
 class EvoXAlgoState(PyTreeData):
     algo_state: EvoXState
-    first_step: bool = pytree_field(pytree_node=False)
+    init_step: bool = pytree_field(pytree_node=False)
 
 
 class EvoXAlgorithmAdapter(EvoOptimizer):
@@ -34,39 +23,40 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
     """
 
     algorithm: Algorithm
-    transform_fn: TransformFn
-
-    def __init__(
-        self,
-        algorithm: Algorithm,
-    ):
-        self.algorithm = algorithm
+    param_vec_spec: ParamVectorSpec
 
     def init(self, key: chex.PRNGKey) -> EvoXAlgoState:
         algo_state = self.algorithm.init(key)
 
-        return EvoXAlgoState(algo_state=algo_state, first_step=True)
+        if has_init_tell(self.algorithm):
+            assert has_init_ask(self.algorithm)
+            init_step = True
+        else:
+            init_step = False
+
+        return EvoXAlgoState(algo_state=algo_state, init_step=init_step)
 
     def tell(
         self, state: EvoXAlgoState, xs: chex.ArrayTree, fitnesses: chex.Array
     ) -> EvoXAlgoState:
-        if has_init_tell(self.algorithm) and state.first_step:
+        if has_init_tell(self.algorithm) and state.init_step:
             tell = self.algorithm.init_tell
         else:
             tell = self.algorithm.tell
 
-        algo_state = tell(state.algo_state, fitnesses)
+        # Note: Evox's Algorithms minimize the fitness
+        algo_state = tell(state.algo_state, -fitnesses)
 
-        return state.replace(algo_state=algo_state, first_step=False)
+        return state.replace(algo_state=algo_state, init_step=False)
 
     def ask(self, state: EvoXAlgoState) -> tuple[chex.ArrayTree, ECState]:
-        if has_init_ask(self.algorithm) and state.first_step:
+        if has_init_ask(self.algorithm) and state.init_step:
             ask = self.algorithm.init_ask
         else:
             ask = self.algorithm.ask
 
         flat_pop, algo_state = ask(state.algo_state)
 
-        pop = self.transform_fn(flat_pop)
+        pop = self.param_vec_spec.to_tree(flat_pop)
 
         return pop, state.replace(algo_state=algo_state)

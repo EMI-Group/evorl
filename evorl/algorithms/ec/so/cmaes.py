@@ -1,3 +1,4 @@
+import logging
 from omegaconf import DictConfig
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
 
@@ -7,17 +8,33 @@ from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
-from evorl.ec.optimizers import SepCEM, ExponentialScheduleSpec, ECState
+from evorl.ec.optimizers import EvoXAlgorithmAdapter, ECState
+from evorl.ec.evox_algorithm import CMAES
+from evorl.utils.ec_utils import ParamVectorSpec
 
 from .es_base import ESWorkflowTemplate
 from ..obs_utils import init_obs_preprocessor
 from ..ec_agent import make_deterministic_ec_agent
 
+logger = logging.getLogger(__name__)
 
-class SepCEMWorkflow(ESWorkflowTemplate):
+
+class CMAESWorkflow(ESWorkflowTemplate):
     @classmethod
     def name(cls):
-        return "SepCEM"
+        return "CMAES"
+
+    @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
+        cls._rescale_config(config)
+
+        num_devices = jax.device_count()
+        if config.random_timesteps % num_devices != 0:
+            logging.warning(
+                f"When enable_multi_devices=True, pop_size ({config.random_timesteps}) should be divisible by num_devices ({num_devices}),"
+            )
+
+        config.random_timesteps = (config.random_timesteps // num_devices) * num_devices
 
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:
@@ -36,13 +53,19 @@ class SepCEMWorkflow(ESWorkflowTemplate):
             norm_layer_type=config.agent_network.norm_layer_type,
         )
 
-        ec_optimizer = SepCEM(
-            pop_size=config.pop_size,
-            num_elites=config.num_elites,
-            diagonal_variance=ExponentialScheduleSpec(**config.diagonal_variance),
-            weighted_update=config.weighted_update,
-            rank_weight_shift=config.rank_weight_shift,
-            mirror_sampling=config.mirror_sampling,
+        # dummy agent_state
+        agent_key = jax.random.PRNGKey(config.seed)
+        agent_state = agent.init(env.obs_space, env.action_space, agent_key)
+        param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
+
+        ec_optimizer = EvoXAlgorithmAdapter(
+            algorithm=CMAES(
+                center_init=param_vec_spec.to_vector(agent_state.params.policy_params),
+                init_stdev=config.init_stdev,
+                pop_size=config.pop_size,
+                mu=config.num_elites,
+            ),
+            param_vec_spec=param_vec_spec,
         )
 
         if config.explore:
@@ -93,8 +116,7 @@ class SepCEMWorkflow(ESWorkflowTemplate):
             self.env.obs_space, self.env.action_space, agent_key
         )
 
-        init_actor_params = agent_state.params.policy_params
-        ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
+        ec_opt_state = self.ec_optimizer.init(ec_key)
 
         # remove params
         agent_state = self._replace_actor_params(agent_state, params=None)
@@ -128,6 +150,8 @@ class SepCEMWorkflow(ESWorkflowTemplate):
         )
 
     def _get_pop_center(self, state: State) -> AgentState:
-        pop_center = state.ec_opt_state.mean
+        flat_pop_center = state.ec_opt_state.algo_state.mean
+
+        pop_center = self.ec_optimizer.param_vec_spec.to_tree(flat_pop_center)
 
         return self._replace_actor_params(state.agent_state, pop_center)

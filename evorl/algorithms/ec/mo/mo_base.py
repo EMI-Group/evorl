@@ -4,13 +4,12 @@ import wandb
 import chex
 import jax
 import orbax.checkpoint as ocp
+from evox.operators import non_dominated_sort
 
 from evorl.distributed import tree_unpmap
 from evorl.types import State
 from evorl.recorders import get_1d_array_statistics
-from evox.operators import non_dominated_sort
-
-from ..ec_workflow import EvoXWorkflowWrapper
+from evorl.workflows import EvoXWorkflowWrapper
 
 
 class MOECWorkflowTemplate(EvoXWorkflowWrapper):

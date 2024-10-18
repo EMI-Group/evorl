@@ -9,10 +9,10 @@ from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.agent import AgentState
 from omegaconf import DictConfig
 
-from ..evox_algorithm import OpenES
-from ..evox_problems import GeneralRLProblem
-from ..ec_agent import make_deterministic_ec_agent
-from .es_base import EvoXESWorkflowTemplate
+from evorl.ec.evox_algorithm import OpenES
+from evorl.ec.evox_problems import GeneralRLProblem
+from ..ec.ec_agent import make_deterministic_ec_agent
+from ..ec.so.es_base import EvoXESWorkflowTemplate
 
 logger = logging.getLogger(__name__)
 

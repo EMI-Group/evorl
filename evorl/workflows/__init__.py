@@ -1,7 +1,7 @@
 from .workflow import Workflow
 from .ec_workflow import (
+    ECWorkflowBase,
     ECWorkflow,
-    ECWorkflowTemplate,
     EvoXWorkflowWrapper,
 )
 from .rl_workflow import (
