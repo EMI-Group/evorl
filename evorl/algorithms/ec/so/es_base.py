@@ -14,12 +14,12 @@ from evorl.types import State
 from evorl.envs import Env
 from evorl.ec.optimizers import EvoOptimizer
 from evorl.recorders import get_1d_array_statistics
-from evorl.workflows import ECWorkflow
+from evorl.workflows import ECWorkflowTemplate
 
 logger = logging.getLogger(__name__)
 
 
-class ESWorkflowTemplate(ECWorkflow):
+class ESWorkflowTemplate(ECWorkflowTemplate):
     def __init__(
         self,
         config: DictConfig,

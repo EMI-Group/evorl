@@ -21,10 +21,10 @@ from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase
 from evorl.recorders import get_1d_array_statistics
 from evorl.types import State
-from .ec_workflow import ECWorkflowBase, ECWorkflowMetric, TrainMetric
+from .ec_workflow import ECWorkflow, ECWorkflowMetric, TrainMetric
 
 
-class EvoXWorkflowWrapper(ECWorkflowBase):
+class EvoXWorkflowWrapper(ECWorkflow):
     def __init__(
         self,
         config: DictConfig,

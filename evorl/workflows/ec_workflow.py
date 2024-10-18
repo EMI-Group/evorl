@@ -38,7 +38,7 @@ class DistributedInfo(PyTreeData):
     world_size: int = pytree_field(default=1, pytree_node=False)
 
 
-class ECWorkflowBase(Workflow):
+class ECWorkflow(Workflow):
     def __init__(self, config: DictConfig):
         """
         config:
@@ -101,7 +101,7 @@ class ECWorkflowBase(Workflow):
         cls.step = jax.pmap(cls.step, axis_name, static_broadcasted_argnums=(0,))
 
 
-class ECWorkflow(ECWorkflowBase):
+class ECWorkflowTemplate(ECWorkflow):
     def __init__(
         self,
         config: DictConfig,
