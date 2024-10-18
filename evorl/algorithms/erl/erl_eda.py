@@ -24,7 +24,7 @@ from evorl.ec.optimizers import ECState, OpenES, ExponentialScheduleSpec
 
 from ..td3 import make_mlp_td3_agent, TD3NetworkParams
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from .erl_base import ERLWorkflowTemplate, POPTrainMetric
+from .erl_base import ERLWorkflowBase, POPTrainMetric
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class EvaluateMetric(MetricBase):
     pop_center_episode_lengths: chex.Array
 
 
-class ERLEDAWorkflow(ERLWorkflowTemplate):
+class ERLEDAWorkflow(ERLWorkflowBase):
     """
     EC: n actors
     RL: 1 (actor,critic)

@@ -25,12 +25,12 @@ from evorl.ec.optimizers import ERLGA, ECState
 
 from ..td3 import make_mlp_td3_agent, TD3NetworkParams
 from ..offpolicy_utils import skip_replay_buffer_state
-from .erl_base import ERLWorkflowTemplate, POPTrainMetric
+from .erl_base import ERLWorkflowBase, POPTrainMetric
 
 logger = logging.getLogger(__name__)
 
 
-class ERLGAWorkflow(ERLWorkflowTemplate):
+class ERLGAWorkflow(ERLWorkflowBase):
     """
     EC: n actors
     RL: k actors + k critics

@@ -57,25 +57,26 @@ class EvaluateMetric(MetricBase):
 class ERLWorkflowBase(Workflow):
     """
     EC: n actors
-    RL: k (actor,critic)
-    Shared replay buffer
+    RL: k actors + k critics + 1 replay buffer.
     """
 
     def __init__(
         self,
         env: Env,
         agent: Agent,
+        agent_state_vmap_axes: AgentStateAxis,
         optimizer: optax.GradientTransformation,
         ec_optimizer: EvoOptimizer,
         ec_collector: EpisodeCollector,
         rl_collector: EpisodeCollector,
-        evaluator: Evaluator,
+        evaluator: Evaluator,  # to evaluate the pop-mean actor
         replay_buffer: Any,
         config: DictConfig,
     ):
         super().__init__(config)
         self.env = env
         self.agent = agent
+        self.agent_state_vmap_axes = agent_state_vmap_axes
         self.optimizer = optimizer
         self.ec_optimizer = ec_optimizer
         self.ec_collector = ec_collector
@@ -109,40 +110,6 @@ class ERLWorkflowBase(Workflow):
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:
         raise NotImplementedError
-
-
-class ERLWorkflowTemplate(ERLWorkflowBase):
-    """
-    EC: n actors
-    RL: k actors + k critics + 1 replay buffer.
-    """
-
-    def __init__(
-        self,
-        env: Env,
-        agent: Agent,
-        agent_state_vmap_axes: AgentStateAxis,
-        optimizer: optax.GradientTransformation,
-        ec_optimizer: EvoOptimizer,
-        ec_collector: EpisodeCollector,
-        rl_collector: EpisodeCollector,
-        evaluator: Evaluator,  # to evaluate the pop-mean actor
-        replay_buffer: Any,
-        config: DictConfig,
-    ):
-        super().__init__(
-            env,
-            agent,
-            optimizer,
-            ec_optimizer,
-            ec_collector,
-            rl_collector,
-            evaluator,
-            replay_buffer,
-            config,
-        )
-
-        self.agent_state_vmap_axes = agent_state_vmap_axes
 
     def setup(self, key: chex.PRNGKey) -> State:
         """
