@@ -14,9 +14,10 @@ from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.agent import AgentState
 from evorl.ec.evox_algorithm import CMAES, SepCMAES
 from evorl.ec.evox_problems import GeneralRLProblem
+from evorl.workflows import EvoXESWorkflowTemplate
+
 
 from ..ec.ec_agent import make_deterministic_ec_agent
-from ..ec.so.es_base import EvoXESWorkflowTemplate
 
 logger = logging.getLogger(__name__)
 

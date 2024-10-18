@@ -1,5 +1,5 @@
 import logging
-
+from omegaconf import DictConfig
 import jax
 
 from evorl.types import State
@@ -7,12 +7,12 @@ from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.agent import AgentState
-from omegaconf import DictConfig
 
 from evorl.ec.evox_algorithm import OpenES
 from evorl.ec.evox_problems import GeneralRLProblem
+from evorl.workflows import EvoXESWorkflowTemplate
+
 from ..ec.ec_agent import make_deterministic_ec_agent
-from ..ec.so.es_base import EvoXESWorkflowTemplate
 
 logger = logging.getLogger(__name__)
 

@@ -7,12 +7,12 @@ import jax.numpy as jnp
 from evorl.envs import AutoresetMode, create_wrapped_brax_env
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.ec.evox_problems import MultiObjectiveBraxProblem
+from evorl.workflows import EvoXMOWorkflowTemplate
 
-from .mo_base import MOECWorkflowTemplate
 from ..ec_agent import make_deterministic_ec_agent
 
 
-class NSGA2Workflow(MOECWorkflowTemplate):
+class NSGA2Workflow(EvoXMOWorkflowTemplate):
     @classmethod
     def name(cls):
         return "NSGA2"
