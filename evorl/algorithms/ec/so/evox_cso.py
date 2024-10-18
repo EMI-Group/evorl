@@ -1,7 +1,6 @@
 from omegaconf import DictConfig
 from functools import partial
 
-import evox.algorithms
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -14,6 +13,7 @@ from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.recorders import get_1d_array_statistics
 from evorl.workflows import EvoXWorkflowWrapper
 
+from ..evox_algorithm import CSO
 from ..evox_problems import GeneralRLProblem
 from ..ec_agent import make_deterministic_ec_agent
 
@@ -54,8 +54,7 @@ class CSOWorkflow(EvoXWorkflowWrapper):
         agent_state = agent.init(env.obs_space, env.action_space, agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
-        # TODO: impl complete version of OpenES
-        algorithm = evox.algorithms.CSO(
+        algorithm = CSO(
             lb=jnp.full((param_vec_spec.vec_size,), fill_value=config.agent_network.lb),
             ub=jnp.full((param_vec_spec.vec_size,), fill_value=config.agent_network.ub),
             pop_size=config.pop_size,
