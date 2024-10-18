@@ -9,7 +9,7 @@ import jax.tree_util as jtu
 import orbax.checkpoint as ocp
 
 from evorl.distributed import tree_unpmap
-from evorl.agent import Agent, AgentState
+from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase
 from evorl.types import State
@@ -30,6 +30,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         ec_optimizer: EvoOptimizer,
         ec_evaluator: Evaluator,
         evaluator: Evaluator,
+        agent_state_vmap_axes: AgentStateAxis = 0,
     ):
         super().__init__(
             config=config,
@@ -37,6 +38,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
             agent=agent,
             ec_optimizer=ec_optimizer,
             ec_evaluator=ec_evaluator,
+            agent_state_vmap_axes=agent_state_vmap_axes,
         )
 
         self.evaluator = evaluator  # independent evaluator for pop_center

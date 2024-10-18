@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import chex
 import jax
+import jax.numpy as jnp
 import jax.tree_util as jtu
 
 from evorl.agent import AgentActionFn, AgentStateAxis
@@ -74,12 +75,12 @@ class EpisodeCollector(PyTreeNode):
 
             return next_key, episode_trajectory
 
-        # [#iters, ..., T, #envs, ...]
+        # [#iters, T, ..., #envs]
         _, episode_trajectory = jax.lax.scan(_evaluate_fn, key, (), length=num_iters)
 
-        # [#iters, ..., T, #envs] -> [T, ..., #envs * #iters]
+        # [#iters, T, ..., #envs] -> [T, ..., #envs * #iters]
         episode_trajectory = jtu.tree_map(
-            lambda x: jax.lax.collapse(x.swapaxes(0, -2), -2), episode_trajectory
+            lambda x: jax.lax.collapse(jnp.moveaxis(x, 0, -2), -2), episode_trajectory
         )
 
         # [..., num_episodes]

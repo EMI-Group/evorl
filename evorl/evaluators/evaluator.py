@@ -93,7 +93,7 @@ class Evaluator(PyTreeNode):
 
         # [#iters, ..., #envs] -> [..., num_episodes]
         eval_metrics = jtu.tree_map(
-            lambda x: jax.lax.collapse(x.swapaxes(0, -2), -2),
+            lambda x: jax.lax.collapse(jnp.moveaxis(x, 0, -2), -2),
             EvaluateMetric(
                 episode_returns=episode_returns,
                 episode_lengths=episode_lengths,
@@ -101,12 +101,3 @@ class Evaluator(PyTreeNode):
         )
 
         return eval_metrics
-
-
-def _flatten_metric(x):
-    """
-    x: (#iters, ..., #envs)
-
-    Return: (..., #iters * #envs)
-    """
-    return jax.lax.collapse(jnp.moveaxis(x, 0, -2), -2)

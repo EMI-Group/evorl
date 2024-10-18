@@ -184,7 +184,10 @@ class ECWorkflowTemplate(ECWorkflow):
     def _update_obs_preprocessor(
         self, agent_state: AgentState, obs: chex.ArrayTree
     ) -> AgentState:
-        return AgentState
+        """
+        By default, don't update obs_preprocessor_state.
+        """
+        return agent_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         agent_state = state.agent_state
