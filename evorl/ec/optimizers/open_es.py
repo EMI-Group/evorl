@@ -103,10 +103,9 @@ class OpenES(EvoOptimizer):
 
         return state.replace(mean=mean, opt_state=opt_state, noise_std=noise_std)
 
-    def ask(self, state: ECState, key: chex.PRNGKey) -> tuple[chex.ArrayTree, ECState]:
+    def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
         "Generate new candidate solutions"
         key, sample_key = jax.random.split(state.key)
-
         sample_keys = rng_split_like_tree(sample_key, state.mean)
 
         if self.mirror_sampling:

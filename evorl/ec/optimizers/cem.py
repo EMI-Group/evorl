@@ -93,11 +93,10 @@ class SepCEM(EvoOptimizer):
     def ask(self, state: SepCEMState) -> tuple[chex.ArrayTree, ECState]:
         key, sample_key = jax.random.split(state.key)
         sample_keys = rng_split_like_tree(sample_key, state.mean)
-        pop_size = self.pop_size
 
         if self.mirror_sampling:
             half_noise = jtu.tree_map(
-                lambda x, var, k: jax.random.normal(k, (pop_size // 2, *x.shape))
+                lambda x, var, k: jax.random.normal(k, (self.pop_size // 2, *x.shape))
                 * jnp.sqrt(var),
                 state.mean,
                 state.variance,
@@ -111,7 +110,7 @@ class SepCEM(EvoOptimizer):
 
         else:
             noise = jtu.tree_map(
-                lambda x, var, k: jax.random.normal(k, (pop_size, *x.shape))
+                lambda x, var, k: jax.random.normal(k, (self.pop_size, *x.shape))
                 * jnp.sqrt(var),
                 state.mean,
                 state.variance,
