@@ -129,18 +129,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             max_episode_steps=config.env.max_episode_steps,
         )
 
-        workflow = cls(
-            env,
-            agent,
-            optimizer,
-            ec_optimizer,
-            collector,
-            evaluator,
-            replay_buffer,
-            config,
-        )
-
-        workflow.agent_state_pytree_axes = AgentState(
+        agent_state_vmap_axes = AgentState(
             params=TD3NetworkParams(
                 critic_params=None,
                 actor_params=0,
@@ -150,8 +139,20 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             obs_preprocessor_state=None,
         )
 
+        workflow = cls(
+            env,
+            agent,
+            agent_state_vmap_axes,
+            optimizer,
+            ec_optimizer,
+            collector,
+            evaluator,
+            replay_buffer,
+            config,
+        )
+
         workflow._rl_update_fn = build_rl_update_fn(
-            agent, optimizer, config, workflow.agent_state_pytree_axes
+            agent, optimizer, config, agent_state_vmap_axes
         )
 
         return workflow
@@ -459,7 +460,7 @@ def build_rl_update_fn(
     agent: Agent,
     optimizer: optax.GradientTransformation,
     config: DictConfig,
-    agent_state_pytree_axes: AgentState,
+    agent_state_vmap_axes: AgentState,
 ):
     num_learning_offspring = config.num_learning_offspring
 
@@ -467,9 +468,9 @@ def build_rl_update_fn(
         # loss on a single critic with multiple actors
         # sample_batch: (n, B, ...)
 
-        loss_dict = jax.vmap(
-            agent.critic_loss, in_axes=(agent_state_pytree_axes, 0, 0)
-        )(agent_state, sample_batch, jax.random.split(key, num_learning_offspring))
+        loss_dict = jax.vmap(agent.critic_loss, in_axes=(agent_state_vmap_axes, 0, 0))(
+            agent_state, sample_batch, jax.random.split(key, num_learning_offspring)
+        )
 
         # mean over the num_learning_offspring
         loss = loss_dict.critic_loss.mean()
@@ -479,7 +480,7 @@ def build_rl_update_fn(
     def actor_loss_fn(agent_state, sample_batch, key):
         # loss on a single actor
 
-        loss_dict = jax.vmap(agent.actor_loss, in_axes=(agent_state_pytree_axes, 0, 0))(
+        loss_dict = jax.vmap(agent.actor_loss, in_axes=(agent_state_vmap_axes, 0, 0))(
             agent_state, sample_batch, jax.random.split(key, num_learning_offspring)
         )
 

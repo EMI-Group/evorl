@@ -143,7 +143,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
             max_episode_steps=config.env.max_episode_steps,
         )
 
-        agent_state_pytree_axes = AgentState(
+        agent_state_vmap_axes = AgentState(
             params=0,
             obs_preprocessor_state=None,
         )
@@ -151,7 +151,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
         workflow = cls(
             env,
             agent,
-            agent_state_pytree_axes,
+            agent_state_vmap_axes,
             optimizer,
             ec_optimizer,
             ec_collector,
@@ -186,8 +186,8 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
         # agnet_state: only contains one agent
         eval_metrics, trajectory = self.rl_collector.rollout(
             agent_state,
-            self.config.rollout_episodes,
             key,
+            self.config.rollout_episodes,
         )
 
         trajectory = clean_trajectory(trajectory)

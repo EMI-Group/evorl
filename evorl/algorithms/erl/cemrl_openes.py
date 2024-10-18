@@ -117,18 +117,7 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
             max_episode_steps=config.env.max_episode_steps,
         )
 
-        workflow = cls(
-            env,
-            agent,
-            optimizer,
-            ec_optimizer,
-            collector,
-            evaluator,
-            replay_buffer,
-            config,
-        )
-
-        workflow.agent_state_pytree_axes = AgentState(
+        agent_state_vmap_axes = AgentState(
             params=TD3NetworkParams(
                 critic_params=None,
                 actor_params=0,
@@ -138,8 +127,20 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
             obs_preprocessor_state=None,
         )
 
+        workflow = cls(
+            env,
+            agent,
+            agent_state_vmap_axes,
+            optimizer,
+            ec_optimizer,
+            collector,
+            evaluator,
+            replay_buffer,
+            config,
+        )
+
         workflow._rl_update_fn = build_rl_update_fn(
-            agent, optimizer, config, workflow.agent_state_pytree_axes
+            agent, optimizer, config, workflow.agent_state_vmap_axes
         )
 
         return workflow

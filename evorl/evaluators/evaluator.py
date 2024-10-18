@@ -4,8 +4,9 @@ import math
 import chex
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 
-from evorl.agent import AgentState
+from evorl.agent import AgentState, AgentStateAxis
 from evorl.envs import Env
 from evorl.metrics import EvaluateMetric
 from evorl.rollout import eval_rollout_episode, fast_eval_rollout_episode
@@ -23,11 +24,17 @@ class Evaluator(PyTreeNode):
     max_episode_steps: int = pytree_field(pytree_node=False)
     discount: float = pytree_field(default=1.0, pytree_node=False)
 
+    agent_state_vmap_axes: AgentState = 0
+
     def __post_init__(self):
         assert hasattr(self.env, "num_envs"), "only parrallel envs are supported"
 
     def evaluate(
-        self, agent_state: AgentState, key: chex.PRNGKey, num_episodes: int
+        self,
+        agent_state: AgentState,
+        key: chex.PRNGKey,
+        num_episodes: int,
+        agent_state_vmap_axes: AgentStateAxis = 0,
     ) -> EvaluateMetric:
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
@@ -42,7 +49,7 @@ class Evaluator(PyTreeNode):
         env_step_fn = self.env.step
         if key.ndim > 1:
             for _ in range(key.ndim - 1):
-                action_fn = jax.vmap(action_fn)
+                action_fn = jax.vmap(action_fn, in_axes=(agent_state_vmap_axes, 0, 0))
                 env_reset_fn = jax.vmap(env_reset_fn)
                 env_step_fn = jax.vmap(env_step_fn)
 
@@ -58,7 +65,7 @@ class Evaluator(PyTreeNode):
                     eval_key,
                     self.max_episode_steps,
                 )
-                discount_returns = episode_metrics.episode_returns
+                episode_returns = episode_metrics.episode_returns
                 episode_lengths = episode_metrics.episode_lengths
             else:
                 episode_trajectory, env_state = eval_rollout_episode(
@@ -72,22 +79,28 @@ class Evaluator(PyTreeNode):
 
                 # Note: be careful when self.max_episode_steps < env.max_episode_steps,
                 # where dones could all be zeros.
-                discount_returns = compute_discount_return(
+                episode_returns = compute_discount_return(
                     episode_trajectory.rewards, episode_trajectory.dones, self.discount
                 )
                 episode_lengths = compute_episode_length(episode_trajectory.dones)
 
-            return next_key, (discount_returns, episode_lengths)  # [..., #envs]
+            return next_key, (episode_returns, episode_lengths)  # [..., #envs]
 
         # [#iters, ..., #envs]
-        _, (discount_returns, episode_lengths) = jax.lax.scan(
+        _, (episode_returns, episode_lengths) = jax.lax.scan(
             _evaluate_fn, key, (), length=num_iters
         )
 
-        return EvaluateMetric(
-            episode_returns=_flatten_metric(discount_returns),  # [..., num_episodes]
-            episode_lengths=_flatten_metric(episode_lengths),
+        # [#iters, ..., #envs] -> [..., num_episodes]
+        eval_metrics = jtu.tree_map(
+            lambda x: jax.lax.collapse(x.swapaxes(0, -2), -2),
+            EvaluateMetric(
+                episode_returns=episode_returns,
+                episode_lengths=episode_lengths,
+            ),
         )
+
+        return eval_metrics
 
 
 def _flatten_metric(x):

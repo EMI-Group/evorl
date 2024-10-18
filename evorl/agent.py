@@ -10,6 +10,7 @@ from evorl.envs import Space
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
+    Axis,
     LossDict,
     Params,
     PolicyExtraInfo,
@@ -26,9 +27,10 @@ class AgentState(PyTreeData):
     obs_preprocessor_state: Any = None
     # TODO: define the action_postprocessor_state
     action_postprocessor_state: Any = None
-    # action_space: Space | None = None
-    # obs_space: Space | None = None
     extra_state: Any = None
+
+
+AgentStateAxis = AgentState | Axis
 
 
 class Agent(PyTreeNode, metaclass=ABCMeta):

@@ -10,6 +10,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
+from evorl.agent import AgentStateAxis
 from evorl.metrics import MetricBase, metricfield
 from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
@@ -120,7 +121,7 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
         self,
         env: Env,
         agent: Agent,
-        agent_state_pytree_axes: AgentState,
+        agent_state_vmap_axes: AgentStateAxis,
         optimizer: optax.GradientTransformation,
         ec_optimizer: EvoOptimizer,
         ec_collector: EpisodeCollector,
@@ -141,7 +142,7 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
             config,
         )
 
-        self.agent_state_pytree_axes = agent_state_pytree_axes
+        self.agent_state_vmap_axes = agent_state_vmap_axes
 
     def setup(self, key: chex.PRNGKey) -> State:
         """
@@ -284,11 +285,11 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
     def _ec_rollout(self, agent_state, key):
         eval_metrics, trajectory = jax.vmap(
             self.ec_collector.rollout,
-            in_axes=(self.agent_state_pytree_axes, None, 0),
+            in_axes=(self.agent_state_vmap_axes, 0, None),
         )(
             agent_state,
-            self.config.episodes_for_fitness,
             jax.random.split(key, self.config.pop_size),
+            self.config.episodes_for_fitness,
         )
 
         trajectory = clean_trajectory(trajectory)
@@ -301,11 +302,11 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
     def _rl_rollout(self, agent_state, key):
         eval_metrics, trajectory = jax.vmap(
             self.rl_collector.rollout,
-            in_axes=(self.agent_state_pytree_axes, None, 0),
+            in_axes=(self.agent_state_vmap_axes, 0, None),
         )(
             agent_state,
-            self.config.rollout_episodes,
             jax.random.split(key, self.config.num_rl_agents),
+            self.config.rollout_episodes,
         )
 
         trajectory = clean_trajectory(trajectory)

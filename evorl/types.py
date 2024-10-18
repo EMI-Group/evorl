@@ -29,10 +29,9 @@ AgentID = Any
 
 ReplayBufferState = chex.ArrayTree
 
+Axis = int | None | Sequence[Any]
 
 MISSING_REWARD = -1e10
-
-Axis = Union[int, Sequence[int], None]
 
 
 class ReductionFn(Protocol):

@@ -142,7 +142,7 @@ class ERLGAWorkflow(ERLWorkflowTemplate):
             max_episode_steps=config.env.max_episode_steps,
         )
 
-        agent_state_pytree_axes = AgentState(
+        agent_state_vmap_axes = AgentState(
             params=0,
             obs_preprocessor_state=None,
         )
@@ -150,7 +150,7 @@ class ERLGAWorkflow(ERLWorkflowTemplate):
         workflow = cls(
             env,
             agent,
-            agent_state_pytree_axes,
+            agent_state_vmap_axes,
             optimizer,
             ec_optimizer,
             ec_collector,
@@ -161,7 +161,7 @@ class ERLGAWorkflow(ERLWorkflowTemplate):
         )
 
         workflow._rl_update_fn = build_rl_update_fn(
-            agent, optimizer, config, workflow.agent_state_pytree_axes
+            agent, optimizer, config, workflow.agent_state_vmap_axes
         )
 
         return workflow
@@ -418,7 +418,7 @@ def build_rl_update_fn(
     agent: Agent,
     optimizer: optax.GradientTransformation,
     config: DictConfig,
-    agent_state_pytree_axes: AgentState,
+    agent_state_vmap_axes: AgentState,
 ):
     num_rl_agents = config.num_rl_agents
 
@@ -426,9 +426,9 @@ def build_rl_update_fn(
         # loss on a single critic with multiple actors
         # sample_batch: (n, B, ...)
 
-        loss_dict = jax.vmap(
-            agent.critic_loss, in_axes=(agent_state_pytree_axes, 0, 0)
-        )(agent_state, sample_batch, jax.random.split(key, num_rl_agents))
+        loss_dict = jax.vmap(agent.critic_loss, in_axes=(agent_state_vmap_axes, 0, 0))(
+            agent_state, sample_batch, jax.random.split(key, num_rl_agents)
+        )
 
         loss = loss_dict.critic_loss.sum()
 
@@ -436,7 +436,7 @@ def build_rl_update_fn(
 
     def actor_loss_fn(agent_state, sample_batch, key):
         # loss on a single actor
-        loss_dict = jax.vmap(agent.actor_loss, in_axes=(agent_state_pytree_axes, 0, 0))(
+        loss_dict = jax.vmap(agent.actor_loss, in_axes=(agent_state_vmap_axes, 0, 0))(
             agent_state, sample_batch, jax.random.split(key, num_rl_agents)
         )
 

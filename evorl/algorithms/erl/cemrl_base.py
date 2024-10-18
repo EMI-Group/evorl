@@ -10,6 +10,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
+from evorl.agent import AgentStateAxis
 from evorl.metrics import MetricBase, metricfield
 from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
@@ -53,6 +54,7 @@ class CEMRLWorkflowBase(Workflow):
         self,
         env: Env,
         agent: Agent,
+        agent_state_vmap_axes: AgentStateAxis,
         optimizer: optax.GradientTransformation,
         ec_optimizer: EvoOptimizer,
         collector: EpisodeCollector,
@@ -63,6 +65,7 @@ class CEMRLWorkflowBase(Workflow):
         super().__init__(config)
         self.env = env
         self.agent = agent
+        self.agent_state_vmap_axes = agent_state_vmap_axes
         self.optimizer = optimizer
         self.ec_optimizer = ec_optimizer
         self.collector = collector
@@ -237,11 +240,11 @@ class CEMRLWorkflowBase(Workflow):
     def _rollout(self, agent_state, key):
         eval_metrics, trajectory = jax.vmap(
             self.collector.rollout,
-            in_axes=(self.agent_state_pytree_axes, None, 0),
+            in_axes=(self.agent_state_vmap_axes, 0, None),
         )(
             agent_state,
-            self.config.episodes_for_fitness,
             jax.random.split(key, self.config.pop_size),
+            self.config.episodes_for_fitness,
         )
 
         trajectory = clean_trajectory(trajectory)
