@@ -39,8 +39,8 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
     def name(cls):
         return "TD3-OnPolicy"
 
-    @staticmethod
-    def _rescale_config(config) -> None:
+    @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
         num_devices = jax.device_count()
 
         if config.num_envs % num_devices != 0:

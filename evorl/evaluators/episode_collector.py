@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 class EpisodeCollector(PyTreeNode):
     """
-    Return eval metrics and trajectory
+    Return eval metrics and episodic trajectory
     """
 
     env: Env

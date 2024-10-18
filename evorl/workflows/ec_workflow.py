@@ -15,8 +15,8 @@ from evorl.distributed import POP_AXIS_NAME, all_gather
 from evorl.metrics import MetricBase
 from evorl.ec.optimizers import EvoOptimizer, ECState
 from evorl.envs import Env
-from evorl.evaluators import Evaluator
-from evorl.agent import Agent, AgentState
+from evorl.evaluators import Evaluator, EpisodeCollector
+from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.distributed import get_global_ranks, psum, split_key_to_devices
 from evorl.types import State, PyTreeData, pytree_field, Params
 
@@ -87,8 +87,8 @@ class ECWorkflow(Workflow):
     def _build_from_config(cls, config: DictConfig) -> Self:
         raise NotImplementedError
 
-    @staticmethod
-    def _rescale_config(config: DictConfig) -> None:
+    @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
         """
         When enable_multi_devices=True, rescale config settings in-place to match multi-devices.
         Note: not need for EvoX part, as it's already handled by EvoX.
@@ -110,8 +110,9 @@ class ECWorkflowTemplate(ECWorkflow):
         config: DictConfig,
         env: Env,
         agent: Agent,
-        ec_optimizer: EvoOptimizer,
-        ec_evaluator: Evaluator,
+        ec_optimizer: EvoOptimizer | Algorithm,
+        ec_evaluator: Evaluator | EpisodeCollector,
+        agent_state_vmap_axes: AgentStateAxis = 0,
     ):
         super().__init__(config)
 
@@ -119,9 +120,10 @@ class ECWorkflowTemplate(ECWorkflow):
         self.env = env
         self.ec_optimizer = ec_optimizer
         self.ec_evaluator = ec_evaluator
+        self.agent_state_vmap_axes = agent_state_vmap_axes
 
-    @staticmethod
-    def _rescale_config(config: DictConfig) -> None:
+    @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
         num_devices = jax.device_count()
 
         # Note: in some model, the generated number of individuals may not be pop_size,
@@ -150,6 +152,7 @@ class ECWorkflowTemplate(ECWorkflow):
     def setup(self, key: chex.PRNGKey) -> State:
         key, agent_key = jax.random.split(key, 2)
 
+        # agent_state: store params not optimized by EC (eg: obs_preprocessor_state)
         agent_state, ec_opt_state = self._setup_agent_and_optimizer(agent_key)
         workflow_metrics = self._setup_workflow_metrics()
         distributed_info = DistributedInfo()
@@ -178,7 +181,13 @@ class ECWorkflowTemplate(ECWorkflow):
     ) -> AgentState:
         raise NotImplementedError
 
+    def _update_obs_preprocessor(
+        self, agent_state: AgentState, obs: chex.ArrayTree
+    ) -> AgentState:
+        return AgentState
+
     def step(self, state: State) -> tuple[MetricBase, State]:
+        agent_state = state.agent_state
         key, rollout_key, ec_key = jax.random.split(state.key, 3)
 
         pop = self.ec_optimizer.ask(state.ec_opt_state, ec_key)
@@ -192,13 +201,28 @@ class ECWorkflowTemplate(ECWorkflow):
             pop,
         )
 
-        pop_agent_state = self._replace_actor_params(state.agent_state, eval_pop)
+        pop_agent_state = self._replace_actor_params(agent_state, eval_pop)
 
-        rollout_metrics = self.ec_evaluator.evaluate(
-            pop_agent_state,
-            jax.random.split(rollout_key, num=slice_size),
-            num_episodes=self.config.episodes_for_fitness,
-        )
+        if self.config.normalize_obs:
+            assert isinstance(self.ec_evaluator, EpisodeCollector)
+            # trajectory: [T, pop_size, #episodes]
+            rollout_metrics, trajactory = self.ec_evaluator.rollout(
+                pop_agent_state,
+                jax.random.split(rollout_key, num=slice_size),
+                num_episodes=self.config.episodes_for_fitness,
+                agent_state_vmap_axes=self.agent_state_vmap_axes,
+            )
+            agent_state = self._update_obs_preprocessor(agent_state, trajactory.obs)
+
+        else:
+            assert isinstance(self.ec_evaluator, Evaluator)
+            rollout_metrics = self.ec_evaluator.evaluate(
+                pop_agent_state,
+                jax.random.split(rollout_key, num=slice_size),
+                num_episodes=self.config.episodes_for_fitness,
+                agent_state_vmap_axes=self.agent_state_vmap_axes,
+            )
+
         fitnesses = jnp.mean(rollout_metrics.episode_returns, axis=-1)
         fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
 
@@ -225,6 +249,7 @@ class ECWorkflowTemplate(ECWorkflow):
 
         return train_metrics, state.replace(
             key=key,
+            agent_state=agent_state,
             ec_opt_state=ec_opt_state,
             metrics=workflow_metrics,
         )

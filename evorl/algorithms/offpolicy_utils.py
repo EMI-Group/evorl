@@ -1,5 +1,6 @@
 import logging
 import math
+from omegaconf import DictConfig
 
 import jax
 import jax.numpy as jnp
@@ -27,8 +28,8 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
     Wrapping some common template for off-policy RL with TD Learning
     """
 
-    @staticmethod
-    def _rescale_config(config) -> None:
+    @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
         num_devices = jax.device_count()
 
         if config.num_envs % num_devices != 0:

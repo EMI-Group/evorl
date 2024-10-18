@@ -244,8 +244,8 @@ class A2CWorkflow(OnPolicyWorkflow):
     def name(cls):
         return "A2C"
 
-    @staticmethod
-    def _rescale_config(config: DictConfig) -> None:
+    @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
         num_devices = jax.device_count()
 
         if config.num_envs % num_devices != 0:

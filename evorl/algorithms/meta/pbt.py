@@ -65,8 +65,8 @@ class PBTWorkflow(Workflow):
     def name(cls):
         return "PBT"
 
-    @staticmethod
-    def _rescale_config(config) -> None:
+    @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
         num_devices = jax.device_count()
 
         if config.pop_size % num_devices != 0:

@@ -35,26 +35,25 @@ class ObsPreprocessorSpec(PyTreeData):
 
 def init_obs_preprocessor_with_random_timesteps(
     obs_preprocessor_state: Any,
-    spec: ObsPreprocessorSpec,
+    timesteps: int,
     env: Env,
-    action_fn: AgentActionFn,
     key: chex.PRNGKey,
     pmap_axis_name: str | None = None,
 ) -> Any:
-    env_key, agent_key, rollout_key = jax.random.split(key)
+    env_key, agent_key, rollout_key = jax.random.split(key, num=3)
     env_state = env.reset(env_key)
 
     agent = RandomAgent()
 
     agent_state = agent.init(env.obs_space, env.action_space, agent_key)
 
-    rollout_length = math.ceil(spec.init_timesteps / env.num_envs)
+    rollout_length = math.ceil(timesteps / env.num_envs)
 
     if rollout_length > 0:
         # obs (rollout_length, num_envs, ...)
         obs, env_state = rollout_obs(
             env.step,
-            action_fn,
+            agent.compute_actions,
             env_state,
             agent_state,
             rollout_key,

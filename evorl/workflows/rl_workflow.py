@@ -66,8 +66,8 @@ class RLWorkflow(Workflow):
     def _build_from_config(cls, config: DictConfig) -> Self:
         raise NotImplementedError
 
-    @staticmethod
-    def _rescale_config(config: DictConfig) -> None:
+    @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
         """
         When enable_multi_devices=True, rescale config settings in-place to match multi-devices
         """

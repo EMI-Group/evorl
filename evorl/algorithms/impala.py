@@ -298,9 +298,9 @@ class IMPALAWorkflow(OnPolicyWorkflow):
     def name(cls):
         return "IMPALA"
 
-    @staticmethod
-    def _rescale_config(config: DictConfig, devices) -> None:
-        num_devices = len(devices)
+    @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
+        num_devices = jax.device_count()
         if config.num_envs % num_devices != 0:
             logger.warning(
                 f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
