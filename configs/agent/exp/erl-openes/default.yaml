@@ -18,7 +18,8 @@ num_elites: 2
 episodes_for_fitness: 1 # must be devided by num_envs
 rollout_episodes: 1 # must be devided by num_envs
 
-rl_injection_interval: 1
+rl_injection_interval: 1 # replace worst pop agents by rl agents
+rl_injection_stepsize: 1.0 # 1: replaced by rl weights, 0: do not inject
 
 agent_network:
   norm_layer_type: "layer_norm"

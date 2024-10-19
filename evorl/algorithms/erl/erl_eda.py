@@ -168,12 +168,16 @@ class ERLEDAWorkflow(ERLWorkflowBase):
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
+        agent_key, ec_key = jax.random.split(key)
+
         # one agent for RL
-        agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
+        agent_state = self.agent.init(
+            self.env.obs_space, self.env.action_space, agent_key
+        )
 
         init_actor_params = agent_state.params.actor_params
 
-        ec_opt_state = self.ec_optimizer.init(init_actor_params)
+        ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
         opt_state = PyTreeDict(
             actor=self.optimizer.init(agent_state.params.actor_params),

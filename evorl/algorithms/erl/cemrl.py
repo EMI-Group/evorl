@@ -160,7 +160,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
-        agent_key, ec_key = jax.random.split(key, 2)
+        agent_key, ec_key = jax.random.split(key)
 
         # one actor + one critic
         agent_state = self.agent.init(
