@@ -1,0 +1,28 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.ec.so.ars.ARSWorkflow
+
+normalize_obs: true # enable of disable VBN
+normalize_obs_mode: "RS" # "Global" or "RS" or "VBN"
+random_timesteps: 10000 # effective in "Global" and "VBN"
+
+pop_size: 128 # use mirror sampling by default
+num_iters: 1000
+
+num_elites: 1 # [1, pop_size//2]
+
+lr: 0.02
+noise_std: 0.03
+
+num_envs: 16
+episodes_for_fitness: 16 # episodes per individual for fitness
+explore: false
+discount: 1.0
+
+num_eval_envs: 128
+eval_episodes: 128
+eval_interval: 10
+
+agent_network:
+  actor_hidden_layer_sizes: [16, 16]
+  norm_layer_type: "none"

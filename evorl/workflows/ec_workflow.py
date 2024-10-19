@@ -15,7 +15,7 @@ from evorl.envs import Env
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.distributed import get_global_ranks, psum, split_key_to_devices
-from evorl.types import State, PyTreeData, pytree_field, Params
+from evorl.types import State, PyTreeData, pytree_field, Params, Observation
 
 from .workflow import Workflow
 
@@ -186,7 +186,7 @@ class ECWorkflowTemplate(ECWorkflow):
         raise NotImplementedError
 
     def _update_obs_preprocessor(
-        self, agent_state: AgentState, obs: chex.ArrayTree
+        self, agent_state: AgentState, obs: Observation
     ) -> AgentState:
         """
         By default, don't update obs_preprocessor_state.

@@ -7,4 +7,6 @@ from .erl_ga import ERLGA
 from .cem import SepCEM
 from .open_es import OpenES
 
+from .ars import ARS
+
 from .evox_wrapper import EvoXAlgorithmAdapter
