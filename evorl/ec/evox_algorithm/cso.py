@@ -25,8 +25,8 @@ class CSOState:
 class CSO(Algorithm):
     lb: jax.Array
     ub: jax.Array
-    pop_size: int = pytree_field(static=True)
-    stdev: jax.Array
+    pop_size: int
+    init_std: jax.Array
     phi: float = 0.0
     dim: int = pytree_field(static=True, init=False)
 
@@ -38,7 +38,7 @@ class CSO(Algorithm):
         state_key, init_key = jax.random.split(key)
 
         center = (self.ub + self.lb) / 2
-        noise = self.stdev * jax.random.normal(
+        noise = self.init_std * jax.random.normal(
             init_key, shape=(self.pop_size, self.dim)
         )
         population = center + noise

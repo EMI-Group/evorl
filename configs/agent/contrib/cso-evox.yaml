@@ -5,6 +5,7 @@ workflow_cls: evorl.algorithms.contrib.cso_evox.CSOWorkflow
 pop_size: 128
 num_iters: 1000
 
+init_std: 0.01
 phi: 0.0
 
 num_envs: 16

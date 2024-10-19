@@ -58,6 +58,7 @@ class CSOWorkflow(EvoXWorkflowWrapper):
             lb=jnp.full((param_vec_spec.vec_size,), fill_value=config.agent_network.lb),
             ub=jnp.full((param_vec_spec.vec_size,), fill_value=config.agent_network.ub),
             pop_size=config.pop_size,
+            init_std=jnp.full((param_vec_spec.vec_size,), fill_value=config.init_std),
             phi=config.phi,
         )
 
