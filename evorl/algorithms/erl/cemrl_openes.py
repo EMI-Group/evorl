@@ -158,10 +158,7 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
         init_actor_params = agent_state.params.actor_params
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
-        # replace
-        pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
-
-        agent_state = replace_actor_params(agent_state, pop_actor_params)
+        agent_state = replace_actor_params(agent_state, pop_actor_params=None)
 
         opt_state = PyTreeDict(
             # Note: we create and drop the actors' opt_state at every step
@@ -242,6 +239,16 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
 
         key, rollout_key, perm_key, learn_key = jax.random.split(state.key, num=4)
 
+        # ======= CEM Sample ========
+        pop_actor_params, ec_opt_state = self._ec_sample(ec_opt_state)
+        # Note: Avoid always choosing the positve parts for learning
+        if self.config.mirror_sampling:
+            pop_actor_params = jtu.tree_map(
+                lambda x, k: jax.random.permutation(k, x, axis=0),
+                pop_actor_params,
+                rng_split_like_tree(perm_key, pop_actor_params),
+            )
+
         # ======== RL update ========
         if iterations > self.config.warmup_iters:
             learning_actor_slice = slice(
@@ -267,10 +274,6 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
                 learning_actor_slice,
                 unique_indices=True,
             )
-            # Note: updated critic_params are stored in learning_agent_state
-            # actor_params [num_learning_offspring, ...] -> [pop_size, ...]
-            # reset target_actor_params
-            agent_state = replace_actor_params(learning_agent_state, pop_actor_params)
 
             # drop the actors' opt_state
             opt_state = opt_state.replace(
@@ -280,10 +283,12 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
         else:
             td3_metrics = None
 
+        pop_agent_state = replace_actor_params(agent_state, pop_actor_params)
+
         # ======== CEM update ========
         # the trajectory [T, #pop*B, ...]
         # metrics: [#pop, B]
-        eval_metrics, trajectory = self._rollout(agent_state, rollout_key)
+        eval_metrics, trajectory = self._rollout(pop_agent_state, rollout_key)
 
         fitnesses = eval_metrics.episode_returns.mean(axis=-1)
 
@@ -293,14 +298,14 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
             eval_metrics.episode_lengths.flatten(),
         )
 
+        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
+
         train_metrics = POPTrainMetric(
             rb_size=get_buffer_size(replay_buffer_state),
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             rl_metrics=td3_metrics,
         )
-
-        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
 
         new_pop_actor_params, ec_opt_state = self._ec_sample(ec_opt_state)
         # Note: Avoid always choosing the positve parts for learning
@@ -312,18 +317,6 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
             )
 
         agent_state = replace_actor_params(agent_state, new_pop_actor_params)
-
-        # adding debug info for CEM
-        ec_info = PyTreeDict()
-        if td3_metrics is not None:
-            elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
-            elites_from_rl = jnp.isin(
-                jnp.arange(self.config.num_learning_offspring), elites_indices
-            )
-            ec_info.elites_from_rl = elites_from_rl.sum()
-            ec_info.elites_from_rl_ratio = elites_from_rl.mean()
-
-        train_metrics = train_metrics.replace(ec_info=ec_info)
 
         # calculate the number of timestep
         sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)

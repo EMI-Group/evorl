@@ -133,6 +133,16 @@ class CEMRLWorkflow(_CEMRLWorkflow):
 
         key, rollout_key, perm_key, learn_key = jax.random.split(state.key, num=4)
 
+        # ======= CEM Sample ========
+        pop_actor_params, ec_opt_state = self._ec_sample(ec_opt_state)
+        # Note: Avoid always choosing the positve parts for learning
+        if self.config.mirror_sampling:
+            pop_actor_params = jtu.tree_map(
+                lambda x, k: jax.random.permutation(k, x, axis=0),
+                pop_actor_params,
+                rng_split_like_tree(perm_key, pop_actor_params),
+            )
+
         # ======== RL update ========
         if iterations > self.config.warmup_iters:
             learning_actor_slice = slice(
@@ -170,10 +180,6 @@ class CEMRLWorkflow(_CEMRLWorkflow):
                 learning_actor_slice,
                 unique_indices=True,
             )
-            # Note: updated critic_params are stored in learning_agent_state
-            # actor_params [num_learning_offspring, ...] -> [pop_size, ...]
-            # reset target_actor_params
-            agent_state = replace_actor_params(learning_agent_state, pop_actor_params)
 
             # drop the actors' opt_state
             opt_state = opt_state.replace(
@@ -183,6 +189,11 @@ class CEMRLWorkflow(_CEMRLWorkflow):
         else:
             num_updates = jnp.zeros((), dtype=jnp.uint32)
             td3_metrics = None
+
+        # Note: updated critic_params are stored in learning_agent_state
+        # actor_params [num_learning_offspring, ...] -> [pop_size, ...]
+        # reset target_actor_params
+        agent_state = replace_actor_params(learning_agent_state, pop_actor_params)
 
         # ======== CEM update ========
         # the trajectory [T, #pop*B, ...]
@@ -197,6 +208,8 @@ class CEMRLWorkflow(_CEMRLWorkflow):
             eval_metrics.episode_lengths.flatten(),
         )
 
+        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
+
         train_metrics = POPTrainMetric(
             rb_size=get_buffer_size(replay_buffer_state),
             num_updates_per_iter=num_updates,
@@ -204,18 +217,6 @@ class CEMRLWorkflow(_CEMRLWorkflow):
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             rl_metrics=td3_metrics,
         )
-
-        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
-
-        new_pop_actor_params, ec_opt_state = self._ec_sample(ec_opt_state)
-        # Note: Avoid always choosing the positve parts for learning
-        if self.config.mirror_sampling:
-            pop_actor_params = jtu.tree_map(
-                lambda x, k: jax.random.permutation(k, x, axis=0),
-                pop_actor_params,
-                rng_split_like_tree(perm_key, pop_actor_params),
-            )
-        agent_state = replace_actor_params(agent_state, new_pop_actor_params)
 
         # adding debug info for CEM
         ec_info = PyTreeDict()
