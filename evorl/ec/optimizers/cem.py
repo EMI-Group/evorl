@@ -62,34 +62,6 @@ class SepCEM(EvoOptimizer):
             key=key,
         )
 
-    def tell(
-        self, state: SepCEMState, xs: chex.ArrayTree, fitnesses: chex.Array
-    ) -> SepCEMState:
-        # fitness: episode_return, higher is better
-        elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
-
-        cov_noise = optax.incremental_update(
-            self.diagonal_variance.final, state.cov_noise, self.diagonal_variance.decay
-        )
-
-        mean = jtu.tree_map(
-            lambda x: weight_sum(x[elites_indices], self.elite_weights),
-            xs,
-        )
-
-        def var_update(m, x):
-            x_norm = jnp.square(x[elites_indices] - m)
-            # TODO: do we need extra division by num_elites mentioned in CEM-RL?
-            return weight_sum(x_norm, self.elite_weights) + cov_noise
-
-        variance = jtu.tree_map(
-            var_update,
-            state.mean,  # old mean
-            xs,
-        )
-
-        return state.replace(mean=mean, variance=variance, cov_noise=cov_noise)
-
     def ask(self, state: SepCEMState) -> tuple[chex.ArrayTree, ECState]:
         key, sample_key = jax.random.split(state.key)
         sample_keys = rng_split_like_tree(sample_key, state.mean)
@@ -124,3 +96,31 @@ class SepCEM(EvoOptimizer):
         state = state.replace(key=key)
 
         return pop, state
+
+    def tell(
+        self, state: SepCEMState, xs: chex.ArrayTree, fitnesses: chex.Array
+    ) -> SepCEMState:
+        # fitness: episode_return, higher is better
+        elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
+
+        cov_noise = optax.incremental_update(
+            self.diagonal_variance.final, state.cov_noise, self.diagonal_variance.decay
+        )
+
+        mean = jtu.tree_map(
+            lambda x: weight_sum(x[elites_indices], self.elite_weights),
+            xs,
+        )
+
+        def var_update(m, x):
+            x_norm = jnp.square(x[elites_indices] - m)
+            # TODO: do we need extra division by num_elites mentioned in CEM-RL?
+            return weight_sum(x_norm, self.elite_weights) + cov_noise
+
+        variance = jtu.tree_map(
+            var_update,
+            state.mean,  # old mean
+            xs,
+        )
+
+        return state.replace(mean=mean, variance=variance, cov_noise=cov_noise)

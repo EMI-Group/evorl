@@ -21,7 +21,14 @@ class EvoOptimizer(PyTreeNode, metaclass=ABCMeta):
     def tell(
         self, state: ECState, xs: chex.ArrayTree, fitnesses: chex.Array
     ) -> ECState:
-        "Update the optimizer state based on the fitnesses of the candidate solutions"
+        """
+        Update the optimizer state based on the fitnesses of the candidate solutions
+
+        Args:
+            state: The current optimizer state
+            xs: The candidate solutions (i.e., offsprings)
+            fitnesses: The fitnesses of the candidate solutions
+        """
         pass
 
     @abstractmethod

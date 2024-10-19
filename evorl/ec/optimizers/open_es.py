@@ -67,6 +67,34 @@ class OpenES(EvoOptimizer):
             key=key,
         )
 
+    def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
+        "Generate new candidate solutions"
+        key, sample_key = jax.random.split(state.key)
+        sample_keys = rng_split_like_tree(sample_key, state.mean)
+
+        if self.mirror_sampling:
+            noise = jtu.tree_map(
+                lambda x, k: jax.random.normal(k, shape=(self.pop_size // 2, *x.shape)),
+                state.mean,
+                sample_keys,
+            )
+            noise = jtu.tree_map(lambda z: jnp.concatenate([z, -z], axis=0), noise)
+        else:
+            noise = jtu.tree_map(
+                lambda x, k: jax.random.normal(k, shape=(self.pop_size, *x.shape)),
+                state.mean,
+                sample_keys,
+            )
+
+        pop = jtu.tree_map(
+            lambda m, z: m + state.noise_std * z,
+            state.mean,
+            noise,
+        )
+        state = state.replace(key=key)
+
+        return pop, state
+
     def tell(
         self, state: ECState, xs: chex.ArrayTree, fitnesses: chex.Array
     ) -> ECState:
@@ -77,11 +105,13 @@ class OpenES(EvoOptimizer):
         opt_state = state.opt_state
 
         # [pop_size, ...]
-        noise = jtu.tree_map(lambda x, m: x - m, xs, state.mean)
+        noise = jtu.tree_map(lambda x, m: (x - m) / state.noise_std, xs, state.mean)
+
+        # grad = 1/(N*sigma^2) * sum(F_i*(x_i-m))
         grad = jtu.tree_map(
             # Note: we need additional "-1.0" since we are maximizing the fitness
-            lambda d: (
-                -weight_sum(d, transformed_fitnesses)
+            lambda z: (
+                -weight_sum(z, transformed_fitnesses)
                 / (self.pop_size * state.noise_std)
             ),
             noise,
@@ -102,29 +132,3 @@ class OpenES(EvoOptimizer):
         )
 
         return state.replace(mean=mean, opt_state=opt_state, noise_std=noise_std)
-
-    def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
-        "Generate new candidate solutions"
-        key, sample_key = jax.random.split(state.key)
-        sample_keys = rng_split_like_tree(sample_key, state.mean)
-
-        if self.mirror_sampling:
-            noise = jtu.tree_map(
-                lambda x, k: jax.random.normal(k, shape=(self.pop_size // 2, *x.shape)),
-                state.mean,
-                sample_keys,
-            )
-            noise = jtu.tree_map(lambda x: jnp.concatenate([x, -x], axis=0), noise)
-        else:
-            noise = jtu.tree_map(
-                lambda x, k: jax.random.normal(k, shape=(self.pop_size, *x.shape)),
-                state.mean,
-                sample_keys,
-            )
-
-        pop = jtu.tree_map(
-            lambda m, delta: m + state.noise_std * delta, state.mean, noise
-        )
-        state = state.replace(key=key)
-
-        return pop, state
