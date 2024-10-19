@@ -4,7 +4,7 @@ import copy
 import chex
 import jax
 import jax.numpy as jnp
-from evorl.agent import Agent
+from evorl.agent import Agent, AgentStateAxis
 from evorl.envs import Env
 from evorl.types import ReductionFn, PyTreeDict
 from evorl.evaluators import BraxEvaluator
@@ -25,6 +25,7 @@ class MultiObjectiveBraxProblem(Problem):
         flatten_objectives: bool = True,
         explore: bool = False,
         reduce_fn: ReductionFn | dict[str, ReductionFn] = jnp.mean,
+        agent_state_vmap_axes: AgentStateAxis = 0,
     ):
         """
         Args:
@@ -45,6 +46,7 @@ class MultiObjectiveBraxProblem(Problem):
         self.discount = discount
         self.metric_names = tuple(metric_names)
         self.flatten_objectives = flatten_objectives
+        self.agent_state_vmap_axes = agent_state_vmap_axes
 
         if isinstance(reduce_fn, dict):
             assert (
@@ -88,9 +90,10 @@ class MultiObjectiveBraxProblem(Problem):
         key, eval_key = jax.random.split(state.key)
         eval_key = jax.random.split(eval_key, num=pop_size)  # [#pop]
 
-        raw_objectives = self.evaluator.evaluate(
-            pop_agent_state, eval_key, self.num_episodes
-        )
+        raw_objectives = jax.vmap(
+            self.evaluator.evaluate,
+            in_axes=(self.agent_state_vmap_axes, 0, None),
+        )(pop_agent_state, eval_key, self.num_episodes)
 
         sampled_timesteps = raw_objectives.episode_length.sum()
         sampled_episodes = jnp.uint32(pop_size * self.num_episodes)

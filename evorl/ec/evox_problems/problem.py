@@ -3,7 +3,7 @@ import logging
 import chex
 import jax
 import jax.numpy as jnp
-from evorl.agent import Agent, AgentState
+from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.envs import Env
 from evorl.evaluators import Evaluator
 from evorl.types import ReductionFn
@@ -24,6 +24,7 @@ class GeneralRLProblem(Problem):
         discount: float = 1.0,
         explore: bool = False,
         reduce_fn: ReductionFn = jnp.mean,
+        agent_state_vmap_axes: AgentStateAxis = 0,
     ):
         """
         RL Problem wrapper for general RL problems. The objective is the discounted return.
@@ -43,6 +44,7 @@ class GeneralRLProblem(Problem):
         self.max_episode_steps = max_episode_steps
         self.discount = discount
         self.reduce_fn = reduce_fn
+        self.agent_state_vmap_axes = agent_state_vmap_axes
 
         if explore:
             action_fn = agent.compute_actions
@@ -72,9 +74,10 @@ class GeneralRLProblem(Problem):
         eval_key = jax.random.split(eval_key, num=pop_size)  # [#pop]
 
         #  [#pop, num_episodes]
-        eval_metrics = self.evaluator.evaluate(
-            pop_agent_state, eval_key, self.num_episodes
-        )
+        eval_metrics = jax.vmap(
+            self.evaluator.evaluate,
+            in_axes=(self.agent_state_vmap_axes, 0, None),
+        )(pop_agent_state, eval_key, self.num_episodes)
 
         objectives = eval_metrics.episode_returns
         sampled_episodes = jnp.uint32(pop_size * self.num_episodes)
