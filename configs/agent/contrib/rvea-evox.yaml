@@ -12,7 +12,7 @@ num_envs: 16
 episodes_for_fitness: 16 # episodes per individual for fitness
 explore: false
 discount: 1.0
-obj_names: ['reward', 'episode_length']
+obj_names: ['reward_forward', 'reward_ctrl']
 opt_directions: ['max', 'max']
 
 agent_network:

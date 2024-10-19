@@ -52,9 +52,9 @@ class BraxEvaluator(Evaluator):
                 env_reset_fn = jax.vmap(env_reset_fn)
                 env_step_fn = jax.vmap(env_step_fn)
 
-        metric_names = copy.deepcopy(self.metric_names)
+        metric_names = copy.deepcopy(tuple(self.metric_names))
+        # we also need episode_length to calculate the sampled_timesteps
         if "episode_lengths" not in metric_names:
-            # we also need episode_length to calculate the sampled_timesteps
             metric_names = metric_names + ("episode_lengths",)
 
         def _evaluate_fn(key, unused_t):
