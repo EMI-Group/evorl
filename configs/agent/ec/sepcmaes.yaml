@@ -1,6 +1,9 @@
 # @package _global_
 
-workflow_cls: evorl.algorithms.ec.so.evox_cmaes.SepCMAESWorkflow
+workflow_cls: evorl.algorithms.ec.so.cmaes.SepCMAESWorkflow
+
+normalize_obs: true # enable of disable VBN
+random_timesteps: 10000
 
 pop_size: 1024
 num_iters: 1000

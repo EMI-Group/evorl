@@ -141,12 +141,12 @@ class CMAES(Algorithm):
         if self.delay_decomp_iters > 0:
             B, D, C = jax.lax.cond(
                 state.count_iter % self.delay_decomp_iters == 0,
-                self._decomposition_C,
+                _decompose_C,
                 lambda _C: (state.B, state.D, state.C),
                 state.C,
             )
         else:
-            B, D, C = self._decomposition_C(state.C)
+            B, D, C = _decompose_C(state.C)
 
         key, sample_key = jax.random.split(state.key)
         noise = jax.random.normal(sample_key, (self.pop_size, self.dim))
@@ -217,11 +217,12 @@ class CMAES(Algorithm):
             (self.cs / self.damps) * (jnp.linalg.norm(ps) / self.chiN - 1)
         )
 
-    def _decomposition_C(self, C):
-        C = 0.5 * (C + C.T)
-        D2, B = jnp.linalg.eigh(C)
-        D = jnp.sqrt(D2)
-        return B, D, C
+
+def _decompose_C(C):
+    C = 0.5 * (C + C.T)
+    D2, B = jnp.linalg.eigh(C)
+    D = jnp.sqrt(D2)
+    return B, D, C
 
 
 class SepCMAES(CMAES):
