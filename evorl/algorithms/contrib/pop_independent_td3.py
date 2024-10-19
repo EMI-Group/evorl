@@ -17,13 +17,10 @@ from evorl.agent import AgentState, RandomAgent
 from evorl.types import PyTreeDict, State
 from evorl.metrics import MetricBase, EvaluateMetric
 from evorl.rollout import rollout
+from evorl.sample_batch import SampleBatch
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
-from evorl.utils.rl_toolkits import (
-    soft_target_update,
-    flatten_rollout_trajectory,
-    flatten_pop_rollout_trajectory,
-)
+from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajectory
 from evorl.recorders import add_prefix, get_1d_array_statistics
 
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
@@ -435,10 +432,10 @@ class PopTD3Workflow(TD3Workflow):
         key, eval_key = jax.random.split(state.key, num=2)
 
         # [#pop, #episodes]
-        raw_eval_metrics = self.evaluator.evaluate(
+        raw_eval_metrics = jax.vmap(self.evaluator.evaluate, in_axes=(0, 0, None))(
             state.agent_state,
             jax.random.split(eval_key, self.config.pop_size),
-            num_episodes=self.config.eval_episodes,
+            self.config.eval_episodes,
         )
 
         eval_metrics = EvaluateMetric(
@@ -499,3 +496,10 @@ class PopTD3Workflow(TD3Workflow):
             )
 
         return state
+
+
+def flatten_pop_rollout_trajectory(trajectory: SampleBatch) -> SampleBatch:
+    """
+    Flatten the trajectory from [#pop, T, B, ...] to [#pop*T*B, ...]
+    """
+    return jtu.tree_map(lambda x: jax.lax.collapse(x, 0, 3), trajectory)

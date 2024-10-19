@@ -12,10 +12,13 @@ from evorl.distributed import POP_AXIS_NAME, all_gather
 from evorl.metrics import MetricBase
 from evorl.ec.optimizers import EvoOptimizer, ECState
 from evorl.envs import Env
+from evorl.sample_batch import SampleBatch
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.distributed import get_global_ranks, psum, split_key_to_devices
-from evorl.types import State, PyTreeData, pytree_field, Params, Observation
+from evorl.types import State, PyTreeData, pytree_field, Params
+from evorl.utils.ec_utils import flatten_pop_rollout_episode
+from evorl.utils.jax_utils import tree_stop_gradient
 
 from .workflow import Workflow
 
@@ -186,10 +189,14 @@ class ECWorkflowTemplate(ECWorkflow):
         raise NotImplementedError
 
     def _update_obs_preprocessor(
-        self, agent_state: AgentState, obs: Observation
+        self, agent_state: AgentState, trajectory: SampleBatch
     ) -> AgentState:
         """
         By default, don't update obs_preprocessor_state.
+
+        Args:
+            agent_state: agent_state
+            trajectory: Episodic trajectory (T, B, ...)
         """
         return agent_state
 
@@ -211,21 +218,28 @@ class ECWorkflowTemplate(ECWorkflow):
         pop_agent_state = self._replace_actor_params(agent_state, eval_pop)
 
         if isinstance(self.ec_evaluator, EpisodeCollector):
-            # trajectory: [T, pop_size, #episodes]
-            rollout_metrics, trajactory = self.ec_evaluator.rollout(
+            # trajectory: [#pop, T, #episodes]
+            rollout_metrics, trajectory = jax.vmap(
+                self.ec_evaluator.rollout,
+                in_axes=(self.agent_state_vmap_axes, 0, None),
+            )(
                 pop_agent_state,
                 jax.random.split(rollout_key, num=slice_size),
-                num_episodes=self.config.episodes_for_fitness,
-                agent_state_vmap_axes=self.agent_state_vmap_axes,
+                self.config.episodes_for_fitness,
             )
-            agent_state = self._update_obs_preprocessor(agent_state, trajactory.obs)
+            # [#pop, T, B, ...] -> [T, #pop*B, ...]
+            trajectory = flatten_pop_rollout_episode(trajectory)
+            trajectory = tree_stop_gradient(trajectory)
+            agent_state = self._update_obs_preprocessor(agent_state, trajectory)
 
         elif isinstance(self.ec_evaluator, Evaluator):
-            rollout_metrics = self.ec_evaluator.evaluate(
+            rollout_metrics = jax.vmap(
+                self.ec_evaluator.evaluate,
+                in_axes=(self.agent_state_vmap_axes, 0, None),
+            )(
                 pop_agent_state,
                 jax.random.split(rollout_key, num=slice_size),
-                num_episodes=self.config.episodes_for_fitness,
-                agent_state_vmap_axes=self.agent_state_vmap_axes,
+                self.config.episodes_for_fitness,
             )
 
         fitnesses = jnp.mean(rollout_metrics.episode_returns, axis=-1)

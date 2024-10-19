@@ -16,6 +16,7 @@ from evorl.types import PyTreeDict, State, Params
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
+from evorl.utils.ec_utils import flatten_pop_rollout_episode
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.sample_batch import SampleBatch
 from evorl.agent import Agent, AgentState, RandomAgent
@@ -25,7 +26,6 @@ from evorl.rollout import rollout
 from evorl.ec.optimizers import EvoOptimizer, ECState
 
 from ..offpolicy_utils import clean_trajectory
-from .utils import flatten_pop_rollout_episode
 
 
 logger = logging.getLogger(__name__)

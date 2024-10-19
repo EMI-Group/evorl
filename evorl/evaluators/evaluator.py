@@ -3,10 +3,8 @@ import math
 
 import chex
 import jax
-import jax.numpy as jnp
-import jax.tree_util as jtu
 
-from evorl.agent import AgentState, AgentStateAxis
+from evorl.agent import AgentState
 from evorl.envs import Env
 from evorl.metrics import EvaluateMetric
 from evorl.rollout import eval_rollout_episode, fast_eval_rollout_episode
@@ -24,8 +22,6 @@ class Evaluator(PyTreeNode):
     max_episode_steps: int = pytree_field(pytree_node=False)
     discount: float = pytree_field(default=1.0, pytree_node=False)
 
-    agent_state_vmap_axes: AgentState = 0
-
     def __post_init__(self):
         assert hasattr(self.env, "num_envs"), "only parrallel envs are supported"
 
@@ -34,7 +30,6 @@ class Evaluator(PyTreeNode):
         agent_state: AgentState,
         key: chex.PRNGKey,
         num_episodes: int,
-        agent_state_vmap_axes: AgentStateAxis = 0,
     ) -> EvaluateMetric:
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
@@ -47,11 +42,6 @@ class Evaluator(PyTreeNode):
         action_fn = self.action_fn
         env_reset_fn = self.env.reset
         env_step_fn = self.env.step
-        if key.ndim > 1:
-            for _ in range(key.ndim - 1):
-                action_fn = jax.vmap(action_fn, in_axes=(agent_state_vmap_axes, 0, 0))
-                env_reset_fn = jax.vmap(env_reset_fn)
-                env_step_fn = jax.vmap(env_step_fn)
 
         def _evaluate_fn(key, unused_t):
             next_key, init_env_key, eval_key = rng_split(key, 3)
@@ -86,18 +76,15 @@ class Evaluator(PyTreeNode):
 
             return next_key, (episode_returns, episode_lengths)  # [..., #envs]
 
-        # [#iters, ..., #envs]
+        # [#iters, #envs]
         _, (episode_returns, episode_lengths) = jax.lax.scan(
             _evaluate_fn, key, (), length=num_iters
         )
 
-        # [#iters, ..., #envs] -> [..., num_episodes]
-        eval_metrics = jtu.tree_map(
-            lambda x: jax.lax.collapse(jnp.moveaxis(x, 0, -2), -2),
-            EvaluateMetric(
-                episode_returns=episode_returns,
-                episode_lengths=episode_lengths,
-            ),
+        # [#iters, #envs] -> [num_episodes]
+        eval_metrics = EvaluateMetric(
+            episode_returns=episode_returns.flatten(),
+            episode_lengths=episode_lengths.flatten(),
         )
 
         return eval_metrics

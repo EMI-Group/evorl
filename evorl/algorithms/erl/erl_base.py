@@ -16,6 +16,7 @@ from evorl.types import PyTreeDict, State, Params
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
+from evorl.utils.ec_utils import flatten_pop_rollout_episode
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.sample_batch import SampleBatch
 from evorl.agent import Agent, AgentState, RandomAgent
@@ -26,7 +27,6 @@ from evorl.ec.optimizers import EvoOptimizer, ECState
 
 from ..td3 import TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory
-from .utils import flatten_pop_rollout_episode
 
 
 logger = logging.getLogger(__name__)
@@ -372,10 +372,12 @@ class ERLWorkflowBase(Workflow):
         key, eval_key = jax.random.split(state.key, num=2)
 
         # [num_rl_agents, #episodes]
-        raw_eval_metrics = self.evaluator.evaluate(
+        raw_eval_metrics = jax.vmap(
+            self.evaluator.evaluate, in_axes=(self.agent_state_vmap_axes, 0, None)
+        )(
             state.agent_state,
             jax.random.split(eval_key, self.config.num_rl_agents),
-            num_episodes=self.config.eval_episodes,
+            self.config.eval_episodes,
         )
 
         eval_metrics = EvaluateMetric(

@@ -131,13 +131,6 @@ def flatten_rollout_trajectory(trajectory: SampleBatch) -> SampleBatch:
     return jtu.tree_map(lambda x: jax.lax.collapse(x, 0, 2), trajectory)
 
 
-def flatten_pop_rollout_trajectory(trajectory: SampleBatch) -> SampleBatch:
-    """
-    Flatten the trajectory from [#pop, T, B, ...] to [#pop*T*B, ...]
-    """
-    return jtu.tree_map(lambda x: jax.lax.collapse(x, 0, 3), trajectory)
-
-
 def average_episode_discount_return(
     episode_discount_return: jax.Array,  # [T,B]
     dones: jax.Array,  # [T,B]

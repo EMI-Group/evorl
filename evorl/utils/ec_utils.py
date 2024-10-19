@@ -1,7 +1,10 @@
 import jax
+import jax.tree_util as jtu
 
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_leaves
+
+from evorl.sample_batch import SampleBatch
 
 
 class ParamVectorSpec:
@@ -34,3 +37,10 @@ class ParamVectorSpec:
             vmap_to_tree = jax.vmap(vmap_to_tree)
 
         return vmap_to_tree(x)
+
+
+def flatten_pop_rollout_episode(trajectory: SampleBatch):
+    """
+    Flatten the trajectory from [#pop, T, B, ...] to [T, #pop*B, ...]
+    """
+    return jtu.tree_map(lambda x: jax.lax.collapse(x.swapaxes(0, 1), 1, 3), trajectory)

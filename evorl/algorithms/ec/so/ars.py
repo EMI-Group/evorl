@@ -5,9 +5,10 @@ from typing_extensions import Self  # pytype: disable=not-supported-yet]
 import jax
 import jax.tree_util as jtu
 
-from evorl.types import State, Params, Observation
+from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator, EpisodeObsCollector
+from evorl.sample_batch import SampleBatch
 from evorl.agent import AgentState
 from evorl.ec.optimizers import ARS, ECState
 from evorl.utils import running_statistics
@@ -162,21 +163,23 @@ class ARSWorkflow(ESWorkflowTemplate):
         return self._replace_actor_params(state.agent_state, pop_center)
 
     def _update_obs_preprocessor(
-        self, agent_state: AgentState, obs: Observation
+        self, agent_state: AgentState, trajectory: SampleBatch
     ) -> AgentState:
         if self.config.normalize_obs_mode == "Global":
             obs_preprocessor_state = running_statistics.update(
                 agent_state.obs_preprocessor_state,
-                obs,
+                trajectory.obs,
+                weights=1 - trajectory.dones,
                 pmap_axis_name=self.pmap_axis_name,
             )
 
         elif self.config.normalize_obs_mode == "RS":
-            dummy_obs = jtu.tree_map(lambda x: x[0], obs)
+            dummy_obs = jtu.tree_map(lambda x: x[0, 0], trajectory.obs)
             obs_preprocessor_state = running_statistics.init_state(dummy_obs)
             obs_preprocessor_state = running_statistics.update(
                 obs_preprocessor_state,
-                dummy_obs,
+                trajectory.obs,
+                weights=1 - trajectory.dones,
                 pmap_axis_name=self.pmap_axis_name,
             )
         else:

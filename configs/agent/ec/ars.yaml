@@ -9,7 +9,7 @@ random_timesteps: 10000 # effective in "Global" and "VBN"
 pop_size: 128 # use mirror sampling by default
 num_iters: 1000
 
-num_elites: 1 # [1, pop_size//2]
+num_elites: 16 # [1, pop_size//2]
 
 lr: 0.02
 noise_std: 0.03

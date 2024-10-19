@@ -16,11 +16,11 @@ class ObsFlattenWrapper(Wrapper):
         self.obs_ndim = len(env.obs_space.shape)
 
     def _flatten_obs(self, state: EnvState) -> EnvState:
-        start_idx = state.obs.ndim - self.obs_ndim
-        state = state.replace(obs=jax.lax.collapse(state.obs, start_idx))
+        start_dim = state.obs.ndim - self.obs_ndim
+        state = state.replace(obs=jax.lax.collapse(state.obs, start_dim))
 
         if "ori_obs" in state.info:
-            state.info.ori_obs = jax.lax.collapse(state.info.ori_obs, start_idx)
+            state.info.ori_obs = jax.lax.collapse(state.info.ori_obs, start_dim)
 
         return state
 

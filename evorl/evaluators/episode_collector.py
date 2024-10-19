@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.agent import AgentActionFn, AgentStateAxis
+from evorl.agent import AgentActionFn
 from evorl.envs import Env
 from evorl.metrics import EvaluateMetric
 from evorl.rollout import rollout, RolloutFn
@@ -40,7 +40,6 @@ class EpisodeCollector(PyTreeNode):
         agent_state,
         key: chex.PRNGKey,
         num_episodes: int,
-        agent_state_vmap_axes: AgentStateAxis = 0,
     ) -> tuple[EvaluateMetric, SampleBatch]:
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
@@ -53,11 +52,6 @@ class EpisodeCollector(PyTreeNode):
         action_fn = self.action_fn
         env_reset_fn = self.env.reset
         env_step_fn = self.env.step
-        if key.ndim > 1:
-            for _ in range(key.ndim - 1):
-                action_fn = jax.vmap(action_fn, in_axes=(agent_state_vmap_axes, 0, 0))
-                env_reset_fn = jax.vmap(env_reset_fn)
-                env_step_fn = jax.vmap(env_step_fn)
 
         def _evaluate_fn(key, unused_t):
             next_key, init_env_key = rng_split(key, 2)
@@ -77,15 +71,15 @@ class EpisodeCollector(PyTreeNode):
 
             return next_key, episode_trajectory
 
-        # [#iters, T, ..., #envs]
+        # [#iters, T, #envs]
         _, episode_trajectory = jax.lax.scan(_evaluate_fn, key, (), length=num_iters)
 
-        # [#iters, T, ..., #envs] -> [T, ..., #envs * #iters]
+        # [#iters, T, #envs] -> [T, num_episodes]
         episode_trajectory = jtu.tree_map(
-            lambda x: jax.lax.collapse(jnp.moveaxis(x, 0, -2), -2), episode_trajectory
+            lambda x: jax.lax.collapse(jnp.swapaxes(x, 0, 1), 1, 3), episode_trajectory
         )
 
-        # [..., num_episodes]
+        # [num_episodes]
         discount_returns = compute_discount_return(
             episode_trajectory.rewards, episode_trajectory.dones, self.discount
         )
