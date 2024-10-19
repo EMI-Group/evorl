@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import optax
 from omegaconf import DictConfig
 
-from evorl.distributed import psum, tree_pmean
+from evorl.distributed import psum, pmean
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import AutoresetMode, Discrete, create_env, Space
 from evorl.evaluators import Evaluator
@@ -50,9 +50,7 @@ class DQNNetworkParams(PyTreeData):
 class DQNTrainMetric(MetricBase):
     # no need reduce_fn since it's already reduced in the step()
     loss: chex.Array = jnp.zeros(())
-    raw_loss_dict: LossDict = metricfield(
-        default_factory=PyTreeDict, reduce_fn=tree_pmean
-    )
+    raw_loss_dict: LossDict = metricfield(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
 class DQNWorkflowMetric(WorkflowMetric):

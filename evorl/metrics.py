@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .distributed import pmean, tree_pmean
+from .distributed import pmean
 from .types import LossDict, PyTreeData, PyTreeDict
 
 
@@ -56,9 +56,7 @@ class TrainMetric(MetricBase):
 
     # no need reduce_fn since it's already reduced in the step()
     loss: chex.Array = jnp.zeros(())
-    raw_loss_dict: LossDict = metricfield(
-        default_factory=PyTreeDict, reduce_fn=tree_pmean
-    )
+    raw_loss_dict: LossDict = metricfield(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
 class EvaluateMetric(MetricBase):

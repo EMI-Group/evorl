@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import optax
 from omegaconf import DictConfig
 
-from evorl.distributed import agent_gradient_update, psum, tree_pmean
+from evorl.distributed import agent_gradient_update, psum, pmean
 from evorl.distribution import get_tanh_norm_dist, get_categorical_dist
 from evorl.envs import AutoresetMode, Box, create_env, Space, Discrete
 from evorl.evaluators import Evaluator
@@ -47,9 +47,7 @@ class SACTrainMetric(MetricBase):
     critic_loss: chex.Array
     actor_loss: chex.Array
     alpha_loss: chex.Array | None = None
-    raw_loss_dict: LossDict = metricfield(
-        default_factory=PyTreeDict, reduce_fn=tree_pmean
-    )
+    raw_loss_dict: LossDict = metricfield(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
 class SACNetworkParams(PyTreeData):

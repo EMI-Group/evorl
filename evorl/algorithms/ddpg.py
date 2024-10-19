@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import optax
 from omegaconf import DictConfig
 
-from evorl.distributed import psum, tree_pmean
+from evorl.distributed import psum, pmean
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluators import Evaluator
@@ -40,9 +40,7 @@ logger = logging.getLogger(__name__)
 class DDPGTrainMetric(MetricBase):
     actor_loss: chex.Array
     critic_loss: chex.Array
-    raw_loss_dict: LossDict = metricfield(
-        default_factory=PyTreeDict, reduce_fn=tree_pmean
-    )
+    raw_loss_dict: LossDict = metricfield(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
 class DDPGNetworkParams(PyTreeData):

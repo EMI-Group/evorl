@@ -10,7 +10,7 @@ import optax
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig
 
-from evorl.distributed import agent_gradient_update, psum, tree_unpmap
+from evorl.distributed import agent_gradient_update, psum, unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.envs import AutoresetMode, create_env, Space, Box, Discrete
 from evorl.evaluators import Evaluator
@@ -406,15 +406,15 @@ class A2CWorkflow(OnPolicyWorkflow):
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
 
         for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
             iters = i + 1
-            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
+            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
+            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
 
             self.recorder.write(workflow_metrics.to_local_dict(), iters)
             train_metric_data = train_metrics.to_local_dict()
@@ -424,14 +424,14 @@ class A2CWorkflow(OnPolicyWorkflow):
 
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
-                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(
                     add_prefix(eval_metrics.to_local_dict(), "eval"), iters
                 )
 
             self.checkpoint_manager.save(
                 iters,
-                args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
+                args=ocp.args.StandardSave(unpmap(state, self.pmap_axis_name)),
             )
 
         return state

@@ -6,7 +6,7 @@ import jax.tree_util as jtu
 import numpy as np
 import orbax.checkpoint as ocp
 
-from evorl.distributed import tree_unpmap
+from evorl.distributed import unpmap
 from evorl.types import MISSING_REWARD, State
 from evorl.utils.rl_toolkits import fold_multi_steps
 from evorl.recorders import add_prefix
@@ -25,7 +25,7 @@ class A2CWorkflow(_A2CWorkflow):
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
 
         steps_interval = self.config.eval_interval
 
@@ -38,10 +38,10 @@ class A2CWorkflow(_A2CWorkflow):
             iters = (i + 1) * steps_interval
             train_metrics_arr, state = _multi_steps(state)
 
-            train_metrics_arr = tree_unpmap(train_metrics_arr, self.pmap_axis_name)
+            train_metrics_arr = unpmap(train_metrics_arr, self.pmap_axis_name)
             train_metrics = jtu.tree_map(lambda x: x[-1], train_metrics_arr)
 
-            workflow_metrics = tree_unpmap(state.metrics, self.pmap_axis_name)
+            workflow_metrics = unpmap(state.metrics, self.pmap_axis_name)
 
             self.recorder.write(workflow_metrics.to_local_dict(), iters)
             train_metric_data = train_metrics.to_local_dict()
@@ -51,12 +51,12 @@ class A2CWorkflow(_A2CWorkflow):
             self.recorder.write(train_metric_data, iters)
 
             eval_metrics, state = self.evaluate(state)
-            eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+            eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
             self.recorder.write(add_prefix(eval_metrics.to_local_dict(), "eval"), iters)
 
             self.checkpoint_manager.save(
                 iters,
-                args=ocp.args.StandardSave(tree_unpmap(state, self.pmap_axis_name)),
+                args=ocp.args.StandardSave(unpmap(state, self.pmap_axis_name)),
             )
 
         return state

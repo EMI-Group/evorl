@@ -3,7 +3,7 @@ import chex
 from omegaconf import DictConfig
 from typing_extensions import Self  # pytype: disable=not-supported-yet
 
-from evorl.distributed import split_key_to_devices, tree_unpmap
+from evorl.distributed import split_key_to_devices, unpmap
 from evorl.workflows import RLWorkflow
 from evorl.agent import RandomAgent, Agent
 from evorl.metrics import MetricBase, EvaluateMetric
@@ -84,7 +84,7 @@ class RandomAgentWorkflow(RLWorkflow):
         dummy learn function for random agent
         """
         eval_metrics, state = self.evaluate(state)
-        eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+        eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
         self.recorder.write(add_prefix(eval_metrics.to_local_dict(), "eval"), 0)
         return state.replace()
 

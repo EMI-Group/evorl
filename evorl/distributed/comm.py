@@ -34,7 +34,7 @@ def pmax(x, axis_name: str | None = None):
         return jax.lax.pmax(x, axis_name)
 
 
-def unpmap(x, axis_name: str | None = None):
+def _unpmap(x, axis_name: str | None = None):
     """
     Only work for pmap(in_axes=0, out_axes=0)
     Return the first device's elements
@@ -45,6 +45,10 @@ def unpmap(x, axis_name: str | None = None):
         return x[0]
 
 
+def unpmap(tree: chex.ArrayTree, axis_name: str | None = None):
+    return jax.tree_map(lambda x: _unpmap(x, axis_name), tree)
+
+
 def all_gather(x, axis_name: str | None = None, **kwargs):
     """
     All-gather the data across all devices
@@ -53,14 +57,6 @@ def all_gather(x, axis_name: str | None = None, **kwargs):
         return x
     else:
         return jax.lax.all_gather(x, axis_name, **kwargs)
-
-
-def tree_pmean(tree: chex.ArrayTree, axis_name: str | None = None):
-    return jax.tree_map(lambda x: pmean(x, axis_name), tree)
-
-
-def tree_unpmap(tree: chex.ArrayTree, axis_name: str | None = None):
-    return jax.tree_map(lambda x: unpmap(x, axis_name), tree)
 
 
 def split_key_to_devices(key: chex.PRNGKey, devices: Sequence[jax.Device]):

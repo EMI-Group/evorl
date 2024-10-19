@@ -11,7 +11,7 @@ import orbax.checkpoint as ocp
 from evorl.distributed import (
     agent_gradient_update,
     psum,
-    tree_unpmap,
+    unpmap,
 )
 from evorl.agent import AgentState, RandomAgent
 from evorl.types import PyTreeDict, State
@@ -451,7 +451,7 @@ class PopTD3Workflow(TD3Workflow):
         one_step_timesteps = (
             self.config.rollout_length * self.config.num_envs * self.config.pop_size
         )
-        sampled_timesteps = tree_unpmap(state.metrics.sampled_timesteps).tolist()
+        sampled_timesteps = unpmap(state.metrics.sampled_timesteps).tolist()
         num_iters = math.ceil(
             (self.config.total_timesteps - sampled_timesteps)
             / (one_step_timesteps * self.config.fold_iters * num_devices)
@@ -462,11 +462,9 @@ class PopTD3Workflow(TD3Workflow):
             workflow_metrics = state.metrics
 
             # current iteration
-            iterations = tree_unpmap(
-                state.metrics.iterations, self.pmap_axis_name
-            ).tolist()
-            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
+            iterations = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
+            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
+            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
             self.recorder.write(workflow_metrics.to_local_dict(), iterations)
 
             train_metrics_dict = jtu.tree_map(
@@ -478,7 +476,7 @@ class PopTD3Workflow(TD3Workflow):
 
             if iterations % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
-                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
 
                 eval_metrics_dict = jtu.tree_map(
                     partial(get_1d_array_statistics, histogram=True),
@@ -487,7 +485,7 @@ class PopTD3Workflow(TD3Workflow):
 
                 self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iterations)
 
-            saved_state = tree_unpmap(state, self.pmap_axis_name)
+            saved_state = unpmap(state, self.pmap_axis_name)
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
             self.checkpoint_manager.save(

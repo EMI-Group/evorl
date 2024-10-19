@@ -6,7 +6,7 @@ import jax
 import jax.tree_util as jtu
 import orbax.checkpoint as ocp
 
-from evorl.distributed import tree_unpmap
+from evorl.distributed import unpmap
 from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase
@@ -66,17 +66,17 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         pass
 
     def learn(self, state: State) -> State:
-        start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
 
         for i in range(start_iteration, self.config.num_iters):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
+            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
             self.recorder.write(workflow_metrics.to_local_dict(), iters)
 
-            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
+            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
             train_metrics_dict = train_metrics.to_local_dict()
             train_metrics_dict = jtu.tree_map(
                 partial(get_1d_array_statistics, histogram=True),
@@ -86,7 +86,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
 
             if iters % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
-                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(
                     {"eval/pop_center": eval_metrics.to_local_dict()}, iters
                 )
@@ -96,7 +96,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
             self.checkpoint_manager.save(
                 iters,
                 args=ocp.args.StandardSave(
-                    tree_unpmap(state, self.pmap_axis_name),
+                    unpmap(state, self.pmap_axis_name),
                 ),
             )
 

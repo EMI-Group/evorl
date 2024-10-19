@@ -12,7 +12,7 @@ import optax
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig
 
-from evorl.distributed import psum, tree_unpmap
+from evorl.distributed import psum, unpmap
 from evorl.distributed.gradients import gradient_update
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluators import Evaluator
@@ -543,7 +543,7 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
     def learn(self, state: State) -> State:
         num_devices = jax.device_count()
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
-        sampled_timesteps = tree_unpmap(state.metrics.sampled_timesteps).tolist()
+        sampled_timesteps = unpmap(state.metrics.sampled_timesteps).tolist()
         num_iters = math.ceil(
             (self.config.total_timesteps - sampled_timesteps)
             / (one_step_timesteps * self.config.fold_iters * num_devices)
@@ -554,11 +554,9 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
             workflow_metrics = state.metrics
 
             # current iteration
-            iterations = tree_unpmap(
-                state.metrics.iterations, self.pmap_axis_name
-            ).tolist()
-            train_metrics = tree_unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = tree_unpmap(workflow_metrics, self.pmap_axis_name)
+            iterations = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
+            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
+            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
 
             train_metrics = jtu.tree_map(
                 lambda x: None if x == MISSING_LOSS else x, train_metrics
@@ -569,12 +567,12 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
 
             if iterations % self.config.eval_interval == 0:
                 eval_metrics, state = self.evaluate(state)
-                eval_metrics = tree_unpmap(eval_metrics, self.pmap_axis_name)
+                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(
                     add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
                 )
 
-            saved_state = tree_unpmap(state, self.pmap_axis_name)
+            saved_state = unpmap(state, self.pmap_axis_name)
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
             self.checkpoint_manager.save(
