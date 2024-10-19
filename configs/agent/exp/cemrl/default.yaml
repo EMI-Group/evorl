@@ -14,7 +14,7 @@ pop_size: 32
 num_learning_offspring: 16
 
 num_elites: 8
-diagonal_variance:
+cov_eps:
   init: 1e-2
   final: 1e-5
   decay: 0.05

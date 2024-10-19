@@ -39,7 +39,7 @@ class SepCEMWorkflow(ESWorkflowTemplate):
         ec_optimizer = SepCEM(
             pop_size=config.pop_size,
             num_elites=config.num_elites,
-            diagonal_variance=ExponentialScheduleSpec(**config.diagonal_variance),
+            cov_eps_schedule=ExponentialScheduleSpec(**config.cov_eps),
             weighted_update=config.weighted_update,
             rank_weight_shift=config.rank_weight_shift,
             mirror_sampling=config.mirror_sampling,

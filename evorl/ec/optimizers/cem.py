@@ -20,14 +20,14 @@ from .ec_optimizer import EvoOptimizer, ECState
 class SepCEMState(PyTreeData):
     mean: chex.ArrayTree
     variance: chex.ArrayTree
-    cov_noise: chex.ArrayTree
+    cov_eps: chex.ArrayTree
     key: chex.PRNGKey
 
 
 class SepCEM(EvoOptimizer):
     pop_size: int
     num_elites: int  # number of good offspring to update the pop
-    diagonal_variance: ExponentialScheduleSpec
+    cov_eps_schedule: ExponentialScheduleSpec
 
     weighted_update: bool = True
     rank_weight_shift: float = 1.0
@@ -52,13 +52,13 @@ class SepCEM(EvoOptimizer):
 
     def init(self, mean: Params, key: chex.PRNGKey) -> SepCEMState:
         variance = jtu.tree_map(
-            lambda x: jnp.full_like(x, self.diagonal_variance.init), mean
+            lambda x: jnp.full_like(x, self.cov_eps_schedule.init), mean
         )
 
         return SepCEMState(
             mean=mean,
             variance=variance,
-            cov_noise=jnp.float32(self.diagonal_variance.init),
+            cov_eps=jnp.float32(self.cov_eps_schedule.init),
             key=key,
         )
 
@@ -103,8 +103,8 @@ class SepCEM(EvoOptimizer):
         # fitness: episode_return, higher is better
         elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
-        cov_noise = optax.incremental_update(
-            self.diagonal_variance.final, state.cov_noise, self.diagonal_variance.decay
+        cov_eps = optax.incremental_update(
+            self.cov_eps_schedule.final, state.cov_eps, self.cov_eps_schedule.decay
         )
 
         mean = jtu.tree_map(
@@ -115,7 +115,7 @@ class SepCEM(EvoOptimizer):
         def var_update(m, x):
             x_norm = jnp.square(x[elites_indices] - m)
             # TODO: do we need extra division by num_elites mentioned in CEM-RL?
-            return weight_sum(x_norm, self.elite_weights) + cov_noise
+            return weight_sum(x_norm, self.elite_weights) + cov_eps
 
         variance = jtu.tree_map(
             var_update,
@@ -123,4 +123,4 @@ class SepCEM(EvoOptimizer):
             xs,
         )
 
-        return state.replace(mean=mean, variance=variance, cov_noise=cov_noise)
+        return state.replace(mean=mean, variance=variance, cov_eps=cov_eps)
