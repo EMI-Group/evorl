@@ -13,7 +13,7 @@ from evorl.utils.jax_utils import (
     rng_split_like_tree,
 )
 
-from .utils import weight_sum
+from .utils import weight_sum, optimizer_map
 from .ec_optimizer import EvoOptimizer, ECState
 
 
@@ -29,6 +29,7 @@ class ARS(EvoOptimizer):
     lr: float
     noise_std: float
     fitness_std_eps: float = 1e-8
+    optimizer_name: str = "sgd"
 
     optimizer: optax.GradientTransformation = pytree_field(
         pytree_node=False, lazy_init=True
@@ -39,7 +40,7 @@ class ARS(EvoOptimizer):
             self.pop_size > 0 and self.pop_size % 2 == 0
         ), "pop_size must be positive even number"
 
-        optimizer = optax.adam(learning_rate=self.lr)
+        optimizer = optimizer_map[self.optimizer_name](learning_rate=self.lr)
         self.set_frozen_attr("optimizer", optimizer)
 
     def init(self, mean: Params, key: chex.PRNGKey) -> ARSState:

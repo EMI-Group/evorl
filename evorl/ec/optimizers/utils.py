@@ -1,8 +1,16 @@
 import chex
 import jax
 import jax.numpy as jnp
+import optax
 
 from evorl.types import PyTreeData
+
+
+optimizer_map = dict(
+    adam=optax.adam,
+    sgd=optax.sgd,
+    rmsprop=optax.rmsprop,
+)
 
 
 class ExponentialScheduleSpec(PyTreeData):

@@ -11,6 +11,7 @@ num_iters: 1000
 
 num_elites: 16 # [1, pop_size//2]
 
+optimizer_name: 'sgd'
 lr: 0.02
 noise_std: 0.03
 

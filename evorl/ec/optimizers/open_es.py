@@ -9,7 +9,7 @@ import optax
 from evorl.types import PyTreeData, pytree_field, Params
 from evorl.utils.jax_utils import rng_split_like_tree
 
-from .utils import ExponentialScheduleSpec, weight_sum
+from .utils import ExponentialScheduleSpec, weight_sum, optimizer_map
 from .ec_optimizer import EvoOptimizer, ECState
 
 
@@ -42,6 +42,8 @@ class OpenES(EvoOptimizer):
     lr_schedule: ExponentialScheduleSpec
     noise_std_schedule: ExponentialScheduleSpec
     mirror_sampling: bool = True
+    optimizer_name: str = "adam"
+
     fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
         pytree_node=False, default=compute_centered_ranks
     )
@@ -54,9 +56,13 @@ class OpenES(EvoOptimizer):
         if self.mirror_sampling:
             assert self.pop_size % 2 == 0, "pop_size must be even for mirror sampling"
 
-        optimizer = optax.inject_hyperparams(
-            optax.adam, static_args=("b1", "b2", "eps", "eps_root")
-        )(learning_rate=self.lr_schedule.init)
+        # optimizer = optax.inject_hyperparams(
+        #     optax.adam, static_args=("b1", "b2", "eps", "eps_root")
+        # )(learning_rate=self.lr_schedule.init)
+        optimizer = optax.inject_hyperparams(optimizer_map[self.optimizer_name])(
+            learning_rate=self.lr_schedule.init
+        )
+
         self.set_frozen_attr("optimizer", optimizer)
 
     def init(self, mean: Params, key: chex.PRNGKey) -> ECState:

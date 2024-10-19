@@ -8,6 +8,7 @@ random_timesteps: 10000
 pop_size: 128
 num_iters: 1000
 
+optimizer_name: 'adam'
 ec_noise_std:
   init: 0.1
   final: 0.001
