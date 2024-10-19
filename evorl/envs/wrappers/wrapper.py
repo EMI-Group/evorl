@@ -27,7 +27,7 @@ class Wrapper(Env):
 
     @property
     def unwrapped(self) -> Env:
-        if hasattr(self.env, "unwrapped"):
+        if isinstance(self.env, Wrapper) and hasattr(self.env, "unwrapped"):
             return self.env.unwrapped
         else:
             return self.env

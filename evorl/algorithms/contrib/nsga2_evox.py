@@ -9,13 +9,13 @@ from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.ec.evox_problems import MultiObjectiveBraxProblem
 from evorl.workflows import EvoXMOWorkflowTemplate
 
-from ..ec_agent import make_deterministic_ec_agent
+from ..ec.ec_agent import make_deterministic_ec_agent
 
 
-class RVEAWorkflow(EvoXMOWorkflowTemplate):
+class NSGA2Workflow(EvoXMOWorkflowTemplate):
     @classmethod
     def name(cls):
-        return "RVEA"
+        return "NSGA2"
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
@@ -49,14 +49,11 @@ class RVEAWorkflow(EvoXMOWorkflowTemplate):
         agent_state = agent.init(env.obs_space, env.action_space, agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
-        algorithm = evox.algorithms.RVEA(
+        algorithm = evox.algorithms.NSGA2(
             lb=jnp.full((param_vec_spec.vec_size,), fill_value=config.agent_network.lb),
             ub=jnp.full((param_vec_spec.vec_size,), fill_value=config.agent_network.ub),
             n_objs=len(config.obj_names),
             pop_size=config.pop_size,
-            alpha=config.alpha,
-            fr=config.fr,
-            max_gen=config.num_iters,
         )
 
         def _candidate_transform(flat_cand):

@@ -1,30 +1,35 @@
 import logging
+import numpy as np
 from omegaconf import DictConfig
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
 
 import jax
-import jax.tree_util as jtu
+import jax.numpy as jnp
+import orbax.checkpoint as ocp
+
+from evox.algorithms import NSGA2
+from evox.operators import non_dominated_sort
 
 from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env
-from evorl.evaluators import Evaluator, EpisodeObsCollector
-from evorl.sample_batch import SampleBatch
+from evorl.evaluators import BraxEvaluator
 from evorl.agent import AgentState
-from evorl.ec.optimizers import ARS, ECState
-from evorl.utils import running_statistics
+from evorl.distributed import unpmap
+from evorl.ec.optimizers import EvoXAlgorithmAdapter, ECState
+from evorl.utils.ec_utils import ParamVectorSpec
+from evorl.recorders import get_1d_array_statistics
+from evorl.workflows import MultiObjectiveECWorkflowTemplate
 
-from .es_base import ESWorkflowTemplate
 from ..obs_utils import init_obs_preprocessor
 from ..ec_agent import make_deterministic_ec_agent
-
 
 logger = logging.getLogger(__name__)
 
 
-class ARSWorkflow(ESWorkflowTemplate):
+class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
     @classmethod
     def name(cls):
-        return "ARS"
+        return "NSGA2"
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
@@ -55,11 +60,19 @@ class ARSWorkflow(ESWorkflowTemplate):
             norm_layer_type=config.agent_network.norm_layer_type,
         )
 
-        ec_optimizer = ARS(
-            pop_size=config.pop_size,
-            num_elites=config.num_elites,
-            lr=config.lr,
-            noise_std=config.noise_std,
+        # dummy agent_state
+        agent_key = jax.random.PRNGKey(config.seed)
+        agent_state = agent.init(env.obs_space, env.action_space, agent_key)
+        param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
+
+        ec_optimizer = EvoXAlgorithmAdapter(
+            algorithm=NSGA2(
+                lb=jnp.full((param_vec_spec.vec_size,), config.agent_network.lb),
+                ub=jnp.full((param_vec_spec.vec_size,), config.agent_network.ub),
+                n_objs=len(config.metric_names),
+                pop_size=config.pop_size,
+            ),
+            param_vec_spec=param_vec_spec,
         )
 
         if config.explore:
@@ -67,35 +80,12 @@ class ARSWorkflow(ESWorkflowTemplate):
         else:
             action_fn = agent.evaluate_actions
 
-        assert config.normalize_obs_mode in ["VBN", "RS", "Global"]
-        if config.normalize_obs_mode == "VBN":
-            ec_evaluator = Evaluator(
-                env=env,
-                action_fn=action_fn,
-                max_episode_steps=config.env.max_episode_steps,
-                discount=config.discount,
-            )
-        else:
-            ec_evaluator = EpisodeObsCollector(
-                env=env,
-                action_fn=action_fn,
-                max_episode_steps=config.env.max_episode_steps,
-                discount=config.discount,
-            )
-
-        # to evaluate the pop-mean actor
-        eval_env = create_env(
-            config.env.env_name,
-            config.env.env_type,
-            episode_length=config.env.max_episode_steps,
-            parallel=config.num_eval_envs,
-            autoreset_mode=AutoresetMode.DISABLED,
-        )
-
-        evaluator = Evaluator(
-            env=eval_env,
-            action_fn=agent.evaluate_actions,
+        ec_evaluator = BraxEvaluator(
+            env=env,
+            action_fn=action_fn,
             max_episode_steps=config.env.max_episode_steps,
+            discount=config.discount,
+            metric_names=tuple(config.metric_names),
         )
 
         agent_state_vmap_axes = AgentState(
@@ -109,7 +99,6 @@ class ARSWorkflow(ESWorkflowTemplate):
             agent=agent,
             ec_optimizer=ec_optimizer,
             ec_evaluator=ec_evaluator,
-            evaluator=evaluator,
             agent_state_vmap_axes=agent_state_vmap_axes,
         )
 
@@ -119,8 +108,7 @@ class ARSWorkflow(ESWorkflowTemplate):
             self.env.obs_space, self.env.action_space, agent_key
         )
 
-        init_actor_params = agent_state.params.policy_params
-        ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
+        ec_opt_state = self.ec_optimizer.init(ec_key)
 
         # remove params
         agent_state = self._replace_actor_params(agent_state, params=None)
@@ -153,32 +141,48 @@ class ARSWorkflow(ESWorkflowTemplate):
             params=agent_state.params.replace(policy_params=params)
         )
 
-    def _get_pop_center(self, state: State) -> AgentState:
-        pop_center = state.ec_opt_state.mean
+    def learn(self, state: State) -> State:
+        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
 
-        return self._replace_actor_params(state.agent_state, pop_center)
+        for i in range(start_iteration, self.config.num_iters):
+            iters = i + 1
+            train_metrics, state = self.step(state)
+            workflow_metrics = state.metrics
 
-    def _update_obs_preprocessor(
-        self, agent_state: AgentState, trajectory: SampleBatch
-    ) -> AgentState:
-        if self.config.normalize_obs_mode == "Global":
-            obs_preprocessor_state = running_statistics.update(
-                agent_state.obs_preprocessor_state,
-                trajectory.obs,
-                weights=1 - trajectory.dones,
-                pmap_axis_name=self.pmap_axis_name,
+            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
+            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
+            self.recorder.write(workflow_metrics.to_local_dict(), iters)
+
+            cpu_device = jax.devices("cpu")[0]
+            with jax.default_device(cpu_device):
+                objectives = jax.device_put(train_metrics.objectives, cpu_device)
+                pf_rank = non_dominated_sort(-objectives, "scan")
+                pf_objectives = train_metrics.objectives[pf_rank == 0]
+
+            train_metrics_dict = {}
+            metric_names = self.config.metric_names
+            objectives = np.asarray(objectives)
+            pf_objectives = np.asarray(pf_objectives)
+            train_metrics_dict["objectives"] = {
+                metric_names[i]: get_1d_array_statistics(
+                    objectives[:, i], histogram=True
+                )
+                for i in range(len(metric_names))
+            }
+
+            train_metrics_dict["pf_objectives"] = {
+                metric_names[i]: get_1d_array_statistics(
+                    pf_objectives[:, i], histogram=True
+                )
+                for i in range(len(metric_names))
+            }
+            train_metrics_dict["num_pf"] = pf_objectives.shape[0]
+
+            self.recorder.write(train_metrics_dict, iters)
+
+            self.checkpoint_manager.save(
+                iters,
+                args=ocp.args.StandardSave(
+                    unpmap(state, self.pmap_axis_name),
+                ),
             )
-
-        elif self.config.normalize_obs_mode == "RS":
-            dummy_obs = jtu.tree_map(lambda x: x[0, 0], trajectory.obs)
-            obs_preprocessor_state = running_statistics.init_state(dummy_obs)
-            obs_preprocessor_state = running_statistics.update(
-                obs_preprocessor_state,
-                trajectory.obs,
-                weights=1 - trajectory.dones,
-                pmap_axis_name=self.pmap_axis_name,
-            )
-        else:
-            obs_preprocessor_state = agent_state.obs_preprocessor_state
-
-        return agent_state.replace(obs_preprocessor_state=obs_preprocessor_state)

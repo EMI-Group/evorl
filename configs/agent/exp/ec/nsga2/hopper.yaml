@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent/ec/nsga2
+  - /agent/ec/nsga2-brax
   - _self_
 
 pop_size: 1024
@@ -11,8 +11,8 @@ num_envs: 16
 episodes: 16 # episodes per individual for fitness
 
 discount: 1.0
-obj_names: ['reward_forward', 'reward_ctrl']
-opt_directions: ['max', 'max']
+metric_names: ['reward_forward', 'reward_ctrl']
+
 
 agent_network:
   # actor_hidden_layer_sizes: [] # linear network

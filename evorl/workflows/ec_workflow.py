@@ -16,7 +16,7 @@ from evorl.sample_batch import SampleBatch
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.distributed import get_global_ranks, psum, split_key_to_devices
-from evorl.types import State, PyTreeData, pytree_field, Params
+from evorl.types import State, PyTreeData, pytree_field, Params, PyTreeDict
 from evorl.utils.ec_utils import flatten_pop_rollout_episode
 from evorl.utils.jax_utils import tree_stop_gradient
 
@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 
 class ECWorkflowMetric(MetricBase):
     best_objective: chex.Array
+    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
+    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+
+
+class MultiObjectiveECWorkflowMetric(MetricBase):
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
@@ -200,6 +206,9 @@ class ECWorkflowTemplate(ECWorkflow):
         """
         return agent_state
 
+    def _metrics_to_fitnesses(self, metrics: MetricBase) -> chex.ArrayTree:
+        return jnp.mean(metrics.episode_returns, axis=-1)
+
     def step(self, state: State) -> tuple[MetricBase, State]:
         agent_state = state.agent_state
         key, rollout_key = jax.random.split(state.key, 2)
@@ -242,7 +251,7 @@ class ECWorkflowTemplate(ECWorkflow):
                 self.config.episodes_for_fitness,
             )
 
-        fitnesses = jnp.mean(rollout_metrics.episode_returns, axis=-1)
+        fitnesses = self._metrics_to_fitnesses(rollout_metrics)
         fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
 
         ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop, fitnesses)
@@ -283,4 +292,89 @@ class ECWorkflowTemplate(ECWorkflow):
         super().enable_pmap(axis_name)
         cls._postsetup = jax.pmap(
             cls._postsetup, axis_name, static_broadcasted_argnums=(0,)
+        )
+
+
+class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
+    def _metrics_to_fitnesses(self, metrics: MetricBase) -> chex.ArrayTree:
+        fitnesses = PyTreeDict(
+            {k: jnp.mean(metrics[k], axis=-1) for k in self.config.metric_names}
+        )
+        fitnesses = jnp.stack(list(fitnesses.values()), axis=-1)
+        if fitnesses.shape[-1] == 1:
+            fitnesses = fitnesses.squeeze(-1)
+
+        return fitnesses
+
+    def _setup_workflow_metrics(self) -> MetricBase:
+        return MultiObjectiveECWorkflowMetric()
+
+    def step(self, state: State) -> tuple[MetricBase, State]:
+        agent_state = state.agent_state
+        key, rollout_key = jax.random.split(state.key, 2)
+
+        pop, ec_opt_state = self.ec_optimizer.ask(state.ec_opt_state)
+        pop_size = jax.tree_leaves(pop)[0].shape[0]
+
+        slice_size = pop_size // state.distributed_info.world_size
+        eval_pop = jtu.tree_map(
+            lambda x: jax.lax.dynamic_slice_in_dim(
+                x, state.distributed_info.rank * slice_size, slice_size, axis=0
+            ),
+            pop,
+        )
+
+        pop_agent_state = self._replace_actor_params(agent_state, eval_pop)
+
+        if isinstance(self.ec_evaluator, EpisodeCollector):
+            # trajectory: [#pop, T, #episodes]
+            rollout_metrics, trajectory = jax.vmap(
+                self.ec_evaluator.rollout,
+                in_axes=(self.agent_state_vmap_axes, 0, None),
+            )(
+                pop_agent_state,
+                jax.random.split(rollout_key, num=slice_size),
+                self.config.episodes_for_fitness,
+            )
+            # [#pop, T, B, ...] -> [T, #pop*B, ...]
+            trajectory = flatten_pop_rollout_episode(trajectory)
+            trajectory = tree_stop_gradient(trajectory)
+            agent_state = self._update_obs_preprocessor(agent_state, trajectory)
+
+        elif isinstance(self.ec_evaluator, Evaluator):
+            rollout_metrics = jax.vmap(
+                self.ec_evaluator.evaluate,
+                in_axes=(self.agent_state_vmap_axes, 0, None),
+            )(
+                pop_agent_state,
+                jax.random.split(rollout_key, num=slice_size),
+                self.config.episodes_for_fitness,
+            )
+
+        fitnesses = self._metrics_to_fitnesses(rollout_metrics)
+        fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
+
+        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop, fitnesses)
+
+        sampled_episodes = psum(
+            jnp.uint32(pop_size * self.config.episodes_for_fitness),
+            self.pmap_axis_name,
+        )
+        sampled_timesteps_m = (
+            psum(rollout_metrics.episode_lengths.sum(), self.pmap_axis_name) / 1e6
+        )
+
+        workflow_metrics = state.metrics.replace(
+            sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
+            sampled_timesteps_m=state.metrics.sampled_timesteps_m + sampled_timesteps_m,
+            iterations=state.metrics.iterations + 1,
+        )
+
+        train_metrics = TrainMetric(objectives=fitnesses)
+
+        return train_metrics, state.replace(
+            key=key,
+            agent_state=agent_state,
+            ec_opt_state=ec_opt_state,
+            metrics=workflow_metrics,
         )

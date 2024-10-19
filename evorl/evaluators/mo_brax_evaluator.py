@@ -9,23 +9,28 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from evorl.agent import AgentState, AgentActionFn
-from evorl.envs import Env, EnvState, EnvStepFn
+from evorl.envs import EnvState, EnvStepFn
+from evorl.envs.brax import BraxAdapter
 from evorl.rollout import SampleBatch
-from evorl.types import Action, PolicyExtraInfo, PyTreeDict, PyTreeNode, pytree_field
+from evorl.types import Action, PolicyExtraInfo, PyTreeDict, pytree_field
 from evorl.utils.jax_utils import rng_split
 from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_length
+
+from .evaluator import Evaluator
 
 logger = logging.getLogger(__name__)
 
 
-class BraxEvaluator(PyTreeNode):
-    env: Env = pytree_field(pytree_node=False)
-    action_fn: AgentActionFn = pytree_field(pytree_node=False)
-    max_episode_steps: int = pytree_field(pytree_node=False)
-    discount: float = pytree_field(default=1.0, pytree_node=False)
+class BraxEvaluator(Evaluator):
     metric_names: tuple[str] = pytree_field(
-        default=("reward", "episode_length"), pytree_node=False
+        default=("reward", "episode_lengths"), pytree_node=False
     )
+
+    def __post_init__(self):
+        super().__post_init__()
+        assert isinstance(
+            self.env.unwrapped, BraxAdapter
+        ), "only support Brax environments"
 
     def evaluate(
         self, agent_state: chex.ArrayTree, key: chex.PRNGKey, num_episodes: int
@@ -48,9 +53,9 @@ class BraxEvaluator(PyTreeNode):
                 env_step_fn = jax.vmap(env_step_fn)
 
         metric_names = copy.deepcopy(self.metric_names)
-        if "episode_length" not in metric_names:
+        if "episode_lengths" not in metric_names:
             # we also need episode_length to calculate the sampled_timesteps
-            metric_names = metric_names + ("episode_length",)
+            metric_names = metric_names + ("episode_lengths",)
 
         def _evaluate_fn(key, unused_t):
             next_key, init_env_key, rollout_key = rng_split(key, 3)
@@ -80,15 +85,7 @@ class BraxEvaluator(PyTreeNode):
                     metric_names=self.metric_names,
                 )
 
-            objectives = PyTreeDict(
-                {
-                    name: val
-                    for name, val in metrics.items()
-                    if name in self.metric_names
-                }
-            )
-
-            return next_key, objectives  # [..., #envs]
+            return next_key, metrics  # [..., #envs]
 
         # [#iters, #pop, #envs]
         _, objectives = jax.lax.scan(_evaluate_fn, key, (), length=num_iters)
@@ -210,7 +207,7 @@ def eval_metrics(
     rollout_length: int,
     discount: float,
     metric_names: tuple[str] = (),
-):
+) -> tuple[PyTreeDict, EnvState]:
     episode_trajectory, env_state = eval_rollout_episode(
         env_fn,
         action_fn,
@@ -230,13 +227,15 @@ def eval_metrics(
                 episode_trajectory.dones,
                 discount,
             )
-        elif "episode_length" == name:
+        elif "episode_lengths" == name:
             metrics[name] = compute_episode_length(episode_trajectory.dones)
         else:
             # For other metrics like 'x_position', we use the last value as the objective.
             # Note: It is ok to use [-1], since wrapper ensures that the last value
             # repeats the terminal step value.
             metrics[name] = episode_trajectory.rewards[name][-1]
+
+    return metrics, env_state
 
 
 def fast_eval_metrics(
@@ -263,7 +262,7 @@ def fast_eval_metrics(
 
     def _terminate_cond(carry):
         env_state, current_key, prev_metrics = carry
-        return (prev_metrics.episode_length < rollout_length).all() & (
+        return (prev_metrics.episode_lengths < rollout_length).all() & (
             ~env_state.done.all()
         )
 
@@ -285,7 +284,7 @@ def fast_eval_metrics(
                 metrics[name] = (
                     prev_metrics[name] + (1 - prev_dones) * transition.rewards[name]
                 )
-            elif "episode_length" == name:
+            elif "episode_lengths" == name:
                 metrics[name] = prev_metrics[name] + (1 - prev_dones)
             elif name in metrics:
                 metrics[name] = transition.rewards[name]

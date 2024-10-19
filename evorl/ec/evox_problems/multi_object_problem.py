@@ -21,7 +21,7 @@ class MultiObjectiveBraxProblem(Problem):
         num_episodes: int = 10,
         max_episode_steps: int = 1000,
         discount: float = 1.0,
-        metric_names: tuple[str] = ("reward", "episode_length"),
+        metric_names: tuple[str] = ("reward", "episode_lengths"),
         flatten_objectives: bool = True,
         explore: bool = False,
         reduce_fn: ReductionFn | dict[str, ReductionFn] = jnp.mean,
@@ -62,9 +62,9 @@ class MultiObjectiveBraxProblem(Problem):
             action_fn = agent.evaluate_actions
 
         metric_names = copy.deepcopy(self.metric_names)
-        if "episode_length" not in metric_names:
-            # we also need episode_length to calculate the sampled_timesteps
-            metric_names = metric_names + ("episode_length",)
+        if "episode_lengths" not in metric_names:
+            # we also need episode_lengths to calculate the sampled_timesteps
+            metric_names = metric_names + ("episode_lengths",)
 
         self.evaluator = BraxEvaluator(
             env, action_fn, max_episode_steps, discount, metric_names
@@ -95,7 +95,7 @@ class MultiObjectiveBraxProblem(Problem):
             in_axes=(self.agent_state_vmap_axes, 0, None),
         )(pop_agent_state, eval_key, self.num_episodes)
 
-        sampled_timesteps = raw_objectives.episode_length.sum()
+        sampled_timesteps = raw_objectives.episode_lengths.sum()
         sampled_episodes = jnp.uint32(pop_size * self.num_episodes)
 
         objectives = PyTreeDict(

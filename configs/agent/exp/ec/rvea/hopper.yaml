@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent/ec/rvea
+  - /agent/contrib/rvea-evox
   - _self_
 
 pop_size: 1024

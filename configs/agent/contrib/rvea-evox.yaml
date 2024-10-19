@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.algorithms.ec.mo.rvea.RVEAWorkflow
+workflow_cls: evorl.algorithms.contrib.rvea_evox.RVEAWorkflow
 
 pop_size: 128
 num_iters: 1000
