@@ -12,7 +12,7 @@ from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
 from evorl.ec.optimizers import EvoXAlgorithmAdapter, ECState
-from evorl.ec.evox_algorithm import CMAES
+from evorl.ec.evox_algorithm import CMAES, SepCMAES
 from evorl.utils.ec_utils import ParamVectorSpec
 
 from .es_base import ESWorkflowTemplate
@@ -198,7 +198,7 @@ class SepCMAESWorkflow(CMAESWorkflow):
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
         ec_optimizer = EvoXAlgorithmAdapter(
-            algorithm=CMAES(
+            algorithm=SepCMAES(
                 center_init=param_vec_spec.to_vector(agent_state.params.policy_params),
                 init_stdev=config.init_stdev,
                 pop_size=config.pop_size,
