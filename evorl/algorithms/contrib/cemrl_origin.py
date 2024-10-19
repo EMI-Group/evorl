@@ -219,7 +219,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
 
         # adding debug info for CEM
         ec_info = PyTreeDict()
-        ec_info.cov_noise = ec_opt_state.cov_noise
+        ec_info.cov_eps = ec_opt_state.cov_eps
         if td3_metrics is not None:
             elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
             elites_from_rl = jnp.isin(

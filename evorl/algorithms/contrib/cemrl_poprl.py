@@ -90,7 +90,7 @@ class PopRLWorkflow(CEMRLWorkflow):
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             rl_metrics=td3_metrics,
-            ec_info=PyTreeDict(cov_noise=ec_opt_state.cov_noise),
+            ec_info=PyTreeDict(cov_eps=ec_opt_state.cov_eps),
         )
 
         # record pop mean, but do not sample new pop:
