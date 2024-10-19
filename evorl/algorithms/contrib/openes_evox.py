@@ -88,7 +88,7 @@ class OpenESWorkflow(EvoXESWorkflowTemplate):
             algorithm=algorithm,
             problem=problem,
             opt_direction="max",
-            candidate_transforms=(jax.vmap(_candidate_transform),),
+            candidate_transforms=(_candidate_transform,),
         )
         workflow._candidate_transform = _candidate_transform
 

@@ -73,7 +73,7 @@ class CSOWorkflow(EvoXWorkflowWrapper):
             algorithm=algorithm,
             problem=problem,
             opt_direction="max",
-            candidate_transforms=(jax.vmap(_candidate_transform),),
+            candidate_transforms=(_candidate_transform,),
         )
 
     def learn(self, state: State) -> State:

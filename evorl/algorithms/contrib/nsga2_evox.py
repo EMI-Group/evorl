@@ -67,5 +67,5 @@ class NSGA2Workflow(EvoXMOWorkflowTemplate):
             algorithm=algorithm,
             problem=problem,
             opt_direction=config.opt_directions,
-            candidate_transforms=(jax.vmap(_candidate_transform),),
+            candidate_transforms=(_candidate_transform,),
         )
