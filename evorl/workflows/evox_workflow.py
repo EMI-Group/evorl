@@ -211,8 +211,6 @@ class EvoXESWorkflowTemplate(EvoXWorkflowWrapper):
                 self.recorder.write(
                     {"eval/pop_center": eval_metrics.to_local_dict()}, iters
                 )
-            else:
-                eval_metrics = None
 
             self._record_callback(state.evox_state, iters)
 

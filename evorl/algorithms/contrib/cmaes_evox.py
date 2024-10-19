@@ -202,7 +202,7 @@ class SepCMAESWorkflow(EvoXESWorkflowTemplate):
         self,
         evox_state: EvoXState,
         iters: int = 0,
-    ):
+    ) -> None:
         algo_state = evox_state.query_state("algorithm")
         cov = algo_state.C
         std = jnp.sqrt(cov) * algo_state.sigma

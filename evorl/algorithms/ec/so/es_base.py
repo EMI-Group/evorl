@@ -62,6 +62,9 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
 
         return eval_metrics, state.replace(key=key)
 
+    def _record_callback(self, state: State, iters: int) -> None:
+        pass
+
     def learn(self, state: State) -> State:
         start_iteration = tree_unpmap(state.metrics.iterations, self.pmap_axis_name)
 
@@ -87,8 +90,8 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
                 self.recorder.write(
                     {"eval/pop_center": eval_metrics.to_local_dict()}, iters
                 )
-            else:
-                eval_metrics = None
+
+            self._record_callback(state, iters)
 
             self.checkpoint_manager.save(
                 iters,
