@@ -216,8 +216,9 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             (self.config.total_timesteps - sampled_timesteps)
             / (one_step_timesteps * self.config.fold_iters * num_devices)
         )
+        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
 
-        for i in range(num_iters):
+        for i in range(start_iteration, num_iters):
             train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
 
