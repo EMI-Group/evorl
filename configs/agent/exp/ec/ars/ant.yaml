@@ -1,0 +1,15 @@
+# @package _global_
+
+defaults:
+  - /agent/ec/ars
+  - _self_
+
+num_iters: 2000
+
+pop_size: 60
+num_elites: 20
+lr: 0.015
+noise_std: 0.025
+
+agent_network:
+  actor_hidden_layer_sizes: []

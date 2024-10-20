@@ -2,11 +2,12 @@
 
 workflow_cls: evorl.algorithms.ec.so.sepcem.SepCEMWorkflow
 
+num_iters: 1000
+
 normalize_obs: true # enable of disable VBN
 random_timesteps: 10000
 
 pop_size: 32
-num_iters: 1000
 
 num_learning_offspring: 16 # number of offspring to learn from RL(TD3)
 num_elites: 8

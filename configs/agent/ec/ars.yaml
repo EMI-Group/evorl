@@ -2,13 +2,13 @@
 
 workflow_cls: evorl.algorithms.ec.so.ars.ARSWorkflow
 
+num_iters: 1000
+
 normalize_obs: true # enable of disable VBN
 normalize_obs_mode: "RS" # "Global" or "RS" or "VBN"
 random_timesteps: 10000 # effective in "Global" and "VBN"
 
 pop_size: 128 # use mirror sampling by default
-num_iters: 1000
-
 num_elites: 16 # [1, pop_size//2]
 
 optimizer_name: 'sgd'
