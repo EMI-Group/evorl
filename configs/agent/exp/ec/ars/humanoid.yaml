@@ -13,3 +13,4 @@ noise_std: 0.0075
 
 agent_network:
   actor_hidden_layer_sizes: []
+  use_bias: false
