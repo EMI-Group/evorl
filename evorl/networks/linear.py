@@ -112,8 +112,8 @@ def make_mlp(
             activation=activation,
             kernel_init=kernel_init,
             activation_final=activation_final,
-            norm_layer=get_norm_layer(norm_layer_type),
             use_bias=use_bias,
+            norm_layer=get_norm_layer(norm_layer_type),
         )
 
     return mlp
@@ -162,6 +162,7 @@ def make_vmap_mlp(
 def make_policy_network(
     action_size: int,
     hidden_layer_sizes: Sequence[int] = (256, 256),
+    use_bias: bool = True,
     activation: ActivationFn = nn.relu,
     activation_final: ActivationFn | None = None,
     norm_layer_type: str = "none",
@@ -173,6 +174,7 @@ def make_policy_network(
         activation=activation,
         kernel_init=jax.nn.initializers.lecun_uniform(),
         activation_final=activation_final,
+        use_bias=use_bias,
         norm_layer_type=norm_layer_type,
     )
 

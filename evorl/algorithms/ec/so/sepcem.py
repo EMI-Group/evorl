@@ -31,7 +31,8 @@ class SepCEMWorkflow(ESWorkflowTemplate):
 
         agent = make_deterministic_ec_agent(
             action_space=env.action_space,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,  # use linear model
+            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+            use_bias=config.agent_network.use_bias,
             normalize_obs=config.normalize_obs,
             norm_layer_type=config.agent_network.norm_layer_type,
         )

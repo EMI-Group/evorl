@@ -169,6 +169,7 @@ class DeterministicECAgent(Agent):
 def make_stochastic_ec_agent(
     action_space: Space,
     actor_hidden_layer_sizes: tuple[int] = (256, 256),
+    use_bias: bool = True,
     norm_layer_type: str = "none",
     normalize_obs: bool = False,
 ):
@@ -185,6 +186,7 @@ def make_stochastic_ec_agent(
         action_size=action_size,
         hidden_layer_sizes=actor_hidden_layer_sizes,
         norm_layer_type=norm_layer_type,
+        use_bias=use_bias,
     )
 
     if normalize_obs:
@@ -202,6 +204,7 @@ def make_stochastic_ec_agent(
 def make_deterministic_ec_agent(
     action_space: Space,
     actor_hidden_layer_sizes: tuple[int] = (256, 256),
+    use_bias: bool = True,
     norm_layer_type: str = "none",
     normalize_obs: bool = False,
 ):
@@ -212,6 +215,7 @@ def make_deterministic_ec_agent(
     policy_network = make_policy_network(
         action_size=action_size,
         hidden_layer_sizes=actor_hidden_layer_sizes,
+        use_bias=use_bias,
         activation_final=nn.tanh,
         norm_layer_type=norm_layer_type,
     )
