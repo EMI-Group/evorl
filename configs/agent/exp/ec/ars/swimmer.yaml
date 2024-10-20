@@ -6,7 +6,7 @@ defaults:
 
 num_iters: 2000
 
-pop_size: 1
+pop_size: 2
 num_elites: 1
 lr: 0.02
 noise_std: 0.01
@@ -14,3 +14,6 @@ noise_std: 0.01
 agent_network:
   actor_hidden_layer_sizes: []
   use_bias: false
+
+wandb:
+  tags: ["ori"]
