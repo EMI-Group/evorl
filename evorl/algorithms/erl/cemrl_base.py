@@ -254,7 +254,9 @@ class CEMRLWorkflowBase(Workflow):
 
         return eval_metrics, trajectory
 
-    def _ec_update(self, ec_opt_state: ECState, fitnesses: chex.Array) -> ECState:
+    def _ec_update(
+        self, ec_opt_state: ECState, fitnesses: chex.Array
+    ) -> tuple[PyTreeDict, ECState]:
         return self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
     def _ec_sample(self, ec_opt_state: ECState) -> tuple[Params, ECState]:

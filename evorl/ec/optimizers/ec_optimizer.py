@@ -23,7 +23,9 @@ class EvoOptimizer(PyTreeNode, metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def tell(self, state: ECState, fitnesses: chex.ArrayTree) -> ECState:
+    def tell(
+        self, state: ECState, fitnesses: chex.ArrayTree
+    ) -> tuple[PyTreeDict, ECState]:
         """
         Update the optimizer state based on the fitnesses of the candidate solutions
 

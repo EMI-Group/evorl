@@ -6,12 +6,11 @@ import optax
 
 from evorl.types import (
     PyTreeData,
+    PyTreeDict,
     Params,
     pytree_field,
 )
-from evorl.utils.jax_utils import (
-    rng_split_like_tree,
-)
+from evorl.utils.jax_utils import rng_split_like_tree
 
 from .utils import weight_sum, optimizer_map
 from .ec_optimizer import EvoOptimizer, ECState
@@ -66,7 +65,9 @@ class ARS(EvoOptimizer):
         )
         return pop, state.replace(key=key, noise=half_noise)
 
-    def tell(self, state: ARSState, fitnesses: chex.Array) -> ARSState:
+    def tell(
+        self, state: ARSState, fitnesses: chex.Array
+    ) -> tuple[PyTreeDict, ARSState]:
         half_pop_size = self.pop_size // 2
 
         fit_p = fitnesses[:half_pop_size]  # r_positive
@@ -90,4 +91,6 @@ class ARS(EvoOptimizer):
         update, opt_state = self.optimizer.update(grad, state.opt_state)
         mean = optax.apply_updates(state.mean, update)
 
-        return state.replace(mean=mean, opt_state=opt_state, noise=None)
+        ec_metrics = PyTreeDict(fitness_std=fitness_std)
+
+        return ec_metrics, state.replace(mean=mean, opt_state=opt_state, noise=None)

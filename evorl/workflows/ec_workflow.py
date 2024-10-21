@@ -40,6 +40,7 @@ class MultiObjectiveECWorkflowMetric(MetricBase):
 
 class TrainMetric(MetricBase):
     objectives: chex.Array
+    ec_metrics: chex.ArrayTree
 
 
 class DistributedInfo(PyTreeData):
@@ -254,7 +255,7 @@ class ECWorkflowTemplate(ECWorkflow):
         fitnesses = self._metrics_to_fitnesses(rollout_metrics)
         fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
 
-        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
+        ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         sampled_episodes = psum(
             jnp.uint32(pop_size * self.config.episodes_for_fitness),
@@ -273,7 +274,10 @@ class ECWorkflowTemplate(ECWorkflow):
             ),
         )
 
-        train_metrics = TrainMetric(objectives=fitnesses)
+        train_metrics = TrainMetric(
+            objectives=fitnesses,
+            ec_metrics=ec_metrics,
+        )
 
         return train_metrics, state.replace(
             key=key,
@@ -354,7 +358,7 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
         fitnesses = self._metrics_to_fitnesses(rollout_metrics)
         fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
 
-        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
+        ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         sampled_episodes = psum(
             jnp.uint32(pop_size * self.config.episodes_for_fitness),

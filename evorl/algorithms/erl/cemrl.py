@@ -310,7 +310,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             eval_metrics.episode_lengths.flatten(),
         )
 
-        ec_opt_state = self._ec_update(ec_opt_state, fitnesses)
+        ec_metrics, ec_opt_state = self._ec_update(ec_opt_state, fitnesses)
 
         train_metrics = POPTrainMetric(
             rb_size=get_buffer_size(replay_buffer_state),
@@ -320,7 +320,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         )
 
         # adding debug info for CEM
-        ec_info = PyTreeDict()
+        ec_info = PyTreeDict(ec_metrics)
         ec_info.cov_eps = ec_opt_state.cov_eps
         if td3_metrics is not None:
             elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]

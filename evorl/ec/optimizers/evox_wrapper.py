@@ -6,10 +6,10 @@ from evox import (
     has_init_tell,
 )
 
-from evorl.types import PyTreeData, pytree_field
+from evorl.types import PyTreeData, pytree_field, PyTreeDict
 from evorl.utils.ec_utils import ParamVectorSpec
 
-from .ec_optimizer import EvoOptimizer, ECState
+from .ec_optimizer import EvoOptimizer
 
 
 class EvoXAlgoState(PyTreeData):
@@ -36,7 +36,7 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
 
         return EvoXAlgoState(algo_state=algo_state, init_step=init_step)
 
-    def ask(self, state: EvoXAlgoState) -> tuple[chex.ArrayTree, ECState]:
+    def ask(self, state: EvoXAlgoState) -> tuple[chex.ArrayTree, EvoXAlgoState]:
         if has_init_ask(self.algorithm) and state.init_step:
             ask = self.algorithm.init_ask
         else:
@@ -48,7 +48,9 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
 
         return pop, state.replace(algo_state=algo_state)
 
-    def tell(self, state: EvoXAlgoState, fitnesses: chex.Array) -> EvoXAlgoState:
+    def tell(
+        self, state: EvoXAlgoState, fitnesses: chex.Array
+    ) -> tuple[PyTreeDict, EvoXAlgoState]:
         if has_init_tell(self.algorithm) and state.init_step:
             tell = self.algorithm.init_tell
         else:
@@ -57,4 +59,4 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
         # Note: Evox's Algorithms minimize the fitness
         algo_state = tell(state.algo_state, -fitnesses)
 
-        return state.replace(algo_state=algo_state, init_step=False)
+        return PyTreeDict(), state.replace(algo_state=algo_state, init_step=False)

@@ -5,18 +5,18 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.types import PyTreeData, pytree_field
+from evorl.types import PyTreeData, pytree_field, PyTreeDict
 from evorl.ec.operators import MLPMutation, MLPCrossover, TournamentSelection
 
-from .ec_optimizer import EvoOptimizer, ECState
+from .ec_optimizer import EvoOptimizer
 
 
-class GAState(PyTreeData):
+class VanillaGAState(PyTreeData):
     pop: chex.ArrayTree
     key: chex.PRNGKey
 
 
-class GA(EvoOptimizer):
+class VanillaGA(EvoOptimizer):
     pop_size: int
     num_elites: int
 
@@ -56,10 +56,15 @@ class GA(EvoOptimizer):
         self.set_frozen_attr("mutate", mutation_op)
         self.set_frozen_attr("crossover", crossover_op)
 
-    def init(self, pop: chex.ArrayTree, key: chex.PRNGKey) -> ECState:
-        return GAState(pop=pop, key=key)
+    def init(self, pop: chex.ArrayTree, key: chex.PRNGKey) -> VanillaGAState:
+        return VanillaGAState(pop=pop, key=key)
 
-    def tell(self, state: ECState, xs: chex.ArrayTree, fitnesses: chex.Array):
+    def ask(self, state: VanillaGAState) -> tuple[chex.ArrayTree, VanillaGAState]:
+        return state.pop, state
+
+    def tell(
+        self, state: VanillaGAState, xs: chex.ArrayTree, fitnesses: chex.Array
+    ) -> tuple[PyTreeDict, VanillaGAState]:
         # Note: We simplify the update in ERL
         key, select_key, mutate_key, crossover_key = jax.random.split(state.key, 4)
 
@@ -81,7 +86,4 @@ class GA(EvoOptimizer):
             lambda x, y: jnp.concatenate([x, y], axis=0), elites, offsprings
         )
 
-        return state.replace(pop=new_pop, key=key)
-
-    def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
-        return state.pop, state
+        return PyTreeDict(), state.replace(pop=new_pop, key=key)

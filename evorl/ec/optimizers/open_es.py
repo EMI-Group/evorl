@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
-from evorl.types import PyTreeData, pytree_field, Params
+from evorl.types import PyTreeData, pytree_field, Params, PyTreeDict
 from evorl.utils.jax_utils import rng_split_like_tree, invert_permutation
 
 from .utils import ExponentialScheduleSpec, weight_sum, optimizer_map
@@ -103,7 +103,9 @@ class OpenES(EvoOptimizer):
 
         return pop, state
 
-    def tell(self, state: ECState, fitnesses: chex.Array) -> ECState:
+    def tell(
+        self, state: ECState, fitnesses: chex.Array
+    ) -> tuple[PyTreeDict, OpenESState]:
         "Update the optimizer state based on the fitnesses of the candidate solutions"
 
         transformed_fitnesses = self.fitness_shaping_fn(fitnesses)
@@ -141,6 +143,6 @@ class OpenES(EvoOptimizer):
             1 - self.noise_std_schedule.decay,
         )
 
-        return state.replace(
+        return PyTreeDict(), state.replace(
             mean=mean, opt_state=opt_state, noise_std=noise_std, noise=None
         )

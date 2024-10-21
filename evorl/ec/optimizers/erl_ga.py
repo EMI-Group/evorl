@@ -5,10 +5,10 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.types import PyTreeData, pytree_field
+from evorl.types import PyTreeData, pytree_field, PyTreeDict
 from evorl.ec.operators import ERLMutation, MLPCrossover, TournamentSelection
 
-from .ec_optimizer import EvoOptimizer, ECState
+from .ec_optimizer import EvoOptimizer
 
 
 class ERLGAState(PyTreeData):
@@ -62,10 +62,15 @@ class ERLGA(EvoOptimizer):
         self.set_frozen_attr("mutate", mutation_op)
         self.set_frozen_attr("crossover", crossover_op)
 
-    def init(self, pop, key) -> ECState:
+    def init(self, pop, key) -> ERLGAState:
         return ERLGAState(pop=pop, key=key)
 
-    def tell(self, state: ECState, xs: chex.ArrayTree, fitnesses: chex.Array):
+    def ask(self, state: ERLGAState) -> tuple[chex.ArrayTree, ERLGAState]:
+        return state.pop, state
+
+    def tell(
+        self, state: ERLGAState, xs: chex.ArrayTree, fitnesses: chex.Array
+    ) -> tuple[PyTreeDict, ERLGAState]:
         # Note: We simplify the update in ERL
         key, select_key, mutate_key, crossover_key = jax.random.split(state.key, 4)
 
@@ -87,7 +92,4 @@ class ERLGA(EvoOptimizer):
             lambda x, y: jnp.concatenate([x, y], axis=0), elites, offsprings
         )
 
-        return state.replace(pop=new_pop, key=key)
-
-    def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
-        return state.pop, state
+        return PyTreeDict(), state.replace(pop=new_pop, key=key)

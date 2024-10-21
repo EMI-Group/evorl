@@ -4,17 +4,11 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
-from evorl.types import (
-    PyTreeData,
-    Params,
-    pytree_field,
-)
-from evorl.utils.jax_utils import (
-    rng_split_like_tree,
-)
+from evorl.types import PyTreeData, Params, pytree_field, PyTreeDict
+from evorl.utils.jax_utils import rng_split_like_tree
 
 from .utils import weight_sum, ExponentialScheduleSpec
-from .ec_optimizer import EvoOptimizer, ECState
+from .ec_optimizer import EvoOptimizer
 
 
 class VanillaESState(PyTreeData):
@@ -44,7 +38,7 @@ class VanillaES(EvoOptimizer):
             key=key,
         )
 
-    def ask(self, state: VanillaESState) -> tuple[Params, ECState]:
+    def ask(self, state: VanillaESState) -> tuple[Params, VanillaESState]:
         key, sample_key = jax.random.split(state.key)
         sample_keys = rng_split_like_tree(sample_key, state.mean)
 
@@ -62,7 +56,9 @@ class VanillaES(EvoOptimizer):
         )
         return pop, state.replace(key=key, noise=noise)
 
-    def tell(self, state: VanillaESState, fitnesses: chex.Array) -> VanillaESState:
+    def tell(
+        self, state: VanillaESState, fitnesses: chex.Array
+    ) -> tuple[PyTreeDict, VanillaESState]:
         elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
         mean = jtu.tree_map(
@@ -77,4 +73,4 @@ class VanillaES(EvoOptimizer):
             1 - self.noise_std_schedule.decay,
         )
 
-        return state.replace(mean=mean, noise_std=noise_std, noise=None)
+        return PyTreeDict(), state.replace(mean=mean, noise_std=noise_std, noise=None)

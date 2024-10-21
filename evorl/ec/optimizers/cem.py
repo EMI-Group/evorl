@@ -6,12 +6,11 @@ import optax
 
 from evorl.types import (
     PyTreeData,
+    PyTreeDict,
     Params,
     pytree_field,
 )
-from evorl.utils.jax_utils import (
-    rng_split_like_tree,
-)
+from evorl.utils.jax_utils import rng_split_like_tree
 
 from .utils import ExponentialScheduleSpec, weight_sum
 from .ec_optimizer import EvoOptimizer, ECState
@@ -98,7 +97,9 @@ class SepCEM(EvoOptimizer):
 
         return pop, state
 
-    def tell(self, state: SepCEMState, fitnesses: chex.Array) -> SepCEMState:
+    def tell(
+        self, state: SepCEMState, fitnesses: chex.Array
+    ) -> tuple[PyTreeDict, SepCEMState]:
         # fitness: episode_return, higher is better
         elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
@@ -122,4 +123,6 @@ class SepCEM(EvoOptimizer):
             self.cov_eps_schedule.final, state.cov_eps, self.cov_eps_schedule.decay
         )
 
-        return state.replace(mean=mean, variance=variance, cov_eps=cov_eps, pop=None)
+        return PyTreeDict(), state.replace(
+            mean=mean, variance=variance, cov_eps=cov_eps, pop=None
+        )
