@@ -35,6 +35,7 @@ class OpenESState(PyTreeData):
     opt_state: optax.OptState
     noise_std: chex.Array
     key: chex.PRNGKey
+    noise: None | chex.ArrayTree = None
 
 
 class OpenES(EvoOptimizer):
@@ -98,21 +99,14 @@ class OpenES(EvoOptimizer):
             state.mean,
             noise,
         )
-        state = state.replace(key=key)
+        state = state.replace(key=key, noise=noise)
 
         return pop, state
 
-    def tell(
-        self, state: ECState, xs: chex.ArrayTree, fitnesses: chex.Array
-    ) -> ECState:
+    def tell(self, state: ECState, fitnesses: chex.Array) -> ECState:
         "Update the optimizer state based on the fitnesses of the candidate solutions"
 
         transformed_fitnesses = self.fitness_shaping_fn(fitnesses)
-
-        opt_state = state.opt_state
-
-        # [pop_size, ...]
-        noise = jtu.tree_map(lambda x, m: (x - m) / state.noise_std, xs, state.mean)
 
         # grad = 1/(N*sigma^2) * sum(F_i*(x_i-m))
         grad = jtu.tree_map(
@@ -121,7 +115,7 @@ class OpenES(EvoOptimizer):
                 -weight_sum(z, transformed_fitnesses)
                 / (self.pop_size * state.noise_std)
             ),
-            noise,
+            state.noise,
         )
 
         # add L2 weight decay
@@ -147,4 +141,6 @@ class OpenES(EvoOptimizer):
             1 - self.noise_std_schedule.decay,
         )
 
-        return state.replace(mean=mean, opt_state=opt_state, noise_std=noise_std)
+        return state.replace(
+            mean=mean, opt_state=opt_state, noise_std=noise_std, noise=None
+        )

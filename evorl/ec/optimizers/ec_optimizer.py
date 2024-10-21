@@ -15,23 +15,20 @@ class EvoOptimizer(PyTreeNode, metaclass=ABCMeta):
 
     @abstractmethod
     def init(self, *args, **kwargs) -> ECState:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
-    def tell(
-        self, state: ECState, xs: chex.ArrayTree, fitnesses: chex.ArrayTree
-    ) -> ECState:
+    def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
+        "Generate new candidate solutions"
+        raise NotImplementedError
+
+    @abstractmethod
+    def tell(self, state: ECState, fitnesses: chex.ArrayTree) -> ECState:
         """
         Update the optimizer state based on the fitnesses of the candidate solutions
 
         Args:
             state: The current optimizer state
-            xs: The candidate solutions (i.e., offsprings)
             fitnesses: The fitnesses of the candidate solutions
         """
-        pass
-
-    @abstractmethod
-    def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
-        "Generate new candidate solutions"
-        pass
+        raise NotImplementedError

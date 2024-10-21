@@ -22,6 +22,7 @@ class SepCEMState(PyTreeData):
     variance: chex.ArrayTree
     cov_eps: chex.ArrayTree
     key: chex.PRNGKey
+    pop: None | chex.ArrayTree = None
 
 
 class SepCEM(EvoOptimizer):
@@ -93,34 +94,32 @@ class SepCEM(EvoOptimizer):
         # mean: (...)
 
         pop = jtu.tree_map(lambda mean, noise: mean + noise, state.mean, noise)
-        state = state.replace(key=key)
+        state = state.replace(key=key, pop=pop)
 
         return pop, state
 
-    def tell(
-        self, state: SepCEMState, xs: chex.ArrayTree, fitnesses: chex.Array
-    ) -> SepCEMState:
+    def tell(self, state: SepCEMState, fitnesses: chex.Array) -> SepCEMState:
         # fitness: episode_return, higher is better
         elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
-        cov_eps = optax.incremental_update(
-            self.cov_eps_schedule.final, state.cov_eps, self.cov_eps_schedule.decay
-        )
-
         mean = jtu.tree_map(
             lambda x: weight_sum(x[elites_indices], self.elite_weights),
-            xs,
+            state.pop,
         )
 
         def var_update(m, x):
             x_norm = jnp.square(x[elites_indices] - m)
             # TODO: do we need extra division by num_elites mentioned in CEM-RL?
-            return weight_sum(x_norm, self.elite_weights) + cov_eps
+            return weight_sum(x_norm, self.elite_weights) + state.cov_eps
 
         variance = jtu.tree_map(
             var_update,
             state.mean,  # old mean
-            xs,
+            state.pop,
         )
 
-        return state.replace(mean=mean, variance=variance, cov_eps=cov_eps)
+        cov_eps = optax.incremental_update(
+            self.cov_eps_schedule.final, state.cov_eps, self.cov_eps_schedule.decay
+        )
+
+        return state.replace(mean=mean, variance=variance, cov_eps=cov_eps, pop=None)

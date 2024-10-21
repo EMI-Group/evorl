@@ -36,19 +36,6 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
 
         return EvoXAlgoState(algo_state=algo_state, init_step=init_step)
 
-    def tell(
-        self, state: EvoXAlgoState, xs: chex.ArrayTree, fitnesses: chex.Array
-    ) -> EvoXAlgoState:
-        if has_init_tell(self.algorithm) and state.init_step:
-            tell = self.algorithm.init_tell
-        else:
-            tell = self.algorithm.tell
-
-        # Note: Evox's Algorithms minimize the fitness
-        algo_state = tell(state.algo_state, -fitnesses)
-
-        return state.replace(algo_state=algo_state, init_step=False)
-
     def ask(self, state: EvoXAlgoState) -> tuple[chex.ArrayTree, ECState]:
         if has_init_ask(self.algorithm) and state.init_step:
             ask = self.algorithm.init_ask
@@ -60,3 +47,14 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
         pop = self.param_vec_spec.to_tree(flat_pop)
 
         return pop, state.replace(algo_state=algo_state)
+
+    def tell(self, state: EvoXAlgoState, fitnesses: chex.Array) -> EvoXAlgoState:
+        if has_init_tell(self.algorithm) and state.init_step:
+            tell = self.algorithm.init_tell
+        else:
+            tell = self.algorithm.tell
+
+        # Note: Evox's Algorithms minimize the fitness
+        algo_state = tell(state.algo_state, -fitnesses)
+
+        return state.replace(algo_state=algo_state, init_step=False)

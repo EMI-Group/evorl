@@ -21,6 +21,7 @@ class VanillaESState(PyTreeData):
     mean: chex.ArrayTree
     noise_std: chex.Array
     key: chex.PRNGKey
+    noise: None | chex.ArrayTree = None
 
 
 class VanillaES(EvoOptimizer):
@@ -48,29 +49,26 @@ class VanillaES(EvoOptimizer):
         sample_keys = rng_split_like_tree(sample_key, state.mean)
 
         noise = jtu.tree_map(
-            lambda x, k: jax.random.normal(k, shape=(self.pop_size, *x.shape)),
+            lambda x, k: jax.random.normal(k, shape=(self.pop_size, *x.shape))
+            * state.noise_std,
             state.mean,
             sample_keys,
         )
 
         pop = jtu.tree_map(
-            lambda m, z: m + state.noise_std * z,
+            lambda m, z: m + z,
             state.mean,
             noise,
         )
-        return pop, state.replace(key=key)
+        return pop, state.replace(key=key, noise=noise)
 
-    def tell(
-        self, state: VanillaESState, xs: Params, fitnesses: chex.Array
-    ) -> VanillaESState:
+    def tell(self, state: VanillaESState, fitnesses: chex.Array) -> VanillaESState:
         elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
-
-        noise = jtu.tree_map(lambda x, m: (x - m), xs, state.mean)
 
         mean = jtu.tree_map(
             lambda x, z: x + weight_sum(z[elites_indices], self.elite_weights),
             state.mean,
-            noise,
+            state.noise,
         )
 
         noise_std = optax.incremental_update(
@@ -79,4 +77,4 @@ class VanillaES(EvoOptimizer):
             1 - self.noise_std_schedule.decay,
         )
 
-        return state.replace(mean=mean, noise_std=noise_std)
+        return state.replace(mean=mean, noise_std=noise_std, noise=None)

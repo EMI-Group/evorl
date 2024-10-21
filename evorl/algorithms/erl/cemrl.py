@@ -310,7 +310,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             eval_metrics.episode_lengths.flatten(),
         )
 
-        ec_opt_state = self._ec_update(ec_opt_state, pop_actor_params, fitnesses)
+        ec_opt_state = self._ec_update(ec_opt_state, fitnesses)
 
         train_metrics = POPTrainMetric(
             rb_size=get_buffer_size(replay_buffer_state),

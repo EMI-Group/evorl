@@ -339,10 +339,8 @@ class ERLWorkflowBase(Workflow):
 
         return td3_metrics, agent_state, opt_state
 
-    def _ec_update(
-        self, ec_opt_state: ECState, pop_actor_params: Params, fitnesses: chex.Array
-    ) -> ECState:
-        return self.ec_optimizer.tell(ec_opt_state, pop_actor_params, fitnesses)
+    def _ec_update(self, ec_opt_state: ECState, fitnesses: chex.Array) -> ECState:
+        return self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
     def _ec_sample(self, ec_opt_state: ECState) -> tuple[Params, ECState]:
         return self.ec_optimizer.ask(ec_opt_state)

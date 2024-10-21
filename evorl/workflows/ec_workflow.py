@@ -254,7 +254,7 @@ class ECWorkflowTemplate(ECWorkflow):
         fitnesses = self._metrics_to_fitnesses(rollout_metrics)
         fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
 
-        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop, fitnesses)
+        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         sampled_episodes = psum(
             jnp.uint32(pop_size * self.config.episodes_for_fitness),
@@ -354,7 +354,7 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
         fitnesses = self._metrics_to_fitnesses(rollout_metrics)
         fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
 
-        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, pop, fitnesses)
+        ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         sampled_episodes = psum(
             jnp.uint32(pop_size * self.config.episodes_for_fitness),

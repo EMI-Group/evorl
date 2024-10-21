@@ -21,6 +21,7 @@ class ARSState(PyTreeData):
     mean: chex.ArrayTree
     opt_state: optax.OptState
     key: chex.PRNGKey
+    noise: None | chex.ArrayTree = None
 
 
 class ARS(EvoOptimizer):
@@ -51,28 +52,22 @@ class ARS(EvoOptimizer):
         key, sample_key = jax.random.split(state.key)
         sample_keys = rng_split_like_tree(sample_key, state.mean)
 
-        noise = jtu.tree_map(
+        half_noise = jtu.tree_map(
             lambda x, k: jax.random.normal(k, shape=(self.pop_size // 2, *x.shape)),
             state.mean,
             sample_keys,
         )
-        noise = jtu.tree_map(lambda z: jnp.concatenate([z, -z], axis=0), noise)
+        noise = jtu.tree_map(lambda z: jnp.concatenate([z, -z], axis=0), half_noise)
 
         pop = jtu.tree_map(
             lambda m, z: m + self.noise_std * z,
             state.mean,
             noise,
         )
-        return pop, state.replace(key=key)
+        return pop, state.replace(key=key, noise=half_noise)
 
-    def tell(self, state: ARSState, xs: Params, fitnesses: chex.Array) -> ARSState:
+    def tell(self, state: ARSState, fitnesses: chex.Array) -> ARSState:
         half_pop_size = self.pop_size // 2
-
-        noise = jtu.tree_map(
-            lambda x, m: (x[:half_pop_size] - m) / self.noise_std,
-            xs,
-            state.mean,
-        )
 
         fit_p = fitnesses[:half_pop_size]  # r_positive
         fit_n = fitnesses[half_pop_size:]  # r_negtive
@@ -89,10 +84,10 @@ class ARS(EvoOptimizer):
         grad = jtu.tree_map(
             # Note: we need additional "-1.0" since we are maximizing the fitness
             lambda z: (-weight_sum(z[elites_indices], fit_diff) / (self.num_elites)),
-            noise,
+            state.noise,
         )
 
         update, opt_state = self.optimizer.update(grad, state.opt_state)
         mean = optax.apply_updates(state.mean, update)
 
-        return state.replace(mean=mean, opt_state=opt_state)
+        return state.replace(mean=mean, opt_state=opt_state, noise=None)
