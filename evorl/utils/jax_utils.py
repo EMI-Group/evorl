@@ -231,3 +231,8 @@ def has_nan(x: jax.Array) -> bool:
 
 def tree_has_nan(tree: chex.ArrayTree) -> chex.ArrayTree:
     return jtu.tree_map(has_nan, tree)
+
+
+def invert_permutation(i: jax.Array) -> jax.Array:
+    """Helper function that inverts a permutation array."""
+    return jnp.empty_like(i).at[i].set(jnp.arange(i.size, dtype=i.dtype))

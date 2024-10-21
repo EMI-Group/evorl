@@ -7,7 +7,7 @@ import jax.tree_util as jtu
 import optax
 
 from evorl.types import PyTreeData, pytree_field, Params
-from evorl.utils.jax_utils import rng_split_like_tree
+from evorl.utils.jax_utils import rng_split_like_tree, invert_permutation
 
 from .utils import ExponentialScheduleSpec, weight_sum, optimizer_map
 from .ec_optimizer import EvoOptimizer, ECState
@@ -15,11 +15,11 @@ from .ec_optimizer import EvoOptimizer, ECState
 
 def compute_ranks(x):
     """
-    Returns ranks in [0, len(x))
+    Returns ranks in [0, len(x)-1]
     Note: This is different from scipy.stats.rankdata, which returns ranks in [1, len(x)].
     """
     assert x.ndim == 1
-    ranks = jnp.arange(len(x))[x.argsort(descending=True)]
+    ranks = invert_permutation(jnp.argsort(x))
     return ranks
 
 
