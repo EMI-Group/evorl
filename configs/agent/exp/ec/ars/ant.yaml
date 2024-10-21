@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent/ec/ars
+  - /agent/contrib/ars_linear
   - _self_
 
 num_iters: 2000

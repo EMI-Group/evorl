@@ -6,6 +6,8 @@ from .linear import (
     make_policy_network,
     make_q_network,
     make_v_network,
+    make_mlp,
+    make_vmap_mlp,
     ActivationFn,
     Initializer,
 )
