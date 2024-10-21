@@ -7,8 +7,8 @@ num_iters: 1000
 normalize_obs: true # enable of disable VBN
 random_timesteps: 10000
 
-pop_size: 1024
-num_elites: 512
+pop_size: 128
+num_elites: 64
 
 init_stdev: 0.1
 
