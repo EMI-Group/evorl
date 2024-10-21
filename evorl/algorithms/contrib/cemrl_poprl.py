@@ -9,7 +9,6 @@ import orbax.checkpoint as ocp
 
 from evorl.metrics import MetricBase
 from evorl.types import State, PyTreeDict
-from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.recorders import get_1d_array_statistics, add_prefix
 
 from ..offpolicy_utils import skip_replay_buffer_state
@@ -86,7 +85,7 @@ class PopRLWorkflow(CEMRLWorkflow):
         )
 
         train_metrics = POPTrainMetric(
-            rb_size=get_buffer_size(replay_buffer_state),
+            rb_size=replay_buffer_state.buffer_size,
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             rl_metrics=td3_metrics,

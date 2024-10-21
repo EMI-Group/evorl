@@ -170,7 +170,7 @@ class TD3V2Workflow(TD3Workflow):
                 opt_state,
             )
 
-        sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key).experience
+        sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
         critic_loss, critic_loss_dict, agent_state, opt_state = _update_critic_fn(
             agent_state, opt_state, sample_batch, critic_key

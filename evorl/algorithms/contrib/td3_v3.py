@@ -3,7 +3,6 @@ import math
 from typing import Any
 
 import chex
-import flashbax
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
@@ -12,6 +11,7 @@ import optax
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig
 
+from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import psum, unpmap
 from evorl.distributed.gradients import gradient_update
 from evorl.envs import AutoresetMode, Box, create_env, Space
@@ -254,11 +254,12 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
         else:
             optimizer = optax.adam(config.optimizer.lr)
 
-        replay_buffer = flashbax.make_item_buffer(
-            max_length=config.replay_buffer_capacity,
-            min_length=max(config.batch_size, config.learning_start_timesteps),
+        replay_buffer = ReplayBuffer(
+            capacity=config.replay_buffer_capacity,
+            min_sample_timesteps=max(
+                config.batch_size, config.learning_start_timesteps
+            ),
             sample_batch_size=config.batch_size,
-            add_batches=True,
         )
 
         eval_env = create_env(
@@ -493,7 +494,7 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
                 opt_state,
             )
 
-        sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key).experience
+        sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
         critic_train_info, agent_state, opt_state = _update_critic_fn(
             agent_state, opt_state, sample_batch, critic_key

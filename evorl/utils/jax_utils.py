@@ -79,7 +79,7 @@ def tree_ones_like(nest: chex.ArrayTree, dtype=None) -> chex.ArrayTree:
     return jtu.tree_map(lambda x: jnp.ones(x.shape, dtype or x.dtype), nest)
 
 
-def tree_concat(nest1, nest2, axis=0):
+def tree_concat(nest1: chex.ArrayTree, nest2: chex.ArrayTree, axis: int = 0):
     return jtu.tree_map(lambda x, y: jnp.concatenate([x, y], axis=axis), nest1, nest2)
 
 
@@ -87,28 +87,34 @@ def tree_stop_gradient(nest: chex.ArrayTree) -> chex.ArrayTree:
     return jtu.tree_map(jax.lax.stop_gradient, nest)
 
 
-def tree_astype(tree, dtype):
+def tree_astype(tree: chex.ArrayTree, dtype):
     return jtu.tree_map(lambda x: x.astype(dtype), tree)
 
 
-def tree_last(tree):
+def tree_last(tree: chex.ArrayTree):
     return jtu.tree_map(lambda x: x[-1], tree)
 
 
-def tree_get(tree, idx_or_slice):
+def tree_get(tree: chex.ArrayTree, idx_or_slice):
     return jtu.tree_map(lambda x: x[idx_or_slice], tree)
 
 
 def tree_set(
-    src,
-    target,
+    src: chex.ArrayTree,
+    target: chex.ArrayTree,
     idx_or_slice,
     indices_are_sorted: bool = False,
     unique_indices: bool = False,
+    mode: str | None = None,
+    fill_value: chex.Scalar | None = None,
 ):
     return jtu.tree_map(
         lambda x, y: x.at[idx_or_slice].set(
-            y, indices_are_sorted=indices_are_sorted, unique_indices=unique_indices
+            y,
+            indices_are_sorted=indices_are_sorted,
+            unique_indices=unique_indices,
+            mode=mode,
+            fill_value=fill_value,
         ),
         src,
         target,

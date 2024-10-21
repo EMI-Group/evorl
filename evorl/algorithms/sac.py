@@ -3,13 +3,13 @@ from collections.abc import Callable
 from typing import Any
 
 import chex
-import flashbax
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
 from omegaconf import DictConfig
 
+from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import agent_gradient_update, psum, pmean
 from evorl.distribution import get_tanh_norm_dist, get_categorical_dist
 from evorl.envs import AutoresetMode, Box, create_env, Space, Discrete
@@ -482,11 +482,12 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
         else:
             optimizer = optax.adam(config.optimizer.lr)
 
-        replay_buffer = flashbax.make_item_buffer(
-            max_length=config.replay_buffer_capacity,
-            min_length=max(config.batch_size, config.learning_start_timesteps),
+        replay_buffer = ReplayBuffer(
+            capacity=config.replay_buffer_capacity,
+            min_sample_timesteps=max(
+                config.batch_size, config.learning_start_timesteps
+            ),
             sample_batch_size=config.batch_size,
-            add_batches=True,
         )
 
         eval_env = create_env(
@@ -629,7 +630,7 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
                     # it's safe to use read-only replay_buffer_state here.
                     sample_batch = self.replay_buffer.sample(
                         replay_buffer_state, rb_key
-                    ).experience
+                    )
 
                     (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                         critic_update_fn(
@@ -648,9 +649,7 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
                     length=self.config.actor_update_interval - 1,
                 )
 
-            sample_batch = self.replay_buffer.sample(
-                replay_buffer_state, rb_key
-            ).experience
+            sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                 critic_update_fn(

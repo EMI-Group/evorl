@@ -1,7 +1,7 @@
 import math
 from omegaconf import DictConfig
 
-import flashbax
+
 import chex
 import jax
 import jax.numpy as jnp
@@ -9,10 +9,10 @@ import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
 
+from evorl.replay_buffers import ReplayBuffer
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import tree_get, tree_set, scan_and_mean
-from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import AgentState
 from evorl.envs import create_env, AutoresetMode
@@ -95,11 +95,10 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
             env_extra_fields=("ori_obs", "termination"),
         )
 
-        replay_buffer = flashbax.make_item_buffer(
-            max_length=config.replay_buffer_capacity,
-            min_length=config.batch_size,
+        replay_buffer = ReplayBuffer(
+            capacity=config.replay_buffer_capacity,
+            min_sample_timesteps=config.batch_size,
             sample_batch_size=config.batch_size,
-            add_batches=True,
         )
 
         # to evaluate the pop-mean actor
@@ -169,7 +168,7 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
 
     def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
         def _sample_fn(key):
-            return self.replay_buffer.sample(replay_buffer_state, key).experience
+            return self.replay_buffer.sample(replay_buffer_state, key)
 
         def _sample_and_update_fn(carry, unused_t):
             key, agent_state, opt_state = carry
@@ -303,7 +302,7 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowBase):
         ec_metrics, ec_opt_state = self._ec_update(ec_opt_state, fitnesses)
 
         train_metrics = POPTrainMetric(
-            rb_size=get_buffer_size(replay_buffer_state),
+            rb_size=replay_buffer_state.buffer_size,
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             rl_metrics=td3_metrics,

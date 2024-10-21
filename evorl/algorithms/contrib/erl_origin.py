@@ -13,7 +13,6 @@ import orbax.checkpoint as ocp
 from evorl.metrics import MetricBase, metricfield
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import is_jitted
-from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.recorders import get_1d_array_statistics, add_prefix
 
 from ..td3 import TD3TrainMetric
@@ -58,9 +57,7 @@ class ERLWorkflow(ERLGAWorkflow):
             key, agent_state, opt_state, replay_buffer_state, _ = carry
 
             def _sample_fn(key):
-                return workflow.replay_buffer.sample(
-                    replay_buffer_state, key
-                ).experience
+                return workflow.replay_buffer.sample(replay_buffer_state, key)
 
             key, rb_key, learn_key = jax.random.split(key, 3)
 
@@ -231,7 +228,7 @@ class ERLWorkflow(ERLGAWorkflow):
             rl_sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
 
         train_metrics = train_metrics.replace(
-            rb_size=get_buffer_size(replay_buffer_state),
+            rb_size=replay_buffer_state.buffer_size,
             time_cost_per_iter=time.perf_counter() - start_t,
         )
 

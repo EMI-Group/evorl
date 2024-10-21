@@ -13,7 +13,6 @@ from evorl.utils.jax_utils import (
     scan_and_last,
     is_jitted,
 )
-from evorl.utils.flashbax_utils import get_buffer_size
 
 from ..td3 import TD3TrainMetric
 from ..erl.cemrl import (
@@ -60,9 +59,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
             key, agent_state, opt_state, replay_buffer_state = carry
 
             def _sample_fn(key):
-                return workflow.replay_buffer.sample(
-                    replay_buffer_state, key
-                ).experience
+                return workflow.replay_buffer.sample(replay_buffer_state, key)
 
             key, rb_key, learn_key = jax.random.split(key, 3)
             rb_keys = jax.random.split(
@@ -209,7 +206,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
         ec_metrics, ec_opt_state = self._ec_update(ec_opt_state, fitnesses)
 
         train_metrics = POPTrainMetric(
-            rb_size=get_buffer_size(replay_buffer_state),
+            rb_size=replay_buffer_state.buffer_size,
             num_updates_per_iter=num_updates,
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),

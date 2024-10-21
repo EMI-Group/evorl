@@ -2,7 +2,6 @@ import logging
 from typing import Any
 
 import chex
-import flashbax
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
@@ -16,6 +15,7 @@ from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase, metricfield
 from evorl.networks import make_policy_network, make_q_network
 from evorl.rollout import rollout
+from evorl.replay_buffers import ReplayBuffer
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
@@ -280,11 +280,12 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
         else:
             optimizer = optax.adam(config.optimizer.lr)
 
-        replay_buffer = flashbax.make_item_buffer(
-            max_length=config.replay_buffer_capacity,
-            min_length=max(config.batch_size, config.learning_start_timesteps),
+        replay_buffer = ReplayBuffer(
+            capacity=config.replay_buffer_capacity,
+            min_sample_timesteps=max(
+                config.batch_size, config.learning_start_timesteps
+            ),
             sample_batch_size=config.batch_size,
-            add_batches=True,
         )
 
         eval_env = create_env(
@@ -399,9 +400,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             critic_opt_state = opt_state.critic
             actor_opt_state = opt_state.actor
 
-            sample_batch = self.replay_buffer.sample(
-                replay_buffer_state, rb_key
-            ).experience
+            sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                 critic_update_fn(

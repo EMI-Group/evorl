@@ -4,13 +4,14 @@ from typing import Any
 
 import chex
 import distrax
-import flashbax
+
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
 from omegaconf import DictConfig
 
+from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import psum, pmean
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import AutoresetMode, Discrete, create_env, Space
@@ -237,11 +238,12 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
         else:
             optimizer = optax.adam(config.optimizer.lr)
 
-        replay_buffer = flashbax.make_item_buffer(
-            max_length=config.replay_buffer_capacity,
-            min_length=max(config.batch_size, config.learning_start_timesteps),
+        replay_buffer = ReplayBuffer(
+            capacity=config.replay_buffer_capacity,
+            min_sample_timesteps=max(
+                config.batch_size, config.learning_start_timesteps
+            ),
             sample_batch_size=config.batch_size,
-            add_batches=True,
         )
 
         eval_env = create_env(
@@ -350,9 +352,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
 
             key, rb_key, q_key = jax.random.split(key, 3)
 
-            sample_batch = self.replay_buffer.sample(
-                replay_buffer_state, rb_key
-            ).experience
+            sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
             (q_loss, loss_dict), agent_state, opt_state = q_update_fn(
                 opt_state, agent_state, sample_batch, q_key

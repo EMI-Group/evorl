@@ -285,7 +285,7 @@ class ERLWorkflowBase(Workflow):
 
     def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
         def _sample_fn(key):
-            return self.replay_buffer.sample(replay_buffer_state, key).experience
+            return self.replay_buffer.sample(replay_buffer_state, key)
 
         def _sample_and_update_fn(carry, unused_t):
             key, agent_state, opt_state = carry

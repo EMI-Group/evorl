@@ -4,19 +4,18 @@ from functools import partial
 from omegaconf import DictConfig
 
 import chex
-import flashbax
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
 
+from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import agent_gradient_update
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import tree_set
 from evorl.utils.rl_toolkits import soft_target_update
-from evorl.utils.flashbax_utils import get_buffer_size
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState
 from evorl.envs import create_env, AutoresetMode
@@ -120,11 +119,10 @@ class ERLGAWorkflow(ERLWorkflowBase):
             env_extra_fields=("ori_obs", "termination"),
         )
 
-        replay_buffer = flashbax.make_item_buffer(
-            max_length=config.replay_buffer_capacity,
-            min_length=config.batch_size,
+        replay_buffer = ReplayBuffer(
+            capacity=config.replay_buffer_capacity,
+            min_sample_timesteps=config.batch_size,
             sample_batch_size=config.batch_size,
-            add_batches=True,
         )
 
         # to evaluate the pop-mean actor
@@ -301,7 +299,7 @@ class ERLGAWorkflow(ERLWorkflowBase):
             rl_sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
 
         train_metrics = train_metrics.replace(
-            rb_size=get_buffer_size(replay_buffer_state),
+            rb_size=replay_buffer_state.buffer_size,
         )
 
         # iterations is the number of updates of the agent

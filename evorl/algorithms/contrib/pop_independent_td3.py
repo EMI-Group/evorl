@@ -313,7 +313,7 @@ class PopTD3Workflow(TD3Workflow):
                     # it's safe to use read-only replay_buffer_state here.
                     sample_batch = self.replay_buffer.sample(
                         replay_buffer_state, rb_key
-                    ).experience
+                    )
 
                     critic_key = jax.random.split(critic_key, pop_size)
 
@@ -334,9 +334,7 @@ class PopTD3Workflow(TD3Workflow):
                     length=self.config.actor_update_interval - 1,
                 )
 
-            sample_batch = self.replay_buffer.sample(
-                replay_buffer_state, rb_key
-            ).experience
+            sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
             critic_key = jax.random.split(critic_key, pop_size)
             actor_key = jax.random.split(actor_key, pop_size)
