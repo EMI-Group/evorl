@@ -1,5 +1,5 @@
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Sequence, Callable
 from functools import partial
 import math
 
@@ -106,7 +106,6 @@ def tree_set(
     indices_are_sorted: bool = False,
     unique_indices: bool = False,
     mode: str | None = None,
-    fill_value: chex.Scalar | None = None,
 ):
     return jtu.tree_map(
         lambda x, y: x.at[idx_or_slice].set(
@@ -114,7 +113,6 @@ def tree_set(
             indices_are_sorted=indices_are_sorted,
             unique_indices=unique_indices,
             mode=mode,
-            fill_value=fill_value,
         ),
         src,
         target,
@@ -224,7 +222,7 @@ def rng_split_like_tree(key: chex.PRNGKey, target: chex.ArrayTree) -> chex.Array
     return jax.tree_unflatten(treedef, keys)
 
 
-def is_jitted(func):
+def is_jitted(func: Callable):
     """
     Detect if a function is wrapped by jit or pmap.
     """
@@ -242,3 +240,18 @@ def tree_has_nan(tree: chex.ArrayTree) -> chex.ArrayTree:
 def invert_permutation(i: jax.Array) -> jax.Array:
     """Helper function that inverts a permutation array."""
     return jnp.empty_like(i).at[i].set(jnp.arange(i.size, dtype=i.dtype))
+
+
+def right_shift_with_padding(
+    x: chex.Array, shift: int, fill_value: None | chex.Scalar = None
+):
+    shifted_matrix = jnp.roll(x, shift=shift, axis=0)
+
+    if fill_value is not None:
+        padding = jnp.full_like(shifted_matrix[:shift], fill_value)
+    else:
+        padding = jnp.zeros_like(shifted_matrix[:shift])
+
+    shifted_matrix = shifted_matrix.at[:shift].set(padding)
+
+    return shifted_matrix
