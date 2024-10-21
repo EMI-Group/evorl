@@ -61,6 +61,7 @@ class ARSWorkflow(ESWorkflowTemplate):
             num_elites=config.num_elites,
             lr=config.lr,
             noise_std=config.noise_std,
+            optimizer_name=config.optimizer_name,
         )
 
         if config.explore:
