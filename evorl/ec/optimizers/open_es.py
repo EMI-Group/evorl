@@ -43,6 +43,7 @@ class OpenES(EvoOptimizer):
     noise_std_schedule: ExponentialScheduleSpec
     mirror_sampling: bool = True
     optimizer_name: str = "adam"
+    weight_decay: float | None = None
 
     fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
         pytree_node=False, default=compute_centered_ranks
@@ -122,6 +123,15 @@ class OpenES(EvoOptimizer):
             ),
             noise,
         )
+
+        # add L2 weight decay
+        if self.weight_decay is not None:
+            grad = jtu.tree_map(
+                lambda g, x: g + self.weight_decay * x,
+                grad,
+                state.mean,
+            )
+
         update, opt_state = self.optimizer.update(grad, state.opt_state)
         mean = optax.apply_updates(state.mean, update)
 

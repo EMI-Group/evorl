@@ -59,6 +59,8 @@ class OpenESWorkflow(ESWorkflowTemplate):
             lr_schedule=ExponentialScheduleSpec(**config.ec_lr),
             noise_std_schedule=ExponentialScheduleSpec(**config.ec_noise_std),
             mirror_sampling=config.mirror_sampling,
+            weight_decay=config.weight_decay,
+            optimizer_name=config.optimizer_name,
         )
 
         if config.explore:
