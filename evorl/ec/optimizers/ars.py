@@ -72,19 +72,17 @@ class ARS(EvoOptimizer):
 
         fit_p = fitnesses[:half_pop_size]  # r_positive
         fit_n = fitnesses[half_pop_size:]  # r_negtive
-        elites_indices = jax.lax.top_k(jnp.maximum(fit_p, fit_n), self.num_elites)[1]
+        elite_indices = jax.lax.top_k(jnp.maximum(fit_p, fit_n), self.num_elites)[1]
 
-        fitnesses_elite = jnp.concatenate(
-            [fit_p[elites_indices], fit_n[elites_indices]]
-        )
+        fitnesses_elite = jnp.concatenate([fit_p[elite_indices], fit_n[elite_indices]])
         # Add small constant to ensure non-zero division stability
         fitness_std = jnp.std(fitnesses_elite) + self.fitness_std_eps
 
-        fit_diff = (fit_p[elites_indices] - fit_n[elites_indices]) / fitness_std
+        fit_diff = (fit_p[elite_indices] - fit_n[elite_indices]) / fitness_std
 
         grad = jtu.tree_map(
             # Note: we need additional "-1.0" since we are maximizing the fitness
-            lambda z: (-weight_sum(z[elites_indices], fit_diff) / (self.num_elites)),
+            lambda z: (-weight_sum(z[elite_indices], fit_diff) / (self.num_elites)),
             state.noise,
         )
 

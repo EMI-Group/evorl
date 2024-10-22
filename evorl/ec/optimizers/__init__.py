@@ -6,7 +6,7 @@ from .erl_ga import ERLGA
 from .cem import SepCEM
 from .open_es import OpenES
 from .ars import ARS
-from .vanilla_es import VanillaES
+from .vanilla_es import VanillaES, VanillaESMod
 
 from .evox_wrapper import EvoXAlgorithmAdapter
 from .utils import ExponentialScheduleSpec

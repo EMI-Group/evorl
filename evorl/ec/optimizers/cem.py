@@ -101,15 +101,15 @@ class SepCEM(EvoOptimizer):
         self, state: SepCEMState, fitnesses: chex.Array
     ) -> tuple[PyTreeDict, SepCEMState]:
         # fitness: episode_return, higher is better
-        elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
+        elite_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
         mean = jtu.tree_map(
-            lambda x: weight_sum(x[elites_indices], self.elite_weights),
+            lambda x: weight_sum(x[elite_indices], self.elite_weights),
             state.pop,
         )
 
         def var_update(m, x):
-            x_norm = jnp.square(x[elites_indices] - m)
+            x_norm = jnp.square(x[elite_indices] - m)
             # TODO: do we need extra division by num_elites mentioned in CEM-RL?
             return weight_sum(x_norm, self.elite_weights) + state.cov_eps
 

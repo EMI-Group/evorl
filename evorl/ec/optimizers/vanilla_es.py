@@ -59,10 +59,74 @@ class VanillaES(EvoOptimizer):
     def tell(
         self, state: VanillaESState, fitnesses: chex.Array
     ) -> tuple[PyTreeDict, VanillaESState]:
-        elites_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
+        elite_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
         mean = jtu.tree_map(
-            lambda x, z: x + weight_sum(z[elites_indices], self.elite_weights),
+            lambda x, z: x + weight_sum(z[elite_indices], self.elite_weights),
+            state.mean,
+            state.noise,
+        )
+
+        noise_std = optax.incremental_update(
+            self.noise_std_schedule.final,
+            state.noise_std,
+            1 - self.noise_std_schedule.decay,
+        )
+
+        return PyTreeDict(), state.replace(mean=mean, noise_std=noise_std, noise=None)
+
+
+class VanillaESMod(VanillaES):
+    external_size: int
+    mix_strategy: str = "always"
+
+    def __post_init__(self):
+        super().__post_init__()
+        assert self.num_elites >= self.external_size
+        assert self.mix_strategy in ["always", "normal"]
+
+    def init(self, mean: Params, key: chex.PRNGKey) -> VanillaESState:
+        return VanillaESState(
+            mean=mean,
+            noise_std=jnp.float32(self.noise_std_schedule.init),
+            key=key,
+        )
+
+    def tell(
+        self, state: VanillaESState, fitnesses: chex.Array
+    ) -> tuple[PyTreeDict, VanillaESState]:
+        chex.assert_shape(fitnesses, (self.pop_size + self.external_size,))
+        chex.assert_tree_shape_prefix(
+            state.noise, (self.pop_size + self.external_size,)
+        )
+
+        if self.mix_strategy == "always":
+            # select (self.num_elites-self.external_size) elites from pop, then insert all external individuals and sort them.
+            pop_fitnesses = fitnesses[: self.pop_size]
+            external_fitnesses = fitnesses[self.pop_size :]
+
+            pop_elite_fitnesses, pop_elite_indices = jax.lax.top_k(
+                pop_fitnesses, self.num_elites - self.external_size
+            )
+
+            elite_fitnesses = jnp.concatenate([pop_elite_fitnesses, external_fitnesses])
+            elite_indices = jnp.concatenate(
+                [
+                    pop_elite_indices,
+                    jnp.arange(
+                        self.pop_size,
+                        self.pop_size + self.external_size,
+                        dtype=jnp.int32,
+                    ),
+                ]
+            )
+
+            elite_indices = elite_indices[jnp.argsort(elite_fitnesses, descending=True)]
+        else:
+            elite_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
+
+        mean = jtu.tree_map(
+            lambda x, z: x + weight_sum(z[elite_indices], self.elite_weights),
             state.mean,
             state.noise,
         )
