@@ -1,0 +1,23 @@
+# @package _global_
+
+defaults:
+  - /agent/ec/vanilla_es
+  - _self_
+
+num_iters: 2000
+
+pop_size: 128
+num_elites: 16
+
+ec_noise_std:
+  init: 0.02
+  final: 0.001
+  decay: 1.0 # 1.0 means: always use fixed init value
+
+num_envs: 16
+episodes_for_fitness: 16 # episodes per individual for fitness
+explore: false
+
+agent_network:
+  actor_hidden_layer_sizes: [16, 16]
+  norm_layer_type: "none"
