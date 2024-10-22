@@ -251,9 +251,6 @@ class CEMRLOpenESWorkflow(CEMRLWorkflow):
             )
 
             if train_metrics_dict["rl_metrics"] is not None:
-                train_metrics_dict["rl_metrics"]["actor_loss"] /= (
-                    self.config.num_learning_offspring
-                )
                 train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
                     get_1d_array_statistics,
                     train_metrics_dict["rl_metrics"]["raw_loss_dict"],

@@ -256,13 +256,6 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             length=self.config.num_rl_updates_per_iter,
         )
 
-        # smoothed td3 metrics
-        td3_metrics = TD3TrainMetric(
-            actor_loss=actor_loss,
-            critic_loss=critic_loss,
-            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        )
-
         pop_actor_params = tree_set(
             pop_actor_params,
             learning_agent_state.params.actor_params,
@@ -275,6 +268,15 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             learning_agent_state, pop_actor_params=None
         )
         opt_state = learning_opt_state.replace(actor=None)
+
+        # smoothed td3 metrics
+        td3_metrics = TD3TrainMetric(
+            actor_loss=actor_loss,
+            critic_loss=critic_loss,
+            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
+        )
+
+        td3_metrics.actor_loss /= self.config.num_learning_offspring
 
         return td3_metrics, pop_actor_params, agent_state, opt_state
 
@@ -419,9 +421,6 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             )
 
             if train_metrics_dict["rl_metrics"] is not None:
-                train_metrics_dict["rl_metrics"]["actor_loss"] /= (
-                    self.config.num_learning_offspring
-                )
                 train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
                     get_1d_array_statistics,
                     train_metrics_dict["rl_metrics"]["raw_loss_dict"],
