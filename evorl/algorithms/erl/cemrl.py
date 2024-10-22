@@ -18,7 +18,6 @@ from evorl.utils.jax_utils import (
     tree_get,
     tree_set,
     scan_and_mean,
-    right_shift_with_padding,
 )
 from evorl.utils.rl_toolkits import soft_target_update
 from evorl.evaluators import Evaluator, EpisodeCollector
@@ -28,12 +27,8 @@ from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import SepCEM, ECState, ExponentialScheduleSpec
 
 from ..offpolicy_utils import skip_replay_buffer_state
-from ..td3 import (
-    make_mlp_td3_agent,
-    TD3NetworkParams,
-    TD3TrainMetric,
-    DUMMY_TD3_TRAINMETRIC,
-)
+from ..td3 import make_mlp_td3_agent, TD3NetworkParams, TD3TrainMetric
+from .erl_utils import create_dummy_td3_trainmetric
 from .cemrl_base import CEMRLWorkflowBase, POPTrainMetric
 
 
@@ -178,7 +173,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         init_actor_params = agent_state.params.actor_params
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
-        agent_state = replace_actor_params(agent_state, pop_actor_params=None)
+        agent_state = replace_td3_actor_params(agent_state, pop_actor_params=None)
 
         opt_state = PyTreeDict(
             # Note: we create and drop the actors' opt_state at every step
@@ -205,7 +200,9 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             )  # [:self.config.num_learning_offspring]
 
         learning_actor_params = tree_get(pop_actor_params, learning_actor_indices)
-        learning_agent_state = replace_actor_params(agent_state, learning_actor_params)
+        learning_agent_state = replace_td3_actor_params(
+            agent_state, learning_actor_params
+        )
 
         # reset and add actors' opt_state
         learning_opt_state = opt_state.replace(
@@ -274,7 +271,9 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         )
 
         # drop the actors and their opt_state
-        agent_state = replace_actor_params(learning_agent_state, pop_actor_params=None)
+        agent_state = replace_td3_actor_params(
+            learning_agent_state, pop_actor_params=None
+        )
         opt_state = learning_opt_state.replace(actor=None)
 
         return td3_metrics, pop_actor_params, agent_state, opt_state
@@ -299,15 +298,12 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         def _dummy_rl_update(
             agent_state, opt_state, replay_buffer_state, pop_actor_params, learn_key
         ):
-            td3_metrics = DUMMY_TD3_TRAINMETRIC.replace(
-                raw_loss_dict=jtu.tree_map(
-                    lambda x: jnp.broadcast_to(
-                        x, (self.config.num_learning_offspring, *x.shape)
-                    ),
-                    DUMMY_TD3_TRAINMETRIC.raw_loss_dict,
-                )
+            return (
+                create_dummy_td3_trainmetric(self.config.num_learning_offspring),
+                pop_actor_params,
+                agent_state,
+                opt_state,
             )
-            return td3_metrics, pop_actor_params, agent_state, opt_state
 
         td3_metrics, pop_actor_params, agent_state, opt_state = jax.lax.cond(
             iterations > self.config.warmup_iters,
@@ -321,24 +317,15 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         )
 
         # ======== CEM update ========
-        pop_agent_state = replace_actor_params(agent_state, pop_actor_params)
+        pop_agent_state = replace_td3_actor_params(agent_state, pop_actor_params)
 
         # the trajectory [T, #pop*B, ...]
         # metrics: [#pop, B]
-        eval_metrics, trajectory = self._rollout(pop_agent_state, rollout_key)
+        eval_metrics, trajectory, replay_buffer_state = self._rollout(
+            pop_agent_state, replay_buffer_state, rollout_key
+        )
 
         fitnesses = eval_metrics.episode_returns.mean(axis=-1)
-
-        mask = jnp.logical_not(right_shift_with_padding(trajectory.dones, 1))
-        trajectory = trajectory.replace(dones=None)
-        trajectory, mask = jtu.tree_map(
-            lambda x: jax.lax.collapse(x, 0, 2),
-            (trajectory, mask),
-        )
-
-        replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, trajectory, mask
-        )
 
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
@@ -388,7 +375,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         pop_mean_actor_params = state.ec_opt_state.mean
 
-        pop_mean_agent_state = replace_actor_params(
+        pop_mean_agent_state = replace_td3_actor_params(
             state.agent_state, pop_mean_actor_params
         )
 
@@ -466,7 +453,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
 
 
-def replace_actor_params(
+def replace_td3_actor_params(
     agent_state: AgentState, pop_actor_params: Params
 ) -> AgentState:
     """

@@ -11,9 +11,6 @@ import orbax.checkpoint as ocp
 from evorl.replay_buffers import ReplayBuffer
 from evorl.metrics import MetricBase
 from evorl.types import State
-from evorl.utils.jax_utils import (
-    right_shift_with_padding,
-)
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import AgentState
 from evorl.envs import create_env, AutoresetMode
@@ -21,17 +18,10 @@ from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import OpenES, ExponentialScheduleSpec
 
 from ..offpolicy_utils import skip_replay_buffer_state
-from ..td3 import (
-    make_mlp_td3_agent,
-    TD3NetworkParams,
-    DUMMY_TD3_TRAINMETRIC,
-)
+from ..td3 import make_mlp_td3_agent, TD3NetworkParams
+from .erl_utils import create_dummy_td3_trainmetric
 from .cemrl_base import POPTrainMetric
-from .cemrl import (
-    build_rl_update_fn,
-    replace_actor_params,
-    CEMRLWorkflow,
-)
+from .cemrl import build_rl_update_fn, CEMRLWorkflow, replace_td3_actor_params
 
 
 class CEMRLOpenESWorkflow(CEMRLWorkflow):
@@ -175,15 +165,12 @@ class CEMRLOpenESWorkflow(CEMRLWorkflow):
         def _dummy_rl_update(
             agent_state, opt_state, replay_buffer_state, pop_actor_params, learn_key
         ):
-            td3_metrics = DUMMY_TD3_TRAINMETRIC.replace(
-                raw_loss_dict=jtu.tree_map(
-                    lambda x: jnp.broadcast_to(
-                        x, (self.config.num_learning_offspring, *x.shape)
-                    ),
-                    DUMMY_TD3_TRAINMETRIC.raw_loss_dict,
-                )
+            return (
+                create_dummy_td3_trainmetric(self.config.num_learning_offspring),
+                pop_actor_params,
+                agent_state,
+                opt_state,
             )
-            return td3_metrics, pop_actor_params, agent_state, opt_state
 
         td3_metrics, pop_actor_params, agent_state, opt_state = jax.lax.cond(
             iterations > self.config.warmup_iters,
@@ -197,24 +184,15 @@ class CEMRLOpenESWorkflow(CEMRLWorkflow):
         )
 
         # ======== CEM update ========
-        pop_agent_state = replace_actor_params(agent_state, pop_actor_params)
+        pop_agent_state = replace_td3_actor_params(agent_state, pop_actor_params)
 
         # the trajectory [T, #pop*B, ...]
         # metrics: [#pop, B]
-        eval_metrics, trajectory = self._rollout(pop_agent_state, rollout_key)
+        eval_metrics, trajectory, replay_buffer_state = self._rollout(
+            pop_agent_state, replay_buffer_state, rollout_key
+        )
 
         fitnesses = eval_metrics.episode_returns.mean(axis=-1)
-
-        mask = jnp.logical_not(right_shift_with_padding(trajectory.dones, 1))
-        trajectory = trajectory.replace(dones=None)
-        trajectory, mask = jtu.tree_map(
-            lambda x: jax.lax.collapse(x, 0, 2),
-            (trajectory, mask),
-        )
-
-        replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, trajectory, mask
-        )
 
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 

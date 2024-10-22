@@ -4,7 +4,6 @@ from omegaconf import DictConfig
 import chex
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 
 from evorl.metrics import MetricBase, metricfield
 from evorl.types import PyTreeDict, State
@@ -13,7 +12,6 @@ from evorl.utils.jax_utils import (
     tree_set,
     scan_and_last,
     is_jitted,
-    right_shift_with_padding,
 )
 
 from ..td3 import TD3TrainMetric
@@ -104,8 +102,8 @@ class CEMRLWorkflow(_CEMRLWorkflow):
         opt_state,
         replay_buffer_state,
         pop_actor_params,
-        num_updates,
         key,
+        num_updates,
     ):
         """
         Add num_updates support. Therefore this method cannot be jitted.
@@ -175,20 +173,11 @@ class CEMRLWorkflow(_CEMRLWorkflow):
 
         # the trajectory [T, #pop*B, ...]
         # metrics: [#pop, B]
-        eval_metrics, trajectory = self._rollout(pop_agent_state, key)
+        eval_metrics, trajectory, replay_buffer_state = self._rollout(
+            pop_agent_state, replay_buffer_state, key
+        )
 
         fitnesses = eval_metrics.episode_returns.mean(axis=-1)
-
-        mask = jnp.logical_not(right_shift_with_padding(trajectory.dones, 1))
-        trajectory = trajectory.replace(dones=None)
-        trajectory, mask = jtu.tree_map(
-            lambda x: jax.lax.collapse(x, 0, 2),
-            (trajectory, mask),
-        )
-
-        replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, trajectory, mask
-        )
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         return eval_metrics, ec_metrics, fitnesses, replay_buffer_state, ec_opt_state
@@ -225,8 +214,8 @@ class CEMRLWorkflow(_CEMRLWorkflow):
                 opt_state,
                 replay_buffer_state,
                 pop_actor_params,
-                num_updates,
                 learn_key,
+                num_updates,
             )
 
         else:
@@ -293,9 +282,6 @@ class CEMRLWorkflow(_CEMRLWorkflow):
 
     @classmethod
     def enable_jit(cls) -> None:
-        """
-        Do not jit replay buffer add
-        """
         cls._ec_sample = jax.jit(cls._ec_sample, static_argnums=(0,))
         cls._rollout_and_update = jax.jit(cls._rollout_and_update, static_argnums=(0,))
 

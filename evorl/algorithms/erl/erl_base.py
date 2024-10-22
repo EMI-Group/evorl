@@ -7,14 +7,17 @@ from omegaconf import DictConfig
 import chex
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 import optax
 
 from evorl.agent import AgentStateAxis
 from evorl.metrics import MetricBase, metricfield
-from evorl.types import PyTreeDict, State, Params
+from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
+from evorl.utils.jax_utils import (
+    tree_stop_gradient,
+    scan_and_mean,
+    right_shift_with_padding,
+)
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.utils.ec_utils import flatten_pop_rollout_episode
 from evorl.evaluators import Evaluator, EpisodeCollector
@@ -35,7 +38,7 @@ logger = logging.getLogger(__name__)
 class POPTrainMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
-    rb_size: int = 0
+    rb_size: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     rl_episode_returns: chex.Array | None = None
     rl_episode_lengths: chex.Array | None = None
     rl_metrics: MetricBase | None = None
@@ -249,39 +252,40 @@ class ERLWorkflowBase(Workflow):
             replay_buffer_state=replay_buffer_state,
         )
 
-    def _ec_rollout(self, agent_state, key):
-        eval_metrics, trajectory = jax.vmap(
-            self.ec_collector.rollout,
-            in_axes=(self.agent_state_vmap_axes, 0, None),
-        )(
-            agent_state,
-            jax.random.split(key, self.config.pop_size),
-            self.config.episodes_for_fitness,
+    def _ec_rollout(self, agent_state, replay_buffer_state, key):
+        return self._rollout(
+            agent_state, replay_buffer_state, key, self.config.pop_size
         )
 
-        trajectory = clean_trajectory(trajectory)
-        # [#pop, T, B, ...] -> [T, #pop*B, ...]
-        trajectory = flatten_pop_rollout_episode(trajectory)
-        trajectory = tree_stop_gradient(trajectory)
+    def _rl_rollout(self, agent_state, replay_buffer_state, key):
+        return self._rollout(
+            agent_state, replay_buffer_state, key, self.config.num_rl_agents
+        )
 
-        return eval_metrics, trajectory
-
-    def _rl_rollout(self, agent_state, key):
+    def _rollout(self, agent_state, replay_buffer_state, key, num_agents):
         eval_metrics, trajectory = jax.vmap(
             self.rl_collector.rollout,
             in_axes=(self.agent_state_vmap_axes, 0, None),
         )(
             agent_state,
-            jax.random.split(key, self.config.num_rl_agents),
+            jax.random.split(key, num_agents),
             self.config.rollout_episodes,
         )
 
-        trajectory = clean_trajectory(trajectory)
         # [num_rl_agents, T, B, ...] -> [T, num_rl_agents*B, ...]
+        trajectory = trajectory.replace(next_obs=None)
         trajectory = flatten_pop_rollout_episode(trajectory)
-        trajectory = tree_stop_gradient(trajectory)
 
-        return eval_metrics, trajectory
+        mask = jnp.logical_not(right_shift_with_padding(trajectory.dones, 1))
+        trajectory = trajectory.replace(dones=None)
+        trajectory, mask = tree_stop_gradient(
+            flatten_rollout_trajectory((trajectory, mask))
+        )
+        replay_buffer_state = self.replay_buffer.add(
+            replay_buffer_state, trajectory, mask
+        )
+
+        return eval_metrics, trajectory, replay_buffer_state
 
     def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
         def _sample_fn(key):
@@ -339,34 +343,8 @@ class ERLWorkflowBase(Workflow):
 
         return td3_metrics, agent_state, opt_state
 
-    def _ec_update(
-        self, ec_opt_state: ECState, fitnesses: chex.Array
-    ) -> tuple[PyTreeDict, ECState]:
-        return self.ec_optimizer.tell(ec_opt_state, fitnesses)
-
-    def _ec_sample(self, ec_opt_state: ECState) -> tuple[Params, ECState]:
-        return self.ec_optimizer.ask(ec_opt_state)
-
     def _rl_injection(self, *args, **kwargs):
         raise NotImplementedError
-
-    def _add_to_replay_buffer(self, replay_buffer_state, trajectory, episode_lengths):
-        # trajectory [T,B,...]
-        # episode_lengths [B]
-
-        def concat_valid(x):
-            # x: [T, B, ...]
-            return jnp.concatenate(
-                [x[:t, i] for i, t in enumerate(episode_lengths)], axis=0
-            )
-
-        valid_trajectory = jtu.tree_map(concat_valid, trajectory)
-
-        replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, valid_trajectory
-        )
-
-        return replay_buffer_state
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         key, eval_key = jax.random.split(state.key, num=2)
@@ -390,15 +368,7 @@ class ERLWorkflowBase(Workflow):
 
     @classmethod
     def enable_jit(cls) -> None:
-        """
-        Do not jit replay buffer add
-        """
-        cls._rl_rollout = jax.jit(cls._rl_rollout, static_argnums=(0,))
-        cls._rl_update = jax.jit(cls._rl_update, static_argnums=(0,))
-        cls._ec_rollout = jax.jit(cls._ec_rollout, static_argnums=(0,))
-        cls._rl_injection = jax.jit(cls._rl_injection, static_argnums=(0,))
-        cls._ec_sample = jax.jit(cls._ec_sample, static_argnums=(0,))
-        cls._ec_update = jax.jit(cls._ec_update, static_argnums=(0,))
+        cls.step = jax.jit(cls.step, static_argnums=(0,))
 
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls._postsetup_replaybuffer = jax.jit(
