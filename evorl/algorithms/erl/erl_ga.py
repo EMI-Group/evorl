@@ -279,8 +279,10 @@ class ERLGAWorkflow(ERLWorkflowBase):
             )
 
             # get average loss
-            td3_metrics.actor_loss /= self.config.num_rl_agents
-            td3_metrics.critic_loss /= self.config.num_rl_agents
+            td3_metrics = td3_metrics.replace(
+                actor_loss=td3_metrics.actor_loss / self.config.num_rl_agents,
+                critic_loss=td3_metrics.critic_loss / self.config.num_rl_agents,
+            )
 
             train_metrics = train_metrics.replace(
                 rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
@@ -392,25 +394,24 @@ class ERLGAWorkflow(ERLWorkflowBase):
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
-            if train_metrics_dict["rl_metrics"] is not None:
-                if self.config.num_rl_agents > 1:
-                    train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
-                        train_metrics_dict["rl_episode_lengths"], histogram=True
-                    )
-                    train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
-                        train_metrics_dict["rl_episode_returns"], histogram=True
-                    )
-                    train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
-                        get_1d_array_statistics,
-                        train_metrics_dict["rl_metrics"]["raw_loss_dict"],
-                    )
-                else:
-                    train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
-                        "rl_episode_lengths"
-                    ].squeeze(-1)
-                    train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
-                        "rl_episode_returns"
-                    ].squeeze(-1)
+            if self.config.num_rl_agents > 1:
+                train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
+                    train_metrics_dict["rl_episode_lengths"], histogram=True
+                )
+                train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
+                    train_metrics_dict["rl_episode_returns"], histogram=True
+                )
+                train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
+                    get_1d_array_statistics,
+                    train_metrics_dict["rl_metrics"]["raw_loss_dict"],
+                )
+            else:
+                train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
+                    "rl_episode_lengths"
+                ].squeeze(0)
+                train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
+                    "rl_episode_returns"
+                ].squeeze(0)
 
             self.recorder.write(train_metrics_dict, iters)
 

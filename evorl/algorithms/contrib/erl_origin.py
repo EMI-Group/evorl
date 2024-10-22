@@ -204,8 +204,10 @@ class ERLWorkflow(ERLGAWorkflow):
             )
 
             # get average loss
-            td3_metrics.actor_loss /= self.config.num_rl_agents
-            td3_metrics.critic_loss /= self.config.num_rl_agents
+            td3_metrics = td3_metrics.replace(
+                actor_loss=td3_metrics.actor_loss / self.config.num_rl_agents,
+                critic_loss=td3_metrics.critic_loss / self.config.num_rl_agents,
+            )
 
             if iterations % self.config.rl_injection_interval == 0:
                 ec_opt_state = self._rl_injection(ec_opt_state, agent_state, fitnesses)
@@ -285,10 +287,10 @@ class ERLWorkflow(ERLGAWorkflow):
                 else:
                     train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
                         "rl_episode_lengths"
-                    ].squeeze(-1)
+                    ].squeeze(0)
                     train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
                         "rl_episode_returns"
-                    ].squeeze(-1)
+                    ].squeeze(0)
 
             self.recorder.write(train_metrics_dict, iters)
 

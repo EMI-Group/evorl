@@ -158,6 +158,10 @@ class CEMRLWorkflow(_CEMRLWorkflow):
         agent_state = replace_actor_params(learning_agent_state, pop_actor_params=None)
         opt_state = learning_opt_state.replace(actor=None)
 
+        td3_metrics = td3_metrics.replace(
+            actor_loss=td3_metrics.actor_loss / self.config.num_learning_offspring
+        )
+
         return td3_metrics, pop_actor_params, agent_state, opt_state
 
     def _rollout_and_update(

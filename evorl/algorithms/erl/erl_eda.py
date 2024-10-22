@@ -291,10 +291,6 @@ class ERLEDAWorkflow(ERLWorkflowBase):
                 agent_state, opt_state, replay_buffer_state, learn_key
             )
 
-            # get average loss (not need)
-            # td3_metrics.actor_loss /= self.config.num_rl_agents
-            # td3_metrics.critic_loss /= self.config.num_rl_agents
-
             train_metrics = train_metrics.replace(
                 rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
                 rl_episode_returns=rl_eval_metrics.episode_returns.mean(-1),

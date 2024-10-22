@@ -276,7 +276,9 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
         )
 
-        td3_metrics.actor_loss /= self.config.num_learning_offspring
+        td3_metrics = td3_metrics.replace(
+            actor_loss=td3_metrics.actor_loss / self.config.num_learning_offspring
+        )
 
         return td3_metrics, pop_actor_params, agent_state, opt_state
 
