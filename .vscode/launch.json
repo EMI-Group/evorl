@@ -26,12 +26,13 @@
                 // "agent=ppo",
                 // "agent=exp/a2c/brax/ant",
                 // "agent=exp/sac/gymnax/batch1",
-                "agent=dqn",
+                "agent=exp/td3/brax/batch2",
+                // "agent=dqn",
                 // "agent=contrib/td3-onpolicy",
                 // "agent=exp/pop-td3/cleanrl-default",
-                // "env=brax/ant",
+                "env=brax/ant",
                 // "env=gymnax/Breakout-MinAtar",
-                "env=gymnax/Acrobot-v1",
+                // "env=gymnax/Acrobot-v1",
                 "debug=true",
             ],
             "env": {
@@ -123,12 +124,14 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                // "agent=erl/cemrl",
+                // "agent=erl/cemrl-openes",
                 // "agent=exp/cemrl/fastpbrl-default",
                 // "agent=erl/cemrl-openes",
-                "agent=exp/cemrl/cemrl-ori",
+                // "agent=exp/cemrl/cemrl-ori",
+                "agent=contrib/cemrl-nocem",
                 "env=brax/ant",
                 "debug=true",
+                "mirror_sampling=true",
                 "warmup_iters=1",
                 "random_timesteps=1000",
             ],
@@ -145,8 +148,8 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                // "agent=erl/erl-ga",
-                "agent=exp/erl-ori/ant",
+                "agent=erl/erl-openes",
+                // "agent=exp/erl-ori/ant",
                 "env=brax/ant",
                 "debug=true",
             ],
@@ -163,8 +166,9 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=erl/erl-openes",
-                "env=brax/ant",
+                // "agent=erl/erl-openes",
+                "agent=exp/erl-openes/brax_default",
+                "env=brax/walker2d",
                 "debug=true",
             ],
             "env": {
@@ -180,9 +184,12 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=ec/openes",
-                "env=brax/ant",
+                // "agent=ec/vanilla_es",
+                // "agent=contrib/openes-evox",
+                "agent=exp/ec/ars/hopper",
+                "env=brax/hopper",
                 "debug=true",
+                // "normalize_obs_mode=VBN"
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
@@ -197,7 +204,8 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=exp/ec/rvea/hopper",
+                // "agent=exp/ec/nsga2/hopper",
+                "agent=contrib/rvea-evox",
                 "env=brax/hopper",
                 "debug=true",
                 // "enable_jit=false"

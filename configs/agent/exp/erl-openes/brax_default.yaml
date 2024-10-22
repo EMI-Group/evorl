@@ -6,7 +6,7 @@ defaults:
 
 total_episodes: 100000
 
-num_rl_agents: 1
+num_rl_agents: 2
 warmup_iters: 10 # steps that only learn by EC
 num_rl_updates_per_iter: 4096
 
