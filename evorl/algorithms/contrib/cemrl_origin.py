@@ -107,6 +107,9 @@ class CEMRLWorkflow(_CEMRLWorkflow):
         num_updates,
         key,
     ):
+        """
+        Add num_updates support. Therefore this method cannot be jitted.
+        """
         if self.config.mirror_sampling:
             key, perm_key = jax.random.split(key)
             learning_actor_indices = jax.random.choice(
@@ -162,6 +165,9 @@ class CEMRLWorkflow(_CEMRLWorkflow):
     def _rollout_and_update(
         self, agent_state, replay_buffer_state, ec_opt_state, pop_actor_params, key
     ):
+        """
+        Calculate the fitness and update the replay buffer and ec_optimizer
+        """
         # Note: updated critic_params are stored in learning_agent_state
         # actor_params [num_learning_offspring, ...] -> [pop_size, ...]
         # reset target_actor_params
@@ -241,10 +247,11 @@ class CEMRLWorkflow(_CEMRLWorkflow):
 
         train_metrics = POPTrainMetric(
             rb_size=replay_buffer_state.buffer_size,
-            num_updates_per_iter=num_updates,
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             rl_metrics=td3_metrics,
+            num_updates_per_iter=num_updates,
+            time_cost_per_iter=time.perf_counter() - start_t,
         )
 
         # adding debug info for CEM
@@ -258,10 +265,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
             ec_info.elites_from_rl = elites_from_rl.sum()
             ec_info.elites_from_rl_ratio = elites_from_rl.mean()
 
-        train_metrics = train_metrics.replace(
-            ec_info=ec_info,
-            time_cost_per_iter=time.perf_counter() - start_t,
-        )
+        train_metrics = train_metrics.replace(ec_info=ec_info)
 
         # calculate the number of timestep
         sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
