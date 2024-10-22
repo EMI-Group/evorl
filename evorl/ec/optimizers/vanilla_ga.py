@@ -63,18 +63,18 @@ class VanillaGA(EvoOptimizer):
         return state.pop, state
 
     def tell(
-        self, state: VanillaGAState, xs: chex.ArrayTree, fitnesses: chex.Array
+        self, state: VanillaGAState, fitnesses: chex.Array
     ) -> tuple[PyTreeDict, VanillaGAState]:
         # Note: We simplify the update in ERL
         key, select_key, mutate_key, crossover_key = jax.random.split(state.key, 4)
 
         elite_indices = jnp.argsort(fitnesses, descending=True)[: self.num_elites]
-        elites = jtu.tree_map(lambda x: x[elite_indices], xs)
+        elites = jtu.tree_map(lambda x: x[elite_indices], state.pop)
 
         parents_indices = self.select_parents(
             fitnesses, self.pop_size - self.num_elites, select_key
         )
-        parents = jtu.tree_map(lambda x: x[parents_indices], xs)
+        parents = jtu.tree_map(lambda x: x[parents_indices], state.pop)
 
         if self.enable_crossover:
             offsprings = self.crossover(parents, crossover_key)

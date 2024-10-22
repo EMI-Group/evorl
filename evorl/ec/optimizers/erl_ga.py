@@ -69,7 +69,7 @@ class ERLGA(EvoOptimizer):
         return state.pop, state
 
     def tell(
-        self, state: ERLGAState, xs: chex.ArrayTree, fitnesses: chex.Array
+        self, state: ERLGAState, fitnesses: chex.Array
     ) -> tuple[PyTreeDict, ERLGAState]:
         # Note: We simplify the update in ERL
         key, select_key, mutate_key, crossover_key = jax.random.split(state.key, 4)
