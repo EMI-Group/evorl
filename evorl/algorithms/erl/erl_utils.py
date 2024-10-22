@@ -1,8 +1,20 @@
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
+from evorl.types import PyTreeDict
 
-from ..td3 import TD3TrainMetric, DUMMY_TD3_TRAINMETRIC
+from ..td3 import TD3TrainMetric
+
+
+DUMMY_TD3_TRAINMETRIC = TD3TrainMetric(
+    critic_loss=jnp.zeros(()),
+    actor_loss=jnp.zeros(()),
+    raw_loss_dict=PyTreeDict(
+        critic_loss=jnp.zeros(()),
+        q_value=jnp.zeros(()),
+        actor_loss=jnp.zeros(()),
+    ),
+)
 
 
 def create_dummy_td3_trainmetric(num: int) -> TD3TrainMetric:

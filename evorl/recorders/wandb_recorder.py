@@ -62,3 +62,15 @@ def get_1d_array_statistics(data, histogram=False):
         res["val"] = pd.Series(data)
 
     return res
+
+
+def get_1d_array(data):
+    res = dict(
+        min=np.min(data).tolist(),
+        max=np.max(data).tolist(),
+        mean=np.mean(data).tolist(),
+    )
+
+    res["val"] = data
+
+    return res

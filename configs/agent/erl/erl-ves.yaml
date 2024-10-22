@@ -1,11 +1,11 @@
 # @package _global_
 
-workflow_cls: evorl.algorithms.erl.erl_eda.ERLEDAWorkflow
+workflow_cls: evorl.algorithms.erl.erl_es.ERLESWorkflow
 
 num_envs: 1
 normalize_obs: false
 discount: 0.99
-total_episodes: 100000 # iters = total_episodes / (episodes_for_fitness * pop_size), e.g: 3125 iters here; not include random_timesteps.
+total_episodes: 1000000 # iters = total_episodes / (episodes_for_fitness * pop_size), e.g: 31250 iters here; not include random_timesteps.
 
 random_timesteps: 0 # random steps filled into the replay buffer
 replay_buffer_capacity: 1000000
@@ -19,6 +19,7 @@ actor_update_interval: 2
 critics_in_actor_loss: first # first or min
 
 # ====== RL Train Params ======
+num_rl_agents: 1
 warmup_iters: 10 # steps that only learn by EC
 num_rl_updates_per_iter: 4096
 
@@ -33,21 +34,16 @@ optimizer:
   lr: 0.0003
   grad_clip_norm: 0 # set 0 or none to turn-off
 
-rl_injection_interval: 1 # replace worst pop agents by rl agents
-rl_injection_stepsize: 1.0 # 1: replaced by rl weights, 0: do not inject
-
-# ====== GA Params ======
+# ====== Vanilla ES Params ======
 pop_size: 32
-mirror_sampling: true
+num_elites: 8
 
 ec_noise_std:
-  init: 0.03
+  init: 0.02
   final: 0.001
   decay: 1.0 # 1.0 means: always use fixed init value
-ec_lr:
-  init: 0.05
-  final: 0.001
-  decay: 1.0 # 1.0 means: always use fixed init value
+
+mix_strategy: always
 
 # ================
 

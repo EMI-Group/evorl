@@ -10,16 +10,13 @@ import jax.numpy as jnp
 import optax
 
 from evorl.agent import AgentStateAxis
-from evorl.metrics import MetricBase, metricfield
+from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import (
     tree_stop_gradient,
-    scan_and_mean,
-    right_shift_with_padding,
 )
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
-from evorl.utils.ec_utils import flatten_pop_rollout_episode
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.sample_batch import SampleBatch
 from evorl.agent import Agent, AgentState, RandomAgent
@@ -28,21 +25,10 @@ from evorl.workflows import Workflow
 from evorl.rollout import rollout
 from evorl.ec.optimizers import EvoOptimizer, ECState
 
-from ..td3 import TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory
 
 
 logger = logging.getLogger(__name__)
-
-
-class POPTrainMetric(MetricBase):
-    pop_episode_returns: chex.Array
-    pop_episode_lengths: chex.Array
-    rb_size: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    rl_episode_returns: chex.Array | None = None
-    rl_episode_lengths: chex.Array | None = None
-    rl_metrics: MetricBase | None = None
-    ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
 
 
 class WorkflowMetric(MetricBase):
@@ -52,17 +38,7 @@ class WorkflowMetric(MetricBase):
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
-class EvaluateMetric(MetricBase):
-    rl_episode_returns: chex.Array
-    rl_episode_lengths: chex.Array
-
-
 class ERLWorkflowBase(Workflow):
-    """
-    EC: n actors
-    RL: k actors + k critics + 1 replay buffer.
-    """
-
     def __init__(
         self,
         env: Env,
@@ -120,14 +96,10 @@ class ERLWorkflowBase(Workflow):
         """
         key, agent_key, rb_key = jax.random.split(key, 3)
 
-        # agent_state: [num_rl_agents, ...]
-        # ec_opt_state.pop: [pop_size, ...]
         agent_state, opt_state, ec_opt_state = self._setup_agent_and_optimizer(
             agent_key
         )
-
         workflow_metrics = self._setup_workflow_metrics()
-
         replay_buffer_state = self._setup_replaybuffer(rb_key)
 
         # =======================
@@ -252,119 +224,11 @@ class ERLWorkflowBase(Workflow):
             replay_buffer_state=replay_buffer_state,
         )
 
-    def _ec_rollout(self, agent_state, replay_buffer_state, key):
-        return self._rollout(
-            agent_state, replay_buffer_state, key, self.config.pop_size
-        )
-
-    def _rl_rollout(self, agent_state, replay_buffer_state, key):
-        return self._rollout(
-            agent_state, replay_buffer_state, key, self.config.num_rl_agents
-        )
-
-    def _rollout(self, agent_state, replay_buffer_state, key, num_agents):
-        eval_metrics, trajectory = jax.vmap(
-            self.rl_collector.rollout,
-            in_axes=(self.agent_state_vmap_axes, 0, None),
-        )(
-            agent_state,
-            jax.random.split(key, num_agents),
-            self.config.rollout_episodes,
-        )
-
-        # [num_rl_agents, T, B, ...] -> [T, num_rl_agents*B, ...]
-        trajectory = trajectory.replace(next_obs=None)
-        trajectory = flatten_pop_rollout_episode(trajectory)
-
-        mask = jnp.logical_not(right_shift_with_padding(trajectory.dones, 1))
-        trajectory = trajectory.replace(dones=None)
-        trajectory, mask = tree_stop_gradient(
-            flatten_rollout_trajectory((trajectory, mask))
-        )
-        replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, trajectory, mask
-        )
-
-        return eval_metrics, trajectory, replay_buffer_state
-
-    def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
-        def _sample_fn(key):
-            return self.replay_buffer.sample(replay_buffer_state, key)
-
-        def _sample_and_update_fn(carry, unused_t):
-            key, agent_state, opt_state = carry
-
-            key, rb_key, learn_key = jax.random.split(key, 3)
-
-            rb_keys = jax.random.split(
-                rb_key, self.config.actor_update_interval * self.config.num_rl_agents
-            )
-            sample_batches = jax.vmap(_sample_fn)(rb_keys)
-
-            # (actor_update_interval, num_rl_agents, B, ...)
-            sample_batches = jax.tree_map(
-                lambda x: x.reshape(
-                    (
-                        self.config.actor_update_interval,
-                        self.config.num_rl_agents,
-                        *x.shape[1:],
-                    )
-                ),
-                sample_batches,
-            )
-
-            (agent_state, opt_state), train_info = self._rl_update_fn(
-                agent_state, opt_state, sample_batches, learn_key
-            )
-
-            return (key, agent_state, opt_state), train_info
-
-        (
-            (_, agent_state, opt_state),
-            (
-                critic_loss,
-                actor_loss,
-                critic_loss_dict,
-                actor_loss_dict,
-            ),
-        ) = scan_and_mean(
-            _sample_and_update_fn,
-            (key, agent_state, opt_state),
-            (),
-            length=self.config.num_rl_updates_per_iter,
-        )
-
-        # smoothed td3 metrics
-        td3_metrics = TD3TrainMetric(
-            actor_loss=actor_loss,
-            critic_loss=critic_loss,
-            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        )
-
-        return td3_metrics, agent_state, opt_state
-
     def _rl_injection(self, *args, **kwargs):
         raise NotImplementedError
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
-        key, eval_key = jax.random.split(state.key, num=2)
-
-        # [num_rl_agents, #episodes]
-        raw_eval_metrics = jax.vmap(
-            self.evaluator.evaluate, in_axes=(self.agent_state_vmap_axes, 0, None)
-        )(
-            state.agent_state,
-            jax.random.split(eval_key, self.config.num_rl_agents),
-            self.config.eval_episodes,
-        )
-
-        eval_metrics = EvaluateMetric(
-            rl_episode_returns=raw_eval_metrics.episode_returns.mean(-1),
-            rl_episode_lengths=raw_eval_metrics.episode_lengths.mean(-1),
-        )
-
-        state = state.replace(key=key)
-        return eval_metrics, state
+        raise NotImplementedError
 
     @classmethod
     def enable_jit(cls) -> None:

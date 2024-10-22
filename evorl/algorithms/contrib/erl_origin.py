@@ -324,6 +324,7 @@ class ERLWorkflow(ERLGAWorkflow):
         """
         cls._rl_rollout = jax.jit(cls._rl_rollout, static_argnums=(0,))
         cls._ec_rollout = jax.jit(cls._ec_rollout, static_argnums=(0,))
+        cls._ec_update = jax.jit(cls._ec_update, static_argnums=(0,))
         cls._rl_injection = jax.jit(cls._rl_injection, static_argnums=(0,))
 
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))

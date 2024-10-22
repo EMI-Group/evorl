@@ -148,9 +148,28 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=erl/erl-openes",
-                // "agent=exp/erl-ori/ant",
+                // "agent=erl/erl-openes",
+                // "agent=exp/erl-ga/ori/ant",
+                "agent=erl/erl-ga",
                 "env=brax/ant",
+                "debug=true",
+            ],
+            "env": {
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                // "CUDA_VISIBLE_DEVICES": "0,1"
+                // "JAX_DISABLE_JIT": "true"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "ERL-ES Train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "evorl.train",
+            "args": [
+                "agent=erl/erl-ves",
+                // "agent=exp/erl-ori/ant",
+                "env=brax/hopper",
                 "debug=true",
             ],
             "env": {
@@ -167,7 +186,7 @@
             "module": "evorl.train",
             "args": [
                 // "agent=erl/erl-openes",
-                "agent=exp/erl-openes/brax_default",
+                "agent=exp/erl-openes/brax-default",
                 "env=brax/walker2d",
                 "debug=true",
             ],
@@ -186,7 +205,8 @@
             "args": [
                 // "agent=ec/vanilla_es",
                 // "agent=contrib/openes-evox",
-                "agent=exp/ec/ars/hopper",
+                // "agent=exp/ec/ars/hopper",
+                "agent=exp/ec/vanilla_es/brax-default",
                 "env=brax/hopper",
                 "debug=true",
                 // "normalize_obs_mode=VBN"

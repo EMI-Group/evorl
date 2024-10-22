@@ -11,13 +11,15 @@ import orbax.checkpoint as ocp
 
 from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import agent_gradient_update
-from evorl.metrics import MetricBase
+from evorl.metrics import MetricBase, metricfield
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
     tree_stop_gradient,
     rng_split_like_tree,
     right_shift_with_padding,
+    scan_and_mean,
 )
+from evorl.utils.ec_utils import flatten_pop_rollout_episode
 from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajectory
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import AgentState, Agent
@@ -25,13 +27,23 @@ from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import ECState, OpenES, ExponentialScheduleSpec
 
-from ..td3 import make_mlp_td3_agent
+from ..td3 import make_mlp_td3_agent, TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from .erl_base import ERLWorkflowBase, POPTrainMetric
+from .erl_base import ERLWorkflowBase
 from .erl_ga import replace_td3_actor_params
 from .erl_utils import create_dummy_td3_trainmetric
 
 logger = logging.getLogger(__name__)
+
+
+class POPTrainMetric(MetricBase):
+    pop_episode_returns: chex.Array
+    pop_episode_lengths: chex.Array
+    rb_size: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    rl_episode_returns: chex.Array | None = None
+    rl_episode_lengths: chex.Array | None = None
+    rl_metrics: MetricBase | None = None
+    ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
 
 
 class EvaluateMetric(MetricBase):
@@ -47,7 +59,7 @@ class ERLEDAWorkflow(ERLWorkflowBase):
     RL: 1 (actor,critic)
     Shared replay buffer
 
-    RL will be injected into the pop mean
+    RL will be injected into the pop mean. Support all EDA based ES algorithms.
     """
 
     @classmethod
@@ -190,6 +202,30 @@ class ERLEDAWorkflow(ERLWorkflowBase):
 
         return agent_state, opt_state, ec_opt_state
 
+    def _ec_rollout(self, agent_state, replay_buffer_state, key):
+        eval_metrics, trajectory = jax.vmap(
+            self.rl_collector.rollout,
+            in_axes=(self.agent_state_vmap_axes, 0, None),
+        )(
+            agent_state,
+            jax.random.split(key, self.config.pop_size),
+            self.config.rollout_episodes,
+        )
+
+        trajectory = trajectory.replace(next_obs=None)
+        trajectory = flatten_pop_rollout_episode(trajectory)
+
+        mask = jnp.logical_not(right_shift_with_padding(trajectory.dones, 1))
+        trajectory = trajectory.replace(dones=None)
+        trajectory, mask = tree_stop_gradient(
+            flatten_rollout_trajectory((trajectory, mask))
+        )
+        replay_buffer_state = self.replay_buffer.add(
+            replay_buffer_state, trajectory, mask
+        )
+
+        return eval_metrics, trajectory, replay_buffer_state
+
     def _rl_rollout(self, agent_state, replay_buffer_state, key):
         # agnet_state: only contains one agent
         # trajectory [T, B, ...]
@@ -209,6 +245,49 @@ class ERLEDAWorkflow(ERLWorkflowBase):
         )
 
         return eval_metrics, trajectory, replay_buffer_state
+
+    def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
+        def _sample_fn(key):
+            return self.replay_buffer.sample(replay_buffer_state, key)
+
+        def _sample_and_update_fn(carry, unused_t):
+            key, agent_state, opt_state = carry
+
+            key, rb_key, learn_key = jax.random.split(key, 3)
+
+            rb_keys = jax.random.split(rb_key, self.config.actor_update_interval)
+            # (actor_update_interval, B, ...)
+            sample_batches = jax.vmap(_sample_fn)(rb_keys)
+
+            (agent_state, opt_state), train_info = self._rl_update_fn(
+                agent_state, opt_state, sample_batches, learn_key
+            )
+
+            return (key, agent_state, opt_state), train_info
+
+        (
+            (_, agent_state, opt_state),
+            (
+                critic_loss,
+                actor_loss,
+                critic_loss_dict,
+                actor_loss_dict,
+            ),
+        ) = scan_and_mean(
+            _sample_and_update_fn,
+            (key, agent_state, opt_state),
+            (),
+            length=self.config.num_rl_updates_per_iter,
+        )
+
+        # smoothed td3 metrics
+        td3_metrics = TD3TrainMetric(
+            actor_loss=actor_loss,
+            critic_loss=critic_loss,
+            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
+        )
+
+        return td3_metrics, agent_state, opt_state
 
     def _rl_injection(self, ec_opt_state, agent_state):
         # update EC pop center with RL weights
@@ -283,9 +362,7 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(
                 jnp.uint32
             )
-            rl_sampled_episodes = jnp.uint32(
-                self.config.num_rl_agents * self.config.rollout_episodes
-            )
+            rl_sampled_episodes = jnp.uint32(self.config.rollout_episodes)
 
             td3_metrics, agent_state, opt_state = self._rl_update(
                 agent_state, opt_state, replay_buffer_state, learn_key

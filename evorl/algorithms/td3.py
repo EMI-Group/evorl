@@ -43,17 +43,6 @@ class TD3TrainMetric(MetricBase):
     raw_loss_dict: LossDict = metricfield(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
-DUMMY_TD3_TRAINMETRIC = TD3TrainMetric(
-    critic_loss=jnp.zeros(()),
-    actor_loss=jnp.zeros(()),
-    raw_loss_dict=PyTreeDict(
-        critic_loss=jnp.zeros(()),
-        q_value=jnp.zeros(()),
-        actor_loss=jnp.zeros(()),
-    ),
-)
-
-
 class TD3NetworkParams(PyTreeData):
     """Contains training state for the learner."""
 
