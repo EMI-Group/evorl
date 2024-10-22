@@ -21,7 +21,7 @@ from evorl.sample_batch import SampleBatch
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajectory
-from evorl.recorders import add_prefix, get_1d_array_statistics
+from evorl.recorders import add_prefix, get_1d_array_statistics, get_1d_array
 
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from ..td3 import TD3TrainMetric, TD3Workflow
@@ -38,7 +38,7 @@ class WorkflowMetric(MetricBase):
 
 class PopTD3Workflow(TD3Workflow):
     """
-    indepentent TD3 agent with shared replay buffer
+    Indepentent TD3 agent with shared replay buffer
     """
 
     @classmethod
@@ -477,7 +477,7 @@ class PopTD3Workflow(TD3Workflow):
                 eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
 
                 eval_metrics_dict = jtu.tree_map(
-                    partial(get_1d_array_statistics, histogram=True),
+                    get_1d_array,
                     eval_metrics.to_local_dict(),
                 )
 
