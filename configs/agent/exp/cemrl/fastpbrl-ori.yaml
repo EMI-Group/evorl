@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent/erl/cemrl
+  - /agent/contrib/cemrl-ori
   - _self_
 
 total_episodes: 20000
@@ -21,7 +21,7 @@ cov_eps:
 
 fitness_with_exploration: false
 episodes_for_fitness: 1 # must be devided by num_envs
-num_rl_updates_per_iter: 4096 # fastpbrl use #sampled_timesteps for #updates, here we set a fixed #update by using around half of the maximum #updates (10*1000)/2
+rl_updates_frac: 1.0
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs

@@ -1,21 +1,17 @@
 # @package _global_
 
-# Note:
-# this config is similar as pop_td3.yaml
-# except the rollout is based on episodes + use shared critic network.
-
 defaults:
-  - /agent/contrib/cemrl-nocem
+  - /agent/erl/cemrl
   - _self_
 
 total_episodes: 20000
 
-actor_update_interval: 1
+actor_update_interval: 1 # not needed since we apply it over #num_learning_offspring actors
 
 warmup_iters: 10 # steps that only learn by CEM
 
 pop_size: 10
-num_learning_offspring: 10
+num_learning_offspring: 5
 
 num_elites: 5
 cov_eps:
@@ -23,9 +19,9 @@ cov_eps:
   final: 1e-5
   decay: 0.05
 
-fitness_with_exploration: true
+fitness_with_exploration: false
 episodes_for_fitness: 1 # must be devided by num_envs
-num_rl_updates_per_iter: 4096 # num of RL updates per iter
+num_rl_updates_per_iter: 4096 # fastpbrl use #sampled_timesteps for #updates, here we set a fixed #update by using around half of the maximum #updates (10*1000)/2
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs
