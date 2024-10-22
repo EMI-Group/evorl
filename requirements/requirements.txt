@@ -2,7 +2,6 @@ brax
 chex
 distrax
 evox @ git+https://github.com/ZaberKo/evox@main
-flashbax
 gymnax
 hydra-core
 
