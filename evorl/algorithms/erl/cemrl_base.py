@@ -264,3 +264,14 @@ class CEMRLWorkflowBase(Workflow):
         )
 
         return eval_metrics, trajectory, replay_buffer_state
+
+    def evaluate(self, state: State) -> tuple[MetricBase, State]:
+        raise NotImplementedError
+
+    @classmethod
+    def enable_jit(cls) -> None:
+        cls.step = jax.jit(cls.step, static_argnums=(0,))
+        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
+        cls._postsetup_replaybuffer = jax.jit(
+            cls._postsetup_replaybuffer, static_argnums=(0,)
+        )

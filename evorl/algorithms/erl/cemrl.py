@@ -446,11 +446,6 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
         return state
 
-    @classmethod
-    def enable_jit(cls) -> None:
-        cls.step = jax.jit(cls.step, static_argnums=(0,))
-        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
-
 
 def replace_td3_actor_params(
     agent_state: AgentState, pop_actor_params: Params
