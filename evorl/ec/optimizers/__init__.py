@@ -2,7 +2,7 @@ from .ec_optimizer import EvoOptimizer, ECState
 
 
 from .vanilla_ga import VanillaGA
-from .erl_ga import ERLGA
+from .erl_ga import ERLGA, ERLGAMod
 from .cem import SepCEM
 from .open_es import OpenES
 from .ars import ARS

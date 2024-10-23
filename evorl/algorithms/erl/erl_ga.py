@@ -14,7 +14,6 @@ from evorl.distributed import agent_gradient_update
 from evorl.metrics import MetricBase, metricfield
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
-    tree_set,
     scan_and_mean,
     right_shift_with_padding,
     tree_stop_gradient,
@@ -25,7 +24,7 @@ from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix, get_1d_array
-from evorl.ec.optimizers import ERLGA, ECState
+from evorl.ec.optimizers import ERLGAMod, ECState
 
 from ..td3 import make_mlp_td3_agent, TD3NetworkParams, TD3TrainMetric
 from ..offpolicy_utils import skip_replay_buffer_state
@@ -63,9 +62,7 @@ class ERLGAWorkflow(ERLWorkflowBase):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        """
-        return workflow
-        """
+        assert config.num_elites >= config.num_rl_agents
 
         # env for rl&ec rollout
         env = create_env(
@@ -102,9 +99,10 @@ class ERLGAWorkflow(ERLWorkflowBase):
         else:
             optimizer = optax.adam(config.optimizer.lr)
 
-        ec_optimizer = ERLGA(
+        ec_optimizer = ERLGAMod(
             pop_size=config.pop_size,
             num_elites=config.num_elites,
+            external_size=config.num_rl_agents,
             weight_max_magnitude=config.weight_max_magnitude,
             mut_strength=config.mut_strength,
             num_mutation_frac=config.num_mutation_frac,
@@ -220,26 +218,6 @@ class ERLGAWorkflow(ERLWorkflowBase):
 
         return agent_state, opt_state, ec_opt_state
 
-    def _rl_injection(
-        self, ec_opt_state: ECState, agent_state: AgentState, fitnesses: chex.Array
-    ) -> ECState:
-        # replace EC worst individuals
-        worst_indices = jax.lax.top_k(-fitnesses, self.config.num_rl_agents)[1]
-        rl_actor_params = agent_state.params.actor_params
-
-        chex.assert_tree_shape_prefix(rl_actor_params, (self.config.num_rl_agents,))
-
-        ec_opt_state = ec_opt_state.replace(
-            pop=tree_set(
-                ec_opt_state.pop,
-                rl_actor_params,
-                worst_indices,
-                unique_indices=True,
-            )
-        )
-
-        return ec_opt_state
-
     def _ec_rollout(self, agent_state, replay_buffer_state, key):
         return self._rollout(
             agent_state, replay_buffer_state, key, self.config.pop_size
@@ -331,6 +309,14 @@ class ERLGAWorkflow(ERLWorkflowBase):
 
         return td3_metrics, agent_state, opt_state
 
+    def _rl_injection(self, ec_opt_state: ECState, agent_state: AgentState) -> ECState:
+        rl_actor_params = agent_state.params.actor_params
+        chex.assert_tree_shape_prefix(rl_actor_params, (self.config.num_rl_agents,))
+
+        ec_opt_state = ec_opt_state.replace(external_pop=rl_actor_params)
+
+        return ec_opt_state
+
     def step(self, state: State) -> tuple[MetricBase, State]:
         """
         the basic step function for the workflow to update agent
@@ -357,7 +343,24 @@ class ERLGAWorkflow(ERLWorkflowBase):
         )
 
         fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
-        ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
+
+        def _tell_with_rl_injection(ec_opt_state, fitnesses):
+            ec_opt_state = self._rl_injection(ec_opt_state, agent_state)
+            ec_metrics, ec_opt_state = self.ec_optimizer.tell_external(
+                ec_opt_state, fitnesses
+            )
+            return ec_metrics, ec_opt_state
+
+        ec_metrics, ec_opt_state = jax.lax.cond(
+            jnp.logical_and(
+                iterations > (self.config.warmup_iters + 1),
+                iterations % self.config.rl_injection_interval == 0,
+            ),
+            _tell_with_rl_injection,
+            self.ec_optimizer.tell,
+            ec_opt_state,
+            fitnesses,
+        )
 
         # calculate the number of timestep
         sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
@@ -446,18 +449,6 @@ class ERLGAWorkflow(ERLWorkflowBase):
             rl_rollout_learn_key,
         )
 
-        ec_opt_state = jax.lax.cond(
-            jnp.logical_and(
-                iterations > self.config.warmup_iters,
-                iterations % self.config.rl_injection_interval == 0,
-            ),
-            self._rl_injection,
-            lambda ec_opt_state, agent_state, fitnesses: ec_opt_state,
-            ec_opt_state,
-            agent_state,
-            fitnesses,
-        )
-
         sampled_timesteps += rl_sampled_timesteps
         sampled_episodes += rl_sampled_episodes
         train_metrics = train_metrics.replace(rb_size=replay_buffer_state.buffer_size)
@@ -525,24 +516,29 @@ class ERLGAWorkflow(ERLWorkflowBase):
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
-            if self.config.num_rl_agents > 1:
-                train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
-                    train_metrics_dict["rl_episode_lengths"], histogram=True
-                )
-                train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
-                    train_metrics_dict["rl_episode_returns"], histogram=True
-                )
-                train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
-                    get_1d_array_statistics,
-                    train_metrics_dict["rl_metrics"]["raw_loss_dict"],
-                )
+            if iters > self.config.warmup_iters:
+                if self.config.num_rl_agents > 1:
+                    train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
+                        train_metrics_dict["rl_episode_lengths"], histogram=True
+                    )
+                    train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
+                        train_metrics_dict["rl_episode_returns"], histogram=True
+                    )
+                    train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
+                        get_1d_array_statistics,
+                        train_metrics_dict["rl_metrics"]["raw_loss_dict"],
+                    )
+                else:
+                    train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
+                        "rl_episode_lengths"
+                    ].squeeze(0)
+                    train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
+                        "rl_episode_returns"
+                    ].squeeze(0)
             else:
-                train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
-                    "rl_episode_lengths"
-                ].squeeze(0)
-                train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
-                    "rl_episode_returns"
-                ].squeeze(0)
+                del train_metrics_dict["rl_episode_lengths"]
+                del train_metrics_dict["rl_episode_returns"]
+                del train_metrics_dict["rl_metrics"]
 
             self.recorder.write(train_metrics_dict, iters)
 

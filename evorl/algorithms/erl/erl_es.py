@@ -205,7 +205,9 @@ class ERLESWorkflow(ERLGAWorkflow):
         self,
         ec_opt_state: ECState,
         agent_state: AgentState,
-    ) -> ECState:
+        fitnesses: chex.Array,
+        rl_fitnesses: chex.Array,
+    ) -> tuple[chex.Array, ECState]:
         rl_noise = jtu.tree_map(
             lambda x, m: x - m,
             agent_state.params.actor_params,
@@ -220,7 +222,9 @@ class ERLESWorkflow(ERLGAWorkflow):
 
         ec_opt_state = ec_opt_state.replace(noise=concat_noise)
 
-        return ec_opt_state
+        fitnesses = jnp.concatenate([fitnesses, rl_fitnesses], axis=0)
+
+        return fitnesses, ec_opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         """
@@ -265,8 +269,10 @@ class ERLESWorkflow(ERLGAWorkflow):
         )
 
         # inject RL into EC
-        fitnesses = jnp.concatenate([fitnesses, rl_fitnesses], axis=0)
-        ec_opt_state = self._rl_injection(ec_opt_state, agent_state)
+
+        fitnesses, ec_opt_state = self._rl_injection(
+            ec_opt_state, agent_state, fitnesses, rl_fitnesses
+        )
 
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
@@ -373,24 +379,29 @@ class ERLESWorkflow(ERLGAWorkflow):
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
-            if self.config.num_rl_agents > 1:
-                train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
-                    train_metrics_dict["rl_episode_lengths"], histogram=True
-                )
-                train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
-                    train_metrics_dict["rl_episode_returns"], histogram=True
-                )
-                train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
-                    get_1d_array_statistics,
-                    train_metrics_dict["rl_metrics"]["raw_loss_dict"],
-                )
+            if iters > self.config.warmup_iters:
+                if self.config.num_rl_agents > 1:
+                    train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
+                        train_metrics_dict["rl_episode_lengths"], histogram=True
+                    )
+                    train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
+                        train_metrics_dict["rl_episode_returns"], histogram=True
+                    )
+                    train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
+                        get_1d_array_statistics,
+                        train_metrics_dict["rl_metrics"]["raw_loss_dict"],
+                    )
+                else:
+                    train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
+                        "rl_episode_lengths"
+                    ].squeeze(0)
+                    train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
+                        "rl_episode_returns"
+                    ].squeeze(0)
             else:
-                train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
-                    "rl_episode_lengths"
-                ].squeeze(0)
-                train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
-                    "rl_episode_returns"
-                ].squeeze(0)
+                del train_metrics_dict["rl_episode_lengths"]
+                del train_metrics_dict["rl_episode_returns"]
+                del train_metrics_dict["rl_metrics"]
 
             self.recorder.write(train_metrics_dict, iters)
 

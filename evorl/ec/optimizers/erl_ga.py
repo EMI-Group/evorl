@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import math
 
 import chex
 import jax
@@ -7,6 +8,7 @@ import jax.tree_util as jtu
 
 from evorl.types import PyTreeData, pytree_field, PyTreeDict
 from evorl.ec.operators import ERLMutation, MLPCrossover, TournamentSelection
+from evorl.utils.jax_utils import tree_get
 
 from .ec_optimizer import EvoOptimizer
 
@@ -42,10 +44,7 @@ class ERLGA(EvoOptimizer):
     crossover: Callable = pytree_field(lazy_init=True)
 
     def __post_init__(self):
-        assert (
-            (self.pop_size - self.num_elites) % 2 == 0 or not self.enable_crossover
-        ), "(pop_size - num_elites) must be even when enable crossover"
-
+        assert self.pop_size >= self.num_elites, "num_elites must be <= pop_size"
         selection_op = TournamentSelection(tournament_size=self.tournament_size)
         mutation_op = ERLMutation(
             weight_max_magnitude=self.weight_max_magnitude,
@@ -75,17 +74,22 @@ class ERLGA(EvoOptimizer):
         key, select_key, mutate_key, crossover_key = jax.random.split(state.key, 4)
 
         elite_indices = jnp.argsort(fitnesses, descending=True)[: self.num_elites]
-        elites = jtu.tree_map(lambda x: x[elite_indices], state.pop)
-
-        parents_indices = self.select_parents(
-            fitnesses, self.pop_size - self.num_elites, select_key
-        )
-        parents = jtu.tree_map(lambda x: x[parents_indices], state.pop)
+        elites = tree_get(state.pop, elite_indices)
 
         if self.enable_crossover:
+            real_num_parents = self.pop_size - self.num_elites
+            num_parents = math.ceil((real_num_parents) / 2) * 2
+            parents_indices = self.select_parents(fitnesses, num_parents, select_key)
+            parents = tree_get(state.pop, parents_indices)
+
             offsprings = self.crossover(parents, crossover_key)
+            if real_num_parents % 2 != 0:
+                offsprings = tree_get(offsprings, slice(real_num_parents))
             offsprings = self.mutate(offsprings, mutate_key)
         else:
+            num_parents = self.pop_size - self.num_elites
+            parents_indices = self.select_parents(fitnesses, num_parents, select_key)
+            parents = tree_get(state.pop, parents_indices)
             offsprings = self.mutate(parents, mutate_key)
 
         new_pop = jtu.tree_map(
@@ -93,3 +97,72 @@ class ERLGA(EvoOptimizer):
         )
 
         return PyTreeDict(), state.replace(pop=new_pop, key=key)
+
+
+class ERLGAModState(ERLGAState):
+    external_pop: None | chex.ArrayTree = None
+
+
+class ERLGAMod(ERLGA):
+    external_size: int
+
+    def __post_init__(self):
+        assert self.pop_size >= (
+            self.num_elites + self.external_size
+        ), "num_elites+external_size must be <= pop_size"
+        super().__post_init__()
+
+    def init(self, pop, key) -> ERLGAModState:
+        return ERLGAModState(pop=pop, key=key)
+
+    def tell_external(
+        self, state: ERLGAModState, fitnesses: chex.Array
+    ) -> tuple[PyTreeDict, ERLGAModState]:
+        # Note: We simplify the update in ERL
+        key, select_key, mutate_key, crossover_key = jax.random.split(state.key, 4)
+
+        sorted_indices = jnp.argsort(fitnesses, descending=True)
+        elite_indices = sorted_indices[: self.num_elites]
+        elites = tree_get(state.pop, elite_indices)
+
+        # unselected(worst) are replaced by external op (e.g: from RL)
+        # unselected_indices = sorted_indices[-self.external_size :]
+        unselected = state.external_pop
+
+        selected_indices = sorted_indices[: -self.external_size]
+
+        if self.enable_crossover:
+            real_num_parents = self.pop_size - self.num_elites - self.external_size
+            num_parents = math.ceil((real_num_parents) / 2) * 2
+            parents_indices = selected_indices[
+                self.select_parents(
+                    fitnesses[selected_indices],
+                    num_parents,
+                    select_key,
+                )
+            ]
+            parents = tree_get(state.pop, parents_indices)
+            offsprings = self.crossover(parents, crossover_key)
+            if real_num_parents % 2 != 0:
+                offsprings = tree_get(offsprings, slice(real_num_parents))
+            offsprings = self.mutate(offsprings, mutate_key)
+        else:
+            num_parents = self.pop_size - self.num_elites
+            parents_indices = selected_indices[
+                self.select_parents(
+                    fitnesses[selected_indices],
+                    num_parents,
+                    select_key,
+                )
+            ]
+            parents = tree_get(state.pop, parents_indices)
+            offsprings = self.mutate(parents, mutate_key)
+
+        new_pop = jtu.tree_map(
+            lambda x, y, z: jnp.concatenate([x, y, z], axis=0),
+            elites,
+            offsprings,
+            unselected,
+        )
+
+        return PyTreeDict(), state.replace(pop=new_pop, key=key, external_pop=None)

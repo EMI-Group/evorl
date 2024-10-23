@@ -18,9 +18,7 @@ DUMMY_TD3_TRAINMETRIC = TD3TrainMetric(
 
 
 def create_dummy_td3_trainmetric(num: int) -> TD3TrainMetric:
-    if num == 1:
-        return DUMMY_TD3_TRAINMETRIC
-    elif num > 1:
+    if num >= 1:
         return DUMMY_TD3_TRAINMETRIC.replace(
             raw_loss_dict=jtu.tree_map(
                 lambda x: jnp.broadcast_to(x, (num, *x.shape)),

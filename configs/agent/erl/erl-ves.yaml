@@ -20,7 +20,6 @@ critics_in_actor_loss: first # first or min
 
 # ====== RL Train Params ======
 num_rl_agents: 1
-warmup_iters: 10 # steps that only learn by EC
 num_rl_updates_per_iter: 4096
 
 episodes_for_fitness: 1 # must be devided by num_envs

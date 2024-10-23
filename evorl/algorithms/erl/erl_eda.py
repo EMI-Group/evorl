@@ -31,7 +31,7 @@ from ..td3 import make_mlp_td3_agent, TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from .erl_base import ERLWorkflowBase
 from .erl_ga import replace_td3_actor_params
-from .erl_utils import create_dummy_td3_trainmetric
+from .erl_utils import DUMMY_TD3_TRAINMETRIC
 
 logger = logging.getLogger(__name__)
 
@@ -389,7 +389,7 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             train_metrics = train_metrics.replace(
                 rl_episode_lengths=jnp.zeros(()),
                 rl_episode_returns=jnp.zeros(()),
-                rl_metrics=create_dummy_td3_trainmetric(1),
+                rl_metrics=DUMMY_TD3_TRAINMETRIC.replace(),
             )
 
             return (
@@ -504,6 +504,11 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
+
+            if iters <= self.config.warmup_iters:
+                del train_metrics_dict["rl_episode_lengths"]
+                del train_metrics_dict["rl_episode_returns"]
+                del train_metrics_dict["rl_metrics"]
 
             self.recorder.write(train_metrics_dict, iters)
 

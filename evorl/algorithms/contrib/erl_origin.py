@@ -94,6 +94,10 @@ class ERLWorkflow(ERLGAWorkflow):
     def _ec_update(self, ec_opt_state, fitnesses):
         return self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
+    def _ec_update_with_rl_injection(self, ec_opt_state, agent_state, fitnesses):
+        ec_opt_state = self._rl_injection(ec_opt_state, agent_state)
+        return self.ec_optimizer.tell_external(ec_opt_state, fitnesses)
+
     def _rl_update(self, agent_state, opt_state, replay_buffer_state, key, num_updates):
         # unlike erl-ga, since num_updates is large, we only use the last train_info
         init_train_info = (
@@ -153,7 +157,16 @@ class ERLWorkflow(ERLGAWorkflow):
         )
 
         fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
-        ec_metrics, ec_opt_state = self._ec_update(ec_opt_state, fitnesses)
+
+        if (
+            iterations > (self.config.warmup_iters + 1)
+            and iterations % self.config.rl_injection_interval == 0
+        ):
+            ec_metrics, ec_opt_state = self._ec_update_with_rl_injection(
+                ec_opt_state, agent_state, fitnesses
+            )
+        else:
+            ec_metrics, ec_opt_state = self._ec_update(ec_opt_state, fitnesses)
 
         # calculate the number of timestep
         sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
@@ -208,9 +221,6 @@ class ERLWorkflow(ERLGAWorkflow):
                 actor_loss=td3_metrics.actor_loss / self.config.num_rl_agents,
                 critic_loss=td3_metrics.critic_loss / self.config.num_rl_agents,
             )
-
-            if iterations % self.config.rl_injection_interval == 0:
-                ec_opt_state = self._rl_injection(ec_opt_state, agent_state, fitnesses)
 
             train_metrics = train_metrics.replace(
                 num_updates_per_iter=num_updates,
@@ -325,7 +335,10 @@ class ERLWorkflow(ERLGAWorkflow):
         cls._rl_rollout = jax.jit(cls._rl_rollout, static_argnums=(0,))
         cls._ec_rollout = jax.jit(cls._ec_rollout, static_argnums=(0,))
         cls._ec_update = jax.jit(cls._ec_update, static_argnums=(0,))
-        cls._rl_injection = jax.jit(cls._rl_injection, static_argnums=(0,))
+        cls._ec_update_with_rl_injection = jax.jit(
+            cls._ec_update_with_rl_injection, static_argnums=(0,)
+        )
+        # cls._rl_injection = jax.jit(cls._rl_injection, static_argnums=(0,))
 
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls._postsetup_replaybuffer = jax.jit(
