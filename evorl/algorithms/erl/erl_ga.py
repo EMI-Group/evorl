@@ -15,11 +15,10 @@ from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
     scan_and_mean,
-    right_shift_with_padding,
-    tree_stop_gradient,
 )
-from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajectory
-from evorl.utils.ec_utils import flatten_pop_rollout_episode
+from evorl.utils.rl_toolkits import (
+    soft_target_update,
+)
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState
 from evorl.envs import create_env, AutoresetMode
@@ -28,7 +27,7 @@ from evorl.ec.optimizers import ERLGAMod, ECState
 
 from ..td3 import make_mlp_td3_agent, TD3NetworkParams, TD3TrainMetric
 from ..offpolicy_utils import skip_replay_buffer_state
-from .erl_utils import create_dummy_td3_trainmetric
+from .erl_utils import create_dummy_td3_trainmetric, rollout_episode
 from .erl_base import ERLWorkflowBase
 
 logger = logging.getLogger(__name__)
@@ -219,39 +218,28 @@ class ERLGAWorkflow(ERLWorkflowBase):
         return agent_state, opt_state, ec_opt_state
 
     def _ec_rollout(self, agent_state, replay_buffer_state, key):
-        return self._rollout(
-            agent_state, replay_buffer_state, key, self.config.pop_size
+        return rollout_episode(
+            agent_state,
+            replay_buffer_state,
+            key,
+            collector=self.ec_collector,
+            replay_buffer=self.replay_buffer,
+            agent_state_vmap_axes=self.agent_state_vmap_axes,
+            num_agents=self.config.pop_size,
+            num_episodes=self.config.episodes_for_fitness,
         )
 
     def _rl_rollout(self, agent_state, replay_buffer_state, key):
-        return self._rollout(
-            agent_state, replay_buffer_state, key, self.config.num_rl_agents
-        )
-
-    def _rollout(self, agent_state, replay_buffer_state, key, num_agents):
-        eval_metrics, trajectory = jax.vmap(
-            self.rl_collector.rollout,
-            in_axes=(self.agent_state_vmap_axes, 0, None),
-        )(
+        return rollout_episode(
             agent_state,
-            jax.random.split(key, num_agents),
-            self.config.rollout_episodes,
+            replay_buffer_state,
+            key,
+            collector=self.rl_collector,
+            replay_buffer=self.replay_buffer,
+            agent_state_vmap_axes=self.agent_state_vmap_axes,
+            num_agents=self.config.num_rl_agents,
+            num_episodes=self.config.rollout_episodes,
         )
-
-        # [n, T, B, ...] -> [T, n*B, ...]
-        trajectory = trajectory.replace(next_obs=None)
-        trajectory = flatten_pop_rollout_episode(trajectory)
-
-        mask = jnp.logical_not(right_shift_with_padding(trajectory.dones, 1))
-        trajectory = trajectory.replace(dones=None)
-        trajectory, mask = tree_stop_gradient(
-            flatten_rollout_trajectory((trajectory, mask))
-        )
-        replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, trajectory, mask
-        )
-
-        return eval_metrics, trajectory, replay_buffer_state
 
     def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
         def _sample_fn(key):

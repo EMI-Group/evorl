@@ -187,3 +187,10 @@ def fold_multi_steps(step_fn, num_steps):
         _multi_steps = jax.jit(_multi_steps)
 
     return _multi_steps
+
+
+def flatten_pop_rollout_episode(trajectory: SampleBatch):
+    """
+    Flatten the trajectory from [#pop, T, B, ...] to [T, #pop*B, ...]
+    """
+    return jtu.tree_map(lambda x: jax.lax.collapse(x.swapaxes(0, 1), 1, 3), trajectory)

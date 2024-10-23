@@ -7,16 +7,14 @@ from omegaconf import DictConfig
 import chex
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 import optax
 
 from evorl.agent import AgentStateAxis
 from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, right_shift_with_padding
+from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
-from evorl.utils.ec_utils import flatten_pop_rollout_episode
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.sample_batch import SampleBatch
 from evorl.agent import Agent, AgentState, RandomAgent
@@ -26,7 +24,7 @@ from evorl.rollout import rollout
 from evorl.ec.optimizers import EvoOptimizer, ECState
 
 from ..offpolicy_utils import clean_trajectory
-
+from .erl_utils import rollout_episode
 
 logger = logging.getLogger(__name__)
 
@@ -238,32 +236,16 @@ class CEMRLWorkflowBase(Workflow):
         )
 
     def _rollout(self, pop_agent_state, replay_buffer_state, key):
-        eval_metrics, trajectory = jax.vmap(
-            self.collector.rollout,
-            in_axes=(self.agent_state_vmap_axes, 0, None),
-        )(
+        return rollout_episode(
             pop_agent_state,
-            jax.random.split(key, self.config.pop_size),
-            self.config.episodes_for_fitness,
+            replay_buffer_state,
+            key,
+            collector=self.collector,
+            replay_buffer=self.replay_buffer,
+            agent_state_vmap_axes=self.agent_state_vmap_axes,
+            num_episodes=self.config.episodes_for_fitness,
+            num_agents=self.config.pop_size,
         )
-
-        trajectory = trajectory.replace(next_obs=None)
-        # [#pop, T, B, ...] -> [T, #pop*B, ...]
-        trajectory = flatten_pop_rollout_episode(trajectory)
-        trajectory = tree_stop_gradient(trajectory)
-
-        mask = jnp.logical_not(right_shift_with_padding(trajectory.dones, 1))
-        trajectory = trajectory.replace(dones=None)
-        trajectory, mask = jtu.tree_map(
-            lambda x: jax.lax.collapse(x, 0, 2),
-            (trajectory, mask),
-        )
-
-        replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, trajectory, mask
-        )
-
-        return eval_metrics, trajectory, replay_buffer_state
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         raise NotImplementedError

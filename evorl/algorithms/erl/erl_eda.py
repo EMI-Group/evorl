@@ -19,7 +19,6 @@ from evorl.utils.jax_utils import (
     right_shift_with_padding,
     scan_and_mean,
 )
-from evorl.utils.ec_utils import flatten_pop_rollout_episode
 from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajectory
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import AgentState, Agent
@@ -31,7 +30,7 @@ from ..td3 import make_mlp_td3_agent, TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from .erl_base import ERLWorkflowBase
 from .erl_ga import replace_td3_actor_params, POPTrainMetric
-from .erl_utils import DUMMY_TD3_TRAINMETRIC
+from .erl_utils import DUMMY_TD3_TRAINMETRIC, rollout_episode
 
 logger = logging.getLogger(__name__)
 
@@ -193,28 +192,16 @@ class ERLEDAWorkflow(ERLWorkflowBase):
         return agent_state, opt_state, ec_opt_state
 
     def _ec_rollout(self, agent_state, replay_buffer_state, key):
-        eval_metrics, trajectory = jax.vmap(
-            self.rl_collector.rollout,
-            in_axes=(self.agent_state_vmap_axes, 0, None),
-        )(
+        return rollout_episode(
             agent_state,
-            jax.random.split(key, self.config.pop_size),
-            self.config.rollout_episodes,
+            replay_buffer_state,
+            key,
+            collector=self.ec_collector,
+            replay_buffer=self.replay_buffer,
+            agent_state_vmap_axes=self.agent_state_vmap_axes,
+            num_agents=self.config.pop_size,
+            num_episodes=self.config.episodes_for_fitness,
         )
-
-        trajectory = trajectory.replace(next_obs=None)
-        trajectory = flatten_pop_rollout_episode(trajectory)
-
-        mask = jnp.logical_not(right_shift_with_padding(trajectory.dones, 1))
-        trajectory = trajectory.replace(dones=None)
-        trajectory, mask = tree_stop_gradient(
-            flatten_rollout_trajectory((trajectory, mask))
-        )
-        replay_buffer_state = self.replay_buffer.add(
-            replay_buffer_state, trajectory, mask
-        )
-
-        return eval_metrics, trajectory, replay_buffer_state
 
     def _rl_rollout(self, agent_state, replay_buffer_state, key):
         # agnet_state: only contains one agent

@@ -17,7 +17,7 @@ from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.distributed import get_global_ranks, psum, split_key_to_devices
 from evorl.types import State, PyTreeData, pytree_field, Params, PyTreeDict
-from evorl.utils.ec_utils import flatten_pop_rollout_episode
+from evorl.utils.rl_toolkits import flatten_pop_rollout_episode
 from evorl.utils.jax_utils import tree_stop_gradient
 
 from .workflow import Workflow
