@@ -51,7 +51,12 @@ class GeneralRLProblem(Problem):
         else:
             action_fn = agent.evaluate_actions
 
-        self.evaluator = Evaluator(env, action_fn, max_episode_steps, discount)
+        self.evaluator = Evaluator(
+            env=env,
+            action_fn=action_fn,
+            max_episode_steps=max_episode_steps,
+            discount=discount,
+        )
 
     @property
     def num_objectives(self):

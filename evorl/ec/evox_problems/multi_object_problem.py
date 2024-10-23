@@ -67,7 +67,11 @@ class MultiObjectiveBraxProblem(Problem):
             metric_names = metric_names + ("episode_lengths",)
 
         self.evaluator = BraxEvaluator(
-            env, action_fn, max_episode_steps, discount, metric_names
+            env=env,
+            action_fn=action_fn,
+            max_episode_steps=max_episode_steps,
+            discount=discount,
+            metric_names=metric_names,
         )
 
     @property
