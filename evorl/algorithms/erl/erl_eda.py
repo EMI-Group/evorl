@@ -285,6 +285,7 @@ class ERLEDAWorkflow(ERLWorkflowBase):
         pop_mean = ec_opt_state.mean
         rl_actor_params = agent_state.params.actor_params
 
+        # Tips: x = x + stepsize * (y - x)
         ec_opt_state = ec_opt_state.replace(
             mean=optax.incremental_update(
                 rl_actor_params, pop_mean, self.config.rl_injection_stepsize
