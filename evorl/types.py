@@ -194,8 +194,8 @@ def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
 
 @dataclass_transform(field_specifiers=(pytree_field,), kw_only_default=True)
 class PyTreeNode:
-    def __init_subclass__(cls, **kwargs):
-        dataclass(cls, pure_data=False, **kwargs)
+    def __init_subclass__(cls, kw_only=True, **kwargs):
+        dataclass(cls, pure_data=False, kw_only=kw_only, **kwargs)
 
     def set_frozen_attr(self, name, value):
         """
@@ -220,5 +220,5 @@ class PyTreeData:
     Like PyTreeNode, but all fileds must be set at __init__, and not allow set_frozen_attr() method.
     """
 
-    def __init_subclass__(cls, **kwargs):
-        dataclass(cls, pure_data=True, **kwargs)
+    def __init_subclass__(cls, kw_only=True, **kwargs):
+        dataclass(cls, pure_data=True, kw_only=kw_only, **kwargs)
