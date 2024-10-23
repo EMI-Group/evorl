@@ -14,7 +14,7 @@ class ReplayBufferState(PyTreeData):
 
     data: chex.ArrayTree
     current_index: chex.Array = jnp.zeros((), jnp.int32)
-    buffer_size: chex.Array = jnp.zeros((), jnp.uint32)
+    buffer_size: chex.Array = jnp.zeros((), jnp.int32)
 
 
 class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):
@@ -66,7 +66,7 @@ class ReplayBuffer(AbstractReplayBuffer):
         return ReplayBufferState(
             data=data,
             current_index=jnp.zeros((), jnp.int32),
-            buffer_size=jnp.zeros((), jnp.uint32),
+            buffer_size=jnp.zeros((), jnp.int32),
         )
 
     def is_full(self, buffer_state: ReplayBufferState) -> bool:
