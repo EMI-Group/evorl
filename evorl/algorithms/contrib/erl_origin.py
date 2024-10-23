@@ -78,12 +78,26 @@ class ERLWorkflow(ERLGAWorkflow):
                 sample_batches,
             )
 
-            (agent_state, opt_state), train_info = workflow._rl_update_fn(
+            (
+                (agent_state, opt_state),
+                (
+                    critic_loss,
+                    actor_loss,
+                    critic_loss_dict,
+                    actor_loss_dict,
+                ),
+            ) = workflow._rl_update_fn(
                 agent_state, opt_state, sample_batches, learn_key
             )
 
+            td3_metrics = TD3TrainMetric(
+                actor_loss=actor_loss,
+                critic_loss=critic_loss,
+                raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
+            )
+
             # Note: we do not put train_info into y_t for saving memory
-            return (key, agent_state, opt_state, replay_buffer_state, train_info), None
+            return (key, agent_state, opt_state, replay_buffer_state, td3_metrics), None
 
         if is_jitted(cls.evaluate):
             _rl_sample_and_update_fn = jax.jit(_rl_sample_and_update_fn)
@@ -101,22 +115,13 @@ class ERLWorkflow(ERLGAWorkflow):
 
     def _rl_update(self, agent_state, opt_state, replay_buffer_state, key, num_updates):
         # unlike erl-ga, since num_updates is large, we only use the last train_info
-        init_train_info = create_dummy_td3_trainmetric(self.config.num_rl_agents)
+        init_td3_metrics = create_dummy_td3_trainmetric(self.config.num_rl_agents)
 
-        (_, agent_state, opt_state, replay_buffer_state, train_info), _ = jax.lax.scan(
+        (_, agent_state, opt_state, replay_buffer_state, td3_metrics), _ = jax.lax.scan(
             self._rl_sample_and_update_fn,
-            (key, agent_state, opt_state, replay_buffer_state, init_train_info),
+            (key, agent_state, opt_state, replay_buffer_state, init_td3_metrics),
             (),
             length=num_updates,
-        )
-
-        critic_loss, actor_loss, critic_loss_dict, actor_loss_dict = train_info
-
-        # smoothed td3 metrics
-        td3_metrics = TD3TrainMetric(
-            actor_loss=actor_loss,
-            critic_loss=critic_loss,
-            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
         )
 
         return td3_metrics, agent_state, opt_state
