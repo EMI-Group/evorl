@@ -71,7 +71,7 @@ def mlp_crossover(
 
 class MLPCrossover(PyTreeNode):
     num_crossover_frac: float = 0.1
-    crossover_fn: Callable = pytree_field(lazy_init=True, pytree_node=False)
+    crossover_fn: Callable = pytree_field(lazy_init=True, static=True)
 
     def __post_init__(self):
         assert (

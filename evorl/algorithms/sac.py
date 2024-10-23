@@ -14,7 +14,7 @@ from evorl.distributed import agent_gradient_update, psum, pmean
 from evorl.distribution import get_tanh_norm_dist, get_categorical_dist
 from evorl.envs import AutoresetMode, Box, create_env, Space, Discrete
 from evorl.evaluators import Evaluator
-from evorl.metrics import MetricBase, metricfield
+from evorl.metrics import MetricBase, metric_field
 from evorl.networks import make_policy_network, make_q_network, make_discrete_q_network
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
@@ -47,7 +47,7 @@ class SACTrainMetric(MetricBase):
     critic_loss: chex.Array
     actor_loss: chex.Array
     alpha_loss: chex.Array | None = None
-    raw_loss_dict: LossDict = metricfield(default_factory=PyTreeDict, reduce_fn=pmean)
+    raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
 class SACNetworkParams(PyTreeData):
@@ -60,7 +60,7 @@ class SACNetworkParams(PyTreeData):
 class SACAgent(Agent):
     critic_network: nn.Module
     actor_network: nn.Module
-    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+    obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     init_alpha: float = 1.0
     discount: float = 0.99
@@ -222,7 +222,7 @@ class SACAgent(Agent):
 class SACDiscreteAgent(Agent):
     critic_network: nn.Module
     actor_network: nn.Module
-    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+    obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     init_alpha: float = 1.0
     discount: float = 0.99

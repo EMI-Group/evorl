@@ -5,7 +5,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from evorl.metrics import MetricBase, metricfield
+from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
     tree_get,
@@ -28,7 +28,7 @@ class POPTrainMetric(MetricBase):
     rl_metrics: MetricBase | None = None
     num_updates_per_iter: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     time_cost_per_iter: float = 0.0
-    ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
+    ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class WorkflowMetric(MetricBase):

@@ -16,7 +16,7 @@ from evorl.distributed import psum, pmean
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import AutoresetMode, Discrete, create_env, Space
 from evorl.evaluators import Evaluator
-from evorl.metrics import MetricBase, WorkflowMetric, metricfield
+from evorl.metrics import MetricBase, WorkflowMetric, metric_field
 from evorl.networks import make_discrete_q_network
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
@@ -51,7 +51,7 @@ class DQNNetworkParams(PyTreeData):
 class DQNTrainMetric(MetricBase):
     # no need reduce_fn since it's already reduced in the step()
     loss: chex.Array = jnp.zeros(())
-    raw_loss_dict: LossDict = metricfield(default_factory=PyTreeDict, reduce_fn=pmean)
+    raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
 class DQNWorkflowMetric(WorkflowMetric):
@@ -64,7 +64,7 @@ class DQNAgent(Agent):
     """
 
     q_network: nn.Module
-    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+    obs_preprocessor: Any = pytree_field(default=None, static=True)
     discount: float = 0.99
 
     @property

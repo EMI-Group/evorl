@@ -86,4 +86,4 @@ def rollout(
 
 
 class EpisodeObsCollector(EpisodeCollector):
-    rollout_fn: RolloutFn = pytree_field(default=rollout, pytree_node=False)
+    rollout_fn: RolloutFn = pytree_field(default=rollout, static=True)

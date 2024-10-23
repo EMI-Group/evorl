@@ -143,7 +143,7 @@ class ERLMutation(PyTreeNode):
     reset_prob: float = 0.05
     vec_relative_prob: float = 0.0
 
-    mutate_fn: Callable = pytree_field(lazy_init=True, pytree_node=False)
+    mutate_fn: Callable = pytree_field(lazy_init=True, static=True)
 
     def __post_init__(self):
         assert (

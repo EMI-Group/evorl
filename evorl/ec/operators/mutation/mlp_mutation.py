@@ -67,7 +67,7 @@ class MLPMutation(PyTreeNode):
     vector_num_mutation_frac: float = 0.0
     matrix_num_mutation_frac: float = 0.01
 
-    mutate_fn: Callable = pytree_field(lazy_init=True, pytree_node=False)
+    mutate_fn: Callable = pytree_field(lazy_init=True, static=True)
 
     def __post_init__(self):
         assert (

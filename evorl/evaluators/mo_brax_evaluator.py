@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 class BraxEvaluator(Evaluator):
     metric_names: tuple[str] = pytree_field(
-        default=("reward", "episode_lengths"), pytree_node=False
+        default=("reward", "episode_lengths"), static=True
     )
 
     def __post_init__(self):

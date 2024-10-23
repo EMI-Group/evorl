@@ -14,7 +14,7 @@ from .ec_optimizer import EvoOptimizer
 
 class EvoXAlgoState(PyTreeData):
     algo_state: EvoXState
-    init_step: bool = pytree_field(pytree_node=False)
+    init_step: bool = pytree_field(static=True)
 
 
 class EvoXAlgorithmAdapter(EvoOptimizer):

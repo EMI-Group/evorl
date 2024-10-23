@@ -37,7 +37,7 @@ class StochasticECAgent(Agent):
 
     continuous_action: bool
     policy_network: nn.Module
-    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+    obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     @property
     def normalize_obs(self):
@@ -119,7 +119,7 @@ class DeterministicECAgent(Agent):
     """
 
     policy_network: nn.Module
-    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+    obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     @property
     def normalize_obs(self):

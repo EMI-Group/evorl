@@ -119,17 +119,17 @@ class EnvLike(Protocol):
         pass
 
 
-def pytree_field(*, lazy_init=False, pytree_node=True, **kwargs):
+def pytree_field(*, lazy_init=False, static=False, **kwargs):
     """
 
     Args:
         lazy_init: When set to True, the field will not be initialized in `__init__()`, and we can use set_frozen_attr to set the value after `__init__`
-        pytree_node: Setting to False will mark the field as static for pytree, that changing data in these fields will cause a re-jit of func.
+        static: Setting to False will mark the field as static for pytree, that changing data in these fields will cause a re-jit of func.
     """
     if lazy_init:
         kwargs.update(init=False, repr=False)
 
-    metadata = {"pytree_node": pytree_node, "lazy_init": lazy_init}
+    metadata = {"static": static, "lazy_init": lazy_init}
     kwargs.setdefault("metadata", {}).update(metadata)
 
     return dataclasses.field(**kwargs)
@@ -146,11 +146,11 @@ def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
     meta_fields = []
     data_fields = []
     for field_info in dataclasses.fields(data_clz):
-        is_pytree_node = field_info.metadata.get("pytree_node", True)
-        if is_pytree_node:
-            data_fields.append(field_info.name)
-        else:
+        is_static = field_info.metadata.get("static", False)
+        if is_static:
             meta_fields.append(field_info.name)
+        else:
+            data_fields.append(field_info.name)
 
     def replace(self, **updates):
         """ "Returns a new object replacing the specified fields with new values."""

@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import orbax.checkpoint as ocp
 
-from evorl.metrics import MetricBase, metricfield
+from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import is_jitted
 from evorl.recorders import get_1d_array_statistics, add_prefix
@@ -32,7 +32,7 @@ class POPTrainMetric(MetricBase):
     rl_episode_lengths: chex.Array | None = None
     rl_metrics: MetricBase | None = None
     time_cost_per_iter: float = 0.0
-    ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
+    ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class ERLWorkflow(ERLGAWorkflow):

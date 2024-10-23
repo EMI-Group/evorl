@@ -57,7 +57,7 @@ class PPOAgent(Agent):
     continuous_action: bool
     policy_network: nn.Module
     value_network: nn.Module
-    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+    obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     clip_epsilon: float = 0.2
 

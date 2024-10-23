@@ -31,9 +31,7 @@ class ARS(EvoOptimizer):
     fitness_std_eps: float = 1e-8
     optimizer_name: str = "sgd"
 
-    optimizer: optax.GradientTransformation = pytree_field(
-        pytree_node=False, lazy_init=True
-    )
+    optimizer: optax.GradientTransformation = pytree_field(static=True, lazy_init=True)
 
     def __post_init__(self):
         assert (

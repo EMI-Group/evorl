@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 class Evaluator(PyTreeNode):
-    env: Env = pytree_field(pytree_node=False)
-    action_fn: AgentActionFn = pytree_field(pytree_node=False)
-    max_episode_steps: int = pytree_field(pytree_node=False)
-    discount: float = pytree_field(default=1.0, pytree_node=False)
+    env: Env = pytree_field(static=True)
+    action_fn: AgentActionFn = pytree_field(static=True)
+    max_episode_steps: int = pytree_field(static=True)
+    discount: float = pytree_field(default=1.0, static=True)
 
     def __post_init__(self):
         assert hasattr(self.env, "num_envs"), "only parrallel envs are supported"

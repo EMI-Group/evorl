@@ -26,11 +26,11 @@ class EpisodeCollector(PyTreeNode):
 
     env: Env
     action_fn: AgentActionFn
-    max_episode_steps: int = pytree_field(pytree_node=False)
+    max_episode_steps: int = pytree_field(static=True)
     env_extra_fields: Sequence[str] = ()
     discount: float = 1.0
 
-    rollout_fn: RolloutFn = pytree_field(default=rollout, pytree_node=False)
+    rollout_fn: RolloutFn = pytree_field(default=rollout, static=True)
 
     def __post_init__(self):
         assert hasattr(self.env, "num_envs"), "only parrallel envs are supported"

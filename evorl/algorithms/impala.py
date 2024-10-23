@@ -57,14 +57,14 @@ class IMPALAAgent(Agent):
     continuous_action: bool
     policy_network: nn.Module
     value_network: nn.Module
-    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+    obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     discount: float = 0.99
     vtrace_lambda: float = 1.0
     clip_rho_threshold: float = 1.0
     clip_c_threshold: float = 1.0
     clip_pg_rho_threshold: float = 1.0
-    adv_mode: str = pytree_field(default="official", pytree_node=False)
+    adv_mode: str = pytree_field(default="official", static=True)
 
     @property
     def normalize_obs(self):

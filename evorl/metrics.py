@@ -10,13 +10,13 @@ from .distributed import pmean
 from .types import LossDict, PyTreeData, PyTreeDict
 
 
-def metricfield(
+def metric_field(
     *,
     reduce_fn: Callable[[chex.Array, str | None], chex.Array] = None,
-    pytree_node=True,
+    static=False,
     **kwargs,
 ):
-    metadata = {"pytree_node": pytree_node, "reduce_fn": reduce_fn}
+    metadata = {"static": static, "reduce_fn": reduce_fn}
     kwargs.setdefault("metadata", {}).update(metadata)
 
     return dataclasses.field(**kwargs)
@@ -56,12 +56,12 @@ class TrainMetric(MetricBase):
 
     # no need reduce_fn since it's already reduced in the step()
     loss: chex.Array = jnp.zeros(())
-    raw_loss_dict: LossDict = metricfield(default_factory=PyTreeDict, reduce_fn=pmean)
+    raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
 class EvaluateMetric(MetricBase):
-    episode_returns: chex.Array = metricfield(reduce_fn=pmean)
-    episode_lengths: chex.Array = metricfield(reduce_fn=pmean)
+    episode_returns: chex.Array = metric_field(reduce_fn=pmean)
+    episode_lengths: chex.Array = metric_field(reduce_fn=pmean)
 
 
 def _is_dataclass_instance(obj):

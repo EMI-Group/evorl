@@ -45,7 +45,7 @@ class TrainMetric(MetricBase):
 
 class DistributedInfo(PyTreeData):
     rank: int = jnp.zeros((), dtype=jnp.int32)
-    world_size: int = pytree_field(default=1, pytree_node=False)
+    world_size: int = pytree_field(default=1, static=True)
 
 
 class ECWorkflow(Workflow):

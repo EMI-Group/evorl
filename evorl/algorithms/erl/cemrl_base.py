@@ -11,7 +11,7 @@ import jax.tree_util as jtu
 import optax
 
 from evorl.agent import AgentStateAxis
-from evorl.metrics import MetricBase, metricfield
+from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient, right_shift_with_padding
@@ -36,7 +36,7 @@ class POPTrainMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
     rl_metrics: MetricBase | None = None
-    ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
+    ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class WorkflowMetric(MetricBase):

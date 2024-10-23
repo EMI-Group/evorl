@@ -54,7 +54,7 @@ class TD3Agent(Agent):
 
     critic_network: nn.Module
     actor_network: nn.Module
-    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+    obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     discount: float = 0.99
     exploration_epsilon: float = 0.5

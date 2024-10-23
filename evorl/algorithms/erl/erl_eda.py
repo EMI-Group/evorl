@@ -11,7 +11,7 @@ import orbax.checkpoint as ocp
 
 from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import agent_gradient_update
-from evorl.metrics import MetricBase, metricfield
+from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
     tree_stop_gradient,
@@ -43,7 +43,7 @@ class POPTrainMetric(MetricBase):
     rl_episode_returns: chex.Array | None = None
     rl_episode_lengths: chex.Array | None = None
     rl_metrics: MetricBase | None = None
-    ec_info: PyTreeDict = metricfield(default_factory=PyTreeDict)
+    ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class EvaluateMetric(MetricBase):

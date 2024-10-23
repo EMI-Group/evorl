@@ -12,7 +12,7 @@ from evorl.distributed import psum, pmean
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluators import Evaluator
-from evorl.metrics import MetricBase, metricfield
+from evorl.metrics import MetricBase, metric_field
 from evorl.networks import make_policy_network, make_q_network
 from evorl.rollout import rollout
 from evorl.replay_buffers import ReplayBuffer
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 class TD3TrainMetric(MetricBase):
     critic_loss: chex.Array
     actor_loss: chex.Array
-    raw_loss_dict: LossDict = metricfield(default_factory=PyTreeDict, reduce_fn=pmean)
+    raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
 class TD3NetworkParams(PyTreeData):
@@ -59,7 +59,7 @@ class TD3Agent(Agent):
 
     critic_network: nn.Module
     actor_network: nn.Module
-    obs_preprocessor: Any = pytree_field(default=None, pytree_node=False)
+    obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     discount: float = 0.99
     exploration_epsilon: float = 0.5
