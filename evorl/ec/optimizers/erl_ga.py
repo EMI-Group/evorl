@@ -147,7 +147,7 @@ class ERLGAMod(ERLGA):
                 offsprings = tree_get(offsprings, slice(real_num_parents))
             offsprings = self.mutate(offsprings, mutate_key)
         else:
-            num_parents = self.pop_size - self.num_elites
+            num_parents = self.pop_size - self.num_elites - self.external_size
             parents_indices = selected_indices[
                 self.select_parents(
                     fitnesses[selected_indices],
