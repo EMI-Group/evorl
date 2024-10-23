@@ -171,6 +171,7 @@
                 // "agent=exp/erl-ori/ant",
                 "env=brax/hopper",
                 "debug=true",
+                // "mix_strategy=normal",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",

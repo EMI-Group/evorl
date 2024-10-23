@@ -35,9 +35,9 @@ logger = logging.getLogger(__name__)
 
 
 class POPTrainMetric(MetricBase):
-    pop_episode_returns: chex.Array
-    pop_episode_lengths: chex.Array
-    rb_size: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    pop_episode_returns: chex.Array | None = None
+    pop_episode_lengths: chex.Array | None = None
+    rb_size: chex.Array | None = None
     rl_episode_returns: chex.Array | None = None
     rl_episode_lengths: chex.Array | None = None
     rl_metrics: MetricBase | None = None
@@ -333,33 +333,13 @@ class ERLGAWorkflow(ERLWorkflowBase):
 
         key, ec_rollout_key, rl_rollout_learn_key = jax.random.split(state.key, num=3)
 
-        # ======== EC update ========
+        # ======== EC rollout ========
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
         pop_agent_state = replace_td3_actor_params(agent_state, pop_actor_params)
         ec_eval_metrics, ec_trajectory, replay_buffer_state = self._ec_rollout(
             pop_agent_state, replay_buffer_state, ec_rollout_key
-        )
-
-        fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
-
-        def _tell_with_rl_injection(ec_opt_state, fitnesses):
-            ec_opt_state = self._rl_injection(ec_opt_state, agent_state)
-            ec_metrics, ec_opt_state = self.ec_optimizer.tell_external(
-                ec_opt_state, fitnesses
-            )
-            return ec_metrics, ec_opt_state
-
-        ec_metrics, ec_opt_state = jax.lax.cond(
-            jnp.logical_and(
-                iterations > (self.config.warmup_iters + 1),
-                iterations % self.config.rl_injection_interval == 0,
-            ),
-            _tell_with_rl_injection,
-            self.ec_optimizer.tell,
-            ec_opt_state,
-            fitnesses,
         )
 
         # calculate the number of timestep
@@ -369,7 +349,6 @@ class ERLGAWorkflow(ERLWorkflowBase):
         train_metrics = POPTrainMetric(
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
-            ec_info=ec_metrics,
         )
 
         # ======== RL update ========
@@ -451,7 +430,32 @@ class ERLGAWorkflow(ERLWorkflowBase):
 
         sampled_timesteps += rl_sampled_timesteps
         sampled_episodes += rl_sampled_episodes
-        train_metrics = train_metrics.replace(rb_size=replay_buffer_state.buffer_size)
+
+        # ====== EC update ======
+        fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
+
+        def _tell_with_rl_injection(ec_opt_state, fitnesses):
+            ec_opt_state = self._rl_injection(ec_opt_state, agent_state)
+            ec_metrics, ec_opt_state = self.ec_optimizer.tell_external(
+                ec_opt_state, fitnesses
+            )
+            return ec_metrics, ec_opt_state
+
+        ec_metrics, ec_opt_state = jax.lax.cond(
+            jnp.logical_and(
+                iterations > self.config.warmup_iters,
+                iterations % self.config.rl_injection_interval == 0,
+            ),
+            _tell_with_rl_injection,
+            self.ec_optimizer.tell,
+            ec_opt_state,
+            fitnesses,
+        )
+
+        train_metrics = train_metrics.replace(
+            rb_size=replay_buffer_state.buffer_size,
+            ec_info=ec_metrics,
+        )
 
         # iterations is the number of updates of the agent
         workflow_metrics = state.metrics.replace(

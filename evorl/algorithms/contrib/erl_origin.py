@@ -16,6 +16,7 @@ from evorl.utils.jax_utils import is_jitted
 from evorl.recorders import get_1d_array_statistics, add_prefix
 
 from ..td3 import TD3TrainMetric
+from ..erl.erl_utils import create_dummy_td3_trainmetric
 from ..erl.erl_ga import ERLGAWorkflow, replace_td3_actor_params
 from ..offpolicy_utils import skip_replay_buffer_state
 
@@ -24,10 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 class POPTrainMetric(MetricBase):
-    pop_episode_returns: chex.Array
-    pop_episode_lengths: chex.Array
+    pop_episode_returns: chex.Array | None = None
+    pop_episode_lengths: chex.Array | None = None
     num_updates_per_iter: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    rb_size: int = 0
+    rb_size: chex.Array | None = None
     rl_episode_returns: chex.Array | None = None
     rl_episode_lengths: chex.Array | None = None
     rl_metrics: MetricBase | None = None
@@ -100,15 +101,7 @@ class ERLWorkflow(ERLGAWorkflow):
 
     def _rl_update(self, agent_state, opt_state, replay_buffer_state, key, num_updates):
         # unlike erl-ga, since num_updates is large, we only use the last train_info
-        init_train_info = (
-            jnp.zeros(()),
-            jnp.zeros(()),
-            PyTreeDict(
-                critic_loss=jnp.zeros((self.config.num_rl_agents,)),
-                q_value=jnp.zeros((self.config.num_rl_agents,)),
-            ),
-            PyTreeDict(actor_loss=jnp.zeros((self.config.num_rl_agents,))),
-        )
+        init_train_info = create_dummy_td3_trainmetric(self.config.num_rl_agents)
 
         (_, agent_state, opt_state, replay_buffer_state, train_info), _ = jax.lax.scan(
             self._rl_sample_and_update_fn,
@@ -147,7 +140,7 @@ class ERLWorkflow(ERLGAWorkflow):
             state.key, num=4
         )
 
-        # ======== EC update ========
+        # ======== EC rollout ========
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
@@ -156,18 +149,6 @@ class ERLWorkflow(ERLGAWorkflow):
             pop_agent_state, replay_buffer_state, ec_rollout_key
         )
 
-        fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
-
-        if (
-            iterations > (self.config.warmup_iters + 1)
-            and iterations % self.config.rl_injection_interval == 0
-        ):
-            ec_metrics, ec_opt_state = self._ec_update_with_rl_injection(
-                ec_opt_state, agent_state, fitnesses
-            )
-        else:
-            ec_metrics, ec_opt_state = self._ec_update(ec_opt_state, fitnesses)
-
         # calculate the number of timestep
         sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
         sampled_episodes += jnp.uint32(self.config.episodes_for_fitness * pop_size)
@@ -175,21 +156,12 @@ class ERLWorkflow(ERLGAWorkflow):
         train_metrics = POPTrainMetric(
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
-            ec_info=ec_metrics,
         )
 
         # ======== RL update ========
         if iterations > self.config.warmup_iters:
             rl_eval_metrics, rl_trajectory, replay_buffer_state = self._rl_rollout(
                 agent_state, replay_buffer_state, rl_rollout_key
-            )
-
-            rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(
-                jnp.uint32
-            )
-            sampled_timesteps += rl_sampled_timesteps
-            sampled_episodes += jnp.uint32(
-                self.config.num_rl_agents * self.config.rollout_episodes
             )
 
             if self.config.rl_updates_mode == "global":  # same as original ERL
@@ -229,10 +201,32 @@ class ERLWorkflow(ERLGAWorkflow):
                 rl_metrics=td3_metrics,
             )
 
+            rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(
+                jnp.uint32
+            )
+            sampled_timesteps += rl_sampled_timesteps
+            sampled_episodes += jnp.uint32(
+                self.config.num_rl_agents * self.config.rollout_episodes
+            )
+
         else:
             rl_sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
 
+        # ======== EC update ========
+        fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
+
+        if (
+            iterations > self.config.warmup_iters
+            and iterations % self.config.rl_injection_interval == 0
+        ):
+            ec_metrics, ec_opt_state = self._ec_update_with_rl_injection(
+                ec_opt_state, agent_state, fitnesses
+            )
+        else:
+            ec_metrics, ec_opt_state = self._ec_update(ec_opt_state, fitnesses)
+
         train_metrics = train_metrics.replace(
+            ec_info=ec_metrics,
             rb_size=replay_buffer_state.buffer_size,
             time_cost_per_iter=time.perf_counter() - start_t,
         )
@@ -338,7 +332,6 @@ class ERLWorkflow(ERLGAWorkflow):
         cls._ec_update_with_rl_injection = jax.jit(
             cls._ec_update_with_rl_injection, static_argnums=(0,)
         )
-        # cls._rl_injection = jax.jit(cls._rl_injection, static_argnums=(0,))
 
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls._postsetup_replaybuffer = jax.jit(

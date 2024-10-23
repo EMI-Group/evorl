@@ -11,7 +11,7 @@ import orbax.checkpoint as ocp
 
 from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import agent_gradient_update
-from evorl.metrics import MetricBase, metric_field
+from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
     tree_stop_gradient,
@@ -30,20 +30,10 @@ from evorl.ec.optimizers import ECState, OpenES, ExponentialScheduleSpec
 from ..td3 import make_mlp_td3_agent, TD3TrainMetric
 from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 from .erl_base import ERLWorkflowBase
-from .erl_ga import replace_td3_actor_params
+from .erl_ga import replace_td3_actor_params, POPTrainMetric
 from .erl_utils import DUMMY_TD3_TRAINMETRIC
 
 logger = logging.getLogger(__name__)
-
-
-class POPTrainMetric(MetricBase):
-    pop_episode_returns: chex.Array
-    pop_episode_lengths: chex.Array
-    rb_size: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    rl_episode_returns: chex.Array | None = None
-    rl_episode_lengths: chex.Array | None = None
-    rl_metrics: MetricBase | None = None
-    ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class EvaluateMetric(MetricBase):
@@ -314,12 +304,9 @@ class ERLEDAWorkflow(ERLWorkflowBase):
         replay_buffer_state = state.replay_buffer_state
         iterations = state.metrics.iterations + 1
 
-        sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
-        sampled_episodes = jnp.zeros((), dtype=jnp.uint32)
-
         key, ec_rollout_key, rl_rollout_learn_key = jax.random.split(state.key, num=3)
 
-        # ======== EC update ========
+        # ======== EC rollout ========
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
@@ -337,17 +324,13 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             pop_agent_state, replay_buffer_state, ec_rollout_key
         )
 
-        fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
-        ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
-
         # calculate the number of timestep
-        sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
-        sampled_episodes += jnp.uint32(self.config.episodes_for_fitness * pop_size)
+        ec_sampled_timesteps = ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        ec_sampled_episodes = jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         train_metrics = POPTrainMetric(
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
-            ec_info=ec_metrics,
         )
 
         # ======== RL update ========
@@ -419,6 +402,13 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             rl_rollout_learn_key,
         )
 
+        sampled_timesteps = ec_sampled_episodes + rl_sampled_timesteps
+        sampled_episodes = ec_sampled_timesteps + rl_sampled_episodes
+
+        # ======== EC update ========
+        fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
+        ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
+
         ec_opt_state = jax.lax.cond(
             jnp.logical_and(
                 iterations > self.config.warmup_iters,
@@ -430,9 +420,10 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             agent_state,
         )
 
-        sampled_timesteps += rl_sampled_timesteps
-        sampled_episodes += rl_sampled_episodes
-        train_metrics = train_metrics.replace(rb_size=replay_buffer_state.buffer_size)
+        train_metrics = train_metrics.replace(
+            ec_info=ec_metrics,
+            rb_size=replay_buffer_state.buffer_size,
+        )
 
         # iterations is the number of updates of the agent
         workflow_metrics = state.metrics.replace(

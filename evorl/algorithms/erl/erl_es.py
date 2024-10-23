@@ -205,7 +205,7 @@ class ERLESWorkflow(ERLGAWorkflow):
         self,
         ec_opt_state: ECState,
         agent_state: AgentState,
-        fitnesses: chex.Array,
+        ec_fitnesses: chex.Array,
         rl_fitnesses: chex.Array,
     ) -> tuple[chex.Array, ECState]:
         rl_noise = jtu.tree_map(
@@ -222,7 +222,7 @@ class ERLESWorkflow(ERLGAWorkflow):
 
         ec_opt_state = ec_opt_state.replace(noise=concat_noise)
 
-        fitnesses = jnp.concatenate([fitnesses, rl_fitnesses], axis=0)
+        fitnesses = jnp.concatenate([ec_fitnesses, rl_fitnesses], axis=0)
 
         return fitnesses, ec_opt_state
 
@@ -237,14 +237,11 @@ class ERLESWorkflow(ERLGAWorkflow):
         replay_buffer_state = state.replay_buffer_state
         iterations = state.metrics.iterations + 1
 
-        sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
-        sampled_episodes = jnp.zeros((), dtype=jnp.uint32)
-
         key, ec_rollout_key, rl_rollout_key, learn_key = jax.random.split(
             state.key, num=4
         )
 
-        # ======== EC update ========
+        # ======== EC & RL rollout ========
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
@@ -254,7 +251,6 @@ class ERLESWorkflow(ERLGAWorkflow):
             pop_agent_state, replay_buffer_state, ec_rollout_key
         )
 
-        fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
         ec_sampled_timesteps = ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
         ec_sampled_episodes = jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
@@ -262,28 +258,18 @@ class ERLESWorkflow(ERLGAWorkflow):
             agent_state, replay_buffer_state, rl_rollout_key
         )
 
-        rl_fitnesses = rl_eval_metrics.episode_returns.mean(axis=-1)
         rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
         rl_sampled_episodes = jnp.uint32(
             self.config.num_rl_agents * self.config.rollout_episodes
         )
 
-        # inject RL into EC
-
-        fitnesses, ec_opt_state = self._rl_injection(
-            ec_opt_state, agent_state, fitnesses, rl_fitnesses
-        )
-
-        ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
-
         # calculate the number of timestep
-        sampled_timesteps += ec_sampled_timesteps + rl_sampled_timesteps
-        sampled_episodes += ec_sampled_episodes + rl_sampled_episodes
+        sampled_timesteps = ec_sampled_timesteps + rl_sampled_timesteps
+        sampled_episodes = ec_sampled_episodes + rl_sampled_episodes
 
         train_metrics = POPTrainMetric(
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
-            ec_info=ec_metrics,
             rb_size=replay_buffer_state.buffer_size,
         )
 
@@ -303,6 +289,19 @@ class ERLESWorkflow(ERLGAWorkflow):
             rl_episode_returns=rl_eval_metrics.episode_returns.mean(-1),
             rl_metrics=td3_metrics,
         )
+
+        # ======== EC update ========
+        # inject RL into EC
+
+        ec_fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
+        rl_fitnesses = rl_eval_metrics.episode_returns.mean(axis=-1)
+        fitnesses, ec_opt_state = self._rl_injection(
+            ec_opt_state, agent_state, ec_fitnesses, rl_fitnesses
+        )
+
+        ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
+
+        train_metrics = train_metrics.replace(ec_info=ec_metrics)
 
         # iterations is the number of updates of the agent
         workflow_metrics = state.metrics.replace(
@@ -379,29 +378,24 @@ class ERLESWorkflow(ERLGAWorkflow):
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
-            if iters > self.config.warmup_iters:
-                if self.config.num_rl_agents > 1:
-                    train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
-                        train_metrics_dict["rl_episode_lengths"], histogram=True
-                    )
-                    train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
-                        train_metrics_dict["rl_episode_returns"], histogram=True
-                    )
-                    train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
-                        get_1d_array_statistics,
-                        train_metrics_dict["rl_metrics"]["raw_loss_dict"],
-                    )
-                else:
-                    train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
-                        "rl_episode_lengths"
-                    ].squeeze(0)
-                    train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
-                        "rl_episode_returns"
-                    ].squeeze(0)
+            if self.config.num_rl_agents > 1:
+                train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
+                    train_metrics_dict["rl_episode_lengths"], histogram=True
+                )
+                train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
+                    train_metrics_dict["rl_episode_returns"], histogram=True
+                )
+                train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
+                    get_1d_array_statistics,
+                    train_metrics_dict["rl_metrics"]["raw_loss_dict"],
+                )
             else:
-                del train_metrics_dict["rl_episode_lengths"]
-                del train_metrics_dict["rl_episode_returns"]
-                del train_metrics_dict["rl_metrics"]
+                train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
+                    "rl_episode_lengths"
+                ].squeeze(0)
+                train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
+                    "rl_episode_returns"
+                ].squeeze(0)
 
             self.recorder.write(train_metrics_dict, iters)
 
