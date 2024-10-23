@@ -22,7 +22,7 @@ from ..erl.cemrl import (
 
 
 class POPTrainMetric(MetricBase):
-    rb_size: int
+    rb_size: chex.Array
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
     rl_metrics: MetricBase | None = None
