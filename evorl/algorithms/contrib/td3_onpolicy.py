@@ -252,28 +252,29 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
+        final_iters = num_iters + start_iteration
 
-        for i in range(start_iteration, num_iters):
+        for i in range(num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            iters = i + 1
+            iterations = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
             train_metrics = unpmap(train_metrics, self.pmap_axis_name)
             workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
 
-            self.recorder.write(workflow_metrics.to_local_dict(), iters)
-            self.recorder.write(train_metrics.to_local_dict(), iters)
+            self.recorder.write(workflow_metrics.to_local_dict(), iterations)
+            self.recorder.write(train_metrics.to_local_dict(), iterations)
 
-            if iters % self.config.eval_interval == 0:
+            if iterations % self.config.eval_interval == 0 or iterations == final_iters:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(
-                    add_prefix(eval_metrics.to_local_dict(), "eval"), iters
+                    add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
                 )
 
             self.checkpoint_manager.save(
-                iters,
+                iterations,
                 args=ocp.args.StandardSave(unpmap(state, self.pmap_axis_name)),
             )
 

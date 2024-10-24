@@ -406,7 +406,7 @@ class A2CWorkflow(OnPolicyWorkflow):
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
 
         for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
@@ -422,7 +422,7 @@ class A2CWorkflow(OnPolicyWorkflow):
                 train_metric_data["train_episode_return"] = None
             self.recorder.write(train_metric_data, iters)
 
-            if iters % self.config.eval_interval == 0:
+            if iters % self.config.eval_interval == 0 or iters == num_iters:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(

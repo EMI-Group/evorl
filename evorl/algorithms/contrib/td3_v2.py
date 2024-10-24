@@ -228,6 +228,9 @@ class TD3V2Workflow(TD3Workflow):
             / (one_step_timesteps * self.config.fold_iters * num_devices)
         )
 
+        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
+        final_iters = num_iters + start_iteration
+
         for i in range(num_iters):
             train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
@@ -244,7 +247,7 @@ class TD3V2Workflow(TD3Workflow):
             self.recorder.write(train_metrics.to_local_dict(), iterations)
             self.recorder.write(workflow_metrics.to_local_dict(), iterations)
 
-            if iterations % self.config.eval_interval == 0:
+            if iterations % self.config.eval_interval == 0 or iterations == final_iters:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(

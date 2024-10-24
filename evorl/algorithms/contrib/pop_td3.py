@@ -454,6 +454,8 @@ class PopTD3Workflow(TD3Workflow):
             (self.config.total_timesteps - sampled_timesteps)
             / (one_step_timesteps * self.config.fold_iters * num_devices)
         )
+        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
+        final_iters = num_iters + start_iteration
 
         for i in range(num_iters):
             train_metrics, state = self._multi_steps(state)
@@ -472,7 +474,7 @@ class PopTD3Workflow(TD3Workflow):
 
             self.recorder.write(train_metrics_dict, iterations)
 
-            if iterations % self.config.eval_interval == 0:
+            if iterations % self.config.eval_interval == 0 or iterations == final_iters:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
 

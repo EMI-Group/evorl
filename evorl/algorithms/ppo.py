@@ -490,7 +490,7 @@ class PPOWorkflow(OnPolicyWorkflow):
                 train_metric_data["train_episode_return"] = None
             self.recorder.write(train_metric_data, iters)
 
-            if iters % self.config.eval_interval == 0:
+            if iters % self.config.eval_interval == 0 or iters == num_iters:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(

@@ -85,7 +85,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
             )
             self.recorder.write(train_metrics_dict, iters)
 
-            if iters % self.config.eval_interval == 0:
+            if iters % self.config.eval_interval == 0 or iters == self.config.num_iters:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(

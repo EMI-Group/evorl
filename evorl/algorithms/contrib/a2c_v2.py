@@ -25,37 +25,36 @@ class A2CWorkflow(_A2CWorkflow):
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
-
         steps_interval = self.config.eval_interval
 
         _multi_steps = fold_multi_steps(self.step, steps_interval)
 
-        start_i = start_iteration // steps_interval
-        end_i = num_iters // steps_interval
+        num_fold_iters = math.ceil(num_iters / steps_interval)
 
-        for i in range(start_i, end_i):
-            iters = (i + 1) * steps_interval
+        for i in range(num_fold_iters):
             train_metrics_arr, state = _multi_steps(state)
 
             train_metrics_arr = unpmap(train_metrics_arr, self.pmap_axis_name)
             train_metrics = jtu.tree_map(lambda x: x[-1], train_metrics_arr)
 
             workflow_metrics = unpmap(state.metrics, self.pmap_axis_name)
+            iterations = workflow_metrics.iterations.tolist()
 
-            self.recorder.write(workflow_metrics.to_local_dict(), iters)
+            self.recorder.write(workflow_metrics.to_local_dict(), iterations)
             train_metric_data = train_metrics.to_local_dict()
             train_metric_data["train_episode_return"] = get_train_episode_return(
                 train_metric_data["train_episode_return"]
             )
-            self.recorder.write(train_metric_data, iters)
+            self.recorder.write(train_metric_data, iterations)
 
             eval_metrics, state = self.evaluate(state)
             eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
-            self.recorder.write(add_prefix(eval_metrics.to_local_dict(), "eval"), iters)
+            self.recorder.write(
+                add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
+            )
 
             self.checkpoint_manager.save(
-                iters,
+                iterations,
                 args=ocp.args.StandardSave(unpmap(state, self.pmap_axis_name)),
             )
 
