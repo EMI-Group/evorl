@@ -404,7 +404,8 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
             / sampled_episodes_per_iter
         )
 
-        for i in range(state.metrics.iterations, num_iters + state.metrics.iterations):
+        final_iters = num_iters + state.metrics.iterations
+        for i in range(state.metrics.iterations, final_iters):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
@@ -423,7 +424,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            if iters % self.config.eval_interval == 0:
+            if iters % self.config.eval_interval == 0 or iters == final_iters:
                 eval_metrics, state = self.evaluate(state)
 
                 self.recorder.write(

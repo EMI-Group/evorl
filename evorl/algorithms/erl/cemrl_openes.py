@@ -1,7 +1,7 @@
 import math
 from omegaconf import DictConfig
 
-
+import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -131,18 +131,41 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowTemplate):
         )
 
         workflow = cls(
-            env,
-            agent,
-            agent_state_vmap_axes,
-            optimizer,
-            ec_optimizer,
-            collector,
-            evaluator,
-            replay_buffer,
-            config,
+            env=env,
+            agent=agent,
+            agent_state_vmap_axes=agent_state_vmap_axes,
+            optimizer=optimizer,
+            ec_optimizer=ec_optimizer,
+            collector=collector,
+            evaluator=evaluator,
+            replay_buffer=replay_buffer,
+            config=config,
         )
 
         return workflow
+
+    def _setup_agent_and_optimizer(
+        self, key: chex.PRNGKey
+    ) -> tuple[AgentState, chex.ArrayTree, ECState]:
+        agent_key, ec_key = jax.random.split(key)
+
+        # one actor + one critic
+        agent_state = self.agent.init(
+            self.env.obs_space, self.env.action_space, agent_key
+        )
+
+        init_actor_params = agent_state.params.actor_params
+        ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
+
+        agent_state = cemrl_replace_td3_actor_params(agent_state, pop_actor_params=None)
+
+        opt_state = PyTreeDict(
+            # Note: we create and drop the actors' opt_state at every step
+            critic=self.optimizer.init(agent_state.params.critic_params),
+            actor=None,
+        )
+
+        return agent_state, opt_state, ec_opt_state
 
     def _rl_injection(
         self, ec_opt_state: ECState, pop: Params, external_indices
@@ -256,30 +279,6 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowTemplate):
         )
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
-        ec_info = PyTreeDict(ec_metrics)
-        ec_info.cov_eps = ec_opt_state.cov_eps
-
-        def _calc_elites_stats(ec_info):
-            elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
-            elites_from_rl = jnp.isin(learning_actor_indices, elites_indices).astype(
-                jnp.int32
-            )
-            ec_info.elites_from_rl = elites_from_rl.sum()
-            ec_info.elites_from_rl_ratio = elites_from_rl.mean()
-            return ec_info
-
-        def _dummy_calc_elites_stats(ec_info):
-            ec_info.elites_from_rl = jnp.zeros((), dtype=jnp.int32)
-            ec_info.elites_from_rl_ratio = jnp.zeros(())
-            return ec_info
-
-        ec_info = jax.lax.cond(
-            iterations > self.config.warmup_iters,
-            _calc_elites_stats,
-            _dummy_calc_elites_stats,
-            ec_info,
-        )
-
         train_metrics = CEMRLTrainMetric(
             rb_size=replay_buffer_state.buffer_size,
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
@@ -315,7 +314,8 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowTemplate):
             / (self.config.episodes_for_fitness * self.config.pop_size)
         )
 
-        for i in range(state.metrics.iterations, num_iters + state.metrics.iterations):
+        final_iters = num_iters + state.metrics.iterations
+        for i in range(state.metrics.iterations, final_iters):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
@@ -340,7 +340,7 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowTemplate):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            if iters % self.config.eval_interval == 0:
+            if iters % self.config.eval_interval == 0 or iters == final_iters:
                 eval_metrics, state = self.evaluate(state)
 
                 self.recorder.write(
