@@ -27,6 +27,7 @@ from .ec_workflow import ECWorkflow, ECWorkflowMetric, TrainMetric
 class EvoXWorkflowWrapper(ECWorkflow):
     def __init__(
         self,
+        *,
         config: DictConfig,
         agent: Agent,
         algorithm: Algorithm,
@@ -121,6 +122,7 @@ class EvoXWorkflowWrapper(ECWorkflow):
 class EvoXESWorkflowTemplate(EvoXWorkflowWrapper):
     def __init__(
         self,
+        *,
         config: DictConfig,
         agent: Agent,
         evaluator: Evaluator,
