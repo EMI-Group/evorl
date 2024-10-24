@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import chex
 import orbax.checkpoint as ocp
 
+from evorl.replay_buffers import ReplayBufferState
 from evorl.envs import Discrete
 from evorl.distributed.comm import psum, unpmap
 from evorl.workflows import OffPolicyWorkflow
@@ -64,7 +65,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         config.random_timesteps = config.random_timesteps // num_devices
         config.learning_start_timesteps = config.learning_start_timesteps // num_devices
 
-    def _setup_replaybuffer(self, key: chex.PRNGKey) -> chex.ArrayTree:
+    def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
         action_space = self.env.action_space
         obs_space = self.env.obs_space
 

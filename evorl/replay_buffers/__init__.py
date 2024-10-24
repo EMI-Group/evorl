@@ -1,1 +1,1 @@
-from .replay_buffer import ReplayBuffer, AbstractReplayBuffer
+from .replay_buffer import ReplayBuffer, AbstractReplayBuffer, ReplayBufferState

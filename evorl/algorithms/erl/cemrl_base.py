@@ -1,6 +1,5 @@
 import copy
 import logging
-from typing import Any
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
 from omegaconf import DictConfig
 
@@ -17,6 +16,7 @@ from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.sample_batch import SampleBatch
+from evorl.replay_buffers import AbstractReplayBuffer, ReplayBufferState
 from evorl.agent import Agent, AgentState, RandomAgent
 from evorl.envs import create_env, AutoresetMode, Env
 from evorl.workflows import Workflow
@@ -57,7 +57,7 @@ class CEMRLWorkflowBase(Workflow):
         ec_optimizer: EvoOptimizer,
         collector: EpisodeCollector,
         evaluator: Evaluator,  # to evaluate the pop-mean actor
-        replay_buffer: Any,
+        replay_buffer: AbstractReplayBuffer,
         config: DictConfig,
     ):
         super().__init__(config)
@@ -138,7 +138,7 @@ class CEMRLWorkflowBase(Workflow):
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
         raise NotImplementedError
 
-    def _setup_replaybuffer(self, key: chex.PRNGKey) -> chex.ArrayTree:
+    def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
         action_space = self.env.action_space
         obs_space = self.env.obs_space
 

@@ -1,6 +1,5 @@
 import copy
 import logging
-from typing import Any
 
 import chex
 import jax
@@ -8,6 +7,7 @@ import optax
 from omegaconf import DictConfig, OmegaConf
 from typing_extensions import Self  # pytype: disable=not-supported-yet
 
+from evorl.replay_buffers import AbstractReplayBuffer, ReplayBufferState
 from evorl.agent import Agent, AgentState
 from evorl.distributed import PMAP_AXIS_NAME, split_key_to_devices
 from evorl.envs import Env
@@ -169,7 +169,7 @@ class OffPolicyWorkflow(RLWorkflow):
         agent: Agent,
         optimizer: optax.GradientTransformation,
         evaluator: Evaluator,
-        replay_buffer: Any,
+        replay_buffer: AbstractReplayBuffer,
         config: DictConfig,
     ):
         super().__init__(config)
@@ -190,7 +190,7 @@ class OffPolicyWorkflow(RLWorkflow):
     def _setup_workflow_metrics(self) -> MetricBase:
         return WorkflowMetric()
 
-    def _setup_replaybuffer(self, key: chex.PRNGKey) -> chex.ArrayTree:
+    def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
         raise NotImplementedError
 
     def _postsetup_replaybuffer(self, state: State) -> State:
