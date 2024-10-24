@@ -438,7 +438,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
 
-            self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(state))
+            self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(saved_state))
 
         return state
 

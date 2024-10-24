@@ -1,25 +1,20 @@
 import logging
-import math
 import time
-from functools import partial
 from omegaconf import DictConfig
 
 import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import orbax.checkpoint as ocp
 
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import is_jitted
-from evorl.recorders import get_1d_array_statistics, add_prefix
 
 from ..td3 import TD3TrainMetric
 from ..erl.erl_base import ERLTrainMetric as ERLTrainMetricBase
 from ..erl.erl_utils import create_dummy_td3_trainmetric
 from ..erl.erl_ga import ERLGAWorkflow, erl_replace_td3_actor_params
-from ..offpolicy_utils import skip_replay_buffer_state
 
 
 logger = logging.getLogger(__name__)
@@ -240,79 +235,79 @@ class ERLWorkflow(ERLGAWorkflow):
 
         return train_metrics, state
 
-    def learn(self, state: State) -> State:
-        sampled_episodes_per_iter = (
-            self.config.episodes_for_fitness * self.config.pop_size
-            + self.config.rollout_episodes * self.config.num_rl_agents
-        )
-        num_iters = math.ceil(
-            (self.config.total_episodes - state.metrics.sampled_episodes)
-            / sampled_episodes_per_iter
-        )
+    # def learn(self, state: State) -> State:
+    #     sampled_episodes_per_iter = (
+    #         self.config.episodes_for_fitness * self.config.pop_size
+    #         + self.config.rollout_episodes * self.config.num_rl_agents
+    #     )
+    #     num_iters = math.ceil(
+    #         (self.config.total_episodes - state.metrics.sampled_episodes)
+    #         / sampled_episodes_per_iter
+    #     )
 
-        for i in range(state.metrics.iterations, num_iters):
-            iters = i + 1
+    #     for i in range(state.metrics.iterations, num_iters):
+    #         iters = i + 1
 
-            train_metrics, state = self.step(state)
+    #         train_metrics, state = self.step(state)
 
-            workflow_metrics = state.metrics
+    #         workflow_metrics = state.metrics
 
-            workflow_metrics_dict = workflow_metrics.to_local_dict()
-            self.recorder.write(workflow_metrics_dict, iters)
+    #         workflow_metrics_dict = workflow_metrics.to_local_dict()
+    #         self.recorder.write(workflow_metrics_dict, iters)
 
-            train_metrics_dict = train_metrics.to_local_dict()
-            train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_returns"], histogram=True
-            )
+    #         train_metrics_dict = train_metrics.to_local_dict()
+    #         train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
+    #             train_metrics_dict["pop_episode_returns"], histogram=True
+    #         )
 
-            train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_lengths"], histogram=True
-            )
+    #         train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
+    #             train_metrics_dict["pop_episode_lengths"], histogram=True
+    #         )
 
-            if train_metrics_dict["rl_metrics"] is not None:
-                if self.config.num_rl_agents > 1:
-                    train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
-                        train_metrics_dict["rl_episode_lengths"], histogram=True
-                    )
-                    train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
-                        train_metrics_dict["rl_episode_returns"], histogram=True
-                    )
-                    train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
-                        get_1d_array_statistics,
-                        train_metrics_dict["rl_metrics"]["raw_loss_dict"],
-                    )
-                else:
-                    train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
-                        "rl_episode_lengths"
-                    ].squeeze(0)
-                    train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
-                        "rl_episode_returns"
-                    ].squeeze(0)
+    #         if train_metrics_dict["rl_metrics"] is not None:
+    #             if self.config.num_rl_agents > 1:
+    #                 train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
+    #                     train_metrics_dict["rl_episode_lengths"], histogram=True
+    #                 )
+    #                 train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
+    #                     train_metrics_dict["rl_episode_returns"], histogram=True
+    #                 )
+    #                 train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
+    #                     get_1d_array_statistics,
+    #                     train_metrics_dict["rl_metrics"]["raw_loss_dict"],
+    #                 )
+    #             else:
+    #                 train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
+    #                     "rl_episode_lengths"
+    #                 ].squeeze(0)
+    #                 train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
+    #                     "rl_episode_returns"
+    #                 ].squeeze(0)
 
-            self.recorder.write(train_metrics_dict, iters)
+    #         self.recorder.write(train_metrics_dict, iters)
 
-            pop_statistics = get_ec_pop_statistics(state.ec_opt_state.pop)
-            self.recorder.write(add_prefix(pop_statistics, "ec"), iters)
+    #         pop_statistics = get_ec_pop_statistics(state.ec_opt_state.pop)
+    #         self.recorder.write(add_prefix(pop_statistics, "ec"), iters)
 
-            if iters % self.config.eval_interval == 0:
-                eval_metrics, state = self.evaluate(state)
+    #         if iters % self.config.eval_interval == 0:
+    #             eval_metrics, state = self.evaluate(state)
 
-                eval_metrics_dict = eval_metrics.to_local_dict()
-                if self.config.num_rl_agents > 1:
-                    eval_metrics_dict = jtu.tree_map(
-                        partial(get_1d_array_statistics, histogram=True),
-                        eval_metrics_dict,
-                    )
+    #             eval_metrics_dict = eval_metrics.to_local_dict()
+    #             if self.config.num_rl_agents > 1:
+    #                 eval_metrics_dict = jtu.tree_map(
+    #                     partial(get_1d_array_statistics, histogram=True),
+    #                     eval_metrics_dict,
+    #                 )
 
-                self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iters)
+    #             self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iters)
 
-            saved_state = state
-            if not self.config.save_replay_buffer:
-                saved_state = skip_replay_buffer_state(saved_state)
+    #         saved_state = state
+    #         if not self.config.save_replay_buffer:
+    #             saved_state = skip_replay_buffer_state(saved_state)
 
-            self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(state))
+    #         self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(saved_state))
 
-        return state
+    #     return state
 
     @classmethod
     def enable_jit(cls) -> None:
