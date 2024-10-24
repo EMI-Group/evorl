@@ -11,25 +11,23 @@ import optax
 import orbax.checkpoint as ocp
 
 from evorl.replay_buffers import ReplayBuffer
-from evorl.distributed import agent_gradient_update
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State, Params
-from evorl.utils.jax_utils import (
-    tree_get,
-    tree_set,
-    scan_and_mean,
-)
-from evorl.utils.rl_toolkits import soft_target_update
+from evorl.utils.jax_utils import tree_get, tree_set
 from evorl.evaluators import Evaluator, EpisodeCollector
-from evorl.agent import Agent, AgentState
+from evorl.agent import AgentState
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import SepCEM, ECState, ExponentialScheduleSpec
 
 from ..offpolicy_utils import skip_replay_buffer_state
-from ..td3 import make_mlp_td3_agent, TD3NetworkParams, TD3TrainMetric
-from .erl_utils import create_dummy_td3_trainmetric
-from .cemrl_base import CEMRLWorkflowBase, POPTrainMetric
+from ..td3 import make_mlp_td3_agent, TD3NetworkParams
+from .erl_utils import (
+    CEMRLWorkflowTemplate,
+    cemrl_replace_td3_actor_params,
+    create_dummy_td3_trainmetric,
+)
+from .cemrl_base import CEMRLTrainMetric
 
 
 class EvaluateMetric(MetricBase):
@@ -37,7 +35,7 @@ class EvaluateMetric(MetricBase):
     pop_center_episode_lengths: chex.Array
 
 
-class CEMRLWorkflow(CEMRLWorkflowBase):
+class CEMRLWorkflow(CEMRLWorkflowTemplate):
     """
     1 critic + n actors + 1 replay buffer.
     We use shard_map to split and parallel the population.
@@ -143,19 +141,15 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         )
 
         workflow = cls(
-            env,
-            agent,
-            agent_state_vmap_axes,
-            optimizer,
-            ec_optimizer,
-            collector,
-            evaluator,
-            replay_buffer,
-            config,
-        )
-
-        workflow._rl_update_fn = build_rl_update_fn(
-            agent, optimizer, config, agent_state_vmap_axes
+            env=env,
+            agent=agent,
+            agent_state_vmap_axes=agent_state_vmap_axes,
+            optimizer=optimizer,
+            ec_optimizer=ec_optimizer,
+            collector=collector,
+            evaluator=evaluator,
+            replay_buffer=replay_buffer,
+            config=config,
         )
 
         return workflow
@@ -173,7 +167,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         init_actor_params = agent_state.params.actor_params
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
-        agent_state = replace_td3_actor_params(agent_state, pop_actor_params=None)
+        agent_state = cemrl_replace_td3_actor_params(agent_state, pop_actor_params=None)
 
         opt_state = PyTreeDict(
             # Note: we create and drop the actors' opt_state at every step
@@ -183,104 +177,8 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
         return agent_state, opt_state, ec_opt_state
 
-    def _rl_update(
-        self, agent_state, opt_state, replay_buffer_state, pop_actor_params, key
-    ):
-        if self.config.mirror_sampling:
-            key, perm_key = jax.random.split(key)
-            learning_actor_indices = jax.random.choice(
-                perm_key,
-                self.config.pop_size,
-                (self.config.num_learning_offspring,),
-                replace=False,
-            )
-        else:
-            learning_actor_indices = slice(
-                self.config.num_learning_offspring
-            )  # [:self.config.num_learning_offspring]
-
-        learning_actor_params = tree_get(pop_actor_params, learning_actor_indices)
-        learning_agent_state = replace_td3_actor_params(
-            agent_state, learning_actor_params
-        )
-
-        # reset and add actors' opt_state
-        learning_opt_state = opt_state.replace(
-            actor=self.optimizer.init(learning_actor_params),
-        )
-
-        def _sample_fn(key):
-            return self.replay_buffer.sample(replay_buffer_state, key)
-
-        def _sample_and_update_fn(carry, unused_t):
-            key, agent_state, opt_state = carry
-
-            key, rb_key, learn_key = jax.random.split(key, 3)
-
-            rb_keys = jax.random.split(
-                rb_key,
-                self.config.actor_update_interval * self.config.num_learning_offspring,
-            )
-            sample_batches = jax.vmap(_sample_fn)(rb_keys)
-
-            # (actor_update_interval, num_learning_offspring, B, ...)
-            sample_batches = jax.tree_map(
-                lambda x: x.reshape(
-                    (
-                        self.config.actor_update_interval,
-                        self.config.num_learning_offspring,
-                        *x.shape[1:],
-                    )
-                ),
-                sample_batches,
-            )
-
-            (agent_state, opt_state), train_info = self._rl_update_fn(
-                agent_state, opt_state, sample_batches, learn_key
-            )
-
-            return (key, agent_state, opt_state), train_info
-
-        (
-            (_, learning_agent_state, learning_opt_state),
-            (
-                critic_loss,
-                actor_loss,
-                critic_loss_dict,
-                actor_loss_dict,
-            ),
-        ) = scan_and_mean(
-            _sample_and_update_fn,
-            (key, learning_agent_state, learning_opt_state),
-            (),
-            length=self.config.num_rl_updates_per_iter,
-        )
-
-        pop_actor_params = tree_set(
-            pop_actor_params,
-            learning_agent_state.params.actor_params,
-            learning_actor_indices,
-            unique_indices=True,
-        )
-
-        # drop the actors and their opt_state
-        agent_state = replace_td3_actor_params(
-            learning_agent_state, pop_actor_params=None
-        )
-        opt_state = learning_opt_state.replace(actor=None)
-
-        # smoothed td3 metrics
-        td3_metrics = TD3TrainMetric(
-            actor_loss=actor_loss,
-            critic_loss=critic_loss,
-            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        )
-
-        td3_metrics = td3_metrics.replace(
-            actor_loss=td3_metrics.actor_loss / self.config.num_learning_offspring
-        )
-
-        return td3_metrics, pop_actor_params, agent_state, opt_state
+    def _rl_injection(self, ec_opt_state: ECState, pop: Params) -> ECState:
+        return ec_opt_state.replace(pop=pop)
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         """
@@ -293,15 +191,54 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
         replay_buffer_state = state.replay_buffer_state
         iterations = state.metrics.iterations + 1
 
-        key, rollout_key, learn_key = jax.random.split(state.key, num=3)
+        key, perm_key, rollout_key, learn_key = jax.random.split(state.key, num=4)
 
         # ======= CEM Sample ========
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
 
         # ======== RL update ========
-        def _dummy_rl_update(
-            agent_state, opt_state, replay_buffer_state, pop_actor_params, learn_key
-        ):
+        # learning_actor_indices = slice(
+        #     self.config.num_learning_offspring
+        # )  # [:self.config.num_learning_offspring]
+        learning_actor_indices = jax.random.choice(
+            perm_key,
+            self.config.pop_size,
+            (self.config.num_learning_offspring,),
+            replace=False,
+        )
+
+        def _rl_update(agent_state, opt_state, pop_actor_params):
+            learning_actor_params = tree_get(pop_actor_params, learning_actor_indices)
+            learning_agent_state = cemrl_replace_td3_actor_params(
+                agent_state, learning_actor_params
+            )
+
+            # reset actors' opt_state
+            learning_opt_state = opt_state.replace(
+                actor=self.optimizer.init(learning_actor_params),
+            )
+
+            td3_metrics, learning_agent_state, learning_opt_state = self._rl_update(
+                learning_agent_state,
+                learning_opt_state,
+                replay_buffer_state,
+                learn_key,
+            )
+
+            pop_actor_params = tree_set(
+                pop_actor_params,
+                learning_agent_state.params.actor_params,
+                learning_actor_indices,
+                unique_indices=True,
+            )
+            # drop the actors and their opt_state
+            agent_state = cemrl_replace_td3_actor_params(
+                learning_agent_state, pop_actor_params=None
+            )
+            opt_state = learning_opt_state.replace(actor=None)
+            return td3_metrics, pop_actor_params, agent_state, opt_state
+
+        def _dummy_rl_update(agent_state, opt_state, pop_actor_params):
             return (
                 create_dummy_td3_trainmetric(self.config.num_learning_offspring),
                 pop_actor_params,
@@ -311,17 +248,15 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
         td3_metrics, pop_actor_params, agent_state, opt_state = jax.lax.cond(
             iterations > self.config.warmup_iters,
-            self._rl_update,
+            _rl_update,
             _dummy_rl_update,
             agent_state,
             opt_state,
-            replay_buffer_state,
             pop_actor_params,
-            learn_key,
         )
 
         # ======== CEM update ========
-        pop_agent_state = replace_td3_actor_params(agent_state, pop_actor_params)
+        pop_agent_state = cemrl_replace_td3_actor_params(agent_state, pop_actor_params)
 
         # the trajectory [T, #pop*B, ...]
         # metrics: [#pop, B]
@@ -331,33 +266,45 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
         fitnesses = eval_metrics.episode_returns.mean(axis=-1)
 
+        ec_opt_state = self._rl_injection(ec_opt_state, pop_actor_params)
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
-
-        train_metrics = POPTrainMetric(
-            rb_size=replay_buffer_state.buffer_size,
-            pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
-            pop_episode_returns=eval_metrics.episode_returns.mean(-1),
-            rl_metrics=td3_metrics,
-        )
 
         # adding debug info for CEM
         ec_info = PyTreeDict(ec_metrics)
         ec_info.cov_eps = ec_opt_state.cov_eps
-        if td3_metrics is not None:
+
+        def _calc_elites_stats(ec_info):
             elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
-            elites_from_rl = jnp.isin(
-                jnp.arange(self.config.num_learning_offspring), elites_indices
+            elites_from_rl = jnp.isin(learning_actor_indices, elites_indices).astype(
+                jnp.int32
             )
             ec_info.elites_from_rl = elites_from_rl.sum()
             ec_info.elites_from_rl_ratio = elites_from_rl.mean()
+            return ec_info
 
-        train_metrics = train_metrics.replace(ec_info=ec_info)
+        def _dummy_calc_elites_stats(ec_info):
+            ec_info.elites_from_rl = jnp.zeros((), dtype=jnp.int32)
+            ec_info.elites_from_rl_ratio = jnp.zeros(())
+            return ec_info
+
+        ec_info = jax.lax.cond(
+            iterations > self.config.warmup_iters,
+            _calc_elites_stats,
+            _dummy_calc_elites_stats,
+            ec_info,
+        )
+
+        train_metrics = CEMRLTrainMetric(
+            rb_size=replay_buffer_state.buffer_size,
+            pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
+            pop_episode_returns=eval_metrics.episode_returns.mean(-1),
+            rl_metrics=td3_metrics,
+            ec_info=ec_info,
+        )
 
         # calculate the number of timestep
         sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
         sampled_episodes = jnp.uint32(self.config.episodes_for_fitness * pop_size)
-
-        # iterations is the number of updates of the agent
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
@@ -379,7 +326,7 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         pop_mean_actor_params = state.ec_opt_state.mean
 
-        pop_mean_agent_state = replace_td3_actor_params(
+        pop_mean_agent_state = cemrl_replace_td3_actor_params(
             state.agent_state, pop_mean_actor_params
         )
 
@@ -447,149 +394,6 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(state))
 
         return state
-
-
-def replace_td3_actor_params(
-    agent_state: AgentState, pop_actor_params: Params
-) -> AgentState:
-    """
-    Reset the actor params and target actor params
-    """
-
-    return agent_state.replace(
-        params=agent_state.params.replace(
-            actor_params=pop_actor_params,
-            target_actor_params=pop_actor_params,
-        )
-    )
-
-
-def build_rl_update_fn(
-    agent: Agent,
-    optimizer: optax.GradientTransformation,
-    config: DictConfig,
-    agent_state_vmap_axes: AgentState,
-):
-    num_learning_offspring = config.num_learning_offspring
-
-    def critic_loss_fn(agent_state, sample_batch, key):
-        # loss on a single critic with multiple actors
-        # sample_batch: (n, B, ...)
-
-        loss_dict = jax.vmap(agent.critic_loss, in_axes=(agent_state_vmap_axes, 0, 0))(
-            agent_state, sample_batch, jax.random.split(key, num_learning_offspring)
-        )
-
-        # mean over the num_learning_offspring
-        loss = loss_dict.critic_loss.mean()
-
-        return loss, loss_dict
-
-    def actor_loss_fn(agent_state, sample_batch, key):
-        # loss on a single actor
-
-        loss_dict = jax.vmap(agent.actor_loss, in_axes=(agent_state_vmap_axes, 0, 0))(
-            agent_state, sample_batch, jax.random.split(key, num_learning_offspring)
-        )
-
-        # sum over the num_learning_offspring
-        loss = loss_dict.actor_loss.sum()
-
-        return loss, loss_dict
-
-    critic_update_fn = agent_gradient_update(
-        critic_loss_fn,
-        optimizer,
-        has_aux=True,
-        attach_fn=lambda agent_state, critic_params: agent_state.replace(
-            params=agent_state.params.replace(critic_params=critic_params)
-        ),
-        detach_fn=lambda agent_state: agent_state.params.critic_params,
-    )
-
-    actor_update_fn = agent_gradient_update(
-        actor_loss_fn,
-        optimizer,
-        has_aux=True,
-        attach_fn=lambda agent_state, actor_params: agent_state.replace(
-            params=agent_state.params.replace(actor_params=actor_params)
-        ),
-        detach_fn=lambda agent_state: agent_state.params.actor_params,
-    )
-
-    def _update_fn(agent_state, opt_state, sample_batches, key):
-        critic_opt_state = opt_state.critic
-        actor_opt_state = opt_state.actor
-
-        key, critic_key, actor_key = jax.random.split(key, num=3)
-
-        critic_sample_batches = jax.tree_map(lambda x: x[:-1], sample_batches)
-        last_sample_batch = jax.tree_map(lambda x: x[-1], sample_batches)
-
-        if config.actor_update_interval - 1 > 0:
-
-            def _update_critic_fn(carry, sample_batch):
-                key, agent_state, critic_opt_state = carry
-
-                key, critic_key = jax.random.split(key)
-
-                (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                    critic_update_fn(
-                        critic_opt_state, agent_state, sample_batch, critic_key
-                    )
-                )
-
-                return (key, agent_state, critic_opt_state), None
-
-            key, critic_multiple_update_key = jax.random.split(key)
-
-            (_, agent_state, critic_opt_state), _ = jax.lax.scan(
-                _update_critic_fn,
-                (
-                    critic_multiple_update_key,
-                    agent_state,
-                    critic_opt_state,
-                ),
-                critic_sample_batches,
-                length=config.actor_update_interval - 1,
-            )
-
-        (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-            critic_update_fn(
-                critic_opt_state, agent_state, last_sample_batch, critic_key
-            )
-        )
-
-        (actor_loss, actor_loss_dict), agent_state, actor_opt_state = actor_update_fn(
-            actor_opt_state, agent_state, last_sample_batch, actor_key
-        )
-
-        # not need vmap
-        target_actor_params = soft_target_update(
-            agent_state.params.target_actor_params,
-            agent_state.params.actor_params,
-            config.tau,
-        )
-        target_critic_params = soft_target_update(
-            agent_state.params.target_critic_params,
-            agent_state.params.critic_params,
-            config.tau,
-        )
-        agent_state = agent_state.replace(
-            params=agent_state.params.replace(
-                target_actor_params=target_actor_params,
-                target_critic_params=target_critic_params,
-            )
-        )
-
-        opt_state = opt_state.replace(actor=actor_opt_state, critic=critic_opt_state)
-
-        return (
-            (agent_state, opt_state),
-            (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict),
-        )
-
-    return _update_fn
 
 
 def get_std_statistics(variance):

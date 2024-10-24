@@ -10,12 +10,10 @@ import jax.numpy as jnp
 import optax
 
 from evorl.agent import AgentStateAxis
-from evorl.metrics import MetricBase
+from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import (
-    tree_stop_gradient,
-)
+from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.sample_batch import SampleBatch
@@ -27,8 +25,17 @@ from evorl.ec.optimizers import EvoOptimizer, ECState
 
 from ..offpolicy_utils import clean_trajectory
 
-
 logger = logging.getLogger(__name__)
+
+
+class ERLTrainMetric(MetricBase):
+    pop_episode_returns: chex.Array | None = None
+    pop_episode_lengths: chex.Array | None = None
+    rb_size: chex.Array | None = None
+    rl_episode_returns: chex.Array | None = None
+    rl_episode_lengths: chex.Array | None = None
+    rl_metrics: MetricBase | None = None
+    ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class WorkflowMetric(MetricBase):
@@ -224,6 +231,9 @@ class ERLWorkflowBase(Workflow):
             replay_buffer_state=replay_buffer_state,
         )
 
+    def warmup_step(self, state: State) -> tuple[MetricBase, State]:
+        raise NotImplementedError
+
     def _rl_injection(self, *args, **kwargs):
         raise NotImplementedError
 
@@ -238,3 +248,4 @@ class ERLWorkflowBase(Workflow):
         cls._postsetup_replaybuffer = jax.jit(
             cls._postsetup_replaybuffer, static_argnums=(0,)
         )
+        cls.warmup_step = jax.jit(cls.warmup_step, static_argnums=(0,))

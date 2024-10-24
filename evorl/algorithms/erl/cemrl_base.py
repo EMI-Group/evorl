@@ -24,12 +24,11 @@ from evorl.rollout import rollout
 from evorl.ec.optimizers import EvoOptimizer, ECState
 
 from ..offpolicy_utils import clean_trajectory
-from .erl_utils import rollout_episode
 
 logger = logging.getLogger(__name__)
 
 
-class POPTrainMetric(MetricBase):
+class CEMRLTrainMetric(MetricBase):
     rb_size: chex.Array
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
@@ -50,6 +49,7 @@ class CEMRLWorkflowBase(Workflow):
 
     def __init__(
         self,
+        *,
         env: Env,
         agent: Agent,
         agent_state_vmap_axes: AgentStateAxis,
@@ -235,17 +235,8 @@ class CEMRLWorkflowBase(Workflow):
             replay_buffer_state=replay_buffer_state,
         )
 
-    def _rollout(self, pop_agent_state, replay_buffer_state, key):
-        return rollout_episode(
-            pop_agent_state,
-            replay_buffer_state,
-            key,
-            collector=self.collector,
-            replay_buffer=self.replay_buffer,
-            agent_state_vmap_axes=self.agent_state_vmap_axes,
-            num_episodes=self.config.episodes_for_fitness,
-            num_agents=self.config.pop_size,
-        )
+    def _rl_injection(self, *args, **kwargs):
+        raise NotImplementedError
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         raise NotImplementedError

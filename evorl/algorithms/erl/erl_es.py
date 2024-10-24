@@ -23,9 +23,9 @@ from ..td3 import make_mlp_td3_agent
 from ..offpolicy_utils import skip_replay_buffer_state
 from .erl_ga import (
     ERLGAWorkflow,
-    replace_td3_actor_params,
+    erl_replace_td3_actor_params,
     build_rl_update_fn,
-    POPTrainMetric,
+    ERLTrainMetric,
 )
 
 logger = logging.getLogger(__name__)
@@ -246,7 +246,7 @@ class ERLESWorkflow(ERLGAWorkflow):
         # metrics: [#pop, B]
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
 
-        pop_agent_state = replace_td3_actor_params(agent_state, pop_actor_params)
+        pop_agent_state = erl_replace_td3_actor_params(agent_state, pop_actor_params)
         ec_eval_metrics, ec_trajectory, replay_buffer_state = self._ec_rollout(
             pop_agent_state, replay_buffer_state, ec_rollout_key
         )
@@ -263,14 +263,9 @@ class ERLESWorkflow(ERLGAWorkflow):
             self.config.num_rl_agents * self.config.rollout_episodes
         )
 
-        # calculate the number of timestep
-        sampled_timesteps = ec_sampled_timesteps + rl_sampled_timesteps
-        sampled_episodes = ec_sampled_episodes + rl_sampled_episodes
-
-        train_metrics = POPTrainMetric(
+        train_metrics = ERLTrainMetric(
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
-            rb_size=replay_buffer_state.buffer_size,
         )
 
         # ======== RL update ========
@@ -299,11 +294,17 @@ class ERLESWorkflow(ERLGAWorkflow):
             ec_opt_state, agent_state, ec_fitnesses, rl_fitnesses
         )
 
-        ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
+        ec_metrics, ec_opt_state = self.ec_optimizer.tell_external(
+            ec_opt_state, fitnesses
+        )
 
-        train_metrics = train_metrics.replace(ec_info=ec_metrics)
+        train_metrics = train_metrics.replace(
+            ec_info=ec_metrics, rb_size=replay_buffer_state.buffer_size
+        )
 
-        # iterations is the number of updates of the agent
+        # calculate the number of timestep
+        sampled_timesteps = ec_sampled_timesteps + rl_sampled_timesteps
+        sampled_episodes = ec_sampled_episodes + rl_sampled_episodes
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
@@ -336,7 +337,7 @@ class ERLESWorkflow(ERLGAWorkflow):
 
         pop_mean_actor_params = state.ec_opt_state.mean
 
-        pop_mean_agent_state = replace_td3_actor_params(
+        pop_mean_agent_state = erl_replace_td3_actor_params(
             state.agent_state, pop_mean_actor_params
         )
 

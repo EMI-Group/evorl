@@ -11,36 +11,26 @@ import orbax.checkpoint as ocp
 
 from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import agent_gradient_update
-from evorl.metrics import MetricBase, metric_field
+from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
-from evorl.utils.jax_utils import (
-    scan_and_mean,
-)
-from evorl.utils.rl_toolkits import (
-    soft_target_update,
-)
+from evorl.utils.jax_utils import scan_and_mean
+from evorl.utils.rl_toolkits import soft_target_update
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix, get_1d_array
 from evorl.ec.optimizers import ERLGAMod, ECState
 
-from ..td3 import make_mlp_td3_agent, TD3NetworkParams, TD3TrainMetric
+from ..td3 import make_mlp_td3_agent, TD3TrainMetric
 from ..offpolicy_utils import skip_replay_buffer_state
-from .erl_utils import create_dummy_td3_trainmetric, rollout_episode
-from .erl_base import ERLWorkflowBase
+from .erl_base import ERLTrainMetric
+from .erl_utils import (
+    ERLWorkflowTemplate,
+    rollout_episode,
+    erl_replace_td3_actor_params,
+)
 
 logger = logging.getLogger(__name__)
-
-
-class POPTrainMetric(MetricBase):
-    pop_episode_returns: chex.Array | None = None
-    pop_episode_lengths: chex.Array | None = None
-    rb_size: chex.Array | None = None
-    rl_episode_returns: chex.Array | None = None
-    rl_episode_lengths: chex.Array | None = None
-    rl_metrics: MetricBase | None = None
-    ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class EvaluateMetric(MetricBase):
@@ -48,7 +38,7 @@ class EvaluateMetric(MetricBase):
     rl_episode_lengths: chex.Array
 
 
-class ERLGAWorkflow(ERLWorkflowBase):
+class ERLGAWorkflow(ERLWorkflowTemplate):
     """
     EC: n actors
     RL: k actors + k critics
@@ -217,18 +207,6 @@ class ERLGAWorkflow(ERLWorkflowBase):
 
         return agent_state, opt_state, ec_opt_state
 
-    def _ec_rollout(self, agent_state, replay_buffer_state, key):
-        return rollout_episode(
-            agent_state,
-            replay_buffer_state,
-            key,
-            collector=self.ec_collector,
-            replay_buffer=self.replay_buffer,
-            agent_state_vmap_axes=self.agent_state_vmap_axes,
-            num_agents=self.config.pop_size,
-            num_episodes=self.config.episodes_for_fitness,
-        )
-
     def _rl_rollout(self, agent_state, replay_buffer_state, key):
         return rollout_episode(
             agent_state,
@@ -316,108 +294,42 @@ class ERLGAWorkflow(ERLWorkflowBase):
         replay_buffer_state = state.replay_buffer_state
         iterations = state.metrics.iterations + 1
 
-        sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
-        sampled_episodes = jnp.zeros((), dtype=jnp.uint32)
-
-        key, ec_rollout_key, rl_rollout_learn_key = jax.random.split(state.key, num=3)
+        key, ec_rollout_key, rl_rollout_key, learn_key = jax.random.split(
+            state.key, num=4
+        )
 
         # ======== EC rollout ========
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
-        pop_agent_state = replace_td3_actor_params(agent_state, pop_actor_params)
+        pop_agent_state = erl_replace_td3_actor_params(agent_state, pop_actor_params)
         ec_eval_metrics, ec_trajectory, replay_buffer_state = self._ec_rollout(
             pop_agent_state, replay_buffer_state, ec_rollout_key
         )
 
-        # calculate the number of timestep
-        sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
-        sampled_episodes += jnp.uint32(self.config.episodes_for_fitness * pop_size)
-
-        train_metrics = POPTrainMetric(
-            pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
-            pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
-        )
+        ec_sampled_timesteps = ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        ec_sampled_episodes = jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         # ======== RL update ========
-        def _rl_rollout_and_update(
-            agent_state, opt_state, replay_buffer_state, train_metrics, key
-        ):
-            rl_rollout_key, learn_key = jax.random.split(key, 2)
-            rl_eval_metrics, rl_trajectory, replay_buffer_state = self._rl_rollout(
-                agent_state, replay_buffer_state, rl_rollout_key
-            )
 
-            rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(
-                jnp.uint32
-            )
-            rl_sampled_episodes = jnp.uint32(
-                self.config.num_rl_agents * self.config.rollout_episodes
-            )
-
-            td3_metrics, agent_state, opt_state = self._rl_update(
-                agent_state, opt_state, replay_buffer_state, learn_key
-            )
-
-            # get average loss
-            td3_metrics = td3_metrics.replace(
-                actor_loss=td3_metrics.actor_loss / self.config.num_rl_agents,
-                critic_loss=td3_metrics.critic_loss / self.config.num_rl_agents,
-            )
-
-            train_metrics = train_metrics.replace(
-                rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
-                rl_episode_returns=rl_eval_metrics.episode_returns.mean(-1),
-                rl_metrics=td3_metrics,
-            )
-
-            return (
-                train_metrics,
-                rl_sampled_timesteps,
-                rl_sampled_episodes,
-                agent_state,
-                opt_state,
-                replay_buffer_state,
-            )
-
-        def _dummy_rl_rollout_and_update(
-            agent_state, opt_state, replay_buffer_state, train_metrics, key
-        ):
-            train_metrics = train_metrics.replace(
-                rl_episode_lengths=jnp.zeros((self.config.num_rl_agents,)),
-                rl_episode_returns=jnp.zeros((self.config.num_rl_agents,)),
-                rl_metrics=create_dummy_td3_trainmetric(self.config.num_rl_agents),
-            )
-
-            return (
-                train_metrics,
-                jnp.zeros((), dtype=jnp.uint32),
-                jnp.zeros((), dtype=jnp.uint32),
-                agent_state,
-                opt_state,
-                replay_buffer_state,
-            )
-
-        (
-            train_metrics,
-            rl_sampled_timesteps,
-            rl_sampled_episodes,
-            agent_state,
-            opt_state,
-            replay_buffer_state,
-        ) = jax.lax.cond(
-            iterations > self.config.warmup_iters,
-            _rl_rollout_and_update,
-            _dummy_rl_rollout_and_update,
-            agent_state,
-            opt_state,
-            replay_buffer_state,
-            train_metrics,
-            rl_rollout_learn_key,
+        rl_eval_metrics, rl_trajectory, replay_buffer_state = self._rl_rollout(
+            agent_state, replay_buffer_state, rl_rollout_key
         )
 
-        sampled_timesteps += rl_sampled_timesteps
-        sampled_episodes += rl_sampled_episodes
+        rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        rl_sampled_episodes = jnp.uint32(
+            self.config.num_rl_agents * self.config.rollout_episodes
+        )
+
+        td3_metrics, agent_state, opt_state = self._rl_update(
+            agent_state, opt_state, replay_buffer_state, learn_key
+        )
+
+        # get average loss
+        td3_metrics = td3_metrics.replace(
+            actor_loss=td3_metrics.actor_loss / self.config.num_rl_agents,
+            critic_loss=td3_metrics.critic_loss / self.config.num_rl_agents,
+        )
 
         # ====== EC update ======
         fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
@@ -430,22 +342,26 @@ class ERLGAWorkflow(ERLWorkflowBase):
             return ec_metrics, ec_opt_state
 
         ec_metrics, ec_opt_state = jax.lax.cond(
-            jnp.logical_and(
-                iterations > self.config.warmup_iters,
-                iterations % self.config.rl_injection_interval == 0,
-            ),
+            iterations % self.config.rl_injection_interval == 0,
             _tell_with_rl_injection,
             self.ec_optimizer.tell,
             ec_opt_state,
             fitnesses,
         )
 
-        train_metrics = train_metrics.replace(
-            rb_size=replay_buffer_state.buffer_size,
+        train_metrics = ERLTrainMetric(
+            pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
+            pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
+            rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
+            rl_episode_returns=rl_eval_metrics.episode_returns.mean(-1),
+            rl_metrics=td3_metrics,
             ec_info=ec_metrics,
+            rb_size=replay_buffer_state.buffer_size,
         )
 
-        # iterations is the number of updates of the agent
+        # calculate the number of timestep
+        sampled_timesteps = ec_sampled_timesteps + rl_sampled_timesteps
+        sampled_episodes = ec_sampled_episodes + rl_sampled_episodes
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
@@ -508,29 +424,24 @@ class ERLGAWorkflow(ERLWorkflowBase):
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
-            if iters > self.config.warmup_iters:
-                if self.config.num_rl_agents > 1:
-                    train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
-                        train_metrics_dict["rl_episode_lengths"], histogram=True
-                    )
-                    train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
-                        train_metrics_dict["rl_episode_returns"], histogram=True
-                    )
-                    train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
-                        get_1d_array_statistics,
-                        train_metrics_dict["rl_metrics"]["raw_loss_dict"],
-                    )
-                else:
-                    train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
-                        "rl_episode_lengths"
-                    ].squeeze(0)
-                    train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
-                        "rl_episode_returns"
-                    ].squeeze(0)
+            if self.config.num_rl_agents > 1:
+                train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
+                    train_metrics_dict["rl_episode_lengths"], histogram=True
+                )
+                train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
+                    train_metrics_dict["rl_episode_returns"], histogram=True
+                )
+                train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
+                    get_1d_array_statistics,
+                    train_metrics_dict["rl_metrics"]["raw_loss_dict"],
+                )
             else:
-                del train_metrics_dict["rl_episode_lengths"]
-                del train_metrics_dict["rl_episode_returns"]
-                del train_metrics_dict["rl_metrics"]
+                train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
+                    "rl_episode_lengths"
+                ].squeeze(0)
+                train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
+                    "rl_episode_returns"
+                ].squeeze(0)
 
             self.recorder.write(train_metrics_dict, iters)
 
@@ -550,23 +461,6 @@ class ERLGAWorkflow(ERLWorkflowBase):
             self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(state))
 
         return state
-
-
-def replace_td3_actor_params(
-    agent_state: AgentState, pop_actor_params: chex.ArrayTree
-) -> AgentState:
-    """
-    reset the actor params and target actor params
-    """
-
-    return agent_state.replace(
-        params=TD3NetworkParams(
-            actor_params=pop_actor_params,
-            target_actor_params=pop_actor_params,
-            critic_params=None,
-            target_critic_params=None,
-        )
-    )
 
 
 def build_rl_update_fn(

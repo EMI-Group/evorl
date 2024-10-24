@@ -92,7 +92,7 @@ class VanillaESMod(VanillaES):
             key=key,
         )
 
-    def tell(
+    def tell_external(
         self, state: VanillaESState, fitnesses: chex.Array
     ) -> tuple[PyTreeDict, VanillaESState]:
         chex.assert_shape(fitnesses, (self.pop_size + self.external_size,))

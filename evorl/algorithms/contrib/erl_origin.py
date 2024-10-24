@@ -10,30 +10,24 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import orbax.checkpoint as ocp
 
-from evorl.metrics import MetricBase, metric_field
+from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import is_jitted
 from evorl.recorders import get_1d_array_statistics, add_prefix
 
 from ..td3 import TD3TrainMetric
+from ..erl.erl_base import ERLTrainMetric as ERLTrainMetricBase
 from ..erl.erl_utils import create_dummy_td3_trainmetric
-from ..erl.erl_ga import ERLGAWorkflow, replace_td3_actor_params
+from ..erl.erl_ga import ERLGAWorkflow, erl_replace_td3_actor_params
 from ..offpolicy_utils import skip_replay_buffer_state
 
 
 logger = logging.getLogger(__name__)
 
 
-class POPTrainMetric(MetricBase):
-    pop_episode_returns: chex.Array | None = None
-    pop_episode_lengths: chex.Array | None = None
+class ERLTrainMetric(ERLTrainMetricBase):
     num_updates_per_iter: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    rb_size: chex.Array | None = None
-    rl_episode_returns: chex.Array | None = None
-    rl_episode_lengths: chex.Array | None = None
-    rl_metrics: MetricBase | None = None
     time_cost_per_iter: float = 0.0
-    ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class ERLWorkflow(ERLGAWorkflow):
@@ -149,7 +143,7 @@ class ERLWorkflow(ERLGAWorkflow):
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
-        pop_agent_state = replace_td3_actor_params(agent_state, pop_actor_params)
+        pop_agent_state = erl_replace_td3_actor_params(agent_state, pop_actor_params)
         ec_eval_metrics, ec_trajectory, replay_buffer_state = self._ec_rollout(
             pop_agent_state, replay_buffer_state, ec_rollout_key
         )
@@ -158,72 +152,62 @@ class ERLWorkflow(ERLGAWorkflow):
         sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
         sampled_episodes += jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
-        train_metrics = POPTrainMetric(
+        train_metrics = ERLTrainMetric(
             pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
         )
 
         # ======== RL update ========
-        if iterations > self.config.warmup_iters:
-            rl_eval_metrics, rl_trajectory, replay_buffer_state = self._rl_rollout(
-                agent_state, replay_buffer_state, rl_rollout_key
-            )
 
-            if self.config.rl_updates_mode == "global":  # same as original ERL
-                total_timesteps = state.metrics.sampled_timesteps + sampled_timesteps
-                num_updates = (
-                    jnp.ceil(total_timesteps * self.config.rl_updates_frac).astype(
-                        jnp.uint32
-                    )
-                    // self.config.actor_update_interval
+        rl_eval_metrics, rl_trajectory, replay_buffer_state = self._rl_rollout(
+            agent_state, replay_buffer_state, rl_rollout_key
+        )
+
+        if self.config.rl_updates_mode == "global":  # same as original ERL
+            total_timesteps = state.metrics.sampled_timesteps + sampled_timesteps
+            num_updates = (
+                jnp.ceil(total_timesteps * self.config.rl_updates_frac).astype(
+                    jnp.uint32
                 )
-            elif self.config.rl_updates_mode == "iter":
-                num_updates = (
-                    jnp.ceil(sampled_timesteps * self.config.rl_updates_frac).astype(
-                        jnp.uint32
-                    )
-                    // self.config.actor_update_interval
+                // self.config.actor_update_interval
+            )
+        elif self.config.rl_updates_mode == "iter":
+            num_updates = (
+                jnp.ceil(sampled_timesteps * self.config.rl_updates_frac).astype(
+                    jnp.uint32
                 )
-            else:
-                raise ValueError(
-                    f"Unknown rl_updates_mode: {self.config.rl_updates_mode}"
-                )
-
-            td3_metrics, agent_state, opt_state = self._rl_update(
-                agent_state, opt_state, replay_buffer_state, learn_key, num_updates
+                // self.config.actor_update_interval
             )
-
-            # get average loss
-            td3_metrics = td3_metrics.replace(
-                actor_loss=td3_metrics.actor_loss / self.config.num_rl_agents,
-                critic_loss=td3_metrics.critic_loss / self.config.num_rl_agents,
-            )
-
-            train_metrics = train_metrics.replace(
-                num_updates_per_iter=num_updates,
-                rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
-                rl_episode_returns=rl_eval_metrics.episode_returns.mean(-1),
-                rl_metrics=td3_metrics,
-            )
-
-            rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(
-                jnp.uint32
-            )
-            sampled_timesteps += rl_sampled_timesteps
-            sampled_episodes += jnp.uint32(
-                self.config.num_rl_agents * self.config.rollout_episodes
-            )
-
         else:
-            rl_sampled_timesteps = jnp.zeros((), dtype=jnp.uint32)
+            raise ValueError(f"Unknown rl_updates_mode: {self.config.rl_updates_mode}")
+
+        td3_metrics, agent_state, opt_state = self._rl_update(
+            agent_state, opt_state, replay_buffer_state, learn_key, num_updates
+        )
+
+        # get average loss
+        td3_metrics = td3_metrics.replace(
+            actor_loss=td3_metrics.actor_loss / self.config.num_rl_agents,
+            critic_loss=td3_metrics.critic_loss / self.config.num_rl_agents,
+        )
+
+        train_metrics = train_metrics.replace(
+            num_updates_per_iter=num_updates,
+            rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
+            rl_episode_returns=rl_eval_metrics.episode_returns.mean(-1),
+            rl_metrics=td3_metrics,
+        )
+
+        rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        sampled_timesteps += rl_sampled_timesteps
+        sampled_episodes += jnp.uint32(
+            self.config.num_rl_agents * self.config.rollout_episodes
+        )
 
         # ======== EC update ========
         fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
 
-        if (
-            iterations > self.config.warmup_iters
-            and iterations % self.config.rl_injection_interval == 0
-        ):
+        if iterations % self.config.rl_injection_interval == 0:
             ec_metrics, ec_opt_state = self._ec_update_with_rl_injection(
                 ec_opt_state, agent_state, fitnesses
             )

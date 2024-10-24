@@ -5,7 +5,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from evorl.metrics import MetricBase, metric_field
+from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
     tree_get,
@@ -15,20 +15,14 @@ from evorl.utils.jax_utils import (
 )
 
 from ..td3 import TD3TrainMetric
-from ..erl.cemrl import (
-    replace_actor_params,
-    CEMRLWorkflow as _CEMRLWorkflow,
-)
+from ..erl.cemrl_base import CEMRLTrainMetric as CEMRLTrainMetricBase
+from ..erl.cemrl import CEMRLWorkflow as _CEMRLWorkflow
+from ..erl.erl_utils import cemrl_replace_td3_actor_params
 
 
-class POPTrainMetric(MetricBase):
-    rb_size: chex.Array
-    pop_episode_returns: chex.Array
-    pop_episode_lengths: chex.Array
-    rl_metrics: MetricBase | None = None
+class CEMRLTrainMetric(CEMRLTrainMetricBase):
     num_updates_per_iter: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     time_cost_per_iter: float = 0.0
-    ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class WorkflowMetric(MetricBase):
@@ -101,39 +95,19 @@ class CEMRLWorkflow(_CEMRLWorkflow):
         agent_state,
         opt_state,
         replay_buffer_state,
-        pop_actor_params,
         key,
         num_updates,
     ):
         """
         Add num_updates support. Therefore this method cannot be jitted.
         """
-        if self.config.mirror_sampling:
-            key, perm_key = jax.random.split(key)
-            learning_actor_indices = jax.random.choice(
-                perm_key,
-                self.config.pop_size,
-                (self.config.num_learning_offspring,),
-                replace=False,
-            )
-        else:
-            learning_actor_indices = slice(
-                self.config.num_learning_offspring
-            )  # [:self.config.num_learning_offspring]
-        learning_actor_params = tree_get(pop_actor_params, learning_actor_indices)
-        learning_agent_state = replace_actor_params(agent_state, learning_actor_params)
-
-        # reset and add actors' opt_state
-        learning_opt_state = opt_state.replace(
-            actor=self.optimizer.init(learning_actor_params),
-        )
 
         (
-            (_, learning_agent_state, learning_opt_state, replay_buffer_state),
+            (_, agent_state, opt_state, replay_buffer_state),
             train_info,
         ) = scan_and_last(
             self._rl_sample_and_update_fn,
-            (key, learning_agent_state, learning_opt_state, replay_buffer_state),
+            (key, agent_state, opt_state, replay_buffer_state),
             (),
             length=num_updates,
         )
@@ -147,33 +121,18 @@ class CEMRLWorkflow(_CEMRLWorkflow):
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
         )
 
-        pop_actor_params = tree_set(
-            pop_actor_params,
-            learning_agent_state.params.actor_params,
-            learning_actor_indices,
-            unique_indices=True,
-        )
-
-        # drop the actors and their opt_state
-        agent_state = replace_actor_params(learning_agent_state, pop_actor_params=None)
-        opt_state = learning_opt_state.replace(actor=None)
-
         td3_metrics = td3_metrics.replace(
             actor_loss=td3_metrics.actor_loss / self.config.num_learning_offspring
         )
 
-        return td3_metrics, pop_actor_params, agent_state, opt_state
+        return td3_metrics, agent_state, opt_state
 
     def _rollout_and_update(
-        self, agent_state, replay_buffer_state, ec_opt_state, pop_actor_params, key
+        self, pop_agent_state, replay_buffer_state, ec_opt_state, key
     ):
         """
         Calculate the fitness and update the replay buffer and ec_optimizer
         """
-        # Note: updated critic_params are stored in learning_agent_state
-        # actor_params [num_learning_offspring, ...] -> [pop_size, ...]
-        # reset target_actor_params
-        pop_agent_state = replace_actor_params(agent_state, pop_actor_params)
 
         # the trajectory [T, #pop*B, ...]
         # metrics: [#pop, B]
@@ -198,13 +157,29 @@ class CEMRLWorkflow(_CEMRLWorkflow):
         replay_buffer_state = state.replay_buffer_state
         iterations = state.metrics.iterations + 1
 
-        key, rollout_key, learn_key = jax.random.split(state.key, num=3)
+        key, perm_key, rollout_key, learn_key = jax.random.split(state.key, num=4)
 
         # ======= CEM Sample ========
         pop_actor_params, ec_opt_state = self._ec_sample(ec_opt_state)
 
         # ======== RL update ========
+        learning_actor_indices = jax.random.choice(
+            perm_key,
+            self.config.pop_size,
+            (self.config.num_learning_offspring,),
+            replace=False,
+        )
+
         if iterations > self.config.warmup_iters:
+            learning_actor_params = tree_get(pop_actor_params, learning_actor_indices)
+            learning_agent_state = cemrl_replace_td3_actor_params(
+                agent_state, learning_actor_params
+            )
+            # reset and add actors' opt_state
+            learning_opt_state = opt_state.replace(
+                actor=self.optimizer.init(learning_actor_params),
+            )
+
             num_updates = (
                 jnp.ceil(
                     state.metrics.sampled_timesteps_per_iter
@@ -213,38 +188,43 @@ class CEMRLWorkflow(_CEMRLWorkflow):
                 // self.config.actor_update_interval
             )
 
-            td3_metrics, pop_actor_params, agent_state, opt_state = self._rl_update(
-                agent_state,
-                opt_state,
+            td3_metrics, learning_agent_state, learning_opt_state = self._rl_update(
+                learning_agent_state,
+                learning_opt_state,
                 replay_buffer_state,
-                pop_actor_params,
                 learn_key,
                 num_updates,
             )
+
+            pop_actor_params = tree_set(
+                pop_actor_params,
+                learning_agent_state.params.actor_params,
+                learning_actor_indices,
+                unique_indices=True,
+            )
+
+            # drop the actors and their opt_state
+            agent_state = cemrl_replace_td3_actor_params(
+                learning_agent_state, pop_actor_params=None
+            )
+            opt_state = learning_opt_state.replace(actor=None)
+
+            # rl injection
+            ec_opt_state = self._rl_injection(ec_opt_state, pop_actor_params)
 
         else:
             num_updates = jnp.zeros((), dtype=jnp.uint32)
             td3_metrics = None
 
         # ======== CEM update ========
-
+        pop_agent_state = cemrl_replace_td3_actor_params(agent_state, pop_actor_params)
         eval_metrics, ec_metrics, fitnesses, replay_buffer_state, ec_opt_state = (
             self._rollout_and_update(
-                agent_state,
+                pop_agent_state,
                 replay_buffer_state,
                 ec_opt_state,
-                pop_actor_params,
                 rollout_key,
             )
-        )
-
-        train_metrics = POPTrainMetric(
-            rb_size=replay_buffer_state.buffer_size,
-            pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
-            pop_episode_returns=eval_metrics.episode_returns.mean(-1),
-            rl_metrics=td3_metrics,
-            num_updates_per_iter=num_updates,
-            time_cost_per_iter=time.perf_counter() - start_t,
         )
 
         # adding debug info for CEM
@@ -258,13 +238,19 @@ class CEMRLWorkflow(_CEMRLWorkflow):
             ec_info.elites_from_rl = elites_from_rl.sum()
             ec_info.elites_from_rl_ratio = elites_from_rl.mean()
 
-        train_metrics = train_metrics.replace(ec_info=ec_info)
+        train_metrics = CEMRLTrainMetric(
+            rb_size=replay_buffer_state.buffer_size,
+            pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
+            pop_episode_returns=eval_metrics.episode_returns.mean(-1),
+            rl_metrics=td3_metrics,
+            ec_info=ec_info,
+            num_updates_per_iter=num_updates,
+            time_cost_per_iter=time.perf_counter() - start_t,
+        )
 
         # calculate the number of timestep
         sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
         sampled_episodes = jnp.uint32(self.config.episodes_for_fitness * pop_size)
-
-        # iterations is the number of updates of the agent
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
