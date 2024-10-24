@@ -54,12 +54,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
         super().__init__(**kwargs)
 
         # override
-        self._rl_update_fn = build_rl_update_fn(
-            self.agent,
-            self.optimizer,
-            self.config,
-            self.agent_state_vmap_axes,
-        )
+        self._rl_update_fn = build_rl_update_fn(self.agent, self.optimizer, self.config)
 
     @classmethod
     def name(cls):
@@ -158,6 +153,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
             max_episode_steps=config.env.max_episode_steps,
         )
 
+        # this is only used for _ec_rollout()
         agent_state_vmap_axes = AgentState(
             params=0,
             obs_preprocessor_state=None,
