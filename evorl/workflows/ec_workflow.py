@@ -114,12 +114,13 @@ class ECWorkflow(Workflow):
 class ECWorkflowTemplate(ECWorkflow):
     def __init__(
         self,
-        config: DictConfig,
+        *,
         env: Env,
         agent: Agent,
         ec_optimizer: EvoOptimizer,
         ec_evaluator: Evaluator | EpisodeCollector,
         agent_state_vmap_axes: AgentStateAxis = 0,
+        config: DictConfig,
     ):
         super().__init__(config)
 

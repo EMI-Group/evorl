@@ -22,21 +22,22 @@ logger = logging.getLogger(__name__)
 class ESWorkflowTemplate(ECWorkflowTemplate):
     def __init__(
         self,
-        config: DictConfig,
+        *,
         env: Env,
         agent: Agent,
         ec_optimizer: EvoOptimizer,
         ec_evaluator: Evaluator,
         evaluator: Evaluator,
         agent_state_vmap_axes: AgentStateAxis = 0,
+        config: DictConfig,
     ):
         super().__init__(
-            config=config,
             env=env,
             agent=agent,
             ec_optimizer=ec_optimizer,
             ec_evaluator=ec_evaluator,
             agent_state_vmap_axes=agent_state_vmap_axes,
+            config=config,
         )
 
         self.evaluator = evaluator  # independent evaluator for pop_center
