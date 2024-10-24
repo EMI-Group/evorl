@@ -48,6 +48,7 @@ class WorkflowMetric(MetricBase):
 class ERLWorkflowBase(Workflow):
     def __init__(
         self,
+        *,
         env: Env,
         agent: Agent,
         agent_state_vmap_axes: AgentStateAxis,

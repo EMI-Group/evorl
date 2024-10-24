@@ -241,9 +241,13 @@ class ERLWorkflow(ERLGAWorkflow):
         return train_metrics, state
 
     def learn(self, state: State) -> State:
+        sampled_episodes_per_iter = (
+            self.config.episodes_for_fitness * self.config.pop_size
+            + self.config.rollout_episodes * self.config.num_rl_agents
+        )
         num_iters = math.ceil(
-            self.config.total_episodes
-            / (self.config.episodes_for_fitness * self.config.pop_size)
+            (self.config.total_episodes - state.metrics.sampled_episodes)
+            / sampled_episodes_per_iter
         )
 
         for i in range(state.metrics.iterations, num_iters):

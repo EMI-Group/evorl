@@ -50,6 +50,17 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
     RL will be injected into the pop mean. Support all EDA based ES algorithms.
     """
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # override
+        self._rl_update_fn = build_rl_update_fn(
+            self.agent,
+            self.optimizer,
+            self.config,
+            self.agent_state_vmap_axes,
+        )
+
     @classmethod
     def name(cls):
         return "ERL-EDA"
@@ -153,19 +164,17 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
         )
 
         workflow = cls(
-            env,
-            agent,
-            agent_state_vmap_axes,
-            optimizer,
-            ec_optimizer,
-            ec_collector,
-            rl_collector,
-            evaluator,
-            replay_buffer,
-            config,
+            env=env,
+            agent=agent,
+            agent_state_vmap_axes=agent_state_vmap_axes,
+            optimizer=optimizer,
+            ec_optimizer=ec_optimizer,
+            ec_collector=ec_collector,
+            rl_collector=rl_collector,
+            evaluator=evaluator,
+            replay_buffer=replay_buffer,
+            config=config,
         )
-
-        workflow._rl_update_fn = build_rl_update_fn(agent, optimizer, config)
 
         return workflow
 
@@ -190,6 +199,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
 
         return agent_state, opt_state, ec_opt_state
 
+    # override
     def _rl_rollout(self, agent_state, replay_buffer_state, key):
         # agnet_state: only contains one agent
         # trajectory [T, B, ...]
@@ -210,6 +220,7 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
 
         return eval_metrics, trajectory, replay_buffer_state
 
+    # override
     def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
         def _sample_fn(key):
             return self.replay_buffer.sample(replay_buffer_state, key)
@@ -388,9 +399,13 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
         return eval_metrics, state
 
     def learn(self, state: State) -> State:
+        sampled_episodes_per_iter = (
+            self.config.episodes_for_fitness * self.config.pop_size
+            + self.config.rollout_episodes
+        )
         num_iters = math.ceil(
             (self.config.total_episodes - state.metrics.sampled_episodes)
-            / (self.config.episodes_for_fitness * self.config.pop_size)
+            / sampled_episodes_per_iter
         )
 
         for i in range(state.metrics.iterations, num_iters + state.metrics.iterations):

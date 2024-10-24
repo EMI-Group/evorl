@@ -21,12 +21,8 @@ from evorl.ec.optimizers import ECState, VanillaESMod, ExponentialScheduleSpec
 
 from ..td3 import make_mlp_td3_agent
 from ..offpolicy_utils import skip_replay_buffer_state
-from .erl_ga import (
-    ERLGAWorkflow,
-    erl_replace_td3_actor_params,
-    build_rl_update_fn,
-    ERLTrainMetric,
-)
+from .erl_base import ERLTrainMetric
+from .erl_utils import ERLWorkflowTemplate, erl_replace_td3_actor_params
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +34,11 @@ class EvaluateMetric(MetricBase):
     pop_center_episode_lengths: chex.Array
 
 
-class ERLESWorkflow(ERLGAWorkflow):
+class ERLESWorkflow(ERLWorkflowTemplate):
     """
     EC: n actors
     RL: k actors + k critics
     Shared replay buffer
-
-    RL will be injected into the pop
     """
 
     @classmethod
@@ -151,20 +145,16 @@ class ERLESWorkflow(ERLGAWorkflow):
         )
 
         workflow = cls(
-            env,
-            agent,
-            agent_state_vmap_axes,
-            optimizer,
-            ec_optimizer,
-            ec_collector,
-            rl_collector,
-            evaluator,
-            replay_buffer,
-            config,
-        )
-
-        workflow._rl_update_fn = build_rl_update_fn(
-            agent, optimizer, config, agent_state_vmap_axes
+            env=env,
+            agent=agent,
+            agent_state_vmap_axes=agent_state_vmap_axes,
+            optimizer=optimizer,
+            ec_optimizer=ec_optimizer,
+            ec_collector=ec_collector,
+            rl_collector=rl_collector,
+            evaluator=evaluator,
+            replay_buffer=replay_buffer,
+            config=config,
         )
 
         return workflow
@@ -357,9 +347,13 @@ class ERLESWorkflow(ERLGAWorkflow):
         return eval_metrics, state
 
     def learn(self, state: State) -> State:
+        sampled_episodes_per_iter = (
+            self.config.episodes_for_fitness * self.config.pop_size
+            + self.config.rollout_episodes * self.config.num_rl_agents
+        )
         num_iters = math.ceil(
             (self.config.total_episodes - state.metrics.sampled_episodes)
-            / (self.config.episodes_for_fitness * self.config.pop_size)
+            / sampled_episodes_per_iter
         )
 
         for i in range(state.metrics.iterations, num_iters + state.metrics.iterations):
