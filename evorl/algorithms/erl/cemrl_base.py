@@ -98,9 +98,6 @@ class CEMRLWorkflowBase(Workflow):
         raise NotImplementedError
 
     def setup(self, key: chex.PRNGKey) -> State:
-        """
-        obs_preprocessor_state update strategy: only updated at _postsetup_replaybuffer(), then fixed during the training.
-        """
         key, agent_key, rb_key = jax.random.split(key, 3)
 
         # [#pop, ...]
@@ -204,9 +201,9 @@ class CEMRLWorkflowBase(Workflow):
             env_extra_fields=("ori_obs", "termination"),
         )
 
-        sampled_timesteps = jnp.uint32(rollout_length * config.num_envs)
-        # Since we sample from autoreset env, this metric might not be accurate:
-        sampled_episodes = trajectory.dones.astype(jnp.uint32).sum()
+        # sampled_timesteps = jnp.uint32(rollout_length * config.num_envs)
+        # # Since we sample from autoreset env, this metric might not be accurate:
+        # sampled_episodes = trajectory.dones.astype(jnp.uint32).sum()
 
         # [T, B, ...] -> [T*B, ...]
         trajectory = clean_trajectory(trajectory)
@@ -223,14 +220,15 @@ class CEMRLWorkflowBase(Workflow):
                 )
             )
 
-        workflow_metrics = state.metrics.replace(
-            sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
-            sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
-        )
+        # Note: we don't count the random transitions in the metrics, to align the x-axis(sampled_episodes/iterations) over different runs
+        # workflow_metrics = state.metrics.replace(
+        #     sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
+        #     sampled_episodes=state.metrics.sampled_episodes + sampled_episodes,
+        # )
 
         return state.replace(
             key=key,
-            metrics=workflow_metrics,
+            # metrics=workflow_metrics,
             agent_state=agent_state,
             replay_buffer_state=replay_buffer_state,
         )
