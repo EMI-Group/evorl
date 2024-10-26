@@ -163,14 +163,14 @@ class CEMRLWorkflow(_CEMRLWorkflow):
         pop_actor_params, ec_opt_state = self._ec_sample(ec_opt_state)
 
         # ======== RL update ========
-        learning_actor_indices = jax.random.choice(
-            perm_key,
-            self.config.pop_size,
-            (self.config.num_learning_offspring,),
-            replace=False,
-        )
 
         if iterations > self.config.warmup_iters:
+            learning_actor_indices = jax.random.choice(
+                perm_key,
+                self.config.pop_size,
+                (self.config.num_learning_offspring,),
+                replace=False,
+            )
             learning_actor_params = tree_get(pop_actor_params, learning_actor_indices)
             learning_agent_state = cemrl_replace_td3_actor_params(
                 agent_state, learning_actor_params
@@ -232,9 +232,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
         ec_info.cov_eps = ec_opt_state.cov_eps
         if td3_metrics is not None:
             elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
-            elites_from_rl = jnp.isin(
-                jnp.arange(self.config.num_learning_offspring), elites_indices
-            )
+            elites_from_rl = jnp.isin(learning_actor_indices, elites_indices)
             ec_info.elites_from_rl = elites_from_rl.sum()
             ec_info.elites_from_rl_ratio = elites_from_rl.mean()
 
