@@ -8,6 +8,7 @@ total_episodes: 20000
 
 actor_update_interval: 1 # not needed since we apply it over #num_learning_offspring actors
 
+random_timesteps: 25600
 warmup_iters: 10 # steps that only learn by CEM
 
 pop_size: 10
@@ -15,7 +16,7 @@ num_learning_offspring: 5
 
 num_elites: 5
 cov_eps:
-  init: 1e-2
+  init: 1e-3
   final: 1e-5
   decay: 0.05
 

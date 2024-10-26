@@ -15,9 +15,9 @@ from evorl.utils.jax_utils import (
 )
 
 from ..td3 import TD3TrainMetric
-from ..erl.cemrl_base import CEMRLTrainMetric as CEMRLTrainMetricBase
-from ..erl.cemrl import CEMRLWorkflow as _CEMRLWorkflow
-from ..erl.erl_utils import cemrl_replace_td3_actor_params
+from .cemrl_base import CEMRLTrainMetric as CEMRLTrainMetricBase
+from .cemrl import CEMRLWorkflow as _CEMRLWorkflow
+from .erl_utils import cemrl_replace_td3_actor_params
 
 
 class CEMRLTrainMetric(CEMRLTrainMetricBase):

@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent/contrib/erl-ori
+  - /agent/erl/erl-ori
   - _self_
 
 total_episodes: 20000

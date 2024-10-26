@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.algorithms.contrib.erl_origin.ERLWorkflow
+workflow_cls: evorl.algorithms.erl.erl_origin.ERLWorkflow
 
 num_envs: 1
 normalize_obs: false

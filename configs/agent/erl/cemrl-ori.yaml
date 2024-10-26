@@ -1,6 +1,6 @@
 # @package _global_
 
-workflow_cls: evorl.algorithms.contrib.cemrl_origin.CEMRLWorkflow
+workflow_cls: evorl.algorithms.erl.cemrl_origin.CEMRLWorkflow
 
 num_envs: 1
 normalize_obs: false
