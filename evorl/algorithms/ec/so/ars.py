@@ -131,7 +131,7 @@ class ARSWorkflow(ESWorkflowTemplate):
 
     def _postsetup(self, state: State) -> State:
         # setup obs_preprocessor_state
-        if self.config.normalize_obs:
+        if self.config.normalize_obs and self.config.normalize_obs_mode != "RS":
             key, obs_key = jax.random.split(state.key, 2)
             agent_state = init_obs_preprocessor(
                 agent_state=state.agent_state,
