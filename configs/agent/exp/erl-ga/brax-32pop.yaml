@@ -13,7 +13,7 @@ num_rl_updates_per_iter: 4096
 batch_size: 256
 tau: 0.005
 
-pop_size: 10
+pop_size: 32
 num_elites: 2
 episodes_for_fitness: 1 # must be devided by num_envs
 rollout_episodes: 1 # must be devided by num_envs
@@ -27,3 +27,6 @@ agent_network:
   num_critics: 2
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
+
+wandb:
+  tags: ["32pop"]
