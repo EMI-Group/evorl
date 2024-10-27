@@ -162,7 +162,7 @@ class PBTWorkflow(Workflow):
             ),
             in_shardings=self.sharding,
             out_shardings=self.sharding,
-        )(pop, pop_workflow_state)
+        )(pop_workflow_state, pop)
 
         return State(
             key=key,
@@ -325,7 +325,7 @@ class PBTWorkflow(Workflow):
         pop_workflow_state: State,
         pop_metrics: chex.Array,
         key: chex.PRNGKey,
-    ):
+    ) -> tuple[chex.ArrayTree, State]:
         exploit_key, explore_key = jax.random.split(key)
 
         config = self.config
@@ -351,7 +351,7 @@ class PBTWorkflow(Workflow):
 
         # Note: no need to deepcopy parents wf_state here
         offsprings_workflow_state = jax.vmap(self.apply_hyperparams_to_workflow_state)(
-            offsprings, parents_wf_state
+            parents_wf_state, offsprings
         )
 
         # ==== survival | merge population ====
@@ -367,8 +367,8 @@ class PBTWorkflow(Workflow):
         return pop, pop_workflow_state
 
     def apply_hyperparams_to_workflow_state(
-        self, hyperparams: PyTreeDict[str, chex.Numeric], workflow_state: State
-    ):
+        self, workflow_state: State, hyperparams: PyTreeDict[str, chex.Numeric]
+    ) -> State:
         """
         Note1: InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
         Note2: try to avoid deepcopy unnessary state
@@ -376,7 +376,7 @@ class PBTWorkflow(Workflow):
         opt_state = workflow_state.opt_state
         assert isinstance(opt_state, InjectStatefulHyperparamsState)
 
-        opt_state = deepcopy_InjectStatefulHyperparamsState(opt_state)
+        opt_state = deepcopy_opt_state(opt_state)
         opt_state.hyperparams["learning_rate"] = hyperparams.lr
         return workflow_state.replace(opt_state=opt_state)
 
@@ -386,17 +386,15 @@ class PBTWorkflow(Workflow):
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
 
-def _pop_write(indices, pop, new):
-    return jtu.tree_map(lambda x, y: x.at[indices].set(y), pop, new)
-
-
 def _convert_pop_to_df(pop):
     df = pd.DataFrame.from_dict(pop)
     df.insert(0, "pop_id", range(len(df)))
     return df
 
 
-def deepcopy_InjectStatefulHyperparamsState(state: InjectStatefulHyperparamsState):
+def deepcopy_opt_state(state: InjectStatefulHyperparamsState):
+    assert isinstance(state, InjectStatefulHyperparamsState)
+
     return InjectStatefulHyperparamsState(
         count=state.count,
         hyperparams=copy.deepcopy(state.hyperparams),

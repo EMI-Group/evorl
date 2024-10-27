@@ -56,7 +56,7 @@ class PBTParamPPOWorkflow(PBTWorkflow):
             ),
             in_shardings=self.sharding,
             out_shardings=self.sharding,
-        )(pop, pop_workflow_state)
+        )(pop_workflow_state, pop)
 
         return State(
             key=key,
@@ -66,6 +66,6 @@ class PBTParamPPOWorkflow(PBTWorkflow):
         )
 
     def apply_hyperparams_to_workflow_state(
-        self, hyperparams: PyTreeDict[str, chex.Numeric], workflow_state: State
+        self, workflow_state: State, hyperparams: PyTreeDict[str, chex.Numeric]
     ):
         return workflow_state.replace(hp_state=hyperparams)
