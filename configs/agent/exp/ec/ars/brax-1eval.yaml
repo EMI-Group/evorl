@@ -1,0 +1,25 @@
+# @package _global_
+
+defaults:
+  - /agent/ec/ars
+  - _self_
+
+num_iters: 2000
+
+normalize_obs: true # enable of disable VBN
+normalize_obs_mode: "RS" # "Global" or "RS" or "VBN"
+
+pop_size: 128
+num_elites: 8
+
+optimizer_name: 'sgd'
+lr: 0.02
+noise_std: 0.03
+
+num_envs: 1
+episodes_for_fitness: 1 # episodes per individual for fitness
+explore: false
+
+agent_network:
+  actor_hidden_layer_sizes: [16, 16]
+  norm_layer_type: "none"
