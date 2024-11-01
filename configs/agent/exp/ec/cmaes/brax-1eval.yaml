@@ -1,0 +1,20 @@
+# @package _global_
+
+defaults:
+  - /agent/ec/cmaes
+  - _self_
+
+num_iters: 2000
+
+pop_size: 128
+num_elites: 64
+
+init_stdev: 0.1
+
+num_envs: 1
+episodes_for_fitness: 1 # episodes per individual for fitness
+explore: false
+
+agent_network:
+  actor_hidden_layer_sizes: [16, 16]
+  norm_layer_type: "none"
