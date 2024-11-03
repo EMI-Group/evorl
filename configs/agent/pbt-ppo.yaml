@@ -12,7 +12,7 @@ parallel_train: true
 parallel_eval: true
 workflow_steps_per_iter: 5
 
-warmup_steps: 5 # warmup_iters = warmup_steps // workflow_steps_per_iter
+warmup_steps: 5 # warmup_iters = warmup_steps / workflow_steps_per_iter
 
 num_iters: 500
 
@@ -26,7 +26,7 @@ perturb_factor:
 search_space:
   lr:
     low: 1e-5
-    high: 1e-3
+    high: 1e-2
 
 target_workflow:
   num_eval_envs: 16

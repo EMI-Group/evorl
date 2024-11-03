@@ -1,10 +1,10 @@
 # @package _global_
 
 defaults:
-  - /agent/meta@target_workflow: paramppo
+  - /agent/meta@target_workflow: paramsac
   - _self_
 
-workflow_cls: evorl.algorithms.meta.pbt_ppo.pbt_param_ppo.PBTParamPPOWorkflow
+workflow_cls: evorl.algorithms.meta.pbt_sac.pbt_param_sac.PBTParamSACWorkflow
 
 pop_size: 8
 
@@ -23,9 +23,9 @@ top_ratio: 0.2
 perturb_factor:
   actor_loss_weight: 0.2
   critic_loss_weight: 0.2
-  entropy_loss_weight: 0.2
-  gae_lambda: 0.2
-  clip_epsilon: 0.2
+  alpha_loss_weight: 0.2
+  discount_g: 0.2
+  target_entropy_h: 0.2
 
 search_space:
   actor_loss_weight:
@@ -34,15 +34,15 @@ search_space:
   critic_loss_weight:
     low: 0.01
     high: 10
-  entropy_loss_weight:
+  alpha_loss_weight:
     low: -1
     high: -1e-5
-  gae_lambda:
-    low: 0.8
-    high: 0.99999
-  clip_epsilon:
-    low: 0.01
-    high: 0.5
+  discount_g: # discount=1-exp(h), [0.86466, 0.99999]
+    low: -12
+    high: -2
+  target_entropy_h:
+    low: 0.1
+    high: 10
 
 target_workflow:
   num_eval_envs: 16

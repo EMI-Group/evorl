@@ -1,0 +1,37 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.meta.pbt_sac.param_sac.ParamSACWorkflow
+
+num_envs: 1
+normalize_obs: false
+rollout_length: 2
+discount: 0.99
+total_timesteps: 5000000
+fold_iters: 8192
+
+num_eval_envs: 16
+eval_episodes: 16 # should be divided by num_eval_envs
+eval_interval: 8192
+
+random_timesteps: 4096 # steps filled into the replay buffer
+learning_start_timesteps: 4096 # steps before training starts
+batch_size: 256
+replay_buffer_capacity: 1000000
+
+reward_scale: 1.0
+tau: 0.005
+alpha: 0.2 # used as initial alpha value (adaptive_alpha is always true)
+target_entropy_h: 1.0 # target entropy multiplier
+
+actor_update_interval: 1
+num_updates_per_iter: 1 # #updates per rollout, usually use: num_envs * rollout_length // actor_update_interval
+
+optimizer:
+  lr: 0.0003
+  grad_clip_norm: 0 # set 0 or null to turn-off
+
+agent_network:
+  critic_hidden_layer_sizes: [256, 256]
+  actor_hidden_layer_sizes: [256, 256]
+
+save_replay_buffer: true
