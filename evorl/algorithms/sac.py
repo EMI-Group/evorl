@@ -1,13 +1,12 @@
 import logging
-from collections.abc import Callable
 from typing import Any
+from omegaconf import DictConfig
 
 import chex
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
-from omegaconf import DictConfig
 
 from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import agent_gradient_update, psum, pmean
@@ -29,18 +28,13 @@ from evorl.types import (
     pytree_field,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import (
-    scan_and_mean,
-    tree_stop_gradient,
-)
+from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
 from evorl.agent import Agent, AgentState
 from .offpolicy_utils import OffPolicyWorkflowTemplate, clean_trajectory
 
 logger = logging.getLogger(__name__)
-ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
-Initializer = Callable[..., Any]
 
 
 class SACTrainMetric(MetricBase):
@@ -98,12 +92,12 @@ class SACAgent(Agent):
         else:
             obs_preprocessor_state = None
 
-        entropy_target = -jnp.prod(jnp.array(action_space.shape, dtype=jnp.float32))
+        target_entropy = -jnp.prod(jnp.array(action_space.shape, dtype=jnp.float32))
 
         return AgentState(
             params=params_state,
             obs_preprocessor_state=obs_preprocessor_state,
-            extra_state=PyTreeDict(entropy_target=entropy_target),  # the constant
+            extra_state=PyTreeDict(target_entropy=target_entropy),  # the constant
         )
 
     def compute_actions(
@@ -142,16 +136,16 @@ class SACAgent(Agent):
         actions = actions_dist.sample(seed=key)
         actions_logp = actions_dist.log_prob(actions)
 
-        entropy_target = agent_state.extra_state.entropy_target
+        target_entropy = agent_state.extra_state.target_entropy
         # official impl:
         alpha = jnp.exp(agent_state.params.log_alpha)
         alpha_loss = jnp.mean(
-            -alpha * jax.lax.stop_gradient(actions_logp + entropy_target)
+            -alpha * jax.lax.stop_gradient(actions_logp + target_entropy)
         )
 
         # another impl: see stable-baselines3/issues/36
         # alpha_loss = (- agent_state.params.log_alpha *
-        #               jax.lax.stop_gradient(actions_logp + entropy_target)).mean()
+        #               jax.lax.stop_gradient(actions_logp + target_entropy)).mean()
 
         return PyTreeDict(
             alpha_loss=alpha_loss, log_alpha=agent_state.params.log_alpha, alpha=alpha
@@ -260,14 +254,14 @@ class SACDiscreteAgent(Agent):
         else:
             obs_preprocessor_state = None
 
-        entropy_target = self.target_entropy_ratio * jnp.log(
+        target_entropy = self.target_entropy_ratio * jnp.log(
             jnp.float32(action_space.n)
         )
 
         return AgentState(
             params=params_state,
             obs_preprocessor_state=obs_preprocessor_state,
-            extra_state=PyTreeDict(entropy_target=entropy_target),  # the constant
+            extra_state=PyTreeDict(target_entropy=target_entropy),  # the constant
         )
 
     def compute_actions(
@@ -305,10 +299,10 @@ class SACDiscreteAgent(Agent):
         actions_dist = get_categorical_dist(raw_actions)
         entropy = actions_dist.entropy()
 
-        entropy_target = agent_state.extra_state.entropy_target
+        target_entropy = agent_state.extra_state.target_entropy
         # official impl:
         alpha = jnp.exp(agent_state.params.log_alpha)
-        alpha_loss = -jnp.mean(alpha * jax.lax.stop_gradient(entropy_target - entropy))
+        alpha_loss = -jnp.mean(alpha * jax.lax.stop_gradient(target_entropy - entropy))
 
         return PyTreeDict(
             alpha_loss=alpha_loss,

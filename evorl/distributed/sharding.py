@@ -22,7 +22,6 @@ def parallel_map(fn: Callable, sharding):
 
     def shmap_f(state):
         # state: sharded state on single device
-        # jax.debug.print("{}", state.env_state.obs.shape)
         return jax.lax.map(fn, state)
 
     return shard_map(

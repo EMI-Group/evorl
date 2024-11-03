@@ -2,6 +2,7 @@ import logging
 import math
 from functools import partial
 from typing import Any
+from omegaconf import DictConfig
 
 import chex
 import flax.linen as nn
@@ -10,7 +11,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
-from omegaconf import DictConfig
+
 
 from evorl.distributed import agent_gradient_update, psum, unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
