@@ -279,10 +279,11 @@ class PBTWorkflowBase(Workflow):
 
     def learn(self, state: State) -> State:
         for i in range(state.metrics.iterations, self.config.num_iters):
+            iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            self.recorder.write(workflow_metrics.to_local_dict(), i)
+            self.recorder.write(workflow_metrics.to_local_dict(), iters)
 
             train_metrics_dict = train_metrics.to_local_dict()
 
@@ -307,9 +308,9 @@ class PBTWorkflowBase(Workflow):
                 get_1d_array_statistics, train_metrics_dict["pop_train_metrics"]
             )
 
-            self.recorder.write(train_metrics_dict, i)
+            self.recorder.write(train_metrics_dict, iters)
 
-            self.checkpoint_manager.save(i, args=ocp.args.StandardSave(state))
+            self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(state))
 
         return state
 
