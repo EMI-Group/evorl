@@ -231,7 +231,6 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             hp_state=PyTreeDict(
                 actor_loss_weight=jnp.float32(1.0),
                 critic_loss_weight=jnp.float32(1.0),
-                alpha_loss_weight=jnp.float32(1.0),
             ),
         )
 
