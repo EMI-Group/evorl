@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent/pbt-paramsac
+  - /agent/meta/pbt-paramsac
   - _self_
 
 pop_size: 128

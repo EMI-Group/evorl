@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent/pbt-paramppo
+  - /agent/meta/pbt-paramppo
   - _self_
 
 pop_size: 128
