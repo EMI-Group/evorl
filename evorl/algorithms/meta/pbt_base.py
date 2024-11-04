@@ -21,7 +21,7 @@ from evorl.distributed import (
 )
 from evorl.metrics import MetricBase
 from evorl.types import MISSING_REWARD, PyTreeDict, State
-from evorl.utils.jax_utils import tree_last, is_jitted
+from evorl.utils.jax_utils import is_jitted, scan_and_last
 from evorl.workflows import RLWorkflow, Workflow
 from evorl.recorders import get_1d_array_statistics
 
@@ -169,11 +169,9 @@ class PBTWorkflowBase(Workflow):
                 train_metrics, wf_state = self.workflow.step(wf_state)
                 return wf_state, train_metrics
 
-            wf_state, train_metrics_list = jax.lax.scan(
+            wf_state, train_metrics = scan_and_last(
                 _one_step, wf_state, (), length=self.config.workflow_steps_per_iter
             )
-
-            train_metrics = tree_last(train_metrics_list)
 
             return train_metrics, wf_state
 

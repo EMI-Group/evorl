@@ -11,7 +11,7 @@ from evorl.utils.jax_utils import tree_get, tree_set
 
 from .pbt_base import PBTWorkflowBase
 from .pbt_operations import explore, select
-from .utils import deepcopy_opt_state
+from .utils import deepcopy_opt_state, log_uniform_init
 
 
 class PBTWorkflowTemplate(PBTWorkflowBase):
@@ -87,12 +87,7 @@ class PBTWorkflow(PBTWorkflowTemplate):
 
     def _setup_pop(self, key: chex.PRNGKey) -> chex.ArrayTree:
         pop = PyTreeDict(
-            lr=jax.random.uniform(
-                key,
-                (self.config.pop_size,),
-                minval=self.config.search_space.lr.low,
-                maxval=self.config.search_space.lr.high,
-            )
+            lr=log_uniform_init(self.config.search_space.lr, key, self.config.pop_size)
         )
 
         return pop

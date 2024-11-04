@@ -263,8 +263,8 @@ class ParamPPOWorkflow(PPOWorkflow):
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(state.agent_state, SampleBatch(obs=_obs))
 
-        gae_lambda = 1 - jnp.exp(state.hp_state.gae_lambda_g)
-        discount = 1 - jnp.exp(state.hp_state.discount_g)
+        gae_lambda = 1 - jnp.exp(-state.hp_state.gae_lambda_g)
+        discount = 1 - jnp.exp(-state.hp_state.discount_g)
 
         v_targets, advantages = compute_gae(
             rewards=trajectory.rewards,  # peb_rewards

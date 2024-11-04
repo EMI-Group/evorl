@@ -8,9 +8,9 @@ pop_size: 128
 
 parallel_train: true
 parallel_eval: true
-workflow_steps_per_iter: 25
+workflow_steps_per_iter: 2048
 
-warmup_steps: 100
+warmup_steps: 2048
 
 num_iters: 500
 

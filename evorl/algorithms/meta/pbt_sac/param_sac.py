@@ -44,9 +44,9 @@ class ParamSACAgent(SACAgent):
 
         return agent_state.replace(
             extra_state=agent_state.extra_state.replace(
-                discount_g=jnp.log(
+                discount_g=-jnp.log(
                     1 - jnp.float32(self.discount)
-                ),  # discount = 1 - exp(g)
+                ),  # discount = 1 - exp(-g)
             )
         )
 
