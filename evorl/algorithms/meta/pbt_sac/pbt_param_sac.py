@@ -18,11 +18,16 @@ from evorl.rollout import rollout
 from evorl.workflows import RLWorkflow
 from evorl.utils.jax_utils import scan_and_last
 
-from ..pbt_base import TrainMetric
+from ..pbt_base import PBTTrainMetric
 from ..pbt import PBTWorkflowTemplate
+from ..utils import uniform_init, log_uniform_init
 from ...offpolicy_utils import clean_trajectory
 
 logger = logging.getLogger(__name__)
+
+
+class PBTOffpolicyTrainMetric(PBTTrainMetric):
+    rb_size: chex.Array
 
 
 class PBTParamSACWorkflow(PBTWorkflowTemplate):
@@ -48,18 +53,18 @@ class PBTParamSACWorkflow(PBTWorkflowTemplate):
         return workflow
 
     def _setup_pop(self, key: chex.PRNGKey) -> chex.ArrayTree:
-        def _uniform_init(key, search_space):
-            return jax.random.uniform(
-                key,
-                (self.config.pop_size,),
-                minval=search_space.low,
-                maxval=search_space.high,
-            )
-
         search_space = self.config.search_space
+
+        def _init(hp, key):
+            match hp:
+                case "discount_g" | "log_alpha":
+                    return uniform_init(search_space[hp], key, self.config.pop_size)
+                case "actor_loss_weight" | "critic_loss_weight":
+                    return log_uniform_init(search_space[hp], key, self.config.pop_size)
+
         pop = PyTreeDict(
             {
-                hp: _uniform_init(key, search_space[hp])
+                hp: _init(hp, key)
                 for hp, key in zip(
                     search_space.keys(), jax.random.split(key, len(search_space))
                 )
@@ -150,13 +155,6 @@ class PBTParamSACWorkflow(PBTWorkflowTemplate):
         replay_buffer_state = state.replay_buffer_state
 
         # ===== step ======
-        pop_state_vmap_axes = State(
-            {
-                k: None if k == "replay_buffer_state" else 0
-                for k in state.pop_workflow_state.keys()
-            }
-        )
-
         def _train_steps(pop_wf_state, replay_buffer_state):
             def _one_step(carry, _):
                 pop_wf_state, replay_buffer_state = carry
@@ -168,9 +166,7 @@ class PBTParamSACWorkflow(PBTWorkflowTemplate):
                     return train_metrics, wf_state
 
                 pop_train_metrics, pop_wf_state = jax.vmap(
-                    _wf_step_wrapper,
-                    spmd_axis_name=POP_AXIS_NAME,
-                    in_axes=(pop_state_vmap_axes,),
+                    _wf_step_wrapper, spmd_axis_name=POP_AXIS_NAME
                 )(pop_wf_state)
 
                 # add replay buffer data:
@@ -250,11 +246,12 @@ class PBTParamSACWorkflow(PBTWorkflowTemplate):
             iterations=state.metrics.iterations + 1,
         )
 
-        train_metrics = TrainMetric(
+        train_metrics = PBTOffpolicyTrainMetric(
             pop_episode_returns=pop_eval_metrics.episode_returns,
             pop_episode_lengths=pop_eval_metrics.episode_lengths,
             pop_train_metrics=pop_train_metrics,
             pop=state.pop,  # save prev pop instead of new pop to match the metrics
+            rb_size=replay_buffer_state.buffer_size,
         )
 
         train_metrics = tree_device_get(train_metrics, self.devices[0])
@@ -272,16 +269,18 @@ class PBTParamSACWorkflow(PBTWorkflowTemplate):
     ):
         agent_state = workflow_state.agent_state
         agent_state = agent_state.replace(
+            params=agent_state.params.replace(
+                log_alpha=hyperparams.log_alpha,
+            ),
             extra_state=agent_state.extra_state.replace(
                 discount_g=hyperparams.discount_g,
-                target_entropy_h=hyperparams.target_entropy_h,
-            )
+            ),
         )
 
         # make a shadow copy
         hyperparams = hyperparams.replace()
         hyperparams.pop("discount_g")
-        hyperparams.pop("target_entropy_h")
+        hyperparams.pop("log_alpha")
 
         return workflow_state.replace(
             agent_state=agent_state,

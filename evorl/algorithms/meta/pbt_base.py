@@ -29,14 +29,14 @@ from evorl.recorders import get_1d_array_statistics
 logger = logging.getLogger(__name__)
 
 
-class TrainMetric(MetricBase):
+class PBTTrainMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
     pop_train_metrics: MetricBase
     pop: chex.ArrayTree
 
 
-class EvalMetric(MetricBase):
+class PBTEvalMetric(MetricBase):
     pop_episode_returns: chex.Array
     pop_episode_lengths: chex.Array
 
@@ -228,7 +228,7 @@ class PBTWorkflowBase(Workflow):
             iterations=state.metrics.iterations + 1,
         )
 
-        train_metrics = TrainMetric(
+        train_metrics = PBTTrainMetric(
             pop_episode_returns=pop_eval_metrics.episode_returns,
             pop_episode_lengths=pop_eval_metrics.episode_lengths,
             pop_train_metrics=pop_train_metrics,
@@ -256,7 +256,7 @@ class PBTWorkflowBase(Workflow):
         )(state.pop_workflow_state)
 
         # customize your pop metrics here
-        eval_metrics = EvalMetric(
+        eval_metrics = PBTEvalMetric(
             pop_episode_returns=pop_eval_metrics.episode_returns,
             pop_episode_lengths=pop_eval_metrics.episode_lengths,
         )

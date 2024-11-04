@@ -220,7 +220,8 @@ class ParamPPOWorkflow(PPOWorkflow):
 
         return state.replace(
             hp_state=PyTreeDict(
-                gae_lambda=jnp.float32(self.config.gae_lambda),
+                gae_lambda_g=jnp.log(1 - jnp.float32(self.config.gae_lambda)),
+                discount_g=jnp.log(1 - jnp.float32(self.config.discount)),
                 actor_loss_weight=jnp.float32(self.config.loss_weights.actor_loss),
                 critic_loss_weight=jnp.float32(self.config.loss_weights.critic_loss),
                 entropy_loss_weight=jnp.float32(self.config.loss_weights.actor_entropy),
@@ -261,12 +262,16 @@ class ParamPPOWorkflow(PPOWorkflow):
         _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(state.agent_state, SampleBatch(obs=_obs))
+
+        gae_lambda = 1 - jnp.exp(state.hp_state.gae_lambda_g)
+        discount = 1 - jnp.exp(state.hp_state.discount_g)
+
         v_targets, advantages = compute_gae(
             rewards=trajectory.rewards,  # peb_rewards
             values=vs,
             dones=trajectory.dones,
-            gae_lambda=state.hp_state.gae_lambda,
-            discount=self.config.discount,
+            gae_lambda=gae_lambda,
+            discount=discount,
         )
         trajectory.extras.v_targets = jax.lax.stop_gradient(v_targets)
         trajectory.extras.advantages = jax.lax.stop_gradient(advantages)

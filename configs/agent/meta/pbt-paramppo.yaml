@@ -35,11 +35,14 @@ search_space:
     low: 0.01
     high: 10
   entropy_loss_weight:
-    low: -1
+    low: -1.0
     high: -1e-5
-  gae_lambda:
-    low: 0.8
-    high: 0.99999
+  discount_g: # discount=1-exp(-g), [0.86466, 0.99999]
+    low: 2
+    high: 12
+  gae_lambda_g: # gae_lambda=1-exp(-g), [0.63212, 0.99999]
+    low: 1
+    high: 12
   clip_epsilon:
     low: 0.01
     high: 0.5

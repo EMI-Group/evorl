@@ -37,8 +37,6 @@ class ParamSACAgent(SACAgent):
     SAC agent with parameterized hyperparameters and adaptive alpha.
     """
 
-    target_entropy_h: float = 1.0
-
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
@@ -46,41 +44,10 @@ class ParamSACAgent(SACAgent):
 
         return agent_state.replace(
             extra_state=agent_state.extra_state.replace(
-                discount_g=jnp.log(1 - self.discount),  # discount = 1 - exp(g)
-                target_entropy_h=jnp.float32(
-                    self.target_entropy_h
-                ),  # target_entropy = h*(-|A|)
+                discount_g=jnp.log(
+                    1 - jnp.float32(self.discount)
+                ),  # discount = 1 - exp(g)
             )
-        )
-
-    def alpha_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
-    ) -> LossDict:
-        obs = sample_batch.obs
-        if self.normalize_obs:
-            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
-
-        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
-        actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
-        actions = actions_dist.sample(seed=key)
-        actions_logp = actions_dist.log_prob(actions)
-
-        target_entropy = (
-            agent_state.extra_state.target_entropy_h
-            * agent_state.extra_state.target_entropy
-        )
-        # official impl:
-        alpha = jnp.exp(agent_state.params.log_alpha)
-        alpha_loss = jnp.mean(
-            -alpha * jax.lax.stop_gradient(actions_logp + target_entropy)
-        )
-
-        # another impl: see stable-baselines3/issues/36
-        # alpha_loss = (- agent_state.params.log_alpha *
-        #               jax.lax.stop_gradient(actions_logp + target_entropy)).mean()
-
-        return PyTreeDict(
-            alpha_loss=alpha_loss, log_alpha=agent_state.params.log_alpha, alpha=alpha
         )
 
     def critic_loss(
@@ -94,7 +61,7 @@ class ParamSACAgent(SACAgent):
                 next_obs, agent_state.obs_preprocessor_state
             )
 
-        discounts = (1 - jnp.exp(agent_state.extra_state.discount_g)) * (
+        discounts = (1 - jnp.exp(-agent_state.extra_state.discount_g)) * (
             1 - sample_batch.extras.env_extras.termination
         )
 
@@ -121,7 +88,7 @@ class ParamSACAgent(SACAgent):
         qs_target = jnp.repeat(qs_target[..., None], 2, axis=-1)
 
         q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
-        return PyTreeDict(critic_loss=q_loss)
+        return PyTreeDict(critic_loss=q_loss, q_value=qs.mean())
 
 
 def make_mlp_sac_agent(
@@ -131,7 +98,6 @@ def make_mlp_sac_agent(
     init_alpha: float = 1.0,
     discount: float = 0.99,
     reward_scale: float = 1.0,
-    target_entropy_h: float = 1.0,
     normalize_obs: bool = False,
 ):
     if isinstance(action_space, Box):
@@ -161,13 +127,12 @@ def make_mlp_sac_agent(
         init_alpha=init_alpha,
         discount=discount,
         reward_scale=reward_scale,
-        target_entropy_h=target_entropy_h,
     )
 
 
 class ParamSACWorkflow(OffPolicyWorkflowTemplate):
     """
-    This workflow can only be used with PBTParamSACWorkflow, since the replay buffer is initialized and managed by PBT.
+    This workflow can only work with PBTParamSACWorkflow, since the replay buffer is initialized and managed by PBT externally.
     """
 
     @classmethod
@@ -192,7 +157,6 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             init_alpha=config.alpha,
             discount=config.discount,
             reward_scale=config.reward_scale,
-            target_entropy_h=config.target_entropy_h,
             normalize_obs=config.normalize_obs,
         )
 
@@ -210,9 +174,7 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
 
         replay_buffer = ReplayBuffer(
             capacity=config.replay_buffer_capacity,
-            min_sample_timesteps=max(
-                config.batch_size, config.learning_start_timesteps
-            ),
+            min_sample_timesteps=config.batch_size,
             sample_batch_size=config.batch_size,
         )
 
@@ -247,7 +209,6 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             dict(
                 actor=self.optimizer.init(agent_state.params.actor_params),
                 critic=self.optimizer.init(agent_state.params.critic_params),
-                alpha=self.optimizer.init(agent_state.params.log_alpha),
             )
         )
 
@@ -266,7 +227,7 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             agent_state=agent_state,
             env_state=env_state,
             opt_state=opt_state,
-            replay_buffer_state=None,
+            replay_buffer_state=None,  # init externally
             hp_state=PyTreeDict(
                 actor_loss_weight=jnp.float32(1.0),
                 critic_loss_weight=jnp.float32(1.0),
@@ -308,10 +269,6 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
         # we save the data externally instead
         replay_buffer_state = state.replay_buffer_state
 
-        # replay_buffer_state = self.replay_buffer.add(
-        #     state.replay_buffer_state, trajectory
-        # )
-
         def critic_loss_fn(agent_state, sample_batch, key):
             loss_dict = self.agent.critic_loss(agent_state, sample_batch, key)
 
@@ -322,12 +279,6 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
 
             loss = loss_dict.actor_loss * state.hp_state.actor_loss_weight
-            return loss, loss_dict
-
-        def alpha_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.alpha_loss(agent_state, sample_batch, key)
-
-            loss = loss_dict.alpha_loss * state.hp_state.alpha_loss_weight
             return loss, loss_dict
 
         critic_update_fn = agent_gradient_update(
@@ -352,24 +303,13 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             detach_fn=lambda agent_state: agent_state.params.actor_params,
         )
 
-        alpha_update_fn = agent_gradient_update(
-            alpha_loss_fn,
-            self.optimizer,
-            pmap_axis_name=self.pmap_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, log_alpha: agent_state.replace(
-                params=agent_state.params.replace(log_alpha=log_alpha)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.log_alpha,
-        )
-
         def _sample_and_update_fn(carry, unused_t):
             key, agent_state, opt_state = carry
 
             critic_opt_state = opt_state.critic
             actor_opt_state = opt_state.actor
 
-            key, critic_key, actor_key, alpha_key, rb_key = jax.random.split(key, num=5)
+            key, critic_key, actor_key, rb_key = jax.random.split(key, num=4)
 
             if self.config.actor_update_interval - 1 > 0:
 
@@ -415,26 +355,11 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
                 actor=actor_opt_state, critic=critic_opt_state
             )
 
-            # we follow the update order of the official implementation:
-            # critic -> actor -> alpha
-            alpha_opt_state = opt_state.alpha
-            (alpha_loss, alpha_loss_dict), agent_state, alpha_opt_state = (
-                alpha_update_fn(alpha_opt_state, agent_state, sample_batch, alpha_key)
-            )
-            opt_state = opt_state.replace(alpha=alpha_opt_state)
-
-            alpha_loss_dict = alpha_loss_dict.replace(
-                log_alpha=agent_state.params.log_alpha,
-                alpha=jnp.exp(agent_state.params.log_alpha),
-            )
-
             res = (
                 critic_loss,
                 actor_loss,
-                alpha_loss,
                 critic_loss_dict,
                 actor_loss_dict,
-                alpha_loss_dict,
             )
 
             target_critic_params = soft_target_update(
@@ -455,10 +380,8 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             (
                 critic_loss,
                 actor_loss,
-                alpha_loss,
                 critic_loss_dict,
                 actor_loss_dict,
-                alpha_loss_dict,
             ),
         ) = scan_and_mean(
             _sample_and_update_fn,
@@ -470,10 +393,7 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
         train_metrics = ParamSACTrainMetric(
             actor_loss=actor_loss,
             critic_loss=critic_loss,
-            alpha_loss=alpha_loss,
-            raw_loss_dict=PyTreeDict(
-                {**critic_loss_dict, **actor_loss_dict, **alpha_loss_dict}
-            ),
+            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
             trajectory=trajectory,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 

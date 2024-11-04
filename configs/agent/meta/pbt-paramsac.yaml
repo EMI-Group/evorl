@@ -6,13 +6,14 @@ defaults:
 
 workflow_cls: evorl.algorithms.meta.pbt_sac.pbt_param_sac.PBTParamSACWorkflow
 
-pop_size: 8
+pop_size: 32
 
 parallel_train: true
 parallel_eval: true
-workflow_steps_per_iter: 5
+workflow_steps_per_iter: 1024
 
-warmup_steps: 5 # warmup_iters = warmup_steps // workflow_steps_per_iter
+random_timesteps: 4096 # timesteps filled into the replay buffer before the first iteration
+warmup_steps: 1024 # warmup_iters = warmup_steps // workflow_steps_per_iter
 
 num_iters: 500
 
@@ -23,9 +24,8 @@ top_ratio: 0.2
 perturb_factor:
   actor_loss_weight: 0.2
   critic_loss_weight: 0.2
-  alpha_loss_weight: 0.2
   discount_g: 0.2
-  target_entropy_h: 0.2
+  log_alpha: 0.2
 
 search_space:
   actor_loss_weight:
@@ -34,15 +34,12 @@ search_space:
   critic_loss_weight:
     low: 0.01
     high: 10
-  alpha_loss_weight:
-    low: -1
-    high: -1e-5
-  discount_g: # discount=1-exp(h), [0.86466, 0.99999]
-    low: -12
-    high: -2
-  target_entropy_h:
-    low: 0.1
-    high: 10
+  discount_g: # discount=1-exp(-g), [0.86466, 0.99999]
+    low: 2
+    high: 12
+  log_alpha: # alpha: [0.00674, 1]
+    low: -5
+    high: 0
 
 target_workflow:
   num_eval_envs: 16

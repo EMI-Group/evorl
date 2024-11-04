@@ -1,8 +1,10 @@
 import chex
 import jax
+
 from evorl.types import PyTreeDict, State
 
 from ..pbt import PBTWorkflowTemplate
+from ..utils import uniform_init, log_uniform_init
 
 
 class PBTParamPPOWorkflow(PBTWorkflowTemplate):
@@ -11,18 +13,24 @@ class PBTParamPPOWorkflow(PBTWorkflowTemplate):
         return "PBT-ParamPPO"
 
     def _setup_pop(self, key: chex.PRNGKey) -> chex.ArrayTree:
-        def _uniform_init(key, search_space):
-            return jax.random.uniform(
-                key,
-                (self.config.pop_size,),
-                minval=search_space.low,
-                maxval=search_space.high,
-            )
-
         search_space = self.config.search_space
+
+        def _init(hp, key):
+            match hp:
+                case "actor_loss_weight" | "critic_loss_weight" | "clip_epsilon":
+                    return log_uniform_init(search_space[hp], key, self.config.pop_size)
+                case "entropy_loss_weight":
+                    return -log_uniform_init(
+                        dict(low=-search_space[hp].high, high=-search_space[hp].low),
+                        key,
+                        self.config.pop_size,
+                    )
+                case "discount_g" | "gae_lambda_g":
+                    return uniform_init(search_space[hp], key, self.config.pop_size)
+
         pop = PyTreeDict(
             {
-                hp: _uniform_init(key, search_space[hp])
+                hp: _init(hp, key)
                 for hp, key in zip(
                     search_space.keys(), jax.random.split(key, len(search_space))
                 )

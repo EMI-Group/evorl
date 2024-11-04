@@ -374,7 +374,7 @@ class SACDiscreteAgent(Agent):
         qs_target = jnp.repeat(qs_target[..., None], 2, axis=-1)
 
         q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
-        return PyTreeDict(critic_loss=q_loss)
+        return PyTreeDict(critic_loss=q_loss, q_value=qs.mean())
 
 
 def make_mlp_sac_agent(
