@@ -1,5 +1,6 @@
 import chex
 import jax
+from omegaconf import OmegaConf
 
 from evorl.types import PyTreeDict, State
 
@@ -21,7 +22,9 @@ class PBTParamPPOWorkflow(PBTWorkflowTemplate):
                     return log_uniform_init(search_space[hp], key, self.config.pop_size)
                 case "entropy_loss_weight":
                     return -log_uniform_init(
-                        dict(low=-search_space[hp].high, high=-search_space[hp].low),
+                        OmegaConf.create(
+                            dict(low=-search_space[hp].high, high=-search_space[hp].low)
+                        ),
                         key,
                         self.config.pop_size,
                     )
