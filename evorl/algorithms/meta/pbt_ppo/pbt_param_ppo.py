@@ -5,7 +5,7 @@ from omegaconf import OmegaConf
 from evorl.types import PyTreeDict, State
 
 from ..pbt import PBTWorkflowTemplate
-from ..utils import uniform_init, log_uniform_init
+from ..pbt_utils import uniform_init, log_uniform_init
 
 
 class PBTParamPPOWorkflow(PBTWorkflowTemplate):

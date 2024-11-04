@@ -1,9 +1,16 @@
 import copy
-from optax.schedules import InjectStatefulHyperparamsState
+import pandas as pd
 
 import chex
 import jax
 import jax.numpy as jnp
+from optax.schedules import InjectStatefulHyperparamsState
+
+
+def convert_pop_to_df(pop):
+    df = pd.DataFrame.from_dict(pop)
+    df.insert(0, "pop_id", range(len(df)))
+    return df
 
 
 def deepcopy_opt_state(state: InjectStatefulHyperparamsState):

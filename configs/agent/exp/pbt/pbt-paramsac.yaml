@@ -10,7 +10,7 @@ parallel_train: true
 parallel_eval: true
 workflow_steps_per_iter: 2048
 
-warmup_steps: 2048
+warmup_steps: 8192 # 4 warmup iters
 
 num_iters: 500
 

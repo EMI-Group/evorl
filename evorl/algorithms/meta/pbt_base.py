@@ -1,17 +1,21 @@
 import copy
 import logging
 import math
-import pandas as pd
-from omegaconf import DictConfig, OmegaConf, open_dict, read_write
+from functools import partial
+from omegaconf import DictConfig
+
+from omegaconf import OmegaConf, open_dict, read_write
 
 import chex
 import hydra
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+from jax.sharding import NamedSharding, Mesh, PartitionSpec as P
 import orbax.checkpoint as ocp
-from jax.sharding import Mesh, NamedSharding, PartitionSpec as P
 
+
+from evorl.agent import RandomAgent
 
 from evorl.distributed import (
     POP_AXIS_NAME,
@@ -19,12 +23,23 @@ from evorl.distributed import (
     tree_device_get,
     tree_device_put,
 )
+from evorl.rollout import rollout
 from evorl.metrics import MetricBase
 from evorl.types import MISSING_REWARD, PyTreeDict, State
-from evorl.utils.jax_utils import is_jitted, scan_and_last
-from evorl.workflows import RLWorkflow, Workflow
 from evorl.recorders import get_1d_array_statistics
+from evorl.utils.rl_toolkits import flatten_rollout_trajectory
+from evorl.utils.jax_utils import (
+    tree_get,
+    tree_set,
+    tree_stop_gradient,
+    scan_and_last,
+    is_jitted,
+)
+from evorl.workflows import RLWorkflow, OffPolicyWorkflow, Workflow
 
+from .pbt_utils import convert_pop_to_df
+from .pbt_operations import explore, select
+from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +49,10 @@ class PBTTrainMetric(MetricBase):
     pop_episode_lengths: chex.Array
     pop_train_metrics: MetricBase
     pop: chex.ArrayTree
+
+
+class PBTOffpolicyTrainMetric(PBTTrainMetric):
+    rb_size: chex.Array
 
 
 class PBTEvalMetric(MetricBase):
@@ -275,6 +294,65 @@ class PBTWorkflowBase(Workflow):
     ) -> State:
         raise NotImplementedError
 
+    @classmethod
+    def enable_jit(cls) -> None:
+        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
+        cls.step = jax.jit(cls.step, static_argnums=(0,))
+
+
+class PBTWorkflowTemplate(PBTWorkflowBase):
+    """
+    Standard PBT Workflow Template
+    """
+
+    def exploit_and_explore(
+        self,
+        pop: chex.ArrayTree,
+        pop_workflow_state: State,
+        pop_metrics: chex.Array,
+        key: chex.PRNGKey,
+    ) -> tuple[chex.ArrayTree, State]:
+        exploit_key, explore_key = jax.random.split(key)
+
+        config = self.config
+
+        tops_indices, bottoms_indices = select(
+            pop_metrics,  # using episode_return
+            exploit_key,
+            bottoms_num=round(config.pop_size * config.bottom_ratio),
+            tops_num=round(config.pop_size * config.top_ratio),
+        )
+
+        parents = tree_get(pop, tops_indices)
+        parents_wf_state = tree_get(pop_workflow_state, tops_indices)
+
+        # TODO: check sharding issue with vmap under multi-devices.
+        offsprings = jax.vmap(
+            partial(
+                explore,
+                perturb_factor=config.perturb_factor,
+                search_space=config.search_space,
+            )
+        )(parents, jax.random.split(explore_key, bottoms_indices.shape[0]))
+
+        # Note: no need to deepcopy parents_wf_state here, since it should be
+        # ensured immutable in apply_hyperparams_to_workflow_state()
+        offsprings_workflow_state = jax.vmap(self.apply_hyperparams_to_workflow_state)(
+            parents_wf_state, offsprings
+        )
+
+        # ==== survival | merge population ====
+        pop = tree_set(pop, offsprings, bottoms_indices, unique_indices=True)
+        # we copy wf_state back to offspring wf_state
+        pop_workflow_state = tree_set(
+            pop_workflow_state,
+            offsprings_workflow_state,
+            bottoms_indices,
+            unique_indices=True,
+        )
+
+        return pop, pop_workflow_state
+
     def learn(self, state: State) -> State:
         for i in range(state.metrics.iterations, self.config.num_iters):
             iters = i + 1
@@ -300,7 +378,7 @@ class PBTWorkflowBase(Workflow):
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
-            train_metrics_dict["pop"] = _convert_pop_to_df(train_metrics_dict["pop"])
+            train_metrics_dict["pop"] = convert_pop_to_df(train_metrics_dict["pop"])
 
             train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
                 get_1d_array_statistics, train_metrics_dict["pop_train_metrics"]
@@ -312,13 +390,259 @@ class PBTWorkflowBase(Workflow):
 
         return state
 
+
+class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
+    """
+    PBT Workflow Template for Off-policy algorithms with shared replay buffer
+    """
+
+    def __init__(self, workflow: OffPolicyWorkflow, config: DictConfig):
+        super().__init__(workflow, config)
+        self.replay_buffer = workflow.replay_buffer
+
+    @classmethod
+    def build_from_config(
+        cls, config: DictConfig, enable_multi_devices=True, enable_jit: bool = True
+    ):
+        num_devices = jax.local_device_count()
+        if num_devices > 1:
+            # Note: this ensures shard_map is not used
+            raise ValueError(
+                "PBTOffpolicyWorkflowTemplate does not support multi-devices yet."
+            )
+
+        return super().build_from_config(config, enable_multi_devices, enable_jit)
+
+    def setup(self, key: chex.PRNGKey):
+        key, rb_key = jax.random.split(key)
+        state = super().setup(key)
+
+        state = state.replace(
+            replay_buffer_state=self.workflow._setup_replaybuffer(rb_key),
+        )
+
+        logger.info("Start replay buffer post-setup")
+        state = self._postsetup_replaybuffer(state)
+
+        logger.info("Complete replay buffer post-setup")
+
+        return state
+
+    def _postsetup_replaybuffer(self, state: State) -> State:
+        env = self.workflow.env
+        action_space = env.action_space
+        obs_space = env.obs_space
+        config = self.config.target_workflow
+        replay_buffer_state = state.replay_buffer_state
+
+        def _rollout(agent, agent_state, key, rollout_length):
+            env_key, rollout_key = jax.random.split(key)
+
+            env_state = env.reset(env_key)
+
+            trajectory, env_state = rollout(
+                env_fn=env.step,
+                action_fn=agent.compute_actions,
+                env_state=env_state,
+                agent_state=agent_state,
+                key=rollout_key,
+                rollout_length=rollout_length,
+                env_extra_fields=("ori_obs", "termination"),
+            )
+
+            # [T, B, ...] -> [T*B, ...]
+            trajectory = clean_trajectory(trajectory)
+            trajectory = flatten_rollout_trajectory(trajectory)
+            trajectory = tree_stop_gradient(trajectory)
+
+            return trajectory
+
+        # ==== fill random transitions ====
+
+        key, random_rollout_key, rollout_key = jax.random.split(state.key, num=3)
+        random_agent = RandomAgent()
+        random_agent_state = random_agent.init(
+            obs_space, action_space, jax.random.PRNGKey(0)
+        )
+        rollout_length = config.random_timesteps // config.num_envs
+
+        trajectory = _rollout(
+            random_agent,
+            random_agent_state,
+            key=random_rollout_key,
+            rollout_length=rollout_length,
+        )
+
+        # TODO: add support for shared obs_preprocessor and init it.
+
+        replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
+
+        sampled_timesteps_m = rollout_length * config.num_envs / 1e6
+
+        workflow_metrics = state.metrics.replace(
+            sampled_timesteps_m=state.metrics.sampled_timesteps_m + sampled_timesteps_m,
+        )
+
+        return state.replace(
+            key=key,
+            metrics=workflow_metrics,
+            replay_buffer_state=replay_buffer_state,
+        )
+
+    def step(self, state: State) -> tuple[MetricBase, State]:
+        pop_workflow_state = state.pop_workflow_state
+        pop = state.pop
+        replay_buffer_state = state.replay_buffer_state
+
+        # ===== step ======
+        def _train_steps(pop_wf_state, replay_buffer_state):
+            def _one_step(carry, _):
+                pop_wf_state, replay_buffer_state = carry
+
+                def _wf_step_wrapper(wf_state):
+                    wf_state = wf_state.replace(replay_buffer_state=replay_buffer_state)
+                    train_metrics, wf_state = self.workflow.step(wf_state)
+                    wf_state = wf_state.replace(replay_buffer_state=None)
+                    return train_metrics, wf_state
+
+                pop_train_metrics, pop_wf_state = jax.vmap(
+                    _wf_step_wrapper, spmd_axis_name=POP_AXIS_NAME
+                )(pop_wf_state)
+
+                # add replay buffer data:
+                # [pop, T*B, ...] -> [pop*T*B, ...]
+                trajectory = jtu.tree_map(
+                    lambda x: jax.lax.collapse(x, 0, 2), pop_train_metrics.trajectory
+                )
+
+                replay_buffer_state = self.replay_buffer.add(
+                    replay_buffer_state, trajectory
+                )
+                pop_train_metrics = pop_train_metrics.replace(trajectory=None)
+
+                return (pop_wf_state, replay_buffer_state), pop_train_metrics
+
+            (pop_wf_state, replay_buffer_state), train_metrics = scan_and_last(
+                _one_step,
+                (pop_wf_state, replay_buffer_state),
+                (),
+                length=self.config.workflow_steps_per_iter,
+            )
+
+            return train_metrics, pop_wf_state, replay_buffer_state
+
+        if self.config.parallel_train:
+            sharding = self.sharding
+            share_sharding = NamedSharding(sharding.mesh, P())
+
+            pop_train_metrics, pop_workflow_state, replay_buffer_state = jax.jit(
+                _train_steps,
+                in_shardings=(sharding, share_sharding),
+                out_shardings=(sharding, sharding, share_sharding),
+            )(pop_workflow_state, replay_buffer_state)
+
+        else:
+            # TODO: impl it
+            raise NotImplementedError(
+                "PBT-ParamSAC does not support sequential train yet."
+            )
+
+        # ===== eval ======
+        if self.config.parallel_eval:
+            eval_fn = jax.vmap(self.workflow.evaluate, spmd_axis_name=POP_AXIS_NAME)
+        else:
+            eval_fn = parallel_map(self.workflow.evaluate, self.sharding)
+
+        pop_eval_metrics, pop_workflow_state = jax.jit(
+            eval_fn, in_shardings=self.sharding, out_shardings=self.sharding
+        )(pop_workflow_state)
+
+        # customize your pop metrics here
+        pop_episode_returns = pop_eval_metrics.episode_returns
+
+        # ===== warmup or exploit & explore ======
+        key, exploit_and_explore_key = jax.random.split(state.key)
+
+        def _dummy_fn(pop, pop_workflow_state, pop_metrics, key):
+            return pop, pop_workflow_state
+
+        pop, pop_workflow_state = jax.lax.cond(
+            state.metrics.iterations + 1
+            <= math.ceil(
+                self.config.warmup_steps / self.config.workflow_steps_per_iter
+            ),
+            _dummy_fn,
+            self.exploit_and_explore,
+            pop,
+            pop_workflow_state,
+            pop_episode_returns,
+            exploit_and_explore_key,
+        )
+
+        # ===== record metrics ======
+        workflow_metrics = state.metrics.replace(
+            sampled_timesteps_m=jnp.sum(
+                pop_workflow_state.metrics.sampled_timesteps / 1e6
+            ),  # convert uint32 to float32
+            iterations=state.metrics.iterations + 1,
+        )
+
+        train_metrics = PBTOffpolicyTrainMetric(
+            pop_episode_returns=pop_eval_metrics.episode_returns,
+            pop_episode_lengths=pop_eval_metrics.episode_lengths,
+            pop_train_metrics=pop_train_metrics,
+            pop=state.pop,  # save prev pop instead of new pop to match the metrics
+            rb_size=replay_buffer_state.buffer_size,
+        )
+
+        train_metrics = tree_device_get(train_metrics, self.devices[0])
+
+        return train_metrics, state.replace(
+            key=key,
+            metrics=workflow_metrics,
+            pop=pop,
+            pop_workflow_state=pop_workflow_state,
+            replay_buffer_state=replay_buffer_state,
+        )
+
+    def learn(self, state: State) -> State:
+        for i in range(state.metrics.iterations, self.config.num_iters):
+            iters = i + 1
+            train_metrics, state = self.step(state)
+            workflow_metrics = state.metrics
+
+            self.recorder.write(workflow_metrics.to_local_dict(), iters)
+
+            train_metrics_dict = train_metrics.to_local_dict()
+
+            train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
+                train_metrics_dict["pop_episode_returns"], histogram=True
+            )
+            train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
+                train_metrics_dict["pop_episode_lengths"], histogram=True
+            )
+
+            train_metrics_dict["pop"] = convert_pop_to_df(train_metrics_dict["pop"])
+
+            train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
+                get_1d_array_statistics, train_metrics_dict["pop_train_metrics"]
+            )
+
+            self.recorder.write(train_metrics_dict, iters)
+
+            saved_state = state
+            if not self.config.save_replay_buffer:
+                saved_state = skip_replay_buffer_state(saved_state)
+            self.checkpoint_manager.save(
+                iters,
+                args=ocp.args.StandardSave(saved_state),
+            )
+
+        return state
+
     @classmethod
     def enable_jit(cls) -> None:
-        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
-        cls.step = jax.jit(cls.step, static_argnums=(0,))
-
-
-def _convert_pop_to_df(pop):
-    df = pd.DataFrame.from_dict(pop)
-    df.insert(0, "pop_id", range(len(df)))
-    return df
+        super().enable_jit()
+        cls._postsetup_replaybuffer = jax.jit(
+            cls._postsetup_replaybuffer, static_argnums=(0,)
+        )

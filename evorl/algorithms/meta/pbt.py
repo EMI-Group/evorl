@@ -1,71 +1,16 @@
-from functools import partial
+import logging
 
 import chex
-import jax
 import optax
 from optax.schedules import InjectStatefulHyperparamsState
 
-
 from evorl.types import PyTreeDict, State
-from evorl.utils.jax_utils import tree_get, tree_set
 
-from .pbt_base import PBTWorkflowBase
-from .pbt_operations import explore, select
-from .utils import deepcopy_opt_state, log_uniform_init
+from .pbt_base import PBTWorkflowTemplate
+from .pbt_utils import deepcopy_opt_state, log_uniform_init
 
 
-class PBTWorkflowTemplate(PBTWorkflowBase):
-    """
-    Standard PBT Workflow Template
-    """
-
-    def exploit_and_explore(
-        self,
-        pop: chex.ArrayTree,
-        pop_workflow_state: State,
-        pop_metrics: chex.Array,
-        key: chex.PRNGKey,
-    ) -> tuple[chex.ArrayTree, State]:
-        exploit_key, explore_key = jax.random.split(key)
-
-        config = self.config
-
-        tops_indices, bottoms_indices = select(
-            pop_metrics,  # using episode_return
-            exploit_key,
-            bottoms_num=round(config.pop_size * config.bottom_ratio),
-            tops_num=round(config.pop_size * config.top_ratio),
-        )
-
-        parents = tree_get(pop, tops_indices)
-        parents_wf_state = tree_get(pop_workflow_state, tops_indices)
-
-        # TODO: check sharding issue with vmap under multi-devices.
-        offsprings = jax.vmap(
-            partial(
-                explore,
-                perturb_factor=config.perturb_factor,
-                search_space=config.search_space,
-            )
-        )(parents, jax.random.split(explore_key, bottoms_indices.shape[0]))
-
-        # Note: no need to deepcopy parents_wf_state here, since it should be
-        # ensured immutable in apply_hyperparams_to_workflow_state()
-        offsprings_workflow_state = jax.vmap(self.apply_hyperparams_to_workflow_state)(
-            parents_wf_state, offsprings
-        )
-
-        # ==== survival | merge population ====
-        pop = tree_set(pop, offsprings, bottoms_indices, unique_indices=True)
-        # we copy wf_state back to offspring wf_state
-        pop_workflow_state = tree_set(
-            pop_workflow_state,
-            offsprings_workflow_state,
-            bottoms_indices,
-            unique_indices=True,
-        )
-
-        return pop, pop_workflow_state
+logger = logging.getLogger(__name__)
 
 
 class PBTWorkflow(PBTWorkflowTemplate):

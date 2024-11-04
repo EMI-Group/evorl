@@ -107,7 +107,7 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=meta/pbt-paramsac",
+                "agent=meta/pbt-paramppo",
                 // "agent=pbt-ppo",
                 "env=brax/ant",
                 "debug=true",

@@ -47,3 +47,5 @@ target_workflow:
 
 checkpoint:
   save_interval_steps: 50
+
+save_replay_buffer: false
