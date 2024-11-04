@@ -429,7 +429,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         env = self.workflow.env
         action_space = env.action_space
         obs_space = env.obs_space
-        config = self.config.target_workflow
+        num_envs = self.config.target_workflow.num_envs
         replay_buffer_state = state.replay_buffer_state
 
         def _rollout(agent, agent_state, key, rollout_length):
@@ -461,7 +461,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         random_agent_state = random_agent.init(
             obs_space, action_space, jax.random.PRNGKey(0)
         )
-        rollout_length = config.random_timesteps // config.num_envs
+        rollout_length = self.config.random_timesteps // num_envs
 
         trajectory = _rollout(
             random_agent,
@@ -474,7 +474,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
         replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
 
-        sampled_timesteps_m = rollout_length * config.num_envs / 1e6
+        sampled_timesteps_m = rollout_length * num_envs / 1e6
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps_m=state.metrics.sampled_timesteps_m + sampled_timesteps_m,
