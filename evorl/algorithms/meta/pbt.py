@@ -9,7 +9,6 @@ from evorl.types import PyTreeDict, State
 from .pbt_base import PBTWorkflowTemplate
 from .pbt_utils import deepcopy_opt_state, log_uniform_init
 
-
 logger = logging.getLogger(__name__)
 
 

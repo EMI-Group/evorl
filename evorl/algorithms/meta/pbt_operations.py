@@ -1,7 +1,3 @@
-"""
-This module defines the PBT operation template and a default implementation (tuning lr only).
-"""
-
 import chex
 import jax
 import jax.numpy as jnp

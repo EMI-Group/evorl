@@ -1,9 +1,7 @@
 import chex
 import jax
 
-
 from evorl.types import PyTreeDict, State
-
 
 from ..pbt_base import PBTOffpolicyWorkflowTemplate
 from ..pbt_utils import uniform_init, log_uniform_init

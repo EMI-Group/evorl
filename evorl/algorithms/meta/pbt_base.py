@@ -2,9 +2,7 @@ import copy
 import logging
 import math
 from functools import partial
-from omegaconf import DictConfig
-
-from omegaconf import OmegaConf, open_dict, read_write
+from omegaconf import DictConfig, OmegaConf, open_dict, read_write
 
 import chex
 import hydra
@@ -16,7 +14,6 @@ import orbax.checkpoint as ocp
 
 
 from evorl.agent import RandomAgent
-
 from evorl.distributed import (
     POP_AXIS_NAME,
     parallel_map,
