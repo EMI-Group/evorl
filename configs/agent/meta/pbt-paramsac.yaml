@@ -8,7 +8,6 @@ workflow_cls: evorl.algorithms.meta.pbt_sac.pbt_param_sac.PBTParamSACWorkflow
 
 pop_size: 32
 
-parallel_train: true
 parallel_eval: true
 workflow_steps_per_iter: 1024
 

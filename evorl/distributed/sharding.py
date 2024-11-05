@@ -5,8 +5,8 @@ import jax
 from jax.experimental.shard_map import shard_map
 
 
-def tree_device_put(tree: chex.ArrayTree, device):
-    return jax.tree_map(lambda x: jax.device_put(x, device), tree)
+def tree_device_put(tree: chex.ArrayTree, device_or_sharding):
+    return jax.tree_map(lambda x: jax.device_put(x, device_or_sharding), tree)
 
 
 def tree_device_get(tree: chex.ArrayTree, device=None):
@@ -15,7 +15,16 @@ def tree_device_get(tree: chex.ArrayTree, device=None):
     return tree_device_put(tree, device)
 
 
-def parallel_map(fn: Callable, sharding):
+def shmap_vmap(fn: Callable, mesh, in_specs, out_specs, **kwargs):
+    def shmap_f(*args):
+        return jax.vmap(fn)(*args)
+
+    return shard_map(
+        shmap_f, mesh=mesh, in_specs=in_specs, out_specs=out_specs, **kwargs
+    )
+
+
+def shmap_map(fn: Callable, mesh, in_specs, out_specs, **kwargs):
     """
     Sequential execution on different gpu.
 
@@ -24,18 +33,12 @@ def parallel_map(fn: Callable, sharding):
         sharding: JAX sharding object
     """
 
-    def _f(carry):
+    def g(carry):
         return fn(*carry)
 
     def shmap_f(*args):
-        # state: sharded state on single device
-
-        return jax.lax.map(_f, args)
+        return jax.lax.map(g, args)
 
     return shard_map(
-        shmap_f,
-        mesh=sharding.mesh,
-        in_specs=sharding.spec,
-        out_specs=sharding.spec,
-        # check_rep=False,
+        shmap_f, mesh=mesh, in_specs=in_specs, out_specs=out_specs, **kwargs
     )

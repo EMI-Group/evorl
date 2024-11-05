@@ -11,7 +11,7 @@ from .comm import (
     split_key_to_devices,
 )
 from .gradients import agent_gradient_update, gradient_update
-from .sharding import parallel_map, tree_device_get, tree_device_put
+from .sharding import shmap_vmap, shmap_map, tree_device_get, tree_device_put
 
 PMAP_AXIS_NAME = "P"
 

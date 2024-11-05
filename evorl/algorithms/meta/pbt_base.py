@@ -10,14 +10,15 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax.sharding import NamedSharding, Mesh, PartitionSpec as P
+from jax.experimental.shard_map import shard_map
 import orbax.checkpoint as ocp
 
 
 from evorl.agent import RandomAgent
 from evorl.distributed import (
     POP_AXIS_NAME,
-    parallel_map,
-    tree_device_get,
+    shmap_vmap,
+    shmap_map,
     tree_device_put,
 )
 from evorl.rollout import rollout
@@ -165,31 +166,33 @@ class PBTWorkflowBase(Workflow):
         pop = self._setup_pop(pop_key)
         pop = tree_device_put(pop, self.sharding)
 
-        # save metric on GPU0
+        # save metrics on GPU0
         workflow_metrics = PBTWorkflowMetric()
 
         workflow_keys = jax.random.split(workflow_key, pop_size)
         workflow_keys = jax.device_put(workflow_keys, self.sharding)
 
-        pop_workflow_state = jax.jit(
-            jax.vmap(self.workflow.setup, spmd_axis_name=POP_AXIS_NAME),
-            in_shardings=self.sharding,
-            out_shardings=self.sharding,
+        pop_workflow_state = shmap_vmap(
+            self.workflow.setup,
+            mesh=self.sharding.mesh,
+            in_specs=self.sharding.spec,
+            out_specs=self.sharding.spec,
+            check_rep=False,
         )(workflow_keys)
 
-        pop_workflow_state = jax.jit(
-            jax.vmap(
-                self.apply_hyperparams_to_workflow_state, spmd_axis_name=POP_AXIS_NAME
-            ),
-            in_shardings=self.sharding,
-            out_shardings=self.sharding,
+        pop_workflow_state = shmap_vmap(
+            self.apply_hyperparams_to_workflow_state,
+            mesh=self.sharding.mesh,
+            in_specs=self.sharding.spec,
+            out_specs=self.sharding.spec,
+            check_rep=False,
         )(pop_workflow_state, pop)
 
         return State(
-            key=key,
-            metrics=workflow_metrics,
-            pop_workflow_state=pop_workflow_state,
-            pop=pop,
+            key=key,  # GPU0
+            metrics=workflow_metrics,  # GPU0
+            pop_workflow_state=pop_workflow_state,  # sharding across devices
+            pop=pop,  # sharding across devices
         )
 
     def step(self, state: State) -> tuple[MetricBase, State]:
@@ -209,25 +212,43 @@ class PBTWorkflowBase(Workflow):
             return train_metrics, wf_state
 
         if self.config.parallel_train:
-            train_steps_fn = jax.vmap(_train_steps, spmd_axis_name=POP_AXIS_NAME)
+            train_steps_fn = shmap_vmap(
+                _train_steps,
+                mesh=self.sharding.mesh,
+                in_specs=self.sharding.spec,
+                out_specs=self.sharding.spec,
+                check_rep=False,
+            )
         else:
-            # TODO: fix potential unneccesary gpu-comm: eg: all-gather in ppo
-            # train_steps_fn = partial(jax.lax.map, _train_steps)
-            train_steps_fn = parallel_map(_train_steps, self.sharding)
+            train_steps_fn = shmap_map(
+                _train_steps,
+                mesh=self.sharding.mesh,
+                in_specs=self.sharding.spec,
+                out_specs=self.sharding.spec,
+                check_rep=False,
+            )
 
-        pop_train_metrics, pop_workflow_state = jax.jit(
-            train_steps_fn, in_shardings=self.sharding, out_shardings=self.sharding
-        )(pop_workflow_state)
+        pop_train_metrics, pop_workflow_state = train_steps_fn(pop_workflow_state)
 
         # ===== eval ======
         if self.config.parallel_eval:
-            eval_fn = jax.vmap(self.workflow.evaluate, spmd_axis_name=POP_AXIS_NAME)
+            eval_fn = shmap_vmap(
+                self.workflow.evaluate,
+                mesh=self.sharding.mesh,
+                in_specs=self.sharding.spec,
+                out_specs=self.sharding.spec,
+                check_rep=False,
+            )
         else:
-            eval_fn = parallel_map(self.workflow.evaluate, self.sharding)
+            eval_fn = shmap_map(
+                self.workflow.evaluate,
+                mesh=self.sharding.mesh,
+                in_specs=self.sharding.spec,
+                out_specs=self.sharding.spec,
+                check_rep=False,
+            )
 
-        pop_eval_metrics, pop_workflow_state = jax.jit(
-            eval_fn, in_shardings=self.sharding, out_shardings=self.sharding
-        )(pop_workflow_state)
+        pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)
 
         # customize your pop metrics here
         pop_episode_returns = pop_eval_metrics.episode_returns
@@ -289,13 +310,25 @@ class PBTWorkflowBase(Workflow):
             return eval_metrics
 
         if self.config.parallel_eval:
-            eval_fn = jax.vmap(_evaluate, spmd_axis_name=POP_AXIS_NAME)
+            eval_fn = shmap_vmap(
+                _evaluate,
+                mesh=self.sharding.mesh,
+                in_specs=self.sharding.spec,
+                out_specs=self.sharding.spec,
+                check_rep=False,
+            )
         else:
-            eval_fn = parallel_map(_evaluate, self.sharding)
+            eval_fn = shmap_map(
+                _evaluate,
+                mesh=self.sharding.mesh,
+                in_specs=self.sharding.spec,
+                out_specs=self.sharding.spec,
+                check_rep=False,
+            )
 
-        pop_eval_metrics = jax.jit(
-            eval_fn, in_shardings=self.sharding, out_shardings=self.sharding
-        )(state.pop_workflow_state, jax.random.split(eval_key, self.config.pop_size))
+        pop_eval_metrics = eval_fn(
+            state.pop_workflow_state, jax.random.split(eval_key, self.config.pop_size)
+        )
 
         eval_metrics = PBTEvalMetric(
             pop_episode_returns=pop_eval_metrics.episode_returns,
@@ -426,8 +459,10 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
     PBT Workflow Template for Off-policy algorithms with shared replay buffer
     """
 
-    def __init__(self, workflow: OffPolicyWorkflow, config: DictConfig):
-        super().__init__(workflow, config)
+    def __init__(
+        self, workflow: OffPolicyWorkflow, evaluator: Evaluator, config: DictConfig
+    ):
+        super().__init__(workflow, evaluator, config)
         self.replay_buffer = workflow.replay_buffer
 
     @classmethod
@@ -566,9 +601,9 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
                     wf_state = wf_state.replace(replay_buffer_state=None)
                     return train_metrics, wf_state
 
-                pop_train_metrics, pop_wf_state = jax.vmap(
-                    _wf_step_wrapper, spmd_axis_name=POP_AXIS_NAME
-                )(pop_wf_state)
+                pop_train_metrics, pop_wf_state = jax.vmap(_wf_step_wrapper)(
+                    pop_wf_state
+                )
 
                 # add replay buffer data:
                 # [pop, T*B, ...] -> [pop*T*B, ...]
@@ -592,31 +627,32 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
             return train_metrics, pop_wf_state, replay_buffer_state
 
-        if self.config.parallel_train:
-            sharding = self.sharding
-            share_sharding = NamedSharding(sharding.mesh, P())
-
-            pop_train_metrics, pop_workflow_state, replay_buffer_state = jax.jit(
-                _train_steps,
-                in_shardings=(sharding, share_sharding),
-                out_shardings=(sharding, sharding, share_sharding),
-            )(pop_workflow_state, replay_buffer_state)
-
-        else:
-            # TODO: impl it
-            raise NotImplementedError(
-                "PBT-ParamSAC does not support sequential train yet."
-            )
+        pop_train_metrics, pop_workflow_state, replay_buffer_state = shard_map(
+            _train_steps,
+            mesh=self.sharding.mesh,
+            in_specs=(P(POP_AXIS_NAME), P()),
+            out_specs=(P(POP_AXIS_NAME), P(POP_AXIS_NAME), P()),
+        )(pop_workflow_state, replay_buffer_state)
 
         # ===== eval ======
         if self.config.parallel_eval:
-            eval_fn = jax.vmap(self.workflow.evaluate, spmd_axis_name=POP_AXIS_NAME)
+            eval_fn = shmap_vmap(
+                self.workflow.evaluate,
+                mesh=self.sharding.mesh,
+                in_specs=self.sharding.spec,
+                out_specs=self.sharding.spec,
+                check_rep=False,
+            )
         else:
-            eval_fn = parallel_map(self.workflow.evaluate, self.sharding)
+            eval_fn = shmap_map(
+                self.workflow.evaluate,
+                mesh=self.sharding.mesh,
+                in_specs=self.sharding.spec,
+                out_specs=self.sharding.spec,
+                check_rep=False,
+            )
 
-        pop_eval_metrics, pop_workflow_state = jax.jit(
-            eval_fn, in_shardings=self.sharding, out_shardings=self.sharding
-        )(pop_workflow_state)
+        pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)
 
         # customize your pop metrics here
         pop_episode_returns = pop_eval_metrics.episode_returns
@@ -655,8 +691,6 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             pop=state.pop,  # save prev pop instead of new pop to match the metrics
             rb_size=replay_buffer_state.buffer_size,
         )
-
-        train_metrics = tree_device_get(train_metrics, self.devices[0])
 
         return train_metrics, state.replace(
             key=key,
