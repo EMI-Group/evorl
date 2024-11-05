@@ -21,9 +21,11 @@ from evorl.distributed import (
     tree_device_put,
 )
 from evorl.rollout import rollout
-from evorl.metrics import MetricBase
+from evorl.metrics import MetricBase, EvaluateMetric
+from evorl.envs import AutoresetMode, create_env
+from evorl.evaluators import Evaluator
 from evorl.types import MISSING_REWARD, PyTreeDict, State
-from evorl.recorders import get_1d_array_statistics
+from evorl.recorders import get_1d_array_statistics, get_1d_array, add_prefix
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.utils.jax_utils import (
     tree_get,
@@ -71,6 +73,19 @@ class PBTWorkflowBase(Workflow):
         self.devices = jax.local_devices()[:1]
         self.sharding = None  # training sharding
         # self.pbt_update_sharding = None
+
+        eval_env = create_env(
+            config.env.env_name,
+            config.env.env_type,
+            episode_length=config.env.max_episode_steps,
+            parallel=config.num_eval_envs,
+            autoreset_mode=AutoresetMode.DISABLED,
+        )
+        self.evaluator = Evaluator(
+            env=eval_env,
+            action_fn=workflow.agent.evaluate_actions,
+            max_episode_steps=config.env.max_episode_steps,
+        )
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
@@ -249,8 +264,6 @@ class PBTWorkflowBase(Workflow):
             pop=state.pop,  # save prev pop instead of new pop to match the metrics
         )
 
-        train_metrics = tree_device_get(train_metrics, self.devices[0])
-
         return train_metrics, state.replace(
             key=key,
             metrics=workflow_metrics,
@@ -259,23 +272,35 @@ class PBTWorkflowBase(Workflow):
         )
 
     def evaluate(self, state: State) -> State:
-        # Tips: evaluation consumes every workflow_state's internal key
+        key, eval_key = jax.random.split(state.key, num=2)
+
+        def _evaluate(wf_state, key):
+            # [#episodes]
+            raw_eval_metrics = self.evaluator.evaluate(
+                wf_state.agent_state, key, num_episodes=self.config.eval_episodes
+            )
+
+            eval_metrics = EvaluateMetric(
+                episode_returns=raw_eval_metrics.episode_returns.mean(),
+                episode_lengths=raw_eval_metrics.episode_lengths.mean(),
+            )
+            return eval_metrics
+
         if self.config.parallel_eval:
-            eval_fn = jax.vmap(self.workflow.evaluate, spmd_axis_name=POP_AXIS_NAME)
+            eval_fn = jax.vmap(_evaluate, spmd_axis_name=POP_AXIS_NAME)
         else:
-            eval_fn = parallel_map(self.workflow.evaluate, self.sharding)
+            eval_fn = parallel_map(_evaluate, self.sharding)
 
-        pop_eval_metrics, pop_workflow_state = jax.jit(
+        pop_eval_metrics = jax.jit(
             eval_fn, in_shardings=self.sharding, out_shardings=self.sharding
-        )(state.pop_workflow_state)
+        )(state.pop_workflow_state, jax.random.split(eval_key, self.config.pop_size))
 
-        # customize your pop metrics here
         eval_metrics = PBTEvalMetric(
             pop_episode_returns=pop_eval_metrics.episode_returns,
             pop_episode_lengths=pop_eval_metrics.episode_lengths,
         )
 
-        return eval_metrics, state.replace(pop_workflow_state=pop_workflow_state)
+        return eval_metrics, state.replace(key=key)
 
     def exploit_and_explore(
         self,
@@ -356,10 +381,7 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            self.recorder.write(workflow_metrics.to_local_dict(), iters)
-
             train_metrics_dict = train_metrics.to_local_dict()
-
             if "train_episode_return" in train_metrics_dict["pop_train_metrics"]:
                 train_episode_return = train_metrics_dict["pop_train_metrics"][
                     "train_episode_return"
@@ -374,14 +396,23 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
             train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
-
             train_metrics_dict["pop"] = convert_pop_to_df(train_metrics_dict["pop"])
-
             train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
                 get_1d_array_statistics, train_metrics_dict["pop_train_metrics"]
             )
 
+            self.recorder.write(workflow_metrics.to_local_dict(), iters)
             self.recorder.write(train_metrics_dict, iters)
+
+            if iters % self.config.eval_interval == 0 or iters == self.config.num_iters:
+                eval_metrics, state = self.evaluate(state)
+
+                eval_metrics_dict = jtu.tree_map(
+                    get_1d_array,
+                    eval_metrics.to_local_dict(),
+                )
+
+                self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iters)
 
             self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(state))
 
@@ -608,8 +639,6 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            self.recorder.write(workflow_metrics.to_local_dict(), iters)
-
             train_metrics_dict = train_metrics.to_local_dict()
 
             train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
@@ -618,14 +647,23 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
                 train_metrics_dict["pop_episode_lengths"], histogram=True
             )
-
             train_metrics_dict["pop"] = convert_pop_to_df(train_metrics_dict["pop"])
-
             train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
                 get_1d_array_statistics, train_metrics_dict["pop_train_metrics"]
             )
 
+            self.recorder.write(workflow_metrics.to_local_dict(), iters)
             self.recorder.write(train_metrics_dict, iters)
+
+            if iters % self.config.eval_interval == 0 or iters == self.config.num_iters:
+                eval_metrics, state = self.evaluate(state)
+
+                eval_metrics_dict = jtu.tree_map(
+                    get_1d_array,
+                    eval_metrics.to_local_dict(),
+                )
+
+                self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iters)
 
             saved_state = state
             if not self.config.save_replay_buffer:

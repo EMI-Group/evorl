@@ -11,7 +11,7 @@ discount: 0.99
 
 total_timesteps: 1000000
 
-num_eval_envs: 8
+num_eval_envs: 16
 eval_interval: 50
 eval_episodes: 16 # should be divided by num_eval_envs
 

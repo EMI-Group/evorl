@@ -32,5 +32,10 @@ target_workflow:
   num_eval_envs: 16
   eval_episodes: 16
 
+# independent evaluation
+num_eval_envs: 128
+eval_episodes: 128
+eval_interval: 25
+
 checkpoint:
   save_interval_steps: 50

@@ -17,12 +17,20 @@ def tree_device_get(tree: chex.ArrayTree, device=None):
 
 def parallel_map(fn: Callable, sharding):
     """
-    sequential on the same gpu, parrallel on different gpu.
+    Sequential execution on different gpu.
+
+    Args:
+        fn: function to be executed, only positional arguments are supported
+        sharding: JAX sharding object
     """
 
-    def shmap_f(state):
+    def _f(carry):
+        return fn(*carry)
+
+    def shmap_f(*args):
         # state: sharded state on single device
-        return jax.lax.map(fn, state)
+
+        return jax.lax.map(_f, args)
 
     return shard_map(
         shmap_f,
