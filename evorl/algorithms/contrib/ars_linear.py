@@ -90,7 +90,7 @@ class ARSWorkflow(ESWorkflowTemplate):
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
-        cls._rescale_config(config)
+        super()._rescale_config(config)
 
         num_devices = jax.device_count()
         if config.random_timesteps % num_devices != 0:

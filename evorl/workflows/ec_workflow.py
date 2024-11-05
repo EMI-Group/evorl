@@ -166,8 +166,8 @@ class ECWorkflowTemplate(ECWorkflow):
         distributed_info = DistributedInfo()
 
         if self.enable_multi_devices:
-            ec_opt_state, workflow_metrics = jax.device_put_replicated(
-                (ec_opt_state, workflow_metrics), self.devices
+            agent_state, ec_opt_state, workflow_metrics = jax.device_put_replicated(
+                (agent_state, ec_opt_state, workflow_metrics), self.devices
             )
             key = split_key_to_devices(key, self.devices)
 
