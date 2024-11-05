@@ -22,9 +22,11 @@ from evorl.distributed import (
 )
 from evorl.rollout import rollout
 from evorl.metrics import MetricBase, EvaluateMetric
-from evorl.envs import AutoresetMode, create_env
+from evorl.envs import AutoresetMode, create_env, Discrete
 from evorl.evaluators import Evaluator
+from evorl.sample_batch import SampleBatch
 from evorl.types import MISSING_REWARD, PyTreeDict, State
+from evorl.replay_buffers import ReplayBufferState
 from evorl.recorders import get_1d_array_statistics, get_1d_array, add_prefix
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.utils.jax_utils import (
@@ -66,26 +68,13 @@ class PBTWorkflowMetric(MetricBase):
 
 
 class PBTWorkflowBase(Workflow):
-    def __init__(self, workflow: RLWorkflow, config: DictConfig):
+    def __init__(self, workflow: RLWorkflow, evaluator: Evaluator, config: DictConfig):
         super().__init__(config)
 
         self.workflow = workflow
+        self.evaluator = evaluator
         self.devices = jax.local_devices()[:1]
         self.sharding = None  # training sharding
-        # self.pbt_update_sharding = None
-
-        eval_env = create_env(
-            config.env.env_name,
-            config.env.env_type,
-            episode_length=config.env.max_episode_steps,
-            parallel=config.num_eval_envs,
-            autoreset_mode=AutoresetMode.DISABLED,
-        )
-        self.evaluator = Evaluator(
-            env=eval_env,
-            action_fn=workflow.agent.evaluate_actions,
-            max_episode_steps=config.env.max_episode_steps,
-        )
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
@@ -146,7 +135,20 @@ class PBTWorkflowBase(Workflow):
 
         target_workflow.devices = devices
 
-        return cls(target_workflow, config)
+        eval_env = create_env(
+            config.env.env_name,
+            config.env.env_type,
+            episode_length=config.env.max_episode_steps,
+            parallel=config.num_eval_envs,
+            autoreset_mode=AutoresetMode.DISABLED,
+        )
+        evaluator = Evaluator(
+            env=eval_env,
+            action_fn=target_workflow.agent.evaluate_actions,
+            max_episode_steps=config.env.max_episode_steps,
+        )
+
+        return cls(target_workflow, evaluator, config)
 
     def _setup_pop(self, key: chex.PRNGKey) -> chex.ArrayTree:
         raise NotImplementedError
@@ -446,7 +448,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         state = super().setup(key)
 
         state = state.replace(
-            replay_buffer_state=self.workflow._setup_replaybuffer(rb_key),
+            replay_buffer_state=self._setup_replaybuffer(rb_key),
         )
 
         logger.info("Start replay buffer post-setup")
@@ -455,6 +457,37 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         logger.info("Complete replay buffer post-setup")
 
         return state
+
+    def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
+        action_space = self.env.action_space
+        obs_space = self.env.obs_space
+
+        # create dummy data to initialize the replay buffer
+        if isinstance(action_space, Discrete):
+            dummy_action = jnp.zeros((), dtype=jnp.int32)
+        else:
+            dummy_action = jnp.zeros(action_space.shape)
+        dummy_obs = jnp.zeros(obs_space.shape)
+
+        dummy_reward = jnp.zeros(())
+        dummy_done = jnp.zeros(())
+
+        dummy_sample_batch = SampleBatch(
+            obs=dummy_obs,
+            actions=dummy_action,
+            rewards=dummy_reward,
+            # next_obs=dummy_obs,
+            # dones=dummy_done,
+            extras=PyTreeDict(
+                policy_extras=PyTreeDict(),
+                env_extras=PyTreeDict(
+                    {"ori_obs": dummy_obs, "termination": dummy_done}
+                ),
+            ),
+        )
+        replay_buffer_state = self.replay_buffer.init(dummy_sample_batch)
+
+        return replay_buffer_state
 
     def _postsetup_replaybuffer(self, state: State) -> State:
         env = self.workflow.env
