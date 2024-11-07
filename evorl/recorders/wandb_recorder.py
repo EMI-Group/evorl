@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from typing import Any
+import warnings
 
 import jax.tree_util as jtu
 import numpy as np
@@ -52,6 +53,11 @@ def add_prefix(data: dict, prefix: str):
 
 
 def get_1d_array_statistics(data, histogram=False):
+    nan_mask = np.isnan(data)
+    if nan_mask.any():
+        warnings.warn("data contains nan, removing them...")
+        data = data[~nan_mask]
+
     res = dict(
         min=np.min(data).tolist(),
         max=np.max(data).tolist(),

@@ -94,7 +94,7 @@ class ARSWorkflow(ESWorkflowTemplate):
 
         num_devices = jax.device_count()
         if config.random_timesteps % num_devices != 0:
-            logging.warning(
+            logger.warning(
                 f"When enable_multi_devices=True, pop_size ({config.random_timesteps}) should be divisible by num_devices ({num_devices}),"
             )
 

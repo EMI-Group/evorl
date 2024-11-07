@@ -134,7 +134,7 @@ class ECWorkflowTemplate(ECWorkflow):
         # then adjust accordingly
         if config.pop_size % num_devices != 0:
             new_pop_size = (config.pop_size // num_devices) * num_devices
-            logging.warning(
+            logger.warning(
                 f"When enable_multi_devices=True, pop_size ({config.pop_size}) should be divisible by num_devices ({num_devices}), set new pop_size to {new_pop_size}"
             )
 
