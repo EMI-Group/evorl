@@ -50,10 +50,6 @@ class DistributedInfo(PyTreeData):
 
 class ECWorkflow(Workflow):
     def __init__(self, config: DictConfig):
-        """
-        config:
-        devices: a single device or a list of devices.
-        """
         super().__init__(config)
 
         self.pmap_axis_name = None
@@ -137,11 +133,12 @@ class ECWorkflowTemplate(ECWorkflow):
         # Note: in some model, the generated number of individuals may not be pop_size,
         # then adjust accordingly
         if config.pop_size % num_devices != 0:
+            new_pop_size = (config.pop_size // num_devices) * num_devices
             logging.warning(
-                f"When enable_multi_devices=True, pop_size ({config.pop_size}) should be divisible by num_devices ({num_devices}),"
+                f"When enable_multi_devices=True, pop_size ({config.pop_size}) should be divisible by num_devices ({num_devices}), set new pop_size to {new_pop_size}"
             )
 
-        config.pop_size = (config.pop_size // num_devices) * num_devices
+            config.pop_size = new_pop_size
 
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
