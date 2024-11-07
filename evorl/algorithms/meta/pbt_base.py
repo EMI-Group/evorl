@@ -341,7 +341,7 @@ class PBTWorkflowBase(Workflow):
         self,
         pop: chex.ArrayTree,
         pop_workflow_state: State,
-        pop_metrics: chex.Array,
+        pop_metrics: chex.ArrayTree,
         key: chex.PRNGKey,
     ) -> tuple[chex.ArrayTree, State]:
         raise NotImplementedError
@@ -366,7 +366,7 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
         self,
         pop: chex.ArrayTree,
         pop_workflow_state: State,
-        pop_metrics: chex.Array,
+        pop_metrics: chex.ArrayTree,
         key: chex.PRNGKey,
     ) -> tuple[chex.ArrayTree, State]:
         exploit_key, explore_key = jax.random.split(key)
