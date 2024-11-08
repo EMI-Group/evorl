@@ -23,9 +23,8 @@ from evorl.distributed import (
 )
 from evorl.rollout import rollout
 from evorl.metrics import MetricBase, EvaluateMetric
-from evorl.envs import AutoresetMode, create_env, Discrete
+from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
-from evorl.sample_batch import SampleBatch
 from evorl.types import MISSING_REWARD, PyTreeDict, State
 from evorl.replay_buffers import ReplayBufferState
 from evorl.recorders import get_1d_array_statistics, get_1d_array, add_prefix
@@ -37,6 +36,7 @@ from evorl.utils.jax_utils import (
     scan_and_last,
     is_jitted,
 )
+from evorl.utils import running_statistics
 from evorl.workflows import RLWorkflow, OffPolicyWorkflow, Workflow
 
 from .pbt_utils import convert_pop_to_df
@@ -166,12 +166,12 @@ class PBTWorkflowBase(Workflow):
         pop = self._setup_pop(pop_key)
         pop = tree_device_put(pop, self.sharding)
 
-        # save metrics on GPU0
         workflow_metrics = PBTWorkflowMetric()
+        shared_sharding = NamedSharding(self.sharding.mesh, P())
+        key, workflow_metrics = jax.device_put((key, workflow_metrics), shared_sharding)
 
         workflow_keys = jax.random.split(workflow_key, pop_size)
         workflow_keys = jax.device_put(workflow_keys, self.sharding)
-
         pop_workflow_state = shmap_vmap(
             self.workflow.setup,
             mesh=self.sharding.mesh,
@@ -179,6 +179,11 @@ class PBTWorkflowBase(Workflow):
             out_specs=self.sharding.spec,
             check_rep=False,
         )(workflow_keys)
+
+        # Note: for obs_preprocessor, we assume pop_workflow_state.agent_state.obs_preprocessor_state
+        # is already same by initialization in self.workflow.setup(),
+        # so we don't need sync them here.
+        # Caution: for off-policy workflow with postsetup, this may not be true.
 
         pop_workflow_state = shmap_vmap(
             self.apply_hyperparams_to_workflow_state,
@@ -189,8 +194,8 @@ class PBTWorkflowBase(Workflow):
         )(pop_workflow_state, pop)
 
         return State(
-            key=key,  # GPU0
-            metrics=workflow_metrics,  # GPU0
+            key=key,  # shared
+            metrics=workflow_metrics,  # shared
             pop_workflow_state=pop_workflow_state,  # sharding across devices
             pop=pop,  # sharding across devices
         )
@@ -465,19 +470,6 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         super().__init__(workflow, evaluator, config)
         self.replay_buffer = workflow.replay_buffer
 
-    @classmethod
-    def build_from_config(
-        cls, config: DictConfig, enable_multi_devices=True, enable_jit: bool = True
-    ):
-        num_devices = jax.local_device_count()
-        if num_devices > 1:
-            # Note: this ensures shard_map is not used
-            raise ValueError(
-                "PBTOffpolicyWorkflowTemplate does not support multi-devices yet."
-            )
-
-        return super().build_from_config(config, enable_multi_devices, enable_jit)
-
     def setup(self, key: chex.PRNGKey):
         key, rb_key = jax.random.split(key)
         state = super().setup(key)
@@ -494,53 +486,45 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         return state
 
     def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
-        action_space = self.env.action_space
-        obs_space = self.env.obs_space
-
-        # create dummy data to initialize the replay buffer
-        if isinstance(action_space, Discrete):
-            dummy_action = jnp.zeros((), dtype=jnp.int32)
-        else:
-            dummy_action = jnp.zeros(action_space.shape)
-        dummy_obs = jnp.zeros(obs_space.shape)
-
-        dummy_reward = jnp.zeros(())
-        dummy_done = jnp.zeros(())
-
-        dummy_sample_batch = SampleBatch(
-            obs=dummy_obs,
-            actions=dummy_action,
-            rewards=dummy_reward,
-            # next_obs=dummy_obs,
-            # dones=dummy_done,
-            extras=PyTreeDict(
-                policy_extras=PyTreeDict(),
-                env_extras=PyTreeDict(
-                    {"ori_obs": dummy_obs, "termination": dummy_done}
-                ),
-            ),
-        )
-        replay_buffer_state = self.replay_buffer.init(dummy_sample_batch)
+        # replicas across devices: every device needs one replay_buffer_state
+        replay_buffer_state = shard_map(
+            self.workflow._setup_replaybuffer,
+            mesh=self.sharding.mesh,
+            in_specs=P(),
+            out_specs=P(),
+            check_rep=False,
+        )(key)
 
         return replay_buffer_state
 
     def _postsetup_replaybuffer(self, state: State) -> State:
+        """
+        Since the replay buffer is shared across workflows, we need an independent post-setup
+        """
         env = self.workflow.env
         action_space = env.action_space
         obs_space = env.obs_space
         num_envs = self.config.target_workflow.num_envs
+
+        pop_workflow_state = state.pop_workflow_state
         replay_buffer_state = state.replay_buffer_state
 
-        def _rollout(agent, agent_state, key, rollout_length):
+        rollout_length = self.config.random_timesteps // num_envs
+
+        def _rollout(obs_preprocessor_state, key):
             env_key, rollout_key = jax.random.split(key)
 
+            random_agent = RandomAgent()
+            random_agent_state = random_agent.init(
+                obs_space, action_space, jax.random.PRNGKey(0)
+            )
             env_state = env.reset(env_key)
 
             trajectory, env_state = rollout(
                 env_fn=env.step,
-                action_fn=agent.compute_actions,
+                action_fn=random_agent.compute_actions,
                 env_state=env_state,
-                agent_state=agent_state,
+                agent_state=random_agent_state,
                 key=rollout_key,
                 rollout_length=rollout_length,
                 env_extra_fields=("ori_obs", "termination"),
@@ -551,25 +535,50 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             trajectory = flatten_rollout_trajectory(trajectory)
             trajectory = tree_stop_gradient(trajectory)
 
-            return trajectory
+            obs_preprocessor_state = running_statistics.update(
+                obs_preprocessor_state,
+                trajectory.obs,
+            )
+
+            return trajectory, obs_preprocessor_state
 
         # ==== fill random transitions ====
 
-        key, random_rollout_key, rollout_key = jax.random.split(state.key, num=3)
-        random_agent = RandomAgent()
-        random_agent_state = random_agent.init(
-            obs_space, action_space, jax.random.PRNGKey(0)
-        )
-        rollout_length = self.config.random_timesteps // num_envs
+        key, rollout_key = jax.random.split(state.key)
+        shared_sharding = NamedSharding(self.sharding.mesh, P())
 
-        trajectory = _rollout(
-            random_agent,
-            random_agent_state,
-            key=random_rollout_key,
-            rollout_length=rollout_length,
+        # running on GPU0
+        first_obs_preprocessor_state = tree_get(
+            pop_workflow_state.agent_state.obs_preprocessor_state, 0
+        )
+        trajectory, first_obs_preprocessor_state = _rollout(
+            first_obs_preprocessor_state,
+            rollout_key,
         )
 
-        # TODO: add support for shared obs_preprocessor and init it.
+        pop_size_per_device = self.config.pop_size // len(self.devices)
+
+        # sync across devices
+        def _sync(obs_preprocessor_state):
+            return jtu.tree_map(
+                lambda x: jnp.tile(x, (pop_size_per_device,) + (1,) * x.ndim),
+                obs_preprocessor_state,
+            )
+
+        obs_preprocessor_state = shard_map(
+            _sync,
+            mesh=self.sharding.mesh,
+            in_specs=shared_sharding.spec,
+            out_specs=self.sharding.spec,
+            check_rep=False,
+        )(first_obs_preprocessor_state)
+        trajectory = jax.device_put(trajectory, shared_sharding)
+
+        pop_workflow_state = pop_workflow_state.replace(
+            agent_state=pop_workflow_state.agent_state.replace(
+                obs_preprocessor_state=obs_preprocessor_state
+            )
+        )
 
         replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
 
@@ -610,6 +619,9 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
                 trajectory = jtu.tree_map(
                     lambda x: jax.lax.collapse(x, 0, 2), pop_train_metrics.trajectory
                 )
+                trajectory = jax.lax.all_gather(
+                    trajectory, POP_AXIS_NAME, axis=0, tiled=True
+                )
 
                 replay_buffer_state = self.replay_buffer.add(
                     replay_buffer_state, trajectory
@@ -632,6 +644,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             mesh=self.sharding.mesh,
             in_specs=(P(POP_AXIS_NAME), P()),
             out_specs=(P(POP_AXIS_NAME), P(POP_AXIS_NAME), P()),
+            check_rep=False,
         )(pop_workflow_state, replay_buffer_state)
 
         # ===== eval ======
