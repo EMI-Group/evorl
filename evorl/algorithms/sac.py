@@ -207,7 +207,7 @@ class SACAgent(Agent):
         qs_target = sample_batch.rewards * self.reward_scale + discounts * (
             jnp.min(next_qs, axis=-1) - alpha * next_actions_logp
         )
-        qs_target = jnp.repeat(qs_target[..., None], 2, axis=-1)
+        qs_target = jnp.broadcast_to(qs_target[..., None], (*qs_target.shape, 2))
 
         q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
         return PyTreeDict(critic_loss=q_loss)
@@ -371,7 +371,7 @@ class SACDiscreteAgent(Agent):
         qs_target = (
             sample_batch.rewards * self.reward_scale + discounts * next_qs_estimate
         )
-        qs_target = jnp.repeat(qs_target[..., None], 2, axis=-1)
+        qs_target = jnp.broadcast_to(qs_target[..., None], (*qs_target.shape, 2))
 
         q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
         return PyTreeDict(critic_loss=q_loss, q_value=qs.mean())

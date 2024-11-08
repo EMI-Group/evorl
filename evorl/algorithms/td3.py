@@ -181,7 +181,7 @@ class TD3Agent(Agent):
         discounts = self.discount * (1 - sample_batch.extras.env_extras.termination)
 
         qs_target = sample_batch.rewards + discounts * next_qs_min
-        qs_target = jnp.repeat(qs_target[..., None], 2, axis=-1)
+        qs_target = jnp.broadcast_to(qs_target[..., None], (*qs_target.shape, 2))
         qs_target = jax.lax.stop_gradient(qs_target)
 
         qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions)
