@@ -18,7 +18,6 @@ from evorl.agent import RandomAgent
 from evorl.distributed import (
     POP_AXIS_NAME,
     shmap_vmap,
-    shmap_map,
     tree_device_put,
 )
 from evorl.rollout import rollout
@@ -216,42 +215,24 @@ class PBTWorkflowBase(Workflow):
 
             return train_metrics, wf_state
 
-        if self.config.parallel_train:
-            train_steps_fn = shmap_vmap(
-                _train_steps,
-                mesh=self.sharding.mesh,
-                in_specs=self.sharding.spec,
-                out_specs=self.sharding.spec,
-                check_rep=False,
-            )
-        else:
-            train_steps_fn = shmap_map(
-                _train_steps,
-                mesh=self.sharding.mesh,
-                in_specs=self.sharding.spec,
-                out_specs=self.sharding.spec,
-                check_rep=False,
-            )
+        train_steps_fn = shmap_vmap(
+            _train_steps,
+            mesh=self.sharding.mesh,
+            in_specs=self.sharding.spec,
+            out_specs=self.sharding.spec,
+            check_rep=False,
+        )
 
         pop_train_metrics, pop_workflow_state = train_steps_fn(pop_workflow_state)
 
         # ===== eval ======
-        if self.config.parallel_eval:
-            eval_fn = shmap_vmap(
-                self.workflow.evaluate,
-                mesh=self.sharding.mesh,
-                in_specs=self.sharding.spec,
-                out_specs=self.sharding.spec,
-                check_rep=False,
-            )
-        else:
-            eval_fn = shmap_map(
-                self.workflow.evaluate,
-                mesh=self.sharding.mesh,
-                in_specs=self.sharding.spec,
-                out_specs=self.sharding.spec,
-                check_rep=False,
-            )
+        eval_fn = shmap_vmap(
+            self.workflow.evaluate,
+            mesh=self.sharding.mesh,
+            in_specs=self.sharding.spec,
+            out_specs=self.sharding.spec,
+            check_rep=False,
+        )
 
         pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)
 
@@ -314,22 +295,13 @@ class PBTWorkflowBase(Workflow):
             )
             return eval_metrics
 
-        if self.config.parallel_eval:
-            eval_fn = shmap_vmap(
-                _evaluate,
-                mesh=self.sharding.mesh,
-                in_specs=self.sharding.spec,
-                out_specs=self.sharding.spec,
-                check_rep=False,
-            )
-        else:
-            eval_fn = shmap_map(
-                _evaluate,
-                mesh=self.sharding.mesh,
-                in_specs=self.sharding.spec,
-                out_specs=self.sharding.spec,
-                check_rep=False,
-            )
+        eval_fn = shmap_vmap(
+            _evaluate,
+            mesh=self.sharding.mesh,
+            in_specs=self.sharding.spec,
+            out_specs=self.sharding.spec,
+            check_rep=False,
+        )
 
         pop_eval_metrics = eval_fn(
             state.pop_workflow_state, jax.random.split(eval_key, self.config.pop_size)
@@ -648,22 +620,13 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         )(pop_workflow_state, replay_buffer_state)
 
         # ===== eval ======
-        if self.config.parallel_eval:
-            eval_fn = shmap_vmap(
-                self.workflow.evaluate,
-                mesh=self.sharding.mesh,
-                in_specs=self.sharding.spec,
-                out_specs=self.sharding.spec,
-                check_rep=False,
-            )
-        else:
-            eval_fn = shmap_map(
-                self.workflow.evaluate,
-                mesh=self.sharding.mesh,
-                in_specs=self.sharding.spec,
-                out_specs=self.sharding.spec,
-                check_rep=False,
-            )
+        eval_fn = shmap_vmap(
+            self.workflow.evaluate,
+            mesh=self.sharding.mesh,
+            in_specs=self.sharding.spec,
+            out_specs=self.sharding.spec,
+            check_rep=False,
+        )
 
         pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)
 

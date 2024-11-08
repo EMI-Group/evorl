@@ -14,13 +14,14 @@ class PBTParamSACWorkflow(PBTOffpolicyWorkflowTemplate):
 
     def _setup_pop(self, key: chex.PRNGKey) -> chex.ArrayTree:
         search_space = self.config.search_space
+        pop_size = self.config.pop_size
 
         def _init(hp, key):
             match hp:
                 case "discount_g" | "log_alpha":
-                    return uniform_init(search_space[hp], key, self.config.pop_size)
+                    return uniform_init(search_space[hp], key, pop_size)
                 case "actor_loss_weight" | "critic_loss_weight":
-                    return log_uniform_init(search_space[hp], key, self.config.pop_size)
+                    return log_uniform_init(search_space[hp], key, pop_size)
 
         pop = PyTreeDict(
             {

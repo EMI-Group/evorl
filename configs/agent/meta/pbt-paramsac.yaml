@@ -8,7 +8,6 @@ workflow_cls: evorl.algorithms.meta.pbt_sac.pbt_param_sac.PBTParamSACWorkflow
 
 pop_size: 32
 
-parallel_eval: true
 workflow_steps_per_iter: 1024
 
 random_timesteps: 4096 # timesteps filled into the replay buffer before the first iteration

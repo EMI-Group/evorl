@@ -220,8 +220,10 @@ class ParamPPOWorkflow(PPOWorkflow):
 
         return state.replace(
             hp_state=PyTreeDict(
-                gae_lambda_g=jnp.log(1 - jnp.float32(self.config.gae_lambda)),
-                discount_g=jnp.log(1 - jnp.float32(self.config.discount)),
+                gae_lambda_g=-jnp.log(1 - jnp.float32(self.config.gae_lambda)),
+                discount_g=-jnp.log(
+                    1 - jnp.float32(self.config.discount)
+                ),  # discount = 1 - exp(-g)
                 actor_loss_weight=jnp.float32(self.config.loss_weights.actor_loss),
                 critic_loss_weight=jnp.float32(self.config.loss_weights.critic_loss),
                 entropy_loss_weight=jnp.float32(self.config.loss_weights.actor_entropy),
