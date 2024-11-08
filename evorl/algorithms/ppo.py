@@ -409,10 +409,10 @@ class PPOWorkflow(OnPolicyWorkflow):
         )
 
         def _get_shuffled_minibatch(perm_key, x):
-            x = jax.random.permutation(perm_key, x)[
+            x = x[jax.random.permutation(perm_key, x.shape[0])][
                 : num_minibatches * self.config.minibatch_size
             ]
-            return x.reshape(num_minibatches, -1, *x.shape[1:])
+            return x.reshape(num_minibatches, self.config.minibatch_size, *x.shape[1:])
 
         def minibatch_step(carry, trajectory):
             opt_state, agent_state, key = carry

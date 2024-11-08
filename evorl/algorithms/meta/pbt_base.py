@@ -204,18 +204,18 @@ class PBTWorkflowBase(Workflow):
         pop = state.pop
 
         # ===== step ======
-        def _train_steps(wf_state):
-            def _one_step(wf_state, _):
-                train_metrics, wf_state = self.workflow.step(wf_state)
-                return wf_state, train_metrics
+        def _train_steps(pop_wf_state):
+            def _one_step(pop_wf_state, _):
+                train_metrics, pop_wf_state = jax.vmap(self.workflow.step)(pop_wf_state)
+                return pop_wf_state, train_metrics
 
-            wf_state, train_metrics = scan_and_last(
-                _one_step, wf_state, (), length=self.config.workflow_steps_per_iter
+            pop_wf_state, train_metrics = scan_and_last(
+                _one_step, pop_wf_state, (), length=self.config.workflow_steps_per_iter
             )
 
-            return train_metrics, wf_state
+            return train_metrics, pop_wf_state
 
-        train_steps_fn = shmap_vmap(
+        train_steps_fn = shard_map(
             _train_steps,
             mesh=self.sharding.mesh,
             in_specs=self.sharding.spec,
@@ -330,6 +330,7 @@ class PBTWorkflowBase(Workflow):
 
     @classmethod
     def enable_jit(cls) -> None:
+        cls.setup = jax.jit(cls.setup, static_argnums=(0,))
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
@@ -483,79 +484,60 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
         rollout_length = self.config.random_timesteps // num_envs
 
-        def _rollout(obs_preprocessor_state, key):
-            env_key, rollout_key = jax.random.split(key)
-
-            random_agent = RandomAgent()
-            random_agent_state = random_agent.init(
-                obs_space, action_space, jax.random.PRNGKey(0)
-            )
-            env_state = env.reset(env_key)
-
-            trajectory, env_state = rollout(
-                env_fn=env.step,
-                action_fn=random_agent.compute_actions,
-                env_state=env_state,
-                agent_state=random_agent_state,
-                key=rollout_key,
-                rollout_length=rollout_length,
-                env_extra_fields=("ori_obs", "termination"),
-            )
-
-            # [T, B, ...] -> [T*B, ...]
-            trajectory = clean_trajectory(trajectory)
-            trajectory = flatten_rollout_trajectory(trajectory)
-            trajectory = tree_stop_gradient(trajectory)
-
-            obs_preprocessor_state = running_statistics.update(
-                obs_preprocessor_state,
-                trajectory.obs,
-            )
-
-            return trajectory, obs_preprocessor_state
+        def _rollout(key):
+            return trajectory
 
         # ==== fill random transitions ====
 
-        key, rollout_key = jax.random.split(state.key)
+        key, env_key, rollout_key = jax.random.split(state.key, num=3)
         shared_sharding = NamedSharding(self.sharding.mesh, P())
 
-        # running on GPU0
-        first_obs_preprocessor_state = tree_get(
-            pop_workflow_state.agent_state.obs_preprocessor_state, 0
+        random_agent = RandomAgent()
+        random_agent_state = random_agent.init(
+            obs_space, action_space, jax.random.PRNGKey(0)
         )
-        trajectory, first_obs_preprocessor_state = _rollout(
-            first_obs_preprocessor_state,
-            rollout_key,
+        env_state = env.reset(env_key)
+
+        trajectory, env_state = rollout(
+            env_fn=env.step,
+            action_fn=random_agent.compute_actions,
+            env_state=env_state,
+            agent_state=random_agent_state,
+            key=rollout_key,
+            rollout_length=rollout_length,
+            env_extra_fields=("ori_obs", "termination"),
         )
 
-        pop_size_per_device = self.config.pop_size // len(self.devices)
-
-        # sync across devices
-        def _sync(obs_preprocessor_state):
-            return jtu.tree_map(
-                lambda x: jnp.tile(x, (pop_size_per_device,) + (1,) * x.ndim),
-                obs_preprocessor_state,
-            )
-
-        obs_preprocessor_state = shard_map(
-            _sync,
-            mesh=self.sharding.mesh,
-            in_specs=shared_sharding.spec,
-            out_specs=self.sharding.spec,
-            check_rep=False,
-        )(first_obs_preprocessor_state)
+        # [T, B, ...] -> [T*B, ...]
+        trajectory = clean_trajectory(trajectory)
+        trajectory = flatten_rollout_trajectory(trajectory)
+        trajectory = tree_stop_gradient(trajectory)
         trajectory = jax.device_put(trajectory, shared_sharding)
 
-        pop_workflow_state = pop_workflow_state.replace(
-            agent_state=pop_workflow_state.agent_state.replace(
-                obs_preprocessor_state=obs_preprocessor_state
+        if pop_workflow_state.agent_state.obs_preprocessor_state is not None:
+            # update all obs_preprocessor_state by the random trajectory
+
+            obs_preprocessor_state = (
+                pop_workflow_state.agent_state.obs_preprocessor_state
             )
-        )
+
+            obs_preprocessor_state = shmap_vmap(
+                running_statistics.update,
+                mesh=self.sharding.mesh,
+                in_specs=(shared_sharding.spec, P()),
+                out_specs=self.sharding.spec,
+                check_rep=False,
+            )(obs_preprocessor_state, trajectory.obs)
+
+            pop_workflow_state = pop_workflow_state.replace(
+                agent_state=pop_workflow_state.agent_state.replace(
+                    obs_preprocessor_state=obs_preprocessor_state
+                )
+            )
 
         replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
 
         sampled_timesteps_m = rollout_length * num_envs / 1e6
-
         workflow_metrics = state.metrics.replace(
             sampled_timesteps_m=state.metrics.sampled_timesteps_m + sampled_timesteps_m,
         )

@@ -59,7 +59,6 @@ def train_dist(config: DictConfig) -> None:
     from evorl.recorders import LogRecorder, WandbRecorder
     from evorl.workflows import Workflow
 
-    jax.config.update("jax_compilation_cache_dir", "../jax-cache")
     jax.config.update("jax_threefry_partitionable", True)
 
     logger.info("config:\n" + OmegaConf.to_yaml(config, resolve=True))
