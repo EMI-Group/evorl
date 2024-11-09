@@ -241,6 +241,7 @@ pip-selfcheck.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,macos
 
+/jax_cache
 /outputs
 /multirun
 /debug
