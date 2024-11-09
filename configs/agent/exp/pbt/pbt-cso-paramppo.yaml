@@ -1,0 +1,16 @@
+# @package _global_
+
+defaults:
+  - /agent/meta/pbt-cso-paramppo
+  - _self_
+
+pop_size: 128
+
+workflow_steps_per_iter: 64
+
+warmup_steps: 256 # 4 warmup iters
+
+num_iters: 500
+
+checkpoint:
+  save_interval_steps: 50
