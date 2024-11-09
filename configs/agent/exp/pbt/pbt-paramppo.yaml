@@ -6,8 +6,6 @@ defaults:
 
 pop_size: 128
 
-parallel_train: true
-parallel_eval: true
 workflow_steps_per_iter: 64
 
 warmup_steps: 256 # 4 warmup iters
