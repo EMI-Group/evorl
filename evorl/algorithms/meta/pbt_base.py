@@ -24,7 +24,7 @@ from evorl.rollout import rollout
 from evorl.metrics import MetricBase, EvaluateMetric
 from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
-from evorl.types import MISSING_REWARD, PyTreeDict, State
+from evorl.types import MISSING_REWARD, PyTreeDict, State, PyTreeData
 from evorl.replay_buffers import ReplayBufferState
 from evorl.recorders import get_1d_array_statistics, get_1d_array, add_prefix
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
@@ -65,6 +65,10 @@ class PBTWorkflowMetric(MetricBase):
     # the average of sampled timesteps of all workflows
     sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+
+
+class PBTOptState(PyTreeData):
+    pass
 
 
 class PBTWorkflowBase(Workflow):
@@ -150,7 +154,9 @@ class PBTWorkflowBase(Workflow):
 
         return cls(target_workflow, evaluator, config)
 
-    def _setup_pop(self, key: chex.PRNGKey) -> chex.ArrayTree:
+    def _setup_pop_and_pbt_optimizer(
+        self, key: chex.PRNGKey
+    ) -> tuple[chex.ArrayTree, PBTOptState]:
         raise NotImplementedError
 
     def _customize_optimizer(self) -> None:
@@ -162,12 +168,14 @@ class PBTWorkflowBase(Workflow):
 
         key, workflow_key, pop_key = jax.random.split(key, num=3)
 
-        pop = self._setup_pop(pop_key)
+        pop, pbt_opt_state = self._setup_pop_and_pbt_optimizer(pop_key)
         pop = tree_device_put(pop, self.sharding)
 
         workflow_metrics = PBTWorkflowMetric()
         shared_sharding = NamedSharding(self.sharding.mesh, P())
-        key, workflow_metrics = jax.device_put((key, workflow_metrics), shared_sharding)
+        key, workflow_metrics, pbt_opt_state = jax.device_put(
+            (key, workflow_metrics, pbt_opt_state), shared_sharding
+        )
 
         workflow_keys = jax.random.split(workflow_key, pop_size)
         workflow_keys = jax.device_put(workflow_keys, self.sharding)
@@ -195,13 +203,15 @@ class PBTWorkflowBase(Workflow):
         return State(
             key=key,  # shared
             metrics=workflow_metrics,  # shared
-            pop_workflow_state=pop_workflow_state,  # sharding across devices
-            pop=pop,  # sharding across devices
+            pop_workflow_state=pop_workflow_state,  # across devices
+            pop=pop,  # across devices
+            pbt_opt_state=pbt_opt_state,  # shared
         )
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         pop_workflow_state = state.pop_workflow_state
         pop = state.pop
+        pbt_opt_state = state.pbt_opt_state
 
         # ===== step ======
         def _train_steps(pop_wf_state):
@@ -242,16 +252,17 @@ class PBTWorkflowBase(Workflow):
         # ===== warmup or exploit & explore ======
         key, exploit_and_explore_key = jax.random.split(state.key)
 
-        def _dummy_fn(pop, pop_workflow_state, pop_metrics, key):
-            return pop, pop_workflow_state
+        def _dummy_fn(pbt_opt_state, pop, pop_workflow_state, pop_metrics, key):
+            return pop, pop_workflow_state, pbt_opt_state
 
-        pop, pop_workflow_state = jax.lax.cond(
+        pop, pop_workflow_state, pbt_opt_state = jax.lax.cond(
             state.metrics.iterations + 1
             <= math.ceil(
                 self.config.warmup_steps / self.config.workflow_steps_per_iter
             ),
             _dummy_fn,
             self.exploit_and_explore,
+            pbt_opt_state,
             pop,
             pop_workflow_state,
             pop_episode_returns,
@@ -278,6 +289,7 @@ class PBTWorkflowBase(Workflow):
             metrics=workflow_metrics,
             pop=pop,
             pop_workflow_state=pop_workflow_state,
+            pbt_opt_state=pbt_opt_state,
         )
 
     def evaluate(self, state: State) -> State:
@@ -316,11 +328,12 @@ class PBTWorkflowBase(Workflow):
 
     def exploit_and_explore(
         self,
+        pbt_opt_state: PBTOptState,
         pop: chex.ArrayTree,
         pop_workflow_state: State,
         pop_metrics: chex.ArrayTree,
         key: chex.PRNGKey,
-    ) -> tuple[chex.ArrayTree, State]:
+    ) -> tuple[chex.ArrayTree, State, PBTOptState]:
         raise NotImplementedError
 
     def apply_hyperparams_to_workflow_state(
@@ -342,33 +355,33 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
 
     def exploit_and_explore(
         self,
+        pbt_opt_state: PBTOptState,
         pop: chex.ArrayTree,
         pop_workflow_state: State,
         pop_metrics: chex.ArrayTree,
         key: chex.PRNGKey,
-    ) -> tuple[chex.ArrayTree, State]:
+    ) -> tuple[chex.ArrayTree, State, PBTOptState]:
         exploit_key, explore_key = jax.random.split(key)
 
         config = self.config
 
-        tops_indices, bottoms_indices = select(
+        top_indices, bottom_indices = select(
             pop_metrics,  # using episode_return
             exploit_key,
             bottoms_num=round(config.pop_size * config.bottom_ratio),
             tops_num=round(config.pop_size * config.top_ratio),
         )
 
-        parents = tree_get(pop, tops_indices)
-        parents_wf_state = tree_get(pop_workflow_state, tops_indices)
+        parents = tree_get(pop, top_indices)
+        parents_wf_state = tree_get(pop_workflow_state, top_indices)
 
-        # TODO: check sharding issue with vmap under multi-devices.
         offsprings = jax.vmap(
             partial(
                 explore,
                 perturb_factor=config.perturb_factor,
                 search_space=config.search_space,
             )
-        )(parents, jax.random.split(explore_key, bottoms_indices.shape[0]))
+        )(parents, jax.random.split(explore_key, bottom_indices.shape[0]))
 
         # Note: no need to deepcopy parents_wf_state here, since it should be
         # ensured immutable in apply_hyperparams_to_workflow_state()
@@ -377,16 +390,16 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
         )
 
         # ==== survival | merge population ====
-        pop = tree_set(pop, offsprings, bottoms_indices, unique_indices=True)
+        pop = tree_set(pop, offsprings, bottom_indices, unique_indices=True)
         # we copy wf_state back to offspring wf_state
         pop_workflow_state = tree_set(
             pop_workflow_state,
             offsprings_workflow_state,
-            bottoms_indices,
+            bottom_indices,
             unique_indices=True,
         )
 
-        return pop, pop_workflow_state
+        return pop, pop_workflow_state, pbt_opt_state
 
     def learn(self, state: State) -> State:
         for i in range(state.metrics.iterations, self.config.num_iters):
@@ -484,9 +497,6 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
         rollout_length = self.config.random_timesteps // num_envs
 
-        def _rollout(key):
-            return trajectory
-
         # ==== fill random transitions ====
 
         key, env_key, rollout_key = jax.random.split(state.key, num=3)
@@ -552,6 +562,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         pop_workflow_state = state.pop_workflow_state
         pop = state.pop
         replay_buffer_state = state.replay_buffer_state
+        pbt_opt_state = state.pbt_opt_state
 
         # ===== step ======
         def _train_steps(pop_wf_state, replay_buffer_state):
@@ -618,16 +629,17 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         # ===== warmup or exploit & explore ======
         key, exploit_and_explore_key = jax.random.split(state.key)
 
-        def _dummy_fn(pop, pop_workflow_state, pop_metrics, key):
-            return pop, pop_workflow_state
+        def _dummy_fn(pbt_opt_state, pop, pop_workflow_state, pop_metrics, key):
+            return pop, pop_workflow_state, pbt_opt_state
 
-        pop, pop_workflow_state = jax.lax.cond(
+        pop, pop_workflow_state, pbt_opt_state = jax.lax.cond(
             state.metrics.iterations + 1
             <= math.ceil(
                 self.config.warmup_steps / self.config.workflow_steps_per_iter
             ),
             _dummy_fn,
             self.exploit_and_explore,
+            pbt_opt_state,
             pop,
             pop_workflow_state,
             pop_episode_returns,
@@ -655,6 +667,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             metrics=workflow_metrics,
             pop=pop,
             pop_workflow_state=pop_workflow_state,
+            pbt_opt_state=pbt_opt_state,
             replay_buffer_state=replay_buffer_state,
         )
 

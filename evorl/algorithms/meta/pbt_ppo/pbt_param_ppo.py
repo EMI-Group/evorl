@@ -4,7 +4,7 @@ from omegaconf import OmegaConf
 
 from evorl.types import PyTreeDict, State
 
-from ..pbt import PBTWorkflowTemplate
+from ..pbt_base import PBTWorkflowTemplate, PBTOptState
 from ..pbt_utils import uniform_init, log_uniform_init
 
 
@@ -13,7 +13,9 @@ class PBTParamPPOWorkflow(PBTWorkflowTemplate):
     def name(cls):
         return "PBT-ParamPPO"
 
-    def _setup_pop(self, key: chex.PRNGKey) -> chex.ArrayTree:
+    def _setup_pop_and_pbt_optimizer(
+        self, key: chex.PRNGKey
+    ) -> tuple[chex.ArrayTree, PBTOptState]:
         search_space = self.config.search_space
         pop_size = self.config.pop_size
 
@@ -41,7 +43,7 @@ class PBTParamPPOWorkflow(PBTWorkflowTemplate):
             }
         )
 
-        return pop
+        return pop, PBTOptState()
 
     def apply_hyperparams_to_workflow_state(
         self, workflow_state: State, hyperparams: PyTreeDict[str, chex.Numeric]
@@ -56,8 +58,9 @@ class PBTParamPPOWorkflow(PBTWorkflowTemplate):
         # make a shadow copy
         hyperparams = hyperparams.replace()
         hyperparams.pop("clip_epsilon")
+        hp_state = workflow_state.hp_state.replace(**hyperparams)
 
         return workflow_state.replace(
             agent_state=agent_state,
-            hp_state=hyperparams,
+            hp_state=hp_state,
         )
