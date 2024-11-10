@@ -1,0 +1,59 @@
+# @package _global_
+
+defaults:
+  - /agent/meta@target_workflow: paramppo
+  - _self_
+
+workflow_cls: evorl.algorithms.meta.pbt_ppo.pbt_param_ppo.PBTParamPPOWorkflow
+
+pop_size: 32
+
+workflow_steps_per_iter: 64 # match the same updates per iter as PBT-SAC
+
+warmup_steps: 256 # warmup_iters = warmup_steps // workflow_steps_per_iter
+
+num_iters: 500
+
+# PBT hyperparameters:
+bottom_ratio: 0.2
+top_ratio: 0.2
+
+perturb_factor:
+  actor_loss_weight: 0.2
+  critic_loss_weight: 0.2
+  entropy_loss_weight: 0.2
+  discount_g: 0.2
+  gae_lambda_g: 0.2
+  clip_epsilon: 0.2
+
+search_space:
+  actor_loss_weight:
+    low: 0.01
+    high: 10
+  critic_loss_weight:
+    low: 0.01
+    high: 10
+  entropy_loss_weight:
+    low: -1.0
+    high: -1e-5
+  discount_g: # discount=1-exp(-g), [0.86466, 0.99999]
+    low: 2
+    high: 12
+  gae_lambda_g: # gae_lambda=1-exp(-g), [0.63212, 0.99999]
+    low: 1
+    high: 12
+  clip_epsilon:
+    low: 0.01
+    high: 0.5
+
+target_workflow:
+  num_eval_envs: 16
+  eval_episodes: 16
+
+# independent evaluation
+num_eval_envs: 128
+eval_episodes: 128
+eval_interval: 25
+
+checkpoint:
+  save_interval_steps: 50
