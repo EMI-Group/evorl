@@ -6,7 +6,7 @@ defaults:
 
 pop_size: 128
 
-workflow_steps_per_iter: 64
+workflow_steps_per_iter: 64 # match the same updates per iter as PBT-SAC(we assume 2critic+1actor sgd updates as one update of SAC)
 
 warmup_steps: 256 # 4 warmup iters
 
