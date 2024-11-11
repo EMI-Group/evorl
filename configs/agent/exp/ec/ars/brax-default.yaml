@@ -12,7 +12,7 @@ normalize_obs_mode: "RS" # "Global" or "RS" or "VBN"
 pop_size: 128
 num_elites: 8
 
-optimizer_name: 'sgd'
+optimizer_name: "sgd"
 lr: 0.02
 noise_std: 0.03
 

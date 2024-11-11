@@ -11,7 +11,7 @@ num_envs: 16
 episodes: 16 # episodes per individual for fitness
 
 discount: 1.0
-metric_names: ['reward_forward', 'reward_ctrl']
+metric_names: ["reward_forward", "reward_ctrl"]
 
 
 agent_network:

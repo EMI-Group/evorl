@@ -20,4 +20,4 @@ agent_network:
   norm_layer_type: "none"
 
 wandb:
-  tags: ['256net']
+  tags: ["256net", "1eval"]

@@ -8,7 +8,7 @@ num_iters: 2000
 
 pop_size: 128
 
-optimizer_name: 'adam'
+optimizer_name: "adam"
 weight_decay: 0.005 # L2 regularization
 ec_noise_std:
   init: 0.02

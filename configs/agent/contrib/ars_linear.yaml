@@ -11,7 +11,7 @@ random_timesteps: 10000 # effective in "Global" and "VBN"
 pop_size: 128 # use mirror sampling by default
 num_elites: 16 # [1, pop_size//2]
 
-optimizer_name: 'sgd'
+optimizer_name: "sgd"
 lr: 0.02
 noise_std: 0.03
 

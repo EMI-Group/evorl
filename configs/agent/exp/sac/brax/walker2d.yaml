@@ -4,7 +4,7 @@ defaults:
   - /agent/sac
   - _self_
 
-# Note: unlike brax, we don't change reward_scale
+# Note: unlike brax, we don"t change reward_scale
 # reward_scaling: 5
 
 num_envs: 128
