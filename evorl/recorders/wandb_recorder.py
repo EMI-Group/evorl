@@ -53,6 +53,12 @@ def add_prefix(data: dict, prefix: str):
 
 
 def get_1d_array_statistics(data, histogram=False):
+    if data is None:
+        res = dict(min=None, max=None, mean=None)
+        if histogram:
+            res["val"] = pd.Series(data)
+        return res
+
     nan_mask = np.isnan(data)
     if nan_mask.any():
         warnings.warn("data contains nan, removing them...")

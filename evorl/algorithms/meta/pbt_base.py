@@ -412,8 +412,15 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
                 train_episode_return = train_metrics_dict["pop_train_metrics"][
                     "train_episode_return"
                 ]
+                train_episode_return = train_episode_return[
+                    train_episode_return != MISSING_REWARD
+                ]
+
+                if len(train_episode_return) == 0:
+                    train_episode_return = None
+
                 train_metrics_dict["pop_train_metrics"]["train_episode_return"] = (
-                    train_episode_return[train_episode_return != MISSING_REWARD]
+                    train_episode_return
                 )
 
             train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
