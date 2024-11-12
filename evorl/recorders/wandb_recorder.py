@@ -21,7 +21,6 @@ class WandbRecorder(Recorder):
             "tags": tags,
             "dir": path,
             "mode": mode,
-            "settings": wandb.Settings(start_method="thread"),
             **wandb_kwargs,
         }
 
