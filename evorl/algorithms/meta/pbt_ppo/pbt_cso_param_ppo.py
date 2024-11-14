@@ -19,7 +19,7 @@ class PBTCSOOptState(PBTOptState):
 class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
     @classmethod
     def name(cls):
-        return "PBT-CSO"
+        return "PBT-CSO-ParamPPO"
 
     def _setup_pop_and_pbt_optimizer(
         self, key: chex.PRNGKey
