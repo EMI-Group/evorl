@@ -23,10 +23,10 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                // "agent=ppo",
+                "agent=ppo",
                 // "agent=exp/a2c/brax/ant",
                 // "agent=exp/sac/gymnax/batch1",
-                "agent=exp/td3/brax/batch2",
+                // "agent=exp/td3/brax/batch2",
                 // "agent=dqn",
                 // "agent=contrib/td3-onpolicy",
                 // "agent=exp/pop-td3/cleanrl-default",
@@ -39,6 +39,7 @@
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",
                 // "JAX_DISABLE_JIT": "true"
+                "JAX_COMPILATION_CACHE_DIR": "./jax_cache",
                 "JAX_DEBUG_NANS": "True"
             },
             "justMyCode": false
@@ -107,7 +108,8 @@
             "request": "launch",
             "module": "evorl.train",
             "args": [
-                "agent=meta/pbt-paramppo",
+                // "agent=meta/pbt-paramppo",
+                "agent=meta/pbt-cso-paramppo",
                 // "agent=pbt-ppo",
                 "env=brax/ant",
                 "debug=true",
@@ -205,7 +207,8 @@
                 // "agent=ec/vanilla_es",
                 // "agent=contrib/openes-evox",
                 // "agent=exp/ec/ars/hopper",
-                "agent=exp/ec/vanilla_es/brax-default",
+                // "agent=exp/ec/vanilla_es/brax-default",
+                "agent=contrib/openes-noise-table",
                 "env=brax/hopper",
                 "debug=true",
                 // "normalize_obs_mode=VBN"

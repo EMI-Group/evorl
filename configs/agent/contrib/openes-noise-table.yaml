@@ -1,0 +1,38 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.contrib.openes_noise_table.OpenESWorkflow
+
+num_iters: 1000
+
+normalize_obs: true # enable of disable VBN
+random_timesteps: 10000
+
+noise_table_size: 250000000
+
+pop_size: 128
+
+optimizer_name: "adam"
+weight_decay: 0.005 # L2 regularization
+ec_noise_std:
+  init: 0.02
+  final: 0.001
+  decay: 1.0 # 1.0 means: always use fixed init value
+ec_lr:
+  init: 0.01
+  final: 0.001
+  decay: 1.0 # 1.0 means: always use fixed init value
+
+num_envs: 1
+episodes_for_fitness: 1 # episodes per individual for fitness
+mirror_sampling: true
+explore: false
+discount: 1.0
+
+num_eval_envs: 128
+eval_episodes: 128
+eval_interval: 10
+
+agent_network:
+  actor_hidden_layer_sizes: [16, 16]
+  use_bias: true
+  norm_layer_type: "none"
