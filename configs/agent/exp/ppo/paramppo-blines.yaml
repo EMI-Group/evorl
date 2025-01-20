@@ -1,0 +1,33 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.ppo.PPOWorkflow
+
+num_envs: 4
+
+normalize_obs: false
+rollout_length: 512 # batch_size = rollout_length * num_envs = 2048
+discount: 0.99
+gae_lambda: 0.95
+clip_epsilon: 0.2
+
+minibatch_size: 256 # num_minibatches = batch_size / minibatch_size = 8
+reuse_rollout_epochs: 4 # apply multiple epochs (one epoch contains multiple minibatches) on the same rollout data
+
+total_timesteps: 65536000 # 512*4*64*500 (500 iters in PBT-PPO)
+
+num_eval_envs: 16
+eval_episodes: 16 # should be divided by num_eval_envs
+eval_interval: 64 # match the workflow_steps_per_iter in PBT-PPO
+
+loss_weights:
+  actor_loss: 1.0
+  critic_loss: 0.5
+  actor_entropy: -0.01
+
+optimizer:
+  lr: 0.0003
+  grad_clip_norm: 10.0 # set 0 or null to turn-off
+
+agent_network:
+  actor_hidden_layer_sizes: [256, 256]
+  critic_hidden_layer_sizes: [256, 256]
