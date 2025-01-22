@@ -15,9 +15,6 @@ warmup_steps: 100 # warmup_iters = warmup_steps // workflow_steps_per_iter
 num_iters: 500
 
 # PBT hyperparameters:
-bottom_ratio: 0.2
-top_ratio: 0.2
-
 perturb_factor:
   actor_loss_weight: 0.2
   critic_loss_weight: 0.2
