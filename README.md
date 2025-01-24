@@ -1,6 +1,8 @@
 ---
 
-<h1 align="center"> 🌟EvoRL: A GPU-acclerated Framework for Evolutionary Reinforcement Learning🌟 </h1>
+<h2 align="center">
+    <p>🌟EvoRL: A GPU-acclerated Framework for Evolutionary Reinforcement Learning🌟</p>
+</h2>
 
 ---
 
