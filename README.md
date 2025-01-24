@@ -125,13 +125,15 @@ Note:
 
 ## Logging
 
-When launching algorithms from the training scipt, the log file and checkpoint files will be stored in `./outputs/train/<timestamp>/<exp-name>/`.
+When launching algorithms from the training scripts, the log file and checkpoint files will be stored in `./outputs/train|train_dist/<timestamp>/<exp-name>/`, or in `./multirun/train|train_dist/<timestamp>/<exp-name>/` when using `-m` option for multiple runs.
 
-By default, the script will enable two recorders for logging: `LogRecorder` and `WandbRecorder`. `LogRecorder` will save logs in above path, and `WandbRecorder` will upload the data to (WandB)[https://wandb.ai/site/], which provides beautiful visualizations. Besides these recorders, we also provide the `JsonRecorder` and users can customize their own recorders.
+By default, the script will enable two recorders for logging: `LogRecorder` and `WandbRecorder`. `LogRecorder` will save logs (`*.log`) in the above path, and `WandbRecorder` will upload the data to (WandB)[https://wandb.ai/site/], which provides beautiful visualizations.
 
 The screenshot in WandB dashboard:
 
 ![](./figs/evorl_wandb.png)
+
+Besides these recorders, we also provide the `JsonRecorder` and allow users to customize their own recorders.
 
 
 # Algorithms
@@ -142,7 +144,7 @@ Currently, `evorl` supports 4 types of algorithms
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
 | RL                      | A2C, PPO, IMPALA, DQN, DDPG, TD3, SAC                                                                         |
 | EA                      | OpenES, VanillaES, ARS, CMA-ES, algorithms from [EvoX](https://github.com/EMI-Group/evox) (PSO, NSGA-II, ...) |
-| Evolution-guided RL     | ERL-GA, ERL-ES, ERL-EDA, CEM-RL, CEM-RL-OpenES                                                                |
+| Evolution-guided RL     | ERL-GA, ERL-ES, ERL-EDA, CEMRL, CEMRL-OpenES                                                                |
 | Population-based AutoRL | PBT-PPO, PBT-SAC, PBT-CSO-PPO                                                                                  |
 
 
