@@ -13,6 +13,12 @@
     <p>🤖 EvoRL: A GPU-acclerated Framework for Evolutionary Reinforcement Learning 🧬</p>
 </h2>
 
+<p align="center">
+  <a href="https://arxiv.org/abs/">
+    <img src="https://img.shields.io/badge/paper-arxiv-red?style=for-the-badge" alt="TensorNEAT Paper on arXiv">
+  </a>
+</p>
+
 
 # Introduction
 
@@ -205,3 +211,9 @@ Test settings:
 - [Jumanji](https://github.com/instadeepai/jumanji)
 - [JaxMARL](https://github.com/FLAIROx/JaxMARL)
 - [EnvPool](https://github.com/sail-sg/envpool)
+
+## Citing EvoRL
+
+If you use EvoRL in your research and want to cite it in your work, please use:
+```
+```
