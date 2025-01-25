@@ -1,3 +1,13 @@
+<h1 align="center">
+  <a href="https://github.com/EMI-Group/evox">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./imgs/evox_logo_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="./imgs/evox_logo_light.png">
+      <img alt="EvoX Logo" height="50" src="./imgs/evox_logo_light.png">
+  </picture>
+  </a>
+  <br>
+</h1>
 
 <h2 align="center">
     <p>🤖 EvoRL: A GPU-acclerated Framework for Evolutionary Reinforcement Learning 🧬</p>
@@ -6,13 +16,15 @@
 
 # Introduction
 
-`evorl` is a fully GPU-acclerated framework for Evolutionary Reinforcement Learning (EvoRL), which is implemented by JAX and provides end-to-end training pipelines, including following processes optimized on GPUs:
+EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learning (EvoRL), which is implemented by JAX and provides end-to-end training pipelines, including following processes optimized on GPUs:
 
 * Reinforcement Learning (RL)
 * Evolutionary Computation (EC)
 * Environment Simulation
 
-`evorl` provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
+EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
+EvoGP is a sister project of <a href="https://github.com/EMI-Group/evox">EvoX</a>.
+
 
 <!-- > “北冥有鱼，其名为鲲。化而为鸟，其名为鹏。怒而飞，其翼若垂天之云。”
 > ——《庄子·逍遥游》 -->
@@ -32,7 +44,7 @@
 
 # Installation
 
-For normal users, `jax` should be installed first, please following their [official guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Then you can use `evorl` by cloning the repo and pip install in editable mode.
+For normal users, `jax` should be installed first, please following their [official guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Then you can use EvoRL by cloning the repo and pip install in editable mode.
 
 ```shell
 # It will install the evorl package from source
@@ -50,7 +62,7 @@ For developers: see [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## Training
 
-`evorl` uses [hydra](https://hydra.cc/) to manage configs and run algorithms. We provide training script `python -m evorl.train` to run algorithms from CLI. You can specify the `agent` (algorithm) and `env` field based on the related config file path (`*.yaml`) in `configs` folder.
+EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. We provide training script `python -m evorl.train` to run algorithms from CLI. You can specify the `agent` (algorithm) and `env` field based on the related config file path (`*.yaml`) in `configs` folder.
 
 ```text
 # hierarchy of folder `configs/`
@@ -138,7 +150,7 @@ Besides these recorders, we also provide the `JsonRecorder` and allow users to c
 
 # Algorithms
 
-Currently, `evorl` supports 4 types of algorithms
+Currently, EvoRL supports 4 types of algorithms
 
 | Type                    | Content                                                                                                       |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
