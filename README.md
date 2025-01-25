@@ -49,9 +49,15 @@ EvoRL is a sister project of <a href="https://github.com/EMI-Group/evox">EvoX</a
 * **Easy integration between EC to RL**: Due to modular design, EC components can be easily plug-and-play in workflows.
 * **Object-oriented functional programming model**: Classes define the static execution logic and their running states are stored externally.
 
+## Overview of Key Concepts in EvoRL
 
+![](./figs/evorl_arch.svg)
 
-
+* **Workflow** defines the training logic of algorithms.
+* **Agent** defines the behavior of a learning agent, and its optional loss functions.
+* **Env** provides a unified interface for different environments.
+* **SampleBatch** is a data structure for continuous trajectories or shuffled transition batch.
+* **EC** module provide EC components like Evolutionary Algorithms (EAs) and related operators.
 
 
 
@@ -69,10 +75,6 @@ For developers: see [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 
 # Quickstart
-
-## Overview of EvoRL Architecture
-
-![](./figs/evorl_arch.svg)
 
 ## Training
 
