@@ -9,6 +9,13 @@
   <br>
 </h1>
 
+<p align="center">
+  <img src="https://github.com/google/brax/raw/main/docs/img/humanoid_v2.gif", width=160, height=160/>
+  <img src="https://github.com/kenjyoung/MinAtar/raw/master/img/breakout.gif", width=160, height=160>
+  <img src="https://raw.githubusercontent.com/instadeepai/jumanji/main/docs/env_anim/bin_pack.gif", width=160, height=160>
+
+</p>
+
 <h2 align="center">
     <p>🤖 EvoRL: A GPU-acclerated Framework for Evolutionary Reinforcement Learning 🧬</p>
 </h2>
@@ -22,7 +29,7 @@
 
 # Introduction
 
-EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learning (EvoRL), which is implemented by JAX and provides end-to-end training pipelines, including following processes optimized on GPUs:
+EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learning, which is implemented by JAX and provides end-to-end training pipelines, including following processes optimized on GPUs:
 
 * Reinforcement Learning (RL)
 * Evolutionary Computation (EC)
@@ -37,7 +44,7 @@ EvoRL is a sister project of <a href="https://github.com/EMI-Group/evox">EvoX</a
 
 ## Highlight
 
-* **Implementation of EvoRL algorithms**: We provide two popular paradigms in EvoRL: Evolution-guided Reinforcement Learning (ERL), e.g.: ERL, CEM-RL; and Population-based AutoRL: e.g.: PBT
+* **Implementation of EvoRL algorithms**: We provide two popular paradigms in Evolutionary Reinforcement Learning: Evolution-guided Reinforcement Learning (ERL), e.g.: ERL, CEM-RL; and Population-based AutoRL: e.g.: PBT
 * **End-to-end training pipelines**: The training pipelines for RL, EC and EvoRL are executed on GPUs, eliminating dense communication between CPUs and GPUs in traditional implementations and fully utilizing the parallel computing capabilities of modern GPU architectures. Besides, most algorithms has a `Workflow.stpe()` function that is capable of `jax.jit` and `jax.vmap()`, supporting parallel training and JIT on full computation graph and.
 * **Easy integration between EC to RL**: Due to modular design, EC components can be easily plug-and-play in workflows.
 * **Object-oriented functional programming model**: Classes define the static execution logic and their running states are stored externally.
@@ -63,8 +70,9 @@ For developers: see [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 # Quickstart
 
+## Overview of EvoRL Architecture
 
-
+![](./figs/evorl_arch.svg)
 
 ## Training
 
