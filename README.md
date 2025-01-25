@@ -26,6 +26,19 @@
   </a>
 </p>
 
+# Table of Contents
+- [Overview of Key Concepts in EvoRL](#overview-of-key-concepts-in-evorl)
+- [Installation](#installation)
+  - [For Normal Users](#for-normal-users)
+  - [For Developers](#for-developers)
+- [Quickstart](#quickstart)
+  - [Training](#training)
+  - [Advanced Usage](#advanced-usage)
+  - [Train Multiple Agents in Parallel (Advanced)](#train-multiple-agents-in-parallel-advanced)
+- [Logging](#logging)
+- [Algorithms](#algorithms)
+- [Environments](#environments)
+
 
 # Introduction
 
