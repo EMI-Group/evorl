@@ -23,7 +23,7 @@ EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learnin
 * Environment Simulation
 
 EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
-EvoGP is a sister project of <a href="https://github.com/EMI-Group/evox">EvoX</a>.
+EvoRL is a sister project of <a href="https://github.com/EMI-Group/evox">EvoX</a>.
 
 
 <!-- > “北冥有鱼，其名为鲲。化而为鸟，其名为鹏。怒而飞，其翼若垂天之云。”
