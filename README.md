@@ -1,43 +1,44 @@
 <h1 align="center">
   <a href="https://github.com/EMI-Group/evox">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./figs/evox_logo_dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="./figs/evox_logo_light.png">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="./figs/evox_logo_dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="./figs/evox_logo_light.png">
       <img alt="EvoX Logo" height="50" src="./figs/evox_logo_light.png">
-  </picture>
+    </picture>
   </a>
-  <br>
 </h1>
 
 <p align="center">
   <img src="https://github.com/google/brax/raw/main/docs/img/humanoid_v2.gif", width=160, height=160/>
   <img src="https://github.com/kenjyoung/MinAtar/raw/master/img/breakout.gif", width=160, height=160>
   <img src="https://raw.githubusercontent.com/instadeepai/jumanji/main/docs/env_anim/bin_pack.gif", width=160, height=160>
-
 </p>
 
 <h2 align="center">
-    <p>🤖 EvoRL: A GPU-acclerated Framework for Evolutionary Reinforcement Learning 🧬</p>
+  <p>🤖 EvoRL: A GPU-acclerated Framework for Evolutionary Reinforcement Learning 🧬</p>
+  <a href="https://arxiv.org/abs/2501.15129">
+    <img src="https://img.shields.io/badge/paper-arxiv-red?style=for-the-badge" alt="EvoRL Paper on arXiv">
+  </a>
 </h2>
 
-<p align="center">
-  <a href="https://arxiv.org/abs/">
-    <img src="https://img.shields.io/badge/paper-arxiv-red?style=for-the-badge" alt="TensorNEAT Paper on arXiv">
-  </a>
-</p>
 
 # Table of Contents
-- [Overview of Key Concepts in EvoRL](#overview-of-key-concepts-in-evorl)
+- [Table of Contents](#table-of-contents)
+- [Introduction](#introduction)
+  - [Highlight](#highlight)
+  - [Overview of Key Concepts in EvoRL](#overview-of-key-concepts-in-evorl)
 - [Installation](#installation)
-  - [For Normal Users](#for-normal-users)
-  - [For Developers](#for-developers)
 - [Quickstart](#quickstart)
   - [Training](#training)
-  - [Advanced Usage](#advanced-usage)
-  - [Train Multiple Agents in Parallel (Advanced)](#train-multiple-agents-in-parallel-advanced)
-- [Logging](#logging)
+    - [Advanced usage](#advanced-usage)
+    - [Train multiple agents in parallel (Advanced)](#train-multiple-agents-in-parallel-advanced)
+  - [Logging](#logging)
 - [Algorithms](#algorithms)
 - [Environments](#environments)
+  - [Supported Environments](#supported-environments)
+- [Performance](#performance)
+- [Acknowledgement](#acknowledgement)
+  - [Citing EvoRL](#citing-evorl)
 
 
 # Introduction
@@ -185,8 +186,8 @@ Currently, EvoRL supports 4 types of algorithms
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
 | RL                      | A2C, PPO, IMPALA, DQN, DDPG, TD3, SAC                                                                         |
 | EA                      | OpenES, VanillaES, ARS, CMA-ES, algorithms from [EvoX](https://github.com/EMI-Group/evox) (PSO, NSGA-II, ...) |
-| Evolution-guided RL     | ERL-GA, ERL-ES, ERL-EDA, CEMRL, CEMRL-OpenES                                                                |
-| Population-based AutoRL | PBT-PPO, PBT-SAC, PBT-CSO-PPO                                                                                  |
+| Evolution-guided RL     | ERL-GA, ERL-ES, ERL-EDA, CEMRL, CEMRL-OpenES                                                                  |
+| Population-based AutoRL | PBT-PPO, PBT-SAC, PBT-CSO-PPO                                                                                 |
 
 
 # Environments
@@ -238,5 +239,15 @@ Test settings:
 ## Citing EvoRL
 
 If you use EvoRL in your research and want to cite it in your work, please use:
+
 ```
+@article{zheng2025evorl,
+  author    = {Bowen Zheng, Ran Cheng, Kay Chen Tan},
+  journal   = {arXiv},
+  pages     = {},
+  publisher = {arXiv},
+  title     = {{EvoRL}: A GPU-accelerated Framework for Evolutionary Reinforcement Learning},
+  volume    = {abs/2501.15129},
+  year      = {2025}
+}
 ```
