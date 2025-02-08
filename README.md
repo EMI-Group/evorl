@@ -50,11 +50,8 @@ EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learnin
 * Environment Simulation
 
 EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
-EvoRL is a sister project of <a href="https://github.com/EMI-Group/evox">EvoX</a>.
+EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 
-
-<!-- > “北冥有鱼，其名为鲲。化而为鸟，其名为鹏。怒而飞，其翼若垂天之云。”
-> ——《庄子·逍遥游》 -->
 
 ## Highlight
 
@@ -162,14 +159,14 @@ Note:
 
 - If you persist in parallel training on a single device, set environment variables like `XLA_PYTHON_CLIENT_MEM_FRACTION=.10` or `XLA_PYTHON_CLIENT_PREALLOCATE=false` to avoid the OOM from JAX's pre-allocation.
 
-- If the number of submitted jobs exceeds the number of CPU cores, joblib will wait and reuse previous processes. This could cause misconfigured GPU settings. To solve it, append `hydra.launcher.n_jobs=<#jobs>` to the script.
+- If the number of submitted jobs exceeds the number of CPU cores, `joblib` will wait and reuse previous processes. This could cause misconfigured GPU settings. To solve it, append `hydra.launcher.n_jobs=<#jobs>` to the script.
 
 
 ## Logging
 
 When launching algorithms from the training scripts, the log file and checkpoint files will be stored in `./outputs/train|train_dist/<timestamp>/<exp-name>/`, or in `./multirun/train|train_dist/<timestamp>/<exp-name>/` when using `-m` option for multiple runs.
 
-By default, the script will enable two recorders for logging: `LogRecorder` and `WandbRecorder`. `LogRecorder` will save logs (`*.log`) in the above path, and `WandbRecorder` will upload the data to (WandB)[https://wandb.ai/site/], which provides beautiful visualizations.
+By default, the script will enable two recorders for logging: `LogRecorder` and `WandbRecorder`. `LogRecorder` will save logs (`*.log`) in the above path, and `WandbRecorder` will upload the data to [WandB](https://wandb.ai/site/), which provides beautiful visualizations.
 
 The screenshot in WandB dashboard:
 
@@ -187,7 +184,7 @@ Currently, EvoRL supports 4 types of algorithms
 | RL                      | A2C, PPO, IMPALA, DQN, DDPG, TD3, SAC                                                                         |
 | EA                      | OpenES, VanillaES, ARS, CMA-ES, algorithms from [EvoX](https://github.com/EMI-Group/evox) (PSO, NSGA-II, ...) |
 | Evolution-guided RL     | ERL-GA, ERL-ES, ERL-EDA, CEMRL, CEMRL-OpenES                                                                  |
-| Population-based AutoRL | PBT-PPO, PBT-SAC, PBT-CSO-PPO                                                                                 |
+| Population-based AutoRL | PBT family (e.g: PBT-PPO, PBT-SAC, PBT-CSO-PPO)                                                               |
 
 
 # Environments
