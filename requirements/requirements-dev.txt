@@ -1,3 +1,6 @@
+myst-parser
 pre-commit
 pytest
 ruff
+sphinx
+sphinx-autodoc2
