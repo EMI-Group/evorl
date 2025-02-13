@@ -56,7 +56,7 @@ EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 ## Highlight
 
 * **Implementation of EvoRL algorithms**: We provide two popular paradigms in Evolutionary Reinforcement Learning: Evolution-guided Reinforcement Learning (ERL), e.g.: ERL, CEM-RL; and Population-based AutoRL: e.g.: PBT
-* **End-to-end training pipelines**: The training pipelines for RL, EC and EvoRL are executed on GPUs, eliminating dense communication between CPUs and GPUs in traditional implementations and fully utilizing the parallel computing capabilities of modern GPU architectures. Besides, most algorithms has a `Workflow.stpe()` function that is capable of `jax.jit` and `jax.vmap()`, supporting parallel training and JIT on full computation graph and.
+* **End-to-end training pipelines**: The training pipelines for RL, EC and EvoRL are executed on GPUs, eliminating dense communication between CPUs and GPUs in traditional implementations and fully utilizing the parallel computing capabilities of modern GPU architectures. Besides, most algorithms has a `Workflow.step()` function that is capable of `jax.jit` and `jax.vmap()`, supporting parallel training and JIT on full computation graph.
 * **Easy integration between EC to RL**: Due to modular design, EC components can be easily plug-and-play in workflows.
 * **Object-oriented functional programming model**: Classes define the static execution logic and their running states are stored externally.
 
@@ -168,7 +168,7 @@ When launching algorithms from the training scripts, the log file and checkpoint
 
 By default, the script will enable two recorders for logging: `LogRecorder` and `WandbRecorder`. `LogRecorder` will save logs (`*.log`) in the above path, and `WandbRecorder` will upload the data to [WandB](https://wandb.ai/site/), which provides beautiful visualizations.
 
-The screenshot in WandB dashboard:
+An example of screenshot in WandB dashboard:
 
 ![](./figs/evorl_wandb.png)
 
@@ -179,7 +179,7 @@ Besides these recorders, we also provide the `JsonRecorder` and allow users to c
 
 Currently, EvoRL supports 4 types of algorithms
 
-| Type                    | Content                                                                                                       |
+| Type                    | Algorithms                                                                                                       |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
 | RL                      | A2C, PPO, IMPALA, DQN, DDPG, TD3, SAC                                                                         |
 | EA                      | OpenES, VanillaES, ARS, CMA-ES, algorithms from [EvoX](https://github.com/EMI-Group/evox) (PSO, NSGA-II, ...) |
