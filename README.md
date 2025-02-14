@@ -15,7 +15,7 @@
 </p>
 
 <h2 align="center">
-  <p>🤖 EvoRL: A GPU-acclerated Framework for Evolutionary Reinforcement Learning 🧬</p>
+  <p>🌟 EvoRL: A GPU-acclerated Framework for Evolutionary Reinforcement Learning 🌟</p>
   <a href="https://arxiv.org/abs/2501.15129">
     <img src="https://img.shields.io/badge/paper-arxiv-red?style=for-the-badge" alt="EvoRL Paper on arXiv">
   </a>
