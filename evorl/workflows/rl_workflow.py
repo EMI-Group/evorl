@@ -21,11 +21,12 @@ logger = logging.getLogger(__name__)
 
 
 class RLWorkflow(Workflow):
+    """Workflow for RL pipeline
+
+    Args:
+        config: config object for RLWorkflow
+    """
     def __init__(self, config: DictConfig):
-        """
-        config:
-        devices: a single device or a list of devices.
-        """
         super().__init__(config)
 
         self.pmap_axis_name = None
