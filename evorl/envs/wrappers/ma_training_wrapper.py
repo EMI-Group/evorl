@@ -14,7 +14,7 @@ class EpisodeWrapper(Wrapper):
 
     This is the same as brax's EpisodeWrapper, and add some new fields in transition.info.
 
-    args:
+    Args:
         env: the wrapped env should be a single un-vectorized environment.
         episode_length: the maxiumum length of each episode for truncation
         action_repeat: the number of times to repeat each action
@@ -69,7 +69,7 @@ class OneEpisodeWrapper(EpisodeWrapper):
     When call step() after the env is done, stop simulation and
     directly return last state.
 
-    args:
+    Args:
         env: the wrapped env should be a single un-vectorized environment.
 
     """
@@ -88,9 +88,7 @@ class OneEpisodeWrapper(EpisodeWrapper):
 
 
 class VmapWrapper(Wrapper):
-    """
-    Vectorizes Brax env.
-    """
+    """Vectorizes Brax env."""
 
     def __init__(self, env: Env, num_envs: int = 1, vmap_step: bool = False):
         super().__init__(env)
@@ -98,9 +96,8 @@ class VmapWrapper(Wrapper):
         self.vmap_step = vmap_step
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        """
-        Args:
-            key: support batched keys [B,2] or single key [2]
+        """Args:
+        key: support batched keys [B,2] or single key [2]
         """
         if key.ndim <= 1:
             key = jax.random.split(key, self.num_envs)
@@ -126,9 +123,8 @@ class VmapAutoResetWrapper(Wrapper):
         self.num_envs = num_envs
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        """
-        Args:
-            key: support batched keys [B,2] or single key [2]
+        """Args:
+        key: support batched keys [B,2] or single key [2]
         """
         if key.ndim <= 1:
             key = jax.random.split(key, self.num_envs)
@@ -179,7 +175,6 @@ class VmapAutoResetWrapper(Wrapper):
 
         Note: run on single env
         """
-
         return jax.lax.cond(
             state.done["__all__"],
             self._auto_reset,
@@ -189,8 +184,7 @@ class VmapAutoResetWrapper(Wrapper):
 
 
 class FastVmapAutoResetWrapper(Wrapper):
-    """
-    Brax-style AutoReset: no randomness in reset.
+    """Brax-style AutoReset: no randomness in reset.
     This wrapper is more efficient than VmapAutoResetWrapper.
     """
 
@@ -199,9 +193,8 @@ class FastVmapAutoResetWrapper(Wrapper):
         self.num_envs = num_envs
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        """
-        Args:
-            key: support batched keys [B,2] or single key [2]
+        """Args:
+        key: support batched keys [B,2] or single key [2]
         """
         if key.ndim <= 1:
             key = jax.random.split(key, self.num_envs)

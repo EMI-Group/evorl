@@ -53,9 +53,7 @@ class TD3NetworkParams(PyTreeData):
 
 
 class TD3Agent(Agent):
-    """
-    The Agnet for TD3
-    """
+    """The Agnet for TD3"""
 
     critic_network: nn.Module
     actor_network: nn.Module
@@ -106,8 +104,7 @@ class TD3Agent(Agent):
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """
-        Args:
+        """Args:
             sample_barch: [#env, ...]
         used in sample action during rollout
         """
@@ -126,9 +123,8 @@ class TD3Agent(Agent):
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """
-        Args:
-            sample_barch: [#env, ...]
+        """Args:
+        sample_barch: [#env, ...]
         """
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -141,8 +137,7 @@ class TD3Agent(Agent):
     def critic_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
-        """
-        Args:
+        """Args:
             sample_barch: [B, ...]
 
         Return: LossDict[
@@ -194,8 +189,7 @@ class TD3Agent(Agent):
     def actor_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
-        """
-        Args:
+        """Args:
             sample_barch: [B, ...]
 
         Return: LossDict[
@@ -282,9 +276,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        """
-        return workflow
-        """
+        """Return workflow"""
         env = create_env(
             config.env.env_name,
             config.env.env_type,
@@ -362,9 +354,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
         return agent_state, opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """
-        the basic step function for the workflow to update agent
-        """
+        """The basic step function for the workflow to update agent"""
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # the trajectory [T, B, ...]

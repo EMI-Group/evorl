@@ -60,9 +60,7 @@ def truncated_normal_init(
 
 
 def log_uniform_init(search_space, key: chex.PRNGKey, num: int) -> chex.Array:
-    """
-    Suitable for hyperparameters that need explore different magnitudes. eg: [1e-3, 100].
-    """
+    """Suitable for hyperparameters that need explore different magnitudes. eg: [1e-3, 100]."""
     assert (
         search_space.low > 0
         and search_space.high > 0
@@ -80,9 +78,7 @@ def log_uniform_init(search_space, key: chex.PRNGKey, num: int) -> chex.Array:
 
 
 def exp_uniform_init(search_space, key: chex.PRNGKey, num: int) -> chex.Array:
-    """
-    exp(-x)
-    """
+    """exp(-x)"""
     assert (
         search_space.low > 0
         and search_space.high > 0

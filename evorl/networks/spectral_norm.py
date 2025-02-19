@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+#         http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,9 +14,11 @@
 
 """Flax-style Dense module with Spectral Normalization.
 
+From https://github.com/google/brax/blob/main/brax/training/networks.py
+
 Reference:
-  Dense: https://github.com/google/flax/blob/main/flax/linen/linear.py
-  Spectral Normalization:
+    Dense: https://github.com/google/flax/blob/main/flax/linen/linear.py
+    Spectral Normalization:
     - https://arxiv.org/abs/1802.05957
     - https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/spectral_norm.py
 """
@@ -39,14 +41,16 @@ def _l2_normalize(x, axis=None, eps=1e-12):
     """Normalizes along dimension `axis` using an L2 norm.
 
     This specialized function exists for numerical stability reasons.
+
     Args:
-      x: An input ndarray.
-      axis: Dimension along which to normalize, e.g. `1` to separately normalize
-        vectors in a batch. Passing `None` views `t` as a flattened vector when
-        calculating the norm (equivalent to Frobenius norm).
-      eps: Epsilon to avoid dividing by zero.
+        x: An input ndarray.
+        axis: Dimension along which to normalize, e.g. `1` to separately normalize
+            vectors in a batch. Passing `None` views `t` as a flattened vector when
+            calculating the norm (equivalent to Frobenius norm).
+        eps: Epsilon to avoid dividing by zero.
+
     Returns:
-      An array of the same shape as 'x' L2-normalized along 'axis'.
+        An array of the same shape as 'x' L2-normalized along 'axis'.
     """
     return x * lax.rsqrt((x * x).sum(axis=axis, keepdims=True) + eps)
 
@@ -58,16 +62,14 @@ class SNDense(linen.Module):
     with spectral normalization (https://arxiv.org/abs/1802.05957).
 
     Attributes:
-      features: the number of output features.
-      use_bias: whether to add a bias to the output (default: True).
-      dtype: the dtype of the computation (default: float32).
-      precision: numerical precision of the computation see `jax.lax.Precision`
-        for details.
-      kernel_init: initializer function for the weight matrix.
-      bias_init: initializer function for the bias.
-      eps: The constant used for numerical stability.
-      n_steps: How many steps of power iteration to perform to approximate the
-        singular value of the input.
+        features: the number of output features.
+        use_bias: whether to add a bias to the output (default: True).
+        dtype: the dtype of the computation (default: float32).
+        precision: numerical precision of the computation see `jax.lax.Precision` for details.
+        kernel_init: initializer function for the weight matrix.
+        bias_init: initializer function for the bias.
+        eps: The constant used for numerical stability.
+        n_steps: How many steps of power iteration to perform to approximate the singular value of the input.
     """
 
     features: int
@@ -84,10 +86,10 @@ class SNDense(linen.Module):
         """Applies a linear transformation to the inputs along the last dimension.
 
         Args:
-          inputs: The nd-array to be transformed.
+            inputs: The nd-array to be transformed.
 
         Returns:
-          The transformed input.
+            The transformed input.
         """
         inputs = jnp.asarray(inputs, self.dtype)
         kernel = self.param(

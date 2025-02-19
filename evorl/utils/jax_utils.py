@@ -10,14 +10,22 @@ import jax.tree_util as jtu
 
 
 def disable_gpu_preallocation():
+    """Disable GPU memory preallocation for XLA.
+
+    Call this method at the beginning of your script.
+    """
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 
 def optimize_gpu_utilization():
-    xla_flags = os.getenv("XLA_FLAGS", "")
+    """Possible Optimizations for Nvidia GPU.
+
+    This function is not tested.
+    """
+    # xla_flags = os.getenv("XLA_FLAGS", "")
     # print(f"current XLA_FLAGS: {xla_flags}")
-    if len(xla_flags) > 0:
-        xla_flags = xla_flags + " "
+    # if len(xla_flags) > 0:
+    #     xla_flags = xla_flags + " "
     # os.environ['XLA_FLAGS'] = xla_flags + (
     #     '--xla_gpu_enable_triton_softmax_fusion=true '
     #     '--xla_gpu_triton_gemm_any=True '
@@ -37,6 +45,10 @@ def optimize_gpu_utilization():
 
 
 def enable_deterministic_mode():
+    """Enable deterministic mode for JAX.
+
+    Call this method at the beginning of your script.
+    """
     xla_flags = os.getenv("XLA_FLAGS", "")
     # print(f"current XLA_FLAGS: {xla_flags}")
     if len(xla_flags) > 0:
@@ -72,30 +84,37 @@ def enable_deterministic_mode():
 
 
 def tree_zeros_like(nest: chex.ArrayTree, dtype=None) -> chex.ArrayTree:
+    """Pytree version of `jnp.zeros_like`."""
     return jtu.tree_map(lambda x: jnp.zeros(x.shape, dtype or x.dtype), nest)
 
 
 def tree_ones_like(nest: chex.ArrayTree, dtype=None) -> chex.ArrayTree:
+    """Pytree version of `jnp.ones_like`."""
     return jtu.tree_map(lambda x: jnp.ones(x.shape, dtype or x.dtype), nest)
 
 
 def tree_concat(nest1: chex.ArrayTree, nest2: chex.ArrayTree, axis: int = 0):
+    """Pytree version of `jnp.concatenate`."""
     return jtu.tree_map(lambda x, y: jnp.concatenate([x, y], axis=axis), nest1, nest2)
 
 
 def tree_stop_gradient(nest: chex.ArrayTree) -> chex.ArrayTree:
+    """Pytree version of `jax.lax.stop_gradient`."""
     return jtu.tree_map(jax.lax.stop_gradient, nest)
 
 
 def tree_astype(tree: chex.ArrayTree, dtype):
+    """Pytree version of `jnp.astype`."""
     return jtu.tree_map(lambda x: x.astype(dtype), tree)
 
 
 def tree_last(tree: chex.ArrayTree):
+    """Get the last element of each array in the pytree."""
     return jtu.tree_map(lambda x: x[-1], tree)
 
 
 def tree_get(tree: chex.ArrayTree, idx_or_slice):
+    """Get the elements of each array in the pytree."""
     return jtu.tree_map(lambda x: x[idx_or_slice], tree)
 
 
@@ -107,6 +126,21 @@ def tree_set(
     unique_indices: bool = False,
     mode: str | None = None,
 ):
+    """Set part of each array in the pytree.
+
+    A Pytree version of `src[idx_or_slice]=target`.
+
+    Args:
+        src: The source pytree.
+        target: The target pytree.
+        idx_or_slice: The indices or slices to be set.
+        indices_are_sorted: Whether the indices are sorted.
+        unique_indices: Whether the indices are unique.
+        mode: The mode to set the values.
+
+    Returns:
+        The updated source pytree.
+    """
     return jtu.tree_map(
         lambda x, y: x.at[idx_or_slice].set(
             y,
@@ -120,16 +154,18 @@ def tree_set(
 
 
 def scan_and_mean(*args, **kwargs):
-    """
-    usage: same like `jax.lax.scan`, but the scan results will be averaged.
+    """Scan with mean aggregation.
+
+    Usage: same like `jax.lax.scan`, but the scan results will be averaged.
     """
     last_carry, ys = jax.lax.scan(*args, **kwargs)
     return last_carry, jtu.tree_map(lambda x: x.mean(axis=0), ys)
 
 
 def scan_and_last(*args, **kwargs):
-    """
-    usage: same like `jax.lax.scan`, but return the last scan iteration results.
+    """Scan and return last iteration results.
+
+    Usage: same like `jax.lax.scan`, but return the last scan iteration results.
     """
     last_carry, ys = jax.lax.scan(*args, **kwargs)
     return last_carry, jtu.tree_map(lambda x: x[-1] if x.shape[0] > 0 else x, ys)
@@ -143,8 +179,7 @@ def jit_method(
     donate_argnames: str | Iterable[str] | None = None,
     **kwargs,
 ):
-    """
-    A decorator for `jax.jit` with arguments.
+    """A decorator for `jax.jit` with arguments.
 
     Args:
         static_argnums: The positional argument indices that are constant across
@@ -153,7 +188,6 @@ def jit_method(
     Returns:
         A decorator for `jax.jit` with arguments.
     """
-
     return partial(
         jax.jit,
         static_argnums=static_argnums,
@@ -171,9 +205,7 @@ def pmap_method(
     donate_argnums=(),
     **kwargs,
 ):
-    """
-    A decorator for `jax.pmap` with arguments.
-    """
+    """A decorator for `jax.pmap` with arguments."""
     return partial(
         jax.pmap,
         axis_name,
@@ -184,7 +216,15 @@ def pmap_method(
 
 
 def vmap_rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
-    # batched_key [B, 2] -> batched_keys [num, B, 2]
+    """Enhanced version of `jax.random.split` that allows batched keys.
+
+    Args:
+        key: Key or batched keys with shape (B, 2)
+        num: Number of keys to split.
+
+    Returns:
+        Batched keys with shape (num, B, 2)
+    """
     chex.assert_shape(key, (..., 2))
 
     rng_split_fn = jax.random.split
@@ -196,9 +236,7 @@ def vmap_rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
 
 
 def rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
-    """
-    Unified Version of `jax.random.split` for both single key and batched keys.
-    """
+    """Unified Version of `jax.random.split` for both single key and batched keys."""
     if key.ndim == 1:
         chex.assert_shape(key, (2,))
         return jax.random.split(key, num)
@@ -207,33 +245,31 @@ def rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
 
 
 def rng_split_by_shape(key: chex.PRNGKey, shape: tuple[int]) -> chex.PRNGKey:
+    """Split the key into multiple keys according to the shape."""
     chex.assert_shape(key, (2,))
     keys = jax.random.split(key, math.prod(shape))
     return jnp.reshape(keys, shape + (2,))
 
 
 def rng_split_like_tree(key: chex.PRNGKey, target: chex.ArrayTree) -> chex.ArrayTree:
-    """
-    Returns:
-        A tree that each like has a single key.
-    """
+    """Split the key according to the structure of the target pytree."""
     treedef = jax.tree_structure(target)
     keys = jax.random.split(key, treedef.num_leaves)
     return jax.tree_unflatten(treedef, keys)
 
 
 def is_jitted(func: Callable):
-    """
-    Detect if a function is wrapped by jit or pmap.
-    """
+    """Detect if a function is wrapped by jit or pmap."""
     return hasattr(func, "lower")
 
 
 def has_nan(x: jax.Array) -> bool:
+    """Check if the array has NaN values."""
     return jnp.isnan(x).any()
 
 
 def tree_has_nan(tree: chex.ArrayTree) -> chex.ArrayTree:
+    """Check if the pytree has NaN values."""
     return jtu.tree_map(has_nan, tree)
 
 
@@ -245,6 +281,7 @@ def invert_permutation(i: jax.Array) -> jax.Array:
 def right_shift_with_padding(
     x: chex.Array, shift: int, fill_value: None | chex.Scalar = None
 ):
+    """Shift the array to the right with padding."""
     shifted_matrix = jnp.roll(x, shift=shift, axis=0)
 
     if fill_value is not None:

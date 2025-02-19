@@ -8,6 +8,8 @@ from flax.linen.initializers import constant, orthogonal
 
 
 class CNN_QNetwork(nn.Module):
+    """A simple CNN network for Q-learning on Atari Games."""
+
     action_dim: int
     normalize: bool = False  # for native Atari envs
 
@@ -30,6 +32,8 @@ class CNN_QNetwork(nn.Module):
 
 
 class CNN_AgentStem(nn.Module):
+    """A simple CNN backbone used for the agent and the critic."""
+
     last_hidden_size: int = 512
     normalize: bool = False
 

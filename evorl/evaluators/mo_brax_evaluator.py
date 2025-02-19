@@ -96,8 +96,7 @@ class BraxEvaluator(Evaluator):
 
 
 def _flatten_metric(x):
-    """
-    x: (#iters, ..., #envs)
+    """x: (#iters, ..., #envs)
 
     Return: (..., #iters * #envs)
     """
@@ -149,21 +148,18 @@ def eval_rollout_episode(
     rollout_length: int,
     metric_names: tuple[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
-    """
-    Collect given rollout_length trajectory.
+    """Collect given rollout_length trajectory.
     Avoid unnecessary env_step()
 
     Args:
         env: vmapped env w/o autoreset
     """
-
     _eval_env_step = partial(
         eval_env_step, env_fn, action_fn, metric_names=metric_names
     )
 
     def _one_step_rollout(carry, unused_t):
-        """
-        sample_batch: one-step obs
+        """sample_batch: one-step obs
         transition: one-step full info
         """
         env_state, current_key, prev_transition = carry
@@ -249,13 +245,12 @@ def fast_eval_metrics(
     rollout_length: int,
     metric_names: tuple[str] = (),
 ) -> tuple[PyTreeDict, EnvState]:
-    """
-    Collect given rollout_length trajectory.
+    """Collect given rollout_length trajectory.
     Avoid unnecessary env_step()
+
     Args:
         env: vmapped env w/o autoreset
     """
-
     _eval_env_step = partial(
         eval_env_step, env_fn, action_fn, metric_names=metric_names
     )
@@ -267,8 +262,7 @@ def fast_eval_metrics(
         )
 
     def _one_step_rollout(carry):
-        """
-        sample_batch: one-step obs
+        """sample_batch: one-step obs
         transition: one-step full info
         """
         env_state, current_key, prev_metrics = carry

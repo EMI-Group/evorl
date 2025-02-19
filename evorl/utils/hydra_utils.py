@@ -8,12 +8,14 @@ from absl import logging
 
 
 def set_omegaconf_resolvers():
+    """Senitize the dirname."""
     OmegaConf.register_new_resolver(
         "sanitize_dirname", lambda path: re.sub(r"/", "_", path)
     )
 
 
 def get_output_dir(default_path: str = "./debug"):
+    """Return the output directory of hydra."""
     if HydraConfig.initialized():
         output_dir = Path(HydraConfig.get().runtime.output_dir).absolute()
     else:
@@ -35,4 +37,5 @@ absl_log_level_map = {
 
 
 def set_absl_log_level(level: str = "warning"):
+    """Set the absl log level."""
     logging.set_verbosity(absl_log_level_map[level])

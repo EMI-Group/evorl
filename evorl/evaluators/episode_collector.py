@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 class EpisodeCollector(PyTreeNode):
-    """
-    Return eval metrics and episodic trajectory
+    """Evaluate and return eval metrics and episodic trajectory.
+
+    Like `Evaluator`, but also returns the trajectories. When evaluating the agent, call `rollout()`.
     """
 
     env: Env

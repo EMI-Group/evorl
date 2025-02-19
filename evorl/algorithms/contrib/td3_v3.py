@@ -48,9 +48,7 @@ MISSING_LOSS = -1e10
 
 
 class TD3Agent(Agent):
-    """
-    The Agnet for TD3
-    """
+    """The Agnet for TD3"""
 
     critic_network: nn.Module
     actor_network: nn.Module
@@ -105,8 +103,7 @@ class TD3Agent(Agent):
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """
-        Args:
+        """Args:
             sample_barch: [#env, ...]
         used in sample action during rollout
         """
@@ -125,9 +122,8 @@ class TD3Agent(Agent):
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """
-        Args:
-            sample_barch: [#env, ...]
+        """Args:
+        sample_barch: [#env, ...]
         """
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -203,9 +199,7 @@ class TD3NetworkParams(PyTreeData):
 
 
 class TD3V3Workflow(OffPolicyWorkflowTemplate):
-    """
-    The similar impl of TD3 in SB3 and CleanRL
-    """
+    """The similar impl of TD3 in SB3 and CleanRL"""
 
     @classmethod
     def name(cls):
@@ -213,9 +207,7 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        """
-        return workflow
-        """
+        """Return workflow"""
         env = create_env(
             config.env.env_name,
             config.env.env_type,
@@ -297,9 +289,7 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
         return agent_state, opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """
-        the basic step function for the workflow to update agent
-        """
+        """The basic step function for the workflow to update agent"""
         iterations = state.metrics.iterations + 1
         key, rollout_key, critic_key, actor_key, rb_key = jax.random.split(
             state.key, num=5

@@ -38,9 +38,7 @@ def env_step(
     key: chex.PRNGKey,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
-    """
-    Collect one-step data.
-    """
+    """Collect one-step data."""
     # sample_batch: [#envs, ...]
     sample_batch = SampleBatch(obs=env_state.obs)
 
@@ -69,9 +67,7 @@ def eval_env_step(
     agent_state: AgentState,  # readonly
     key: chex.PRNGKey,
 ) -> tuple[SampleBatch, EnvState]:
-    """
-    Collect one-step data in evaluation mode.
-    """
+    """Collect one-step data in evaluation mode."""
     # sample_batch: [#envs, ...]
     sample_batch = SampleBatch(obs=env_state.obs)
 
@@ -95,8 +91,7 @@ def rollout(
     rollout_length: int,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
-    """
-    Collect given rollout_length trajectory.
+    """Collect given rollout_length trajectory.
     Tips: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
 
     Args:
@@ -108,8 +103,7 @@ def rollout(
     """
 
     def _one_step_rollout(carry, unused_t):
-        """
-        sample_batch: one-step obs
+        """sample_batch: one-step obs
         transition: one-step full info
         """
         env_state, current_key = carry
@@ -230,8 +224,7 @@ def eval_rollout(
     key: chex.PRNGKey,
     rollout_length: int,
 ) -> tuple[EnvState, Reward | RewardDict]:
-    """
-    Collect given rollout_length trajectory.
+    """Collect given rollout_length trajectory.
 
     Args:
         env: vmapped env w/o autoreset
@@ -243,8 +236,7 @@ def eval_rollout(
     """
 
     def _one_step_rollout(carry, unused_t):
-        """
-        sample_batch: one-step obs
+        """sample_batch: one-step obs
         transition: one-step full info
         """
         env_state, current_key = carry
@@ -273,18 +265,16 @@ def eval_rollout_episode(
     key: chex.PRNGKey,
     rollout_length: int,
 ) -> tuple[SampleBatch, EnvState]:
-    """
-    Collect given rollout_length trajectory.
+    """Collect given rollout_length trajectory.
     Avoid unnecessary env_step()
+
     Args:
         env: vmapped env w/o autoreset
     """
-
     _eval_env_step = partial(eval_env_step, env_fn, action_fn)
 
     def _one_step_rollout(carry, unused_t):
-        """
-        sample_batch: one-step obs
+        """sample_batch: one-step obs
         transition: one-step full info
         """
         env_state, current_key, prev_transition = carry
@@ -324,12 +314,9 @@ def fast_eval_rollout_episode(
     key: chex.PRNGKey,
     rollout_length: int,
 ) -> tuple[PyTreeDict, EnvState]:
+    """Args:
+    env: vmapped env w/o autoreset
     """
-
-    Args:
-        env: vmapped env w/o autoreset
-    """
-
     _eval_env_step = partial(eval_env_step, env_fn, action_fn)
 
     def _terminate_cond(carry):
@@ -339,8 +326,7 @@ def fast_eval_rollout_episode(
         )
 
     def _one_step_rollout(carry):
-        """
-        sample_batch: one-step obs
+        """sample_batch: one-step obs
         transition: one-step full info
         """
         env_state, current_key, prev_metrics = carry

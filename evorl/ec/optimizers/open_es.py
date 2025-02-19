@@ -15,8 +15,7 @@ from .ec_optimizer import EvoOptimizer, ECState
 
 
 def compute_ranks(x):
-    """
-    Returns ranks in [0, len(x)-1]
+    """Returns ranks in [0, len(x)-1]
     Note: This is different from scipy.stats.rankdata, which returns ranks in [1, len(x)].
     """
     assert x.ndim == 1
@@ -75,7 +74,7 @@ class OpenES(EvoOptimizer):
         )
 
     def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
-        "Generate new candidate solutions"
+        """Generate new candidate solutions"""
         key, sample_key = jax.random.split(state.key)
         sample_keys = rng_split_like_tree(sample_key, state.mean)
 
@@ -105,8 +104,7 @@ class OpenES(EvoOptimizer):
     def tell(
         self, state: ECState, fitnesses: chex.Array
     ) -> tuple[PyTreeDict, OpenESState]:
-        "Update the optimizer state based on the fitnesses of the candidate solutions"
-
+        """Update the optimizer state based on the fitnesses of the candidate solutions"""
         transformed_fitnesses = self.fitness_shaping_fn(fitnesses)
 
         # grad = 1/(N*sigma^2) * sum(F_i*(x_i-m))
@@ -197,7 +195,7 @@ class OpenESNoiseTable(EvoOptimizer):
         )
 
     def ask(self, state: ECState) -> tuple[chex.ArrayTree, ECState]:
-        "Generate new candidate solutions"
+        """Generate new candidate solutions"""
         key, sample_key = jax.random.split(state.key)
         # sample_keys = rng_split_like_tree(sample_key, state.mean)
 
@@ -239,8 +237,7 @@ class OpenESNoiseTable(EvoOptimizer):
     def tell(
         self, state: ECState, fitnesses: chex.Array
     ) -> tuple[PyTreeDict, OpenESState]:
-        "Update the optimizer state based on the fitnesses of the candidate solutions"
-
+        """Update the optimizer state based on the fitnesses of the candidate solutions"""
         transformed_fitnesses = self.fitness_shaping_fn(fitnesses)
 
         # grad = 1/(N*sigma^2) * sum(F_i*(x_i-m))

@@ -10,8 +10,7 @@ def explore(
     perturb_factor: dict[str, float],
     search_space: dict[str, dict[str, float]],
 ):
-    """
-    Define the exploration operation for PBT. Normally explore the local of an individual.
+    """Define the exploration operation for PBT. Normally explore the local of an individual.
     i.e., mutation op in the context of EC.
     Here we use the orginal exploration operator in PBT.
     """
@@ -35,10 +34,7 @@ def explore(
 def select(
     pop_episode_returns: chex.Array, key: chex.PRNGKey, bottoms_num: int, tops_num: int
 ):
-    """
-    select parents to replace worse individuals
-    """
-
+    """Select parents to replace worse individuals"""
     indices = jnp.argsort(pop_episode_returns)
     bottoms_indices = indices[:bottoms_num]
     tops_indices = indices[-tops_num:]

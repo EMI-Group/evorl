@@ -90,9 +90,8 @@ class A2CAgent(Agent):
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """
-        Args:
-            sample_barch: [#env, ...]
+        """Args:
+        sample_barch: [#env, ...]
         """
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -117,9 +116,8 @@ class A2CAgent(Agent):
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """
-        Args:
-            sample_barch: [#env, ...]
+        """Args:
+        sample_barch: [#env, ...]
         """
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -139,10 +137,7 @@ class A2CAgent(Agent):
     def loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
-        """
-
-        sample_batch: [T*B, ...]
-
+        """sample_batch: [T*B, ...]
 
         Return: LossDict[
             actor_loss
@@ -150,7 +145,6 @@ class A2CAgent(Agent):
             actor_entropy_loss
         ]
         """
-
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)

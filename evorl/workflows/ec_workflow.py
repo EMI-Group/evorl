@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 
 class ECWorkflowMetric(MetricBase):
+    """Workflow metric for ECWorkflow."""
+
     best_objective: chex.Array
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
@@ -33,23 +35,36 @@ class ECWorkflowMetric(MetricBase):
 
 
 class MultiObjectiveECWorkflowMetric(MetricBase):
+    """Workflow metric for MultiObjectiveECWorkflow."""
+
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class TrainMetric(MetricBase):
+    """Training Metrics for ECWorkflow."""
+
     objectives: chex.Array
     ec_metrics: chex.ArrayTree
 
 
 class DistributedInfo(PyTreeData):
+    """Distributed information for multi-devices training."""
+
     rank: int = jnp.zeros((), dtype=jnp.int32)
     world_size: int = pytree_field(default=1, static=True)
 
 
 class ECWorkflow(Workflow):
+    """Base Workflow for EC (Evolutionary Computation) algorithms."""
+
     def __init__(self, config: DictConfig):
+        """Initialize the ECWorkflow instance.
+
+        Args:
+            config: the config object
+        """
         super().__init__(config)
 
         self.pmap_axis_name = None
@@ -57,6 +72,7 @@ class ECWorkflow(Workflow):
 
     @property
     def enable_multi_devices(self) -> bool:
+        """Whether multi-devices training is enabled."""
         return self.pmap_axis_name is not None
 
     @classmethod
@@ -66,6 +82,13 @@ class ECWorkflow(Workflow):
         enable_multi_devices: bool = False,
         enable_jit: bool = True,
     ):
+        """Build the ec workflow instance from the config.
+
+        Args:
+            config: Config of the workflow
+            enable_multi_devices: Whether multi-devices training is enabled
+            enable_jit: Whether jit is enabled
+        """
         config = copy.deepcopy(config)  # avoid in-place modification
 
         devices = jax.local_devices()
@@ -88,26 +111,56 @@ class ECWorkflow(Workflow):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:
+        """Customize the process of building the workflow instance from the config.
+
+        Args:
+            config: Config of the workflow
+
+        Returns:
+            workflow: the created workflow instance
+        """
         raise NotImplementedError
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
-        """
-        When enable_multi_devices=True, rescale config settings in-place to match multi-devices.
-        Note: not need for EvoX part, as it's already handled by EvoX.
+        """Customize the logic of rescaling the config settings when multi-devices training is enabled.
+
+        When enable_multi_devices=True, rescale config settings in-place to match multi-devices
+
+        Args:
+            config: Config of the workflow
         """
         pass
 
     @classmethod
     def enable_jit(cls) -> None:
+        """Define which methods should be jitted.
+
+        By default, the workflow's `step()` method is jitted.
+        """
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
     @classmethod
     def enable_pmap(cls, axis_name) -> None:
+        """Define which methods should be pmaped.
+
+        This method defines the multi-device behavior. By default, the workflow's `step()` method is pmaped.
+        """
         cls.step = jax.pmap(cls.step, axis_name, static_broadcasted_argnums=(0,))
 
 
 class ECWorkflowTemplate(ECWorkflow):
+    """Workflow template for EC algorithms.
+
+    Attributes:
+        env: Environment object.
+        agent: Workflow-sepecific agent object.
+        ec_optimizer: EC Optimizer of the agent.
+        ec_evaluator: Evaluator object used in `self.evaluation()`.
+        agent_state_vmap_axes: Vmap axis for the agent state.
+        config: Config of the workflow.
+    """
+
     def __init__(
         self,
         *,
@@ -118,6 +171,16 @@ class ECWorkflowTemplate(ECWorkflow):
         agent_state_vmap_axes: AgentStateAxis = 0,
         config: DictConfig,
     ):
+        """Initialize the ECWorkflow instance.
+
+        Args:
+            env: Environment object.
+            agent: Workflow-sepecific agent object.
+            ec_optimizer: EC Optimizer of the agent.
+            ec_evaluator: Evaluator object used in `self.evaluation()`.
+            agent_state_vmap_axes: Vmap axis for the agent state.
+            config: Config of the workflow.
+        """
         super().__init__(config)
 
         self.agent = agent
@@ -126,32 +189,21 @@ class ECWorkflowTemplate(ECWorkflow):
         self.ec_evaluator = ec_evaluator
         self.agent_state_vmap_axes = agent_state_vmap_axes
 
-    @classmethod
-    def _rescale_config(cls, config: DictConfig) -> None:
-        num_devices = jax.device_count()
-
-        # Note: in some model, the generated number of individuals may not be pop_size,
-        # then adjust accordingly
-        if config.pop_size % num_devices != 0:
-            new_pop_size = (config.pop_size // num_devices) * num_devices
-            logger.warning(
-                f"When enable_multi_devices=True, pop_size ({config.pop_size}) should be divisible by num_devices ({num_devices}), set new pop_size to {new_pop_size}"
-            )
-
-            config.pop_size = new_pop_size
-
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, ECState]:
-        # agent_key, ec_key = jax.random.split(key, 2)
-        # agent_state = self.agent.init(self.env.obs_space, self.env.action_space, agent_key)
+        """Setup Agent and ECOptimizer states.
+
+        Args:
+            key: JAX PRNGKey
+
+        Returns:
+            Tuple of (agent_state, ec_state)
+        """
         raise NotImplementedError
 
     def _setup_workflow_metrics(self) -> MetricBase:
-        """
-        Customize the workflow metrics.
-        """
-
+        """Define Workflow metrics."""
         return ECWorkflowMetric(best_objective=jnp.finfo(jnp.float32).min)
 
     def setup(self, key: chex.PRNGKey) -> State:
@@ -186,26 +238,50 @@ class ECWorkflowTemplate(ECWorkflow):
         return state
 
     def _postsetup(self, state: State) -> State:
+        """Post-setup state before training.
+
+        By default, no post-setup is applied
+        """
         return state
 
     def _replace_actor_params(
         self, agent_state: AgentState, params: Params
     ) -> AgentState:
+        """Define how to replace the pop agent_state from the population params.
+
+        Args:
+            agent_state: State of the agent.
+            params: Population params.
+
+        Returns:
+            New agent_state with replaced population params.
+        """
         raise NotImplementedError
 
     def _update_obs_preprocessor(
         self, agent_state: AgentState, trajectory: SampleBatch
     ) -> AgentState:
-        """
+        """Update the obs_preprocessor_state based on sampled trajectories.
+
         By default, don't update obs_preprocessor_state.
 
         Args:
-            agent_state: agent_state
+            agent_state: State of the agent
             trajectory: Episodic trajectory (T, B, ...)
         """
         return agent_state
 
     def _metrics_to_fitnesses(self, metrics: MetricBase) -> chex.ArrayTree:
+        """Convert the rollout metrics to fitnesses.
+
+        By default, use the mean of episode_returns over multiple episodes as fitnesses.
+
+        Args:
+            metrics: Rollout metrics.
+
+        Returns:
+            Fitnesses of the population.
+        """
         return jnp.mean(metrics.episode_returns, axis=-1)
 
     def step(self, state: State) -> tuple[MetricBase, State]:
@@ -298,6 +374,8 @@ class ECWorkflowTemplate(ECWorkflow):
 
 
 class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
+    """Workflow template for multi-objective EC algorithms."""
+
     def _metrics_to_fitnesses(self, metrics: MetricBase) -> chex.ArrayTree:
         fitnesses = PyTreeDict(
             {k: jnp.mean(metrics[k], axis=-1) for k in self.config.metric_names}

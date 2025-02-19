@@ -7,7 +7,31 @@ profile = "black"
 [tool.ruff]
 line-length = 88
 target-version = "py310"
-src = ["evorl", "tests"]
+# src = ["evorl", "tests"]
+src = ["evorl"]
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 80
+
+[tool.ruff.lint]
+# Enable all `pydocstyle` rules, limiting to those that adhere to the
+# Google convention via `convention = "google"`, below.
+extend-select = ["D"]
+
+# On top of the Google convention, disable `D417`, which requires
+# documentation for every function parameter.
+ignore = [
+    "D100",  # Missing docstring in public module
+    # "D101",  # Missing docstring in public class
+    "D102",  # Missing docstring in public method
+    # "D103",  # Missing docstring in public function
+    "D104",  # Missing docstring in public package
+    "D417",  # equires documentation for every function parameter.
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
@@ -16,13 +40,13 @@ src = ["evorl", "tests"]
 testpaths = ["tests"]
 
 [build-system]
-requires = ["setuptools >= 62.6"] # to support `file` directive
+requires = ["setuptools >= 62.6"]       # to support `file` directive
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.dynamic]
-version = {attr = "evorl.__version__"}
-dependencies = {file = ["requirements/requirements.txt"]}
-optional-dependencies.dev = {file = ["requirements/requirements-dev.txt"] }
+version = { attr = "evorl.__version__" }
+dependencies = { file = ["requirements/requirements.txt"] }
+optional-dependencies.dev = { file = ["requirements/requirements-dev.txt"] }
 
 [tool.setuptools.packages.find]
 include = ["evorl"]
@@ -30,9 +54,7 @@ namespaces = false
 
 [project]
 name = "evorl"
-authors = [
-    {name = "Bowen Zheng", email = "bowen.zheng@protonmail.com"}
-]
+authors = [{ name = "Bowen Zheng", email = "bowen.zheng@protonmail.com" }]
 description = "An efficient Evolutionary Reinforcement Learning Framework on Jax"
 readme = "README.md"
 dynamic = ["version", "dependencies", "optional-dependencies"]

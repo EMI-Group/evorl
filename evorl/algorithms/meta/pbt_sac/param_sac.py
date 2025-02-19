@@ -33,9 +33,7 @@ class ParamSACTrainMetric(SACTrainMetric):
 
 
 class ParamSACAgent(SACAgent):
-    """
-    SAC agent with parameterized hyperparameters and adaptive alpha.
-    """
+    """SAC agent with parameterized hyperparameters and adaptive alpha."""
 
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
@@ -131,9 +129,7 @@ def make_mlp_sac_agent(
 
 
 class ParamSACWorkflow(OffPolicyWorkflowTemplate):
-    """
-    This workflow can only work with PBTParamSACWorkflow, since the replay buffer is initialized and managed by PBT externally.
-    """
+    """This workflow can only work with PBTParamSACWorkflow, since the replay buffer is initialized and managed by PBT externally."""
 
     @classmethod
     def name(cls):

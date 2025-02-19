@@ -13,18 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 class PBTWorkflow(PBTWorkflowTemplate):
-    """
-    A minimal Example of PBT that tunes the lr of PPO.
-    """
+    """A minimal Example of PBT that tunes the lr of PPO."""
 
     @classmethod
     def name(cls):
         return "PBT"
 
     def _customize_optimizer(self) -> None:
-        """
-        Customize the target workflow's optimizer
-        """
+        """Customize the target workflow's optimizer"""
         self.workflow.optimizer = optax.inject_hyperparams(
             optax.adam, static_args=("b1", "b2", "eps", "eps_root")
         )(learning_rate=self.config.search_space.lr.low)
@@ -41,8 +37,7 @@ class PBTWorkflow(PBTWorkflowTemplate):
     def apply_hyperparams_to_workflow_state(
         self, workflow_state: State, hyperparams: PyTreeDict[str, chex.Numeric]
     ) -> State:
-        """
-        Note1: InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
+        """Note1: InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
         Note2: try to avoid deepcopy unnessary state
         """
         opt_state = workflow_state.opt_state

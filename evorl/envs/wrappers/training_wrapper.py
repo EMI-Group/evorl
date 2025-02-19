@@ -4,7 +4,6 @@ import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-
 from evorl.utils.jax_utils import vmap_rng_split
 
 from ..env import Env, EnvState
@@ -16,18 +15,10 @@ class EpisodeWrapper(Wrapper):
 
     This is the same as brax's EpisodeWrapper, and add some new fields in transition.info.
     Including:
-        - steps: the current step count of the episode
-        - trunction: whether the episode is truncated
-        - termination: whether the episode is terminated
-        - ori_obs: the next observation without autoreset
-
-    args:
-        env: the wrapped env should be a single un-vectorized environment.
-        episode_length: the maxiumum length of each episode for truncation
-        action_repeat: the number of times to repeat each action
-        record_ori_obs: whether to record the real next observation of each episode
-        record_episode_return: whether to record the return of each episode
-        discount: the discount factor for computing the return when setting record_episode_return=True
+    - steps: the current step count of the episode
+    - trunction: whether the episode is truncated
+    - termination: whether the episode is terminated
+    - ori_obs: the next observation without autoreset
     """
 
     def __init__(
@@ -38,6 +29,16 @@ class EpisodeWrapper(Wrapper):
         record_episode_return: bool = False,
         discount: float = 1.0,
     ):
+        """Initializes the wrapper.
+
+        Args:
+            env: the wrapped env should be a single un-vectorized environment.
+            episode_length: the maxiumum length of each episode for truncation
+            action_repeat: the number of times to repeat each action
+            record_ori_obs: whether to record the real next observation of each episode
+            record_episode_return: whether to record the return of each episode
+            discount: the discount factor for computing the return when setting record_episode_return=True
+        """
         super().__init__(env)
         self.episode_length = episode_length
         self.record_ori_obs = record_ori_obs
@@ -111,10 +112,6 @@ class OneEpisodeWrapper(EpisodeWrapper):
 
     When call step() after the env is done, stop simulation and
     directly return last state.
-
-    args:
-        env: the wrapped env should be a single un-vectorized environment.
-
     """
 
     def __init__(
@@ -123,6 +120,10 @@ class OneEpisodeWrapper(EpisodeWrapper):
         episode_length: int,
         record_ori_obs: bool = False,
     ):
+        """
+        Args:
+            env: the wrapped env should be a single un-vectorized environment.
+        """
         super().__init__(
             env,
             episode_length,
@@ -138,9 +139,7 @@ class OneEpisodeWrapper(EpisodeWrapper):
 
 
 class VmapWrapper(Wrapper):
-    """
-    Vectorizes Brax env.
-    """
+    """Vectorizes Brax env."""
 
     def __init__(self, env: Env, num_envs: int = 1, vmap_step: bool = False):
         """
@@ -182,6 +181,7 @@ class VmapAutoResetWrapper(Wrapper):
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         """
+
         Args:
             key: support batched keys [B,2] or single key [2]
         """
@@ -210,11 +210,11 @@ class VmapAutoResetWrapper(Wrapper):
         return state
 
     def _auto_reset(self, state: EnvState) -> EnvState:
-        """Reset the state and overwrite `timestep.observation` with the reset observation
-        if the episode has terminated.
+        """AutoReset the state of one Env.
 
-            Note: run on single env
+        Reset the state and overwrite `timestep.observation` with the reset observation if the episode has terminated.
         """
+
         # Make sure that the random key in the environment changes at each call to reset.
         new_key, reset_key = jax.random.split(state._internal.reset_key)
         reset_state = self.env.reset(reset_key)
@@ -229,11 +229,7 @@ class VmapAutoResetWrapper(Wrapper):
         return state
 
     def _maybe_reset(self, state: EnvState) -> EnvState:
-        """Overwrite the state and timestep appropriately if the episode terminates.
-
-        Note: run on single env
-        """
-
+        """Overwrite the state and timestep appropriately if the episode terminates."""
         return jax.lax.cond(
             state.done,
             self._auto_reset,
@@ -243,8 +239,8 @@ class VmapAutoResetWrapper(Wrapper):
 
 
 class FastVmapAutoResetWrapper(Wrapper):
-    """
-    Brax-style AutoReset: no randomness in reset.
+    """Brax-style AutoReset: no randomness in reset.
+
     This wrapper is more efficient than VmapAutoResetWrapper.
     """
 
@@ -290,9 +286,7 @@ class FastVmapAutoResetWrapper(Wrapper):
 
 
 class VmapEnvPoolAutoResetWrapper(Wrapper):
-    """
-    EnvPool style AutoReset: an additional reset step after the episode ends.
-    """
+    """EnvPool style AutoReset: an additional reset step after the episode ends."""
 
     def __init__(self, env: Env, num_envs: int = 1):
         super().__init__(env)

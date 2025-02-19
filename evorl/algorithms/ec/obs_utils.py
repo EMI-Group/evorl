@@ -96,8 +96,7 @@ def rollout_obs(
     rollout_length: int,
 ) -> tuple[chex.ArrayTree, EnvState]:
     def _one_step_rollout(carry, unused_t):
-        """
-        sample_batch: one-step obs
+        """sample_batch: one-step obs
         transition: one-step full info
         """
         env_state, current_key = carry

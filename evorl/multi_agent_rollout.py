@@ -24,10 +24,7 @@ def decentralized_env_step(
     key: chex.PRNGKey,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
-    """
-    Collect one-step data.
-    """
-
+    """Collect one-step data."""
     num_agents = len(agents)
     env_keys = jax.random.split(key, num_agents)
 
@@ -70,8 +67,7 @@ def decentralized_rollout(
     rollout_length: int,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
-    """
-    Collect given rollout_length trajectory.
+    """Collect given rollout_length trajectory.
     Tips: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
 
     Args:
@@ -83,8 +79,7 @@ def decentralized_rollout(
     """
 
     def _one_step_rollout(carry, unused_t):
-        """
-        sample_batch: one-step obs
+        """sample_batch: one-step obs
         transition: one-step full info
         """
         env_state, current_key = carry
@@ -120,9 +115,7 @@ def decentralized_env_step_with_shared_model(
     action_unbatchify_fn: Callable[[jax.Array], Mapping[AgentID, jax.Array]],
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
-    """
-    Collect one-step data.
-    """
+    """Collect one-step data."""
     # sample_batch: [#envs, ...]
     sample_batch = SampleBatch(obs=obs_batchify_fn(env_state.obs))
 
@@ -164,8 +157,7 @@ def decentralized_rollout_with_shared_model(
     | (Callable[[jax.Array], Mapping[AgentID, jax.Array]]) = None,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
-    """
-    Centrialized Execution: Collect given rollout_length trajectory.
+    """Centrialized Execution: Collect given rollout_length trajectory.
 
     Args:
         env: vmapped env w/ autoreset
@@ -181,8 +173,7 @@ def decentralized_rollout_with_shared_model(
         action_unbatchify_fn = partial(unbatchify, agent_list=env.agents)
 
     def _one_step_rollout(carry, unused_t):
-        """
-        sample_batch: one-step obs
+        """sample_batch: one-step obs
         transition: one-step full info
         """
         env_state, current_key = carry

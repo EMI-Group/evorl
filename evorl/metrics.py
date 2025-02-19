@@ -16,6 +16,7 @@ def metric_field(
     static=False,
     **kwargs,
 ):
+    """"""
     metadata = {"static": static, "reduce_fn": reduce_fn}
     kwargs.setdefault("metadata", {}).update(metadata)
 
@@ -38,8 +39,7 @@ class MetricBase(PyTreeData, kw_only=True):
         return self.replace(**field_dict)
 
     def to_local_dict(self):
-        """
-        Convert all dataclass to dict and convert
+        """Convert all dataclass to dict and convert
         jax array and numpy array to python list
         """
         return to_local_dict(self)

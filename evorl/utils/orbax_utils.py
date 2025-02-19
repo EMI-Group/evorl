@@ -12,16 +12,25 @@ logger = logging.getLogger(__name__)
 
 
 def save(path, state: chex.ArrayTree):
+    """Save state to a file.
+
+    Args:
+        path: Checkpoint path
+        state: The state to be saved.
+    """
     ckpt = ocp.StandardCheckpointer()
     ckpt.save(path, args=ocp.args.StandardSave(state))
 
 
 def load(path, state: chex.ArrayTree) -> chex.ArrayTree:
-    """
+    """Load state from a file.
+
     Args:
-        path: checkpoint path
-        state: the same structure as the saved state. Can be a dummy state
-            or its abstract_state by `jtu.tree_map(ocp.utils.to_shape_dtype_struct, state)`
+        path: Checkpoint path
+        state: The same structure as the saved state. Can be a dummy state or its abstract_state by `jtu.tree_map(ocp.utils.to_shape_dtype_struct, state)`
+
+    Returns:
+        The loaded state.
     """
     ckpt = ocp.StandardCheckpointer()
     state = ckpt.restore(path, args=ocp.args.StandardRestore(state))
@@ -29,6 +38,7 @@ def load(path, state: chex.ArrayTree) -> chex.ArrayTree:
 
 
 class DummyCheckpointManager(ocp.AbstractCheckpointManager):
+    """A dummy checkpoint manager that does nothing."""
     def directory(self):
         return "UwU"
 
@@ -94,6 +104,7 @@ class DummyCheckpointManager(ocp.AbstractCheckpointManager):
 
 
 def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
+    """Setup checkpoint manager."""
     if config.checkpoint.enable:
         output_dir = get_output_dir()
         ckpt_options = ocp.CheckpointManagerOptions(

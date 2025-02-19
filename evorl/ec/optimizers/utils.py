@@ -20,8 +20,7 @@ class ExponentialScheduleSpec(PyTreeData):
 
 
 def weight_sum(x: jax.Array, w: jax.Array) -> jax.Array:
-    """
-    x: (n, ...)
+    """x: (n, ...)
     w: (n,)
     """
     chex.assert_equal_shape_prefix((x, w), 1)

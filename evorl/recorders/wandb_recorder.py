@@ -11,6 +11,8 @@ from .recorder import Recorder
 
 
 class WandbRecorder(Recorder):
+    """Recorder for Weights & Biases."""
+
     def __init__(
         self, *, project, name, config, tags, path, mode="disabled", **wandb_kwargs
     ):
@@ -36,9 +38,6 @@ class WandbRecorder(Recorder):
 
 
 def _convert_data(val: Any):
-    """
-    Special handling of pandas objects for wandb logging
-    """
     if isinstance(val, pd.Series):
         return wandb.Histogram(val)
     elif isinstance(val, pd.DataFrame):
@@ -48,10 +47,15 @@ def _convert_data(val: Any):
 
 
 def add_prefix(data: dict, prefix: str):
+    """Add prefix to the keys of a dictionary."""
     return {f"{prefix}/{k}": v for k, v in data.items()}
 
 
 def get_1d_array_statistics(data, histogram=False):
+    """Get raw value and statistics of a 1D array.
+
+    Helper function for logging in WandB.
+    """
     if data is None:
         res = dict(min=None, max=None, mean=None)
         if histogram:
@@ -76,6 +80,10 @@ def get_1d_array_statistics(data, histogram=False):
 
 
 def get_1d_array(data):
+    """Get statistics of a 1D array.
+
+    Helper function for logging in WandB.
+    """
     res = dict(
         min=np.min(data).tolist(),
         max=np.max(data).tolist(),

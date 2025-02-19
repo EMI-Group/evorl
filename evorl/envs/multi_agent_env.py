@@ -18,9 +18,7 @@ class MultiAgentEnv(Env):
 
     @abstractmethod
     def step(self, state: EnvState, action: Mapping[AgentID, Action]) -> EnvState:
-        """
-        EnvState should have fields like obs, reward, done, info, ...
-        """
+        """EnvState should have fields like obs, reward, done, info, ..."""
         raise NotImplementedError
 
     @property

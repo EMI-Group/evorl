@@ -349,9 +349,7 @@ class PBTWorkflowBase(Workflow):
 
 
 class PBTWorkflowTemplate(PBTWorkflowBase):
-    """
-    Standard PBT Workflow Template
-    """
+    """Standard PBT Workflow Template"""
 
     def exploit_and_explore(
         self,
@@ -453,9 +451,7 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
 
 
 class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
-    """
-    PBT Workflow Template for Off-policy algorithms with shared replay buffer
-    """
+    """PBT Workflow Template for Off-policy algorithms with shared replay buffer"""
 
     def __init__(
         self, workflow: OffPolicyWorkflow, evaluator: Evaluator, config: DictConfig
@@ -491,9 +487,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         return replay_buffer_state
 
     def _postsetup_replaybuffer(self, state: State) -> State:
-        """
-        Since the replay buffer is shared across workflows, we need an independent post-setup
-        """
+        """Since the replay buffer is shared across workflows, we need an independent post-setup"""
         env = self.workflow.env
         action_space = env.action_space
         obs_space = env.obs_space

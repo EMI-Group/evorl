@@ -33,8 +33,7 @@ def _to_numpy(x):
 
 
 class GymAdapter(EnvAdapter):
-    """
-    Adapter for EnvPool to support gym(>=0.26.2) and gymnasium environments.
+    """Adapter for EnvPool to support gym(>=0.26.2) and gymnasium environments.
     TODO: multi-device support
     """
 
@@ -113,17 +112,13 @@ class GymAdapter(EnvAdapter):
 
 
 class OneEpisodeWrapper(Wrapper):
-    """
-    Vectorized one episode wrapper for evaluation.
-    """
+    """Vectorized one episode wrapper for evaluation."""
 
     def __init__(self, env: Env):
         super().__init__(env)
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        """
-        Note: could add extra CPU overhead
-        """
+        """Note: could add extra CPU overhead"""
 
         def where_done(x, y):
             done = state.done
@@ -163,12 +158,10 @@ def creat_gym_env(
     autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
     **kwargs,
 ) -> GymAdapter:
-    """
-    Tips:
+    """Tips:
     1. unlike other jax-based env, most wrappers are handled in envpool.
     2. Don't use the env with vmap, eg: vmap(env.step), this could cause undefined behavior.
     """
-
     if autoreset_mode not in [AutoresetMode.ENVPOOL, AutoresetMode.DISABLED]:
         raise ValueError(
             "Only AutoresetMode.ENVPOOL and AutoresetMode.DISABLED are supported for envpool based env."

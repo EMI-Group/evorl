@@ -16,6 +16,8 @@ def tree_device_get(tree: chex.ArrayTree, device=None):
 
 
 def shmap_vmap(fn: Callable, mesh, in_specs, out_specs, **kwargs):
+    """Vmap on different gpu."""
+
     def shmap_f(*args):
         return jax.vmap(fn)(*args)
 
@@ -25,12 +27,13 @@ def shmap_vmap(fn: Callable, mesh, in_specs, out_specs, **kwargs):
 
 
 def shmap_map(fn: Callable, mesh, in_specs, out_specs, **kwargs):
-    """
-    Sequential execution on different gpu.
+    """Sequential execution on different gpu.
 
     Args:
         fn: function to be executed, only positional arguments are supported
         sharding: JAX sharding object
+    Returns:
+        A wrapped function.
     """
 
     def g(carry):

@@ -66,12 +66,15 @@ class BraxAdapter(EnvAdapter):
 
 
 def create_brax_env(env_name: str, **kwargs) -> BraxAdapter:
-    """
-    Args:
-        Autoreset: When use envs for RL training, set autoreset=True. When use envs for evaluation, set autoreset=False.
-        discount: discount factor for episode return calculation. The episode returns are Only recorded when autoreset=True.
-    """
+    """Create Brax environment.
 
+    Args:
+        env_name: Environment name.
+        kwargs: Arguments passing into Brax.
+
+    Returns:
+        Brax env.
+    """
     env = get_environment(env_name, **kwargs)
     env = BraxAdapter(env)
 
@@ -87,6 +90,21 @@ def create_wrapped_brax_env(
     record_ori_obs: bool = False,
     **kwargs,
 ) -> Env:
+    """Create wrapped Brax environment for training.
+
+    Args:
+        env_name: Environment name.
+        episode_length: Max episode length.
+        parallel: Number of parallel environments.
+        autoreset_mode: Autoreset mode.
+        discount: Discount factor.
+        record_ori_obs: Whether record original observation.
+        kwargs: Other arguments passing into Brax.
+
+    Returns:
+        Wrapped Brax env.
+
+    """
     env = create_brax_env(env_name, **kwargs)
 
     if autoreset_mode == AutoresetMode.ENVPOOL:

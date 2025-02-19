@@ -19,9 +19,7 @@ def env_step(
     agent_state: AgentState,  # readonly
     key: chex.PRNGKey,
 ) -> tuple[SampleBatch, EnvState]:
-    """
-    Collect one-step data.
-    """
+    """Collect one-step data."""
     # sample_batch: [#envs, ...]
     sample_batch = SampleBatch(obs=env_state.obs)
 
@@ -46,23 +44,19 @@ def rollout(
     rollout_length: int,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
-    """
-    Collect given rollout_length trajectory.
-    Tips: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
+    """Collect given rollout_length trajectory.
+
+    Note: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
 
     Args:
         env: vmapped env w/ autoreset
 
     Returns:
-        env_state: last env_state after rollout
         trajectory: SampleBatch [T, B, ...], T=rollout_length, B=#envs
+        env_state: Last env_state after rollout
     """
 
     def _one_step_rollout(carry, unused_t):
-        """
-        sample_batch: one-step obs
-        transition: one-step full info
-        """
         env_state, current_key = carry
         next_key, current_key = rng_split(current_key, 2)
 
@@ -86,4 +80,6 @@ def rollout(
 
 
 class EpisodeObsCollector(EpisodeCollector):
+    """Streamlined episode collector for observation only."""
+
     rollout_fn: RolloutFn = pytree_field(default=rollout, static=True)

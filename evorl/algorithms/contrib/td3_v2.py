@@ -28,18 +28,14 @@ MISSING_LOSS = -1e10
 
 
 class TD3V2Workflow(TD3Workflow):
-    """
-    The similar impl of TD3 in SB3 and CleanRL
-    """
+    """The similar impl of TD3 in SB3 and CleanRL"""
 
     @classmethod
     def name(cls):
         return "TD3-V2"
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """
-        the basic step function for the workflow to update agent
-        """
+        """The basic step function for the workflow to update agent"""
         iterations = state.metrics.iterations + 1
         key, rollout_key, rb_key, critic_key, actor_key = jax.random.split(
             state.key, num=5

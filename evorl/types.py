@@ -5,7 +5,6 @@ from typing import Any, Protocol, Union, TypeVar
 import chex
 import jax
 import jax.tree_util as jtu
-from jax.typing import ArrayLike, DTypeLike
 from typing_extensions import dataclass_transform  # pytype: disable=not-supported-yet
 
 Metrics = Mapping[str, chex.ArrayTree]
@@ -34,23 +33,9 @@ Axis = int | None | Sequence[Any]
 MISSING_REWARD = -1e10
 
 
-class ReductionFn(Protocol):
-    def __call__(
-        self,
-        x: ArrayLike,
-        axis: Axis = None,
-        dtype: DTypeLike | None = None,
-        out: None = None,
-        keepdims: bool = False,
-    ):
-        pass
-
-
 @jtu.register_pytree_node_class
 class PyTreeDict(dict):
-    """
-    An easydict with pytree support
-    """
+    """An easydict with pytree support."""
 
     def __init__(self, *args, **kwargs):
         d = dict(*args, **kwargs)
@@ -60,7 +45,7 @@ class PyTreeDict(dict):
 
     @classmethod
     def _nested_convert(cls, obj):
-        # currently only support dict, list, tuple (but not support their children class)
+        # Currently, only support dict, list, tuple (not include their children classes)
         if type(obj) is dict:
             return cls(obj)
         elif type(obj) is list:
@@ -106,6 +91,8 @@ class PyTreeDict(dict):
 
 @jtu.register_pytree_node_class
 class State(PyTreeDict):
+    """A general State class."""
+
     pass
 
 
@@ -120,7 +107,7 @@ class EnvLike(Protocol):
 
 
 def pytree_field(*, lazy_init=False, static=False, **kwargs):
-    """
+    """Define a pytree field in our dataclass.
 
     Args:
         lazy_init: When set to True, the field will not be initialized in `__init__()`, and we can use set_frozen_attr to set the value after `__init__`
@@ -153,7 +140,7 @@ def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
             data_fields.append(field_info.name)
 
     def replace(self, **updates):
-        """ "Returns a new object replacing the specified fields with new values."""
+        """Returns a new object replacing the specified fields with new values."""
         return dataclasses.replace(self, **updates)
 
     data_clz.replace = replace
@@ -194,13 +181,13 @@ def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
 
 @dataclass_transform(field_specifiers=(pytree_field,), kw_only_default=True)
 class PyTreeNode:
+    """A pytree dataclass for Node."""
+
     def __init_subclass__(cls, kw_only=True, **kwargs):
         dataclass(cls, pure_data=False, kw_only=kw_only, **kwargs)
 
     def set_frozen_attr(self, name, value):
-        """
-        Force set attribute after __init__ of the dataclass
-        """
+        """Force set attribute after __init__ of the dataclass"""
         for field in dataclasses.fields(self):
             if field.name == name:
                 if field.metadata.get("lazy_init", False):
@@ -216,8 +203,9 @@ class PyTreeNode:
 
 @dataclass_transform(field_specifiers=(pytree_field,), kw_only_default=True)
 class PyTreeData:
-    """
-    Like PyTreeNode, but all fileds must be set at __init__, and not allow set_frozen_attr() method.
+    """A pytree dataclass for Data.
+
+    Like `PyTreeNode`, but all fileds must be set at __init__, and not allow set_frozen_attr() method.
     """
 
     def __init_subclass__(cls, kw_only=True, **kwargs):

@@ -31,9 +31,7 @@ class ECNetworkParams(PyTreeData):
 
 
 class StochasticECAgent(Agent):
-    """
-    Stochastic Agent for continuous action space in [-1, 1] via TanhNormal distribution or discrete action space via Softmax distribution
-    """
+    """Stochastic Agent for continuous action space in [-1, 1] via TanhNormal distribution or discrete action space via Softmax distribution"""
 
     continuous_action: bool
     policy_network: nn.Module
@@ -66,9 +64,8 @@ class StochasticECAgent(Agent):
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """
-        Args:
-            sample_barch: [#env, ...]
+        """Args:
+        sample_barch: [#env, ...]
         """
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -93,9 +90,8 @@ class StochasticECAgent(Agent):
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """
-        Args:
-            sample_barch: [#env, ...]
+        """Args:
+        sample_barch: [#env, ...]
         """
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -114,9 +110,7 @@ class StochasticECAgent(Agent):
 
 
 class DeterministicECAgent(Agent):
-    """
-    Deterministic Agent for continuous action space in [-1, 1]
-    """
+    """Deterministic Agent for continuous action space in [-1, 1]"""
 
     policy_network: nn.Module
     obs_preprocessor: Any = pytree_field(default=None, static=True)
@@ -148,9 +142,8 @@ class DeterministicECAgent(Agent):
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """
-        Args:
-            sample_barch: [#env, ...]
+        """Args:
+        sample_barch: [#env, ...]
         """
         obs = sample_batch.obs
         if self.normalize_obs:

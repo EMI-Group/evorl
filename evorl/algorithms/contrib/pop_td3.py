@@ -37,9 +37,7 @@ class WorkflowMetric(MetricBase):
 
 
 class PopTD3Workflow(TD3Workflow):
-    """
-    Indepentent TD3 agent with shared replay buffer
-    """
+    """Indepentent TD3 agent with shared replay buffer"""
 
     @classmethod
     def name(cls):
@@ -222,9 +220,7 @@ class PopTD3Workflow(TD3Workflow):
         )
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """
-        the basic step function for the workflow to update agent
-        """
+        """The basic step function for the workflow to update agent"""
         pop_size = self.config.pop_size
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
@@ -497,7 +493,5 @@ class PopTD3Workflow(TD3Workflow):
 
 
 def flatten_pop_rollout_trajectory(trajectory: SampleBatch) -> SampleBatch:
-    """
-    Flatten the trajectory from [#pop, T, B, ...] to [#pop*T*B, ...]
-    """
+    """Flatten the trajectory from [#pop, T, B, ...] to [#pop*T*B, ...]"""
     return jtu.tree_map(lambda x: jax.lax.collapse(x, 0, 3), trajectory)

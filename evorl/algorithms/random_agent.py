@@ -74,15 +74,11 @@ class RandomAgentWorkflow(RLWorkflow):
         )
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """
-        dummy step function for random agent
-        """
+        """Dummy step function for random agent"""
         return RandomTrainMetric(), state.replace()
 
     def learn(self, state: State) -> State:
-        """
-        dummy learn function for random agent
-        """
+        """Dummy learn function for random agent"""
         eval_metrics, state = self.evaluate(state)
         eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
         self.recorder.write(add_prefix(eval_metrics.to_local_dict(), "eval"), 0)

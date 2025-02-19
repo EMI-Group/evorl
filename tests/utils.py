@@ -72,11 +72,6 @@ class FakeVmapEnv(Env):
 
 
 class DebugRandomAgent(Agent):
-    """
-    An agent that takes random actions.
-    Used for testing and debugging.
-    """
-
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:

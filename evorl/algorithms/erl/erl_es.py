@@ -35,8 +35,7 @@ class EvaluateMetric(MetricBase):
 
 
 class ERLESWorkflow(ERLWorkflowTemplate):
-    """
-    EC: n actors
+    """EC: n actors
     RL: k actors + k critics
     Shared replay buffer
     """
@@ -47,10 +46,7 @@ class ERLESWorkflow(ERLWorkflowTemplate):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        """
-        return workflow
-        """
-
+        """Return workflow"""
         # env for rl&ec rollout
         env = create_env(
             config.env.env_name,
@@ -217,9 +213,7 @@ class ERLESWorkflow(ERLWorkflowTemplate):
         return fitnesses, ec_opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """
-        the basic step function for the workflow to update agent
-        """
+        """The basic step function for the workflow to update agent"""
         pop_size = self.config.pop_size
         agent_state = state.agent_state
         opt_state = state.opt_state

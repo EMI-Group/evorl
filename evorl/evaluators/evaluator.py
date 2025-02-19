@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 class Evaluator(PyTreeNode):
+    """Evaluate the agent in the environments."""
+
     env: Env = pytree_field(static=True)
     action_fn: AgentActionFn = pytree_field(static=True)
     max_episode_steps: int = pytree_field(static=True)
@@ -31,6 +33,16 @@ class Evaluator(PyTreeNode):
         key: chex.PRNGKey,
         num_episodes: int,
     ) -> EvaluateMetric:
+        """Evaluate the agent based on its state.
+
+        Args:
+            agent_state: The state of the agent.
+            key: The PRNG key.
+            num_episodes: The number of episodes to evaluate.
+
+        Returns:
+            EvaluateMetric(episode_returns, episode_lengths).
+        """
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
         if num_episodes % num_envs != 0:

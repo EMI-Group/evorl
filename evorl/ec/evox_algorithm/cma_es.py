@@ -9,8 +9,7 @@ from .sort_utils import sort_by_key
 
 
 class CMAES(Algorithm):
-    """
-    Title: Completely Derandomized Self-Adaptation in Evolution Strategies
+    """Title: Completely Derandomized Self-Adaptation in Evolution Strategies
     Link: http://www.cmap.polytechnique.fr/~nikolaus.hansen/cmaartic.pdf
     """
 
@@ -25,8 +24,7 @@ class CMAES(Algorithm):
         alpha_cov: float = 2.0,
         delay_decomp: bool = True,
     ):
-        """
-        This implementation follows `The CMA Evolution Strategy: A Tutorial <https://arxiv.org/pdf/1604.00772.pdf>`_.
+        """This implementation follows `The CMA Evolution Strategy: A Tutorial <https://arxiv.org/pdf/1604.00772.pdf>`_.
 
         .. note::
             CMA-ES involves eigendecomposition,
@@ -226,8 +224,7 @@ def _decompose_C(C):
 
 
 class SepCMAES(CMAES):
-    """
-    Title: A Simple Modification in CMA-ES Achieving Linear Time and Space Complexity (SepCMAES)
+    """Title: A Simple Modification in CMA-ES Achieving Linear Time and Space Complexity (SepCMAES)
     Link: https://inria.hal.science/inria-00287367/document
     """
 

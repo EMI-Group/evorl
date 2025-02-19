@@ -6,9 +6,7 @@ from evorl.types import PyTreeData
 
 
 class Space(PyTreeData):
-    """
-    a jax version of the gym.Space
-    """
+    """A jax version of the gym.Space."""
 
     def sample(self, key: chex.PRNGKey) -> chex.Array:
         """Randomly sample an element of this space.
@@ -22,7 +20,7 @@ class Space(PyTreeData):
 
     @property
     def shape(self) -> chex.Shape:
-        """Return the shape of the space"""
+        """The shape of the space."""
         raise NotImplementedError
 
     def contains(self, x: chex.Array) -> bool:

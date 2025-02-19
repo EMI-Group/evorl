@@ -11,8 +11,7 @@ from .types import ExtraInfo, PyTreeData, Reward, RewardDict
 
 
 class SampleBatch(PyTreeData):
-    """
-    Batched transitions w/ additional first axis as batch_axis.
+    """Batched transitions w/ additional first axis as batch_axis.
     Could also be used as a trajectory.
     """
 

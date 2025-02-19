@@ -21,12 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 class RLWorkflow(Workflow):
-    """Workflow for RL pipeline
+    """Base Workflow for RL algorithms."""
 
-    Args:
-        config: config object for RLWorkflow
-    """
     def __init__(self, config: DictConfig):
+        """Initialize a RLWorkflow instance.
+
+        Args:
+            config: the config object.
+        """
         super().__init__(config)
 
         self.pmap_axis_name = None
@@ -34,6 +36,7 @@ class RLWorkflow(Workflow):
 
     @property
     def enable_multi_devices(self) -> bool:
+        """Whether multi-devices training is enabled."""
         return self.pmap_axis_name is not None
 
     @classmethod
@@ -43,6 +46,13 @@ class RLWorkflow(Workflow):
         enable_multi_devices: bool = False,
         enable_jit: bool = True,
     ) -> Self:
+        """Build the rl workflow instance from the config.
+
+        Args:
+            config: Config of the workflow.
+            enable_multi_devices: Whether multi-devices training is enabled.
+            enable_jit: Whether jit is enabled.
+        """
         config = copy.deepcopy(config)  # avoid in-place modification
 
         devices = jax.local_devices()
@@ -65,28 +75,63 @@ class RLWorkflow(Workflow):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:
+        """Customize the process of building the workflow instance from the config.
+
+        Args:
+            config: Config of the workflow.
+
+        Returns:
+            The created workflow instance.
+        """
         raise NotImplementedError
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
-        """
-        When enable_multi_devices=True, rescale config settings in-place to match multi-devices
+        """Customize the logic of rescaling the config settings when multi-devices training is enabled.
+
+        When enable_multi_devices=True, rescale config settings in-place to match multi-devices.
+
+        Args:
+            config: Config of the workflow.
         """
         pass
 
     def step(self, state: State) -> tuple[MetricBase, State]:
+        """Customize the training logic of one iteration.
+
+        Args:
+            state: State of the workflow.
+        Returns:
+            Tuple of (metrics, state).
+        """
         raise NotImplementedError
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
+        """Customize the evaluation logic for the workflow.
+
+        Args:
+            state: State of the workflow.
+        """
         raise NotImplementedError
 
     @classmethod
     def enable_jit(cls) -> None:
+        """Define which methods should be jitted.
+
+        By default, the workflow's `step()` and `evaluate()` methods are jitted.
+        """
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
     @classmethod
-    def enable_pmap(cls, axis_name) -> None:
+    def enable_pmap(cls, axis_name: str) -> None:
+        """Define which methods should be pmaped.
+
+        This method defines the multi-device behavior. By default, the workflow's `step()` and `evaluate()` methods are pmaped.
+
+        Args:
+            axis_name: The axis_name for pmap.
+        """
         cls.step = jax.pmap(cls.step, axis_name, static_broadcasted_argnums=(0,))
         cls.evaluate = jax.pmap(
             cls.evaluate, axis_name, static_broadcasted_argnums=(0,)
@@ -94,6 +139,11 @@ class RLWorkflow(Workflow):
 
 
 class OnPolicyWorkflow(RLWorkflow):
+    """Workflow template for On-Policy RL algorithms.
+
+    This class constructs the template for On-Policy RL algorithms, providing the general `setup()` and `evaluate()` methods.
+    """
+
     def __init__(
         self,
         env: Env,
@@ -102,6 +152,15 @@ class OnPolicyWorkflow(RLWorkflow):
         evaluator: Evaluator,
         config: DictConfig,
     ):
+        """Initialize an OnPolicyWorkflow instance.
+
+        Args:
+            env: Environment object.
+            agent: Workflow-sepecific agent object.
+            optimizer: Optimizer of the agent.
+            evaluator: Evaluator object used in self.evaluation().
+            config: Config of the workflow.
+        """
         super().__init__(config)
 
         self.env = env
@@ -112,11 +171,20 @@ class OnPolicyWorkflow(RLWorkflow):
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree]:
+        """Setup Agent and Optimizer states.
+
+        Args:
+            key: JAX PRNGKey.
+
+        Returns:
+            Tuple of (agent_state, opt_state)
+        """
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = self.optimizer.init(agent_state.params)
         return agent_state, opt_state
 
     def _setup_workflow_metrics(self) -> MetricBase:
+        """Define Workflow metrics."""
         return WorkflowMetric()
 
     def setup(self, key: chex.PRNGKey) -> State:
@@ -164,6 +232,11 @@ class OnPolicyWorkflow(RLWorkflow):
 
 
 class OffPolicyWorkflow(RLWorkflow):
+    """Workflow template for Off-Policy RL algorithms.
+
+    This class constructs the template for Off-Policy RL algorithms, providing the general `setup()` and `evaluate()` methods.
+    """
+
     def __init__(
         self,
         env: Env,
@@ -173,6 +246,16 @@ class OffPolicyWorkflow(RLWorkflow):
         replay_buffer: AbstractReplayBuffer,
         config: DictConfig,
     ):
+        """Initialize an OffPolicyWorkflow instance.
+
+        Args:
+            env: Environment object.
+            agent: Workflow-sepecific agent object.
+            optimizer: Optimizer of the agent.
+            evaluator: Evaluator object used in self.evaluation().
+            replay_buffer: ReplayBuffer object.
+            config: Config of the workflow.
+        """
         super().__init__(config)
 
         self.env = env
@@ -184,17 +267,28 @@ class OffPolicyWorkflow(RLWorkflow):
     def _setup_agent_and_optimizer(
         self, key: chex.PRNGKey
     ) -> tuple[AgentState, chex.ArrayTree]:
+        """Setup Agent and Optimizer states.
+
+        Args:
+            key: JAX PRNGKey.
+
+        Returns:
+            Tuple of (agent_state, opt_state).
+        """
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = self.optimizer.init(agent_state.params)
         return agent_state, opt_state
 
     def _setup_workflow_metrics(self) -> MetricBase:
+        """Define Workflow metrics."""
         return WorkflowMetric()
 
     def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
+        """Setup ReplayBuffer state."""
         raise NotImplementedError
 
     def _postsetup_replaybuffer(self, state: State) -> State:
+        """Post-setup ReplayBuffer state before training."""
         return state
 
     def setup(self, key: chex.PRNGKey) -> State:

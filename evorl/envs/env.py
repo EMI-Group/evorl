@@ -19,9 +19,9 @@ from .space import Space
 
 
 class EnvState(PyTreeData):
-    """
-    Include all the information needed to represent the state of the environment.
+    """State of the environment.
 
+    Include all the data needed to represent the state of the environment.
     """
 
     env_state: EnvInternalState
@@ -39,17 +39,16 @@ EnvResetFn = Callable[[chex.PRNGKey], EnvState]
 
 
 class Env(ABC):
-    """Unified EvoRL Env API"""
+    """Unified EvoRL Env API."""
 
     @abstractmethod
     def reset(self, key: chex.PRNGKey) -> EnvState:
+        """Reset the environment to initial state."""
         raise NotImplementedError
 
     @abstractmethod
     def step(self, state: EnvState, action: Action) -> EnvState:
-        """
-        EnvState should have fields like obs, reward, done, info, ...
-        """
+        """Take a step in the environment."""
         raise NotImplementedError
 
     @property
@@ -66,9 +65,7 @@ class Env(ABC):
 
 
 class EnvAdapter(Env):
-    """
-    Convert envs from other packages to EvoRL's Env API.
-    """
+    """Convert envs from other packages to EvoRL's Env API."""
 
     def __init__(self, env: EnvLike):
         self.env = env

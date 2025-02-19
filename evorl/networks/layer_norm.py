@@ -6,9 +6,7 @@ from flax import linen as nn
 
 
 class StaticLayerNorm(nn.LayerNorm):
-    """
-    Layer normalization with fixed scale and bias.
-    """
+    """Layer normalization with fixed scale and bias."""
 
     use_bias: bool = False
     use_scale: bool = False
@@ -22,6 +20,7 @@ class StaticLayerNorm(nn.LayerNorm):
 
 
 def get_norm_layer(norm_layer_type: str) -> type[nn.Module]:
+    """Get the normalization layer class based on the type."""
     match norm_layer_type:
         case "layer_norm":
             norm_layer = nn.LayerNorm

@@ -1,10 +1,3 @@
-"""Utility functions to compute running statistics.
-
-This file was taken from acme and modified to simplify dependencies:
-
-https://github.com/deepmind/acme/blob/master/acme/jax/running_statistics.py
-"""
-
 import chex
 import jax
 import jax.numpy as jnp
@@ -13,6 +6,11 @@ import jax.tree_util as jtu
 from evorl.types import PyTreeData
 
 from .jax_utils import tree_ones_like, tree_zeros_like
+
+"""Utility functions to compute running statistics.
+
+Modified from https://github.com/google/brax/blob/main/brax/training/acme/running_statistics.py
+"""
 
 
 class NestedMeanStd(PyTreeData):

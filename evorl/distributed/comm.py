@@ -35,10 +35,8 @@ def pmax(x, axis_name: str | None = None):
 
 
 def _unpmap(x, axis_name: str | None = None):
-    """
-    Only work for pmap(in_axes=0, out_axes=0)
-    Return the first device's elements
-    """
+    # Only work for pmap(in_axes=0, out_axes=0)
+    # Return the first device's elements
     if axis_name is None:
         return x
     else:
@@ -50,9 +48,7 @@ def unpmap(tree: chex.ArrayTree, axis_name: str | None = None):
 
 
 def all_gather(x, axis_name: str | None = None, **kwargs):
-    """
-    All-gather the data across all devices
-    """
+    """All-gather the data across all devices."""
     if axis_name is None:
         return x
     else:
@@ -69,9 +65,7 @@ def is_dist_initialized():
 
 
 def get_process_id():
-    """
-    Return the node id in multi-node distributed env.
-    """
+    """Return the node id in multi-node distributed env."""
     if is_dist_initialized():
         return global_state.process_id
     else:
@@ -79,11 +73,11 @@ def get_process_id():
 
 
 def get_global_ranks():
-    """
-    Return the global rank for each device.
-    Note: the return rank is already sharded.
-    """
+    """Return the global rank for each device.
 
+    Returns:
+        The sharded ranks across devices. Each device has a unique rank.
+    """
     num_local_devices = jax.local_device_count()
 
     process_id = get_process_id()

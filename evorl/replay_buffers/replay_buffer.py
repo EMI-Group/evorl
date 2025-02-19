@@ -10,7 +10,13 @@ from evorl.utils.jax_utils import tree_get, tree_set
 
 
 class ReplayBufferState(PyTreeData):
-    """Contains data related to a replay buffer."""
+    """Contains data related to a replay buffer.
+
+    Attributes:
+        data: the stored replay buffer data.
+        current_index: the pointer used for adding data.
+        buffer_size: the current size of the replay buffer.
+    """
 
     data: chex.ArrayTree
     current_index: chex.Array = jnp.zeros((), jnp.int32)
@@ -18,11 +24,17 @@ class ReplayBufferState(PyTreeData):
 
 
 class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):
+    """A ReplyBuffer Interface."""
+
     @abstractmethod
-    def init(self, sample_spec: chex.ArrayTree):
-        """
+    def init(self, sample_spec: chex.ArrayTree) -> ReplayBufferState:
+        """Initialize the state of the replay buffer.
+
         Args:
-            sample_spec: a single sample that contains the pytree structure and their dtype and shape
+            sample_spec: A single sample or sample spec that contains the pytree structure and their dtype and shape.
+
+        Returns:
+            The initial state of the replay buffer.
         """
         pass
 
@@ -30,16 +42,42 @@ class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):
     def add(
         self, buffer_state: ReplayBufferState, xs: chex.ArrayTree
     ) -> ReplayBufferState:
+        """Add data to the replay buffer.
+
+        Args:
+            buffer_state: The current state of the replay buffer.
+            xs: The data to add to the replay buffer.
+
+        Returns:
+            Updated state of the replay buffer.
+        """
         pass
 
     @abstractmethod
     def sample(
         self, buffer_state: ReplayBufferState, key: chex.PRNGKey
     ) -> chex.ArrayTree:
+        """Sample a batch of data from the replay buffer.
+
+        Args:
+            buffer_state: The current state of the replay buffer.
+            key: JAX PRNGKey.
+
+        Returns:
+            A batch of data sampled from the replay buffer.
+        """
         pass
 
     @abstractmethod
     def can_sample(self, buffer_state: ReplayBufferState) -> bool:
+        """Check if the current replay buffer state can be used to sample.
+
+        Args:
+            buffer_state: The current state of the replay buffer.
+
+        Returns:
+            Whether the replay buffer is ready to call `sample()`.
+        """
         pass
 
     @abstractmethod
@@ -48,8 +86,14 @@ class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):
 
 
 class ReplayBuffer(AbstractReplayBuffer):
-    """
-    ReplayBuffer with uniform sampling. Data are added and sampled in 1d-like structure.
+    """ReplayBuffer with uniform sampling.
+
+    Data are added and sampled in 1d-like structure.
+
+    # Attributes:
+    #     capacity: the maximum capacity of the replay buffer.
+    #     sample_batch_size: the batch size for `sample()`.
+    #     min_sample_timesteps: the minimum number of timesteps before the replay buffer can sample.
     """
 
     capacity: int
@@ -81,9 +125,7 @@ class ReplayBuffer(AbstractReplayBuffer):
         xs: chex.ArrayTree,
         mask: chex.Array | None = None,
     ) -> ReplayBufferState:
-        """
-        Tips: when jit this function, set mask to static
-        """
+        # Tips: when jit this function, set mask to static
 
         chex.assert_trees_all_equal_dtypes(xs, buffer_state.data)
 

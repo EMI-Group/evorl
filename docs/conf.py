@@ -5,7 +5,8 @@
 
 import os
 import sys
-sys.path.insert(0, os.path.abspath('.'))
+
+sys.path.insert(0, os.path.abspath("."))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -28,17 +29,32 @@ extensions = [
 autodoc2_packages = [
     "../evorl",
 ]
-
 autodoc2_render_plugin = "myst"
-
 autodoc2_docstring_parser_regexes = [
     (r".*", "autodoc2_docstrings_parser"),
 ]
+autodoc2_module_all_regexes = [
+    # r"evorl\.[^\.]+",
+    r"evorl\..workflow\..*",
+    # r"evorl\..env",
+    # r"evorl\..ec",
+    # r"evorl\..networks",
+    # r"evorl\..recorders",
+    # r"evorl\..replay_buffer",
+    # r"evorl\..evaluator",
+]
+autodoc2_class_docstring = "both"
+# autodoc2_hidden_objects = [
+#     "undoc",
+#     "inherited"
+# ]
+
+napoleon_google_docstring = True
 
 myst_enable_extensions = [
-    "colon_fence",
+    # "colon_fence",
     "dollarmath",
-    # "tasklist",
+    # "fieldlist",
 ]
 
 templates_path = ["_templates"]

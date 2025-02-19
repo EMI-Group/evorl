@@ -1,19 +1,3 @@
-# Copyright 2023 The Brax Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Network definitions."""
-
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -168,7 +152,6 @@ def make_policy_network(
     norm_layer_type: str = "none",
 ) -> nn.Module:
     """Creates a policy network."""
-
     policy_model = make_mlp(
         layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
         activation=activation,
@@ -187,7 +170,7 @@ def make_v_network(
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
     norm_layer_type: str = "none",
 ) -> nn.Module:
-    """Creates a V network: (obs) -> value"""
+    """Creates a V network: (obs) -> value."""
 
     class VModule(nn.Module):
         """V Module."""
@@ -215,10 +198,10 @@ def make_q_network(
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
     norm_layer_type: str = "none",
 ) -> nn.Module:
-    """Creates a Q network: (obs, action) -> value"""
+    """Creates a Q network: (obs, action) -> value."""
 
     class QModule(nn.Module):
-        """Q Module for continuous action space"""
+        """Q Module for continuous action space."""
 
         n: int
 
@@ -258,10 +241,10 @@ def make_discrete_q_network(
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
     norm_layer_type: str = "none",
 ) -> nn.Module:
-    """Creates a Q network for discrete action space: (obs) -> q_values"""
+    """Creates a Q network for discrete action space: (obs) -> q_values."""
 
     class QModule(nn.Module):
-        """Q Module for discrete action space"""
+        """Q Module for discrete action space."""
 
         n: int
 

@@ -112,10 +112,6 @@ def _fast_eval(rewards, dones, rollout_length):
         )
 
     def _one_step_rollout(carry):
-        """
-        sample_batch: one-step obs
-        transition: one-step full info
-        """
         env_state, prev_metrics = carry
 
         prev_dones = env_state.done

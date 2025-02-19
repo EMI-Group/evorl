@@ -18,9 +18,7 @@ class EvoXAlgoState(PyTreeData):
 
 
 class EvoXAlgorithmAdapter(EvoOptimizer):
-    """
-    Adapter class to convert EvoX algorithms to EvoRL optimizers.
-    """
+    """Adapter class to convert EvoX algorithms to EvoRL optimizers."""
 
     algorithm: Algorithm
     param_vec_spec: ParamVectorSpec

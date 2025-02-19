@@ -22,14 +22,12 @@ def erl_mutate(
     reset_prob: float = 0.05,
     vec_relative_prob: float = 0.0,
 ):
+    """Args:
+    key: PRNGKey
+    x: single individual,
+    vec_relative_prob: probability of mutating a vector(1-d) parameter.
+        Disable vector mutation when set 0.0; ERL use 0.04
     """
-    Args:
-        key: PRNGKey
-        x: single individual,
-        vec_relative_prob: probability of mutating a vector(1-d) parameter.
-            Disable vector mutation when set 0.0; ERL use 0.04
-    """
-
     leaves, treedef = jtu.tree_flatten_with_path(x)
     key, ssne_key = jax.random.split(key)
 

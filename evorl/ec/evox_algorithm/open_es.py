@@ -17,8 +17,7 @@ from evorl.utils.jax_utils import invert_permutation
 
 
 def compute_ranks(x):
-    """
-    Returns ranks in [0, len(x)-1]
+    """Returns ranks in [0, len(x)-1]
     Note: This is different from scipy.stats.rankdata, which returns ranks in [1, len(x)].
     """
     assert x.ndim == 1
@@ -43,8 +42,7 @@ class OpenES(Algorithm):
         optimizer=None,
         mirror_sampling=True,
     ):
-        """
-        Implement the algorithm described in "Evolution Strategies as a Scalable Alternative to Reinforcement Learning"
+        """Implement the algorithm described in "Evolution Strategies as a Scalable Alternative to Reinforcement Learning"
         from https://arxiv.org/abs/1703.03864
         """
         assert noise_std > 0
