@@ -42,9 +42,13 @@ class EvaluateMetric(MetricBase):
 
 
 class ERLEDAWorkflow(ERLWorkflowTemplate):
-    """EC: n actors
-    RL: 1 (actor,critic)
-    Shared replay buffer
+    """ERL w/ EDA.
+
+    Configs:
+
+    - EC: n actors
+    - RL: 1 (actor,critic)
+    - Shared replay buffer
 
     RL will be injected into the pop mean. Support all EDA based ES algorithms.
     """
@@ -61,7 +65,6 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        """Return workflow"""
         # env for rl&ec rollout
         env = create_env(
             config.env.env_name,
@@ -272,7 +275,6 @@ class ERLEDAWorkflow(ERLWorkflowTemplate):
         return ec_opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """The basic step function for the workflow to update agent"""
         pop_size = self.config.pop_size
         agent_state = state.agent_state
         opt_state = state.opt_state

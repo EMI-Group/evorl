@@ -19,10 +19,26 @@ from evorl.types import (
     PyTreeDict,
 )
 
+__all__ = [
+    "AgentState",
+    "Agent",
+    "RandomAgent",
+]
+
+
 AgentParams = Mapping[str, Params]
 
 
 class AgentState(PyTreeData):
+    """State of the agent.
+
+    Attributes:
+        params: The network parameters of the agent.
+        obs_preprocessor_state: The state of the observation preprocessor.
+        action_postprocessor_state: The state of the action postprocessor.
+        extra_state: Extra state of the agent.
+    """
+
     params: AgentParams
     obs_preprocessor_state: Any = None
     # TODO: define the action_postprocessor_state
@@ -33,13 +49,42 @@ class AgentState(PyTreeData):
 AgentStateAxis = AgentState | Axis
 
 
-class Agent(PyTreeNode, metaclass=ABCMeta):
-    """Base class for all agents.
+class ObsPreprocessorFn(Protocol):
+    """The type of the observation preprocessor function."""
 
-    Usage:
-    - Store models like actor and critic
-    - interactive with environment by compute_actions
-    - compute loss by loss
+    def __call__(self, obs: chex.Array, *args: Any, **kwds: Any) -> chex.Array:
+        return obs
+
+
+class LossFn(Protocol):
+    """The type of the agent's loss function.
+
+    In some case, a single loss function is not enough. For example, DDPG has two loss functions: actor_loss and critic_loss.
+    """
+
+    def __call__(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> LossDict:
+        pass
+
+
+class AgentActionFn(Protocol):
+    """The type of the agent's action function."""
+
+    def __call__(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+    ) -> tuple[Action, PolicyExtraInfo]:
+        pass
+
+
+class Agent(PyTreeNode, metaclass=ABCMeta):
+    """Agent Interface.
+
+    The responsibilities of an Agent:
+
+    - Store models like actor and critic.
+    - Interact with environment by `compute_actions()` or `evaluate_actions()`.
+    - Compute algorithm-specific losses (optional).
     """
 
     @abstractmethod
@@ -54,16 +99,15 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
     ) -> tuple[Action, PolicyExtraInfo]:
         """Get actions from the policy model + add exploraton noise.
 
-        This function is exclusively used for rollout.
+        This method is exclusively used for rollout.
 
         Args:
-            sample_batch: only `obs` field are available.
-        key: a single PRNGKey.
+            agent_state: the state of the agent.
+            sample_batch: Previous Transition data. Usually only contrains `obs`.
+            key: JAX PRNGKey.
 
         Return:
-            Tuple:
-            - action
-            - policy extra info (eg: hidden state of RNN)
+            A tuple (action, policy_extra_info), policy_extra_info is a dict containing extra information about the policy, such as the current hidden state of RNN.
         """
         raise NotImplementedError()
 
@@ -71,35 +115,24 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """Get the best action from the action distribution."""
+        """Get the best action from the action distribution.
+
+        This method is exclusively used for evaluation.
+
+        Args:
+            agent_state: the state of the agent.
+            sample_batch: Previous Transition data. Usually only contrains `obs`.
+            key: JAX PRNGKey.
+
+        Return:
+            A tuple (action, policy_extra_info), policy_extra_info is a dict containing extra information about the policy, such as the current hidden state of RNN.
+
+        """
         raise NotImplementedError()
 
 
-class ObsPreprocessorFn(Protocol):
-    def __call__(self, obs: chex.Array, *args: Any, **kwds: Any) -> chex.Array:
-        return obs
-
-
-class LossFn(Protocol):
-    def __call__(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
-    ) -> LossDict:
-        """The type for the loss function for the model.
-        
-        In some case, a single loss function is not enough. For example, DDPG has two loss functions: actor_loss and critic_loss.
-        """
-        pass
-
-
-class AgentActionFn(Protocol):
-    def __call__(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
-    ) -> tuple[Action, PolicyExtraInfo]:
-        pass
-
-
 class RandomAgent(Agent):
-    """An agent that takes random actions."""
+    """An agent that takes uniform random actions."""
 
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey

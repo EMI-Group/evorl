@@ -59,7 +59,7 @@ class DQNWorkflowMetric(WorkflowMetric):
 
 
 class DQNAgent(Agent):
-    """Double-DQN"""
+    """Double-DQN."""
 
     q_network: nn.Module
     obs_preprocessor: Any = pytree_field(default=None, static=True)
@@ -96,9 +96,6 @@ class DQNAgent(Agent):
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """Args:
-        sample_barch: [#env, ...]
-        """
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
@@ -116,9 +113,6 @@ class DQNAgent(Agent):
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """Args:
-        sample_barch: [#env, ...]
-        """
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
@@ -135,9 +129,6 @@ class DQNAgent(Agent):
     def loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
-        """Args:
-        sample_batch: [B, ...]
-        """
         obs = sample_batch.obs
         actions = sample_batch.actions
         rewards = sample_batch.rewards

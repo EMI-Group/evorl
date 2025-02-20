@@ -6,12 +6,20 @@ from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions  # note: tfp use lazy init.
 
+__all__ = [
+    "get_categorical_dist",
+    "get_tanh_norm_dist",
+    "get_trancated_norm_dist",
+]
+
 
 def get_categorical_dist(logits: jax.Array):
+    """Get a categorical distribution."""
     return tfd.Categorical(logits=logits)
 
 
 def get_tanh_norm_dist(loc: jax.Array, scale: jax.Array, min_scale: float = 1e-3):
+    """Get a tanh transformed normal distribution."""
     scale = jax.nn.softplus(scale) + min_scale
     distribution = tfd.Normal(loc=loc, scale=scale)
     return tfd.Independent(
@@ -42,6 +50,7 @@ def get_tanh_norm_dist(loc: jax.Array, scale: jax.Array, min_scale: float = 1e-3
 
 
 def get_trancated_norm_dist(loc, scale, low, high):
+    """Get a truncated normal distribution."""
     return tfd.TruncatedNormal(loc=loc, scale=scale, low=low, high=high)
 
 

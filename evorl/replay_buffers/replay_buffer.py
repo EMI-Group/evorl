@@ -90,10 +90,10 @@ class ReplayBuffer(AbstractReplayBuffer):
 
     Data are added and sampled in 1d-like structure.
 
-    # Attributes:
-    #     capacity: the maximum capacity of the replay buffer.
-    #     sample_batch_size: the batch size for `sample()`.
-    #     min_sample_timesteps: the minimum number of timesteps before the replay buffer can sample.
+    Attributes:
+        capacity: the maximum capacity of the replay buffer.
+        sample_batch_size: the batch size for `sample()`.
+        min_sample_timesteps: the minimum number of timesteps before the replay buffer can sample.
     """
 
     capacity: int

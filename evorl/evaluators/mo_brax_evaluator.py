@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 
 
 class BraxEvaluator(Evaluator):
+    """Mutli-objective evaluator for Brax environments.
+
+    Attributes:
+        metric_names: The names of the metrics to evaluate, default is ("reward", "episode_lengths")
+
+    """
+
     metric_names: tuple[str] = pytree_field(
         default=("reward", "episode_lengths"), static=True
     )
@@ -96,9 +103,13 @@ class BraxEvaluator(Evaluator):
 
 
 def _flatten_metric(x):
-    """x: (#iters, ..., #envs)
+    """Flatten the last two dims.
 
-    Return: (..., #iters * #envs)
+    Args:
+        x: jax tensor with shape (#iters, ..., #envs)
+
+    Returns:
+        flatten x with shape (..., #iters * #envs)
     """
     return jax.lax.collapse(jnp.moveaxis(x, 0, -2), -2)
 
@@ -148,20 +159,15 @@ def eval_rollout_episode(
     rollout_length: int,
     metric_names: tuple[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
-    """Collect given rollout_length trajectory.
-    Avoid unnecessary env_step()
+    """Evaulate a batch of episodic trajectories.
 
-    Args:
-        env: vmapped env w/o autoreset
+    The retruned metrics are defined by `metric_names`.
     """
     _eval_env_step = partial(
         eval_env_step, env_fn, action_fn, metric_names=metric_names
     )
 
     def _one_step_rollout(carry, unused_t):
-        """sample_batch: one-step obs
-        transition: one-step full info
-        """
         env_state, current_key, prev_transition = carry
         # next_key, current_key = jax.random.split(current_key, 2)
         next_key, current_key = rng_split(current_key, 2)
@@ -245,11 +251,9 @@ def fast_eval_metrics(
     rollout_length: int,
     metric_names: tuple[str] = (),
 ) -> tuple[PyTreeDict, EnvState]:
-    """Collect given rollout_length trajectory.
-    Avoid unnecessary env_step()
+    """Fast evaulate a batch of episodic trajectories.
 
-    Args:
-        env: vmapped env w/o autoreset
+    The retruned metrics are defined by `metric_names`.
     """
     _eval_env_step = partial(
         eval_env_step, env_fn, action_fn, metric_names=metric_names
@@ -262,9 +266,6 @@ def fast_eval_metrics(
         )
 
     def _one_step_rollout(carry):
-        """sample_batch: one-step obs
-        transition: one-step full info
-        """
         env_state, current_key, prev_metrics = carry
         next_key, current_key = rng_split(current_key, 2)
 

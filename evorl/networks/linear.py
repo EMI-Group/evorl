@@ -82,6 +82,7 @@ def make_mlp(
     use_bias: bool = True,
     norm_layer_type: str = "none",
 ) -> nn.Module:
+    """Creates an MLP network."""
     if norm_layer_type == "spectral_norm":
         mlp = SNMLP(
             layer_sizes=layer_sizes,
@@ -112,6 +113,7 @@ def make_vmap_mlp(
     norm_layer_type: str = "none",
     out_axes: int = -2,
 ):
+    """Creates multiple MLP networks in parallel."""
     if norm_layer_type == "spectral_norm":
         mlp = nn.vmap(
             SNMLP,

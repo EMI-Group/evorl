@@ -46,7 +46,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         raise NotImplementedError
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
-        """Evaluate the policy with the mean of CMAES"""
+        """Evaluate the policy with the mean of ES."""
         key, eval_key = jax.random.split(state.key, num=2)
 
         agent_state = self._get_pop_center(state)

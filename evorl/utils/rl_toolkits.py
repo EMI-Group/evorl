@@ -8,6 +8,19 @@ from evorl.types import MISSING_REWARD
 
 from .jax_utils import is_jitted
 
+__all__ = [
+    "compute_episode_length",
+    "compute_discount_return",
+    "compute_gae",
+    "shuffle_sample_batch",
+    "soft_target_update",
+    "flatten_rollout_trajectory",
+    "flatten_pop_rollout_episode",
+    "average_episode_discount_return",
+    "approximate_kl",
+    "fold_multi_steps",
+]
+
 
 def compute_episode_length(
     dones: chex.Array,  # [T, B]

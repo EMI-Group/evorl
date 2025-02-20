@@ -26,7 +26,11 @@ class ERLTrainMetric(ERLTrainMetricBase):
 
 
 class ERLWorkflow(ERLGAWorkflow):
-    """Original ERL impl with dynamic training updates per iteration, i.e., #rl_updates = #sampled_timesteps_this_iter"""
+    """Original ERL impl.
+
+    Have dynamic training updates per iteration, i.e., #rl_updates = #sampled_timesteps_this_iter
+
+    """
 
     @classmethod
     def name(cls):
@@ -34,7 +38,6 @@ class ERLWorkflow(ERLGAWorkflow):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        """Return workflow"""
         workflow = super()._build_from_config(config)
 
         def _rl_sample_and_update_fn(carry, unused_t):
@@ -111,7 +114,7 @@ class ERLWorkflow(ERLGAWorkflow):
         return td3_metrics, agent_state, opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """The basic step function for the workflow to update agent"""
+        """The basic step function for the workflow to update agent."""
         start_t = time.perf_counter()
         pop_size = self.config.pop_size
         agent_state = state.agent_state
@@ -304,7 +307,8 @@ class ERLWorkflow(ERLGAWorkflow):
 
     @classmethod
     def enable_jit(cls) -> None:
-        """Do not jit replay buffer add"""
+        # Do not jit replay buffer add
+
         cls._rl_rollout = jax.jit(cls._rl_rollout, static_argnums=(0,))
         cls._ec_rollout = jax.jit(cls._ec_rollout, static_argnums=(0,))
         cls._ec_update = jax.jit(cls._ec_update, static_argnums=(0,))

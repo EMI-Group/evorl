@@ -6,6 +6,12 @@ from omegaconf import OmegaConf
 
 from absl import logging
 
+__all__ = [
+    "set_omegaconf_resolvers",
+    "get_output_dir",
+    "set_absl_log_level",
+]
+
 
 def set_omegaconf_resolvers():
     """Senitize the dirname."""
@@ -27,7 +33,7 @@ def get_output_dir(default_path: str = "./debug"):
     return output_dir
 
 
-absl_log_level_map = {
+_absl_log_level_map = {
     "debug": logging.DEBUG,
     "info": logging.INFO,
     "warning": logging.WARNING,
@@ -38,4 +44,4 @@ absl_log_level_map = {
 
 def set_absl_log_level(level: str = "warning"):
     """Set the absl log level."""
-    logging.set_verbosity(absl_log_level_map[level])
+    logging.set_verbosity(_absl_log_level_map[level])

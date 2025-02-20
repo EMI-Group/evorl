@@ -19,11 +19,13 @@ def mlp_mutate(
     vector_num_mutation_frac: float = 0.0,
     matrix_num_mutation_frac: float = 0.01,
 ):
-    """Args:
-    key: PRNGKey
-    x: single individual,
-    vec_relative_prob: probability of mutating a vector(1-d) parameter.
-        Disable vector mutation when set 0.0; ERL use 0.04
+    """Mutation for MLP.
+
+    Args:
+        key: PRNGKey
+        x: single individual,
+        vec_relative_prob: probability of mutating a vector(1-d) parameter.
+            Disable vector mutation when set 0.0; ERL use 0.04
     """
     leaves, treedef = jtu.tree_flatten_with_path(x)
 

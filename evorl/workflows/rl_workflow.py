@@ -101,6 +101,7 @@ class RLWorkflow(Workflow):
 
         Args:
             state: State of the workflow.
+
         Returns:
             Tuple of (metrics, state).
         """

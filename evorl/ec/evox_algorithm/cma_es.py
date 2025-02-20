@@ -9,8 +9,9 @@ from .sort_utils import sort_by_key
 
 
 class CMAES(Algorithm):
-    """Title: Completely Derandomized Self-Adaptation in Evolution Strategies
-    Link: http://www.cmap.polytechnique.fr/~nikolaus.hansen/cmaartic.pdf
+    """CMA-ES.
+
+    Paper: [Completely Derandomized Self-Adaptation in Evolution Strategies](http://www.cmap.polytechnique.fr/~nikolaus.hansen/cmaartic.pdf)
     """
 
     def __init__(
@@ -224,8 +225,9 @@ def _decompose_C(C):
 
 
 class SepCMAES(CMAES):
-    """Title: A Simple Modification in CMA-ES Achieving Linear Time and Space Complexity (SepCMAES)
-    Link: https://inria.hal.science/inria-00287367/document
+    """SepCMAES.
+
+    Paper: [A Simple Modification in CMA-ES Achieving Linear Time and Space Complexity](https://inria.hal.science/inria-00287367/document)
     """
 
     def setup(self, key):

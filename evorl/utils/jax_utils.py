@@ -8,6 +8,31 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
+__all__ = [
+    "disable_gpu_preallocation",
+    "enable_deterministic_mode",
+    "tree_zeros_like",
+    "tree_ones_like",
+    "tree_concat",
+    "tree_stop_gradient",
+    "tree_astype",
+    "tree_last",
+    "tree_get",
+    "tree_set",
+    "scan_and_mean",
+    "scan_and_last",
+    "jit_method",
+    "pmap_method",
+    "rng_split",
+    "rng_split_by_shape",
+    "rng_split_like_tree",
+    "is_jitted",
+    "has_nan",
+    "tree_has_nan",
+    "invert_permutation",
+    "right_shift_with_padding",
+]
+
 
 def disable_gpu_preallocation():
     """Disable GPU memory preallocation for XLA.
@@ -215,7 +240,7 @@ def pmap_method(
     )
 
 
-def vmap_rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
+def _vmap_rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
     """Enhanced version of `jax.random.split` that allows batched keys.
 
     Args:
@@ -241,7 +266,7 @@ def rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
         chex.assert_shape(key, (2,))
         return jax.random.split(key, num)
     else:
-        return vmap_rng_split(key, num)
+        return _vmap_rng_split(key, num)
 
 
 def rng_split_by_shape(key: chex.PRNGKey, shape: tuple[int]) -> chex.PRNGKey:

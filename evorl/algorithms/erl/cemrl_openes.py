@@ -31,6 +31,7 @@ from .cemrl_base import CEMRLTrainMetric
 
 class CEMRLOpenESWorkflow(CEMRLWorkflowTemplate):
     """1 critic + n actors + 1 replay buffer.
+
     We use shard_map to split and parallel the population.
     """
 
@@ -184,7 +185,6 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowTemplate):
         return ec_opt_state.replace(noise=noise)
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """The basic step function for the workflow to update agent"""
         pop_size = self.config.pop_size
         agent_state = state.agent_state
         opt_state = state.opt_state

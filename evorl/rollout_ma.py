@@ -14,6 +14,12 @@ from evorl.utils.ma_utils import batchify, unbatchify
 
 # Decentralized Execution
 
+__all__ = [
+    "decentralized_env_step",
+    "decentralized_rollout",
+    "decentralized_env_step_with_shared_model",
+    "decentralized_rollout_with_shared_model",
+]
 
 def decentralized_env_step(
     env: MultiAgentEnv,

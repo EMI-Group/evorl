@@ -56,11 +56,13 @@ def all_gather(x, axis_name: str | None = None, **kwargs):
 
 
 def split_key_to_devices(key: chex.PRNGKey, devices: Sequence[jax.Device]):
+    """Split the key to each device."""
     return jax.device_put_sharded(tuple(jax.random.split(key, len(devices))), devices)
 
 
 def is_dist_initialized():
-    # Note: global_state is a JAX internal API
+    """Whether the JAX's distributed setting is initialized."""
+    # Note: global_state is a JAX internal API, which is not stable.
     return global_state.coordinator_address is not None
 
 

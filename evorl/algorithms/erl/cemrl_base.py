@@ -43,7 +43,7 @@ class WorkflowMetric(MetricBase):
 
 
 class CEMRLWorkflowBase(Workflow):
-    """Base Class for CEMRL, equipped with many useful methods"""
+    """Base Class for CEMRL, equipped with many useful methods."""
 
     def __init__(
         self,

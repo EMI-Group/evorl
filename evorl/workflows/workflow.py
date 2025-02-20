@@ -29,12 +29,12 @@ class AbstractWorkflow(ABC):
 
     @abstractmethod
     def step(self, state: State) -> tuple[Any, State]:
-        """Define the logic of one training iteration"""
+        """Define the logic of one training iteration."""
         raise NotImplementedError
 
     @classmethod
     def name(cls) -> str:
-        """Define the name of the workflow (eg. PPO, PSO, etc.)
+        """Define the name of the workflow (eg. PPO, PSO, etc.).
 
         Default workflow name is its class name.
         """
@@ -48,6 +48,11 @@ class Workflow(AbstractWorkflow):
     """
 
     def __init__(self, config: DictConfig):
+        """Initialize a RLWorkflow instance.
+
+        Args:
+            config: the config object.
+        """
         self.config = config
         self.recorder = ChainRecorder([])
         self.checkpoint_manager = setup_checkpoint_manager(config)
@@ -89,7 +94,10 @@ class Workflow(AbstractWorkflow):
         self.checkpoint_manager.close()
 
     def learn(self, state: State) -> State:
-        """Run the complete learning process:
+        """Run the complete learning process.
+
+        The learning process includes:
+
         - call multiple times of step()
         - record the metrics
         - save checkpoints

@@ -10,7 +10,7 @@ def tournament_selection(
     *,
     tournament_size: int,
 ):
-    """Tournament selection operator for single objective"""
+    """Tournament selection operator for single objective."""
     chex.assert_shape(fitnesses, (fitnesses.shape[0],))
     assert num_offsprings > 0, "num_offsprings must be positive"
     assert tournament_size > 1, "tournament_size must be greater than 1"

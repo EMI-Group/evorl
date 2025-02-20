@@ -19,37 +19,49 @@ author = "Bowen Zheng"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    "myst_parser",
     "sphinx.ext.napoleon",
+    "myst_parser",
     # "sphinx.ext.coverage",
     # "sphinx_copybutton",
     "autodoc2",
 ]
 
 autodoc2_packages = [
-    "../evorl",
+    {
+        "path": "../evorl",
+        "auto_mode": True,
+    }
 ]
 autodoc2_render_plugin = "myst"
 autodoc2_docstring_parser_regexes = [
     (r".*", "autodoc2_docstrings_parser"),
 ]
+
 autodoc2_module_all_regexes = [
-    # r"evorl\.[^\.]+",
-    r"evorl\..workflow\..*",
-    # r"evorl\..env",
-    # r"evorl\..ec",
-    # r"evorl\..networks",
-    # r"evorl\..recorders",
-    # r"evorl\..replay_buffer",
-    # r"evorl\..evaluator",
+    r"evorl\.agent",
+    r"evorl\.algorithms",
+    r"evorl\.distributed",
+    r"evorl\.distribution",
+    r"evorl\.ec\.[a-zA-Z_]+",
+    r"evorl\.envs",
+    r"evorl\.evaluators",
+    r"evorl\.metrics",
+    r"evorl\.multi_agent_rollout",
+    r"evorl\.networks",
+    r"evorl\.recorders",
+    r"evorl\.replay_buffers",
+    r"evorl\.rollout",
+    r"evorl\.rollout_ma",
+    r"evorl\.sample_batch",
+    r"evorl\.workflows",
 ]
 autodoc2_class_docstring = "both"
-# autodoc2_hidden_objects = [
-#     "undoc",
-#     "inherited"
-# ]
-
-napoleon_google_docstring = True
+autodoc2_hidden_objects = [
+    "inherited",
+    "private",
+    "dunder",
+]
+autodoc2_hidden_regexes = [r"evorl\.(train|train_dist)"]
 
 myst_enable_extensions = [
     # "colon_fence",
@@ -65,4 +77,5 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "furo"
+# html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]

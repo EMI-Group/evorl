@@ -78,7 +78,7 @@ def log_uniform_init(search_space, key: chex.PRNGKey, num: int) -> chex.Array:
 
 
 def exp_uniform_init(search_space, key: chex.PRNGKey, num: int) -> chex.Array:
-    """exp(-x)"""
+    """Sample from exp(-x)."""
     assert (
         search_space.low > 0
         and search_space.high > 0

@@ -24,6 +24,7 @@ class MABraxEnvV2(MABraxEnv):
         **kwargs,
     ):
         """Multi-Agent Brax environment.
+
         Compared to the original MABraxEnv, this version disables the autoreset and other wrappers in internal brax envs.
 
         Args:

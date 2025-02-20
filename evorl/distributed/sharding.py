@@ -6,13 +6,8 @@ from jax.experimental.shard_map import shard_map
 
 
 def tree_device_put(tree: chex.ArrayTree, device_or_sharding):
+    """Pytree version of `jax.device_put`."""
     return jax.tree_map(lambda x: jax.device_put(x, device_or_sharding), tree)
-
-
-def tree_device_get(tree: chex.ArrayTree, device=None):
-    if device is None:
-        device = jax.devices()[0]
-    return tree_device_put(tree, device)
 
 
 def shmap_vmap(fn: Callable, mesh, in_specs, out_specs, **kwargs):

@@ -10,7 +10,7 @@ from .space import Space
 
 
 class MultiAgentEnv(Env):
-    """Unified EvoRL Env API"""
+    """Unified EvoRL Env API."""
 
     @abstractmethod
     def reset(self, key: chex.PRNGKey) -> EnvState:

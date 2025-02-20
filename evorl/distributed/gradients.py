@@ -9,6 +9,7 @@ import optax
 Modified from https://github.com/google/brax/blob/main/brax/training/gradients.py
 """
 
+
 def loss_and_pgrad(
     loss_fn: Callable[..., float], pmap_axis_name: str | None, has_aux: bool = False
 ):

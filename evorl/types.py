@@ -33,6 +33,16 @@ Axis = int | None | Sequence[Any]
 MISSING_REWARD = -1e10
 
 
+__all__ = [
+    "pytree_field",
+    "dataclass",
+    "PyTreeDict",
+    "State",
+    "PyTreeNode",
+    "PyTreeData",
+]
+
+
 @jtu.register_pytree_node_class
 class PyTreeDict(dict):
     """An easydict with pytree support."""
@@ -91,12 +101,17 @@ class PyTreeDict(dict):
 
 @jtu.register_pytree_node_class
 class State(PyTreeDict):
-    """A general State class."""
+    """A general State class.
+
+    An alias of PyTreeDict. This class is specfically used for `Workflow` state.
+    """
 
     pass
 
 
 class EnvLike(Protocol):
+    """A protocol for environment objects."""
+
     def reset(self, *args, **kwargs) -> Any:
         """Resets the environment to an initial state."""
         pass
@@ -112,6 +127,9 @@ def pytree_field(*, lazy_init=False, static=False, **kwargs):
     Args:
         lazy_init: When set to True, the field will not be initialized in `__init__()`, and we can use set_frozen_attr to set the value after `__init__`
         static: Setting to False will mark the field as static for pytree, that changing data in these fields will cause a re-jit of func.
+
+    Returns:
+        A dataclass field.
     """
     if lazy_init:
         kwargs.update(init=False, repr=False)
@@ -187,7 +205,7 @@ class PyTreeNode:
         dataclass(cls, pure_data=False, kw_only=kw_only, **kwargs)
 
     def set_frozen_attr(self, name, value):
-        """Force set attribute after __init__ of the dataclass"""
+        """Force set attribute after __init__ of the dataclass."""
         for field in dataclasses.fields(self):
             if field.name == name:
                 if field.metadata.get("lazy_init", False):

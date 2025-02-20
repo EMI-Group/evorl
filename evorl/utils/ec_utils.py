@@ -3,6 +3,8 @@ import jax
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_leaves
 
+__all__ = ["ParamVectorSpec"]
+
 
 class ParamVectorSpec:
     """Save the structure of the parameters.

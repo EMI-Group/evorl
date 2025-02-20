@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
-    """Wrapping some common template for off-policy RL with TD Learning"""
+    """Wrapping some common template for off-policy RL with TD Learning."""
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
@@ -256,14 +256,15 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
 
 
 def skip_replay_buffer_state(state: State) -> State:
-    """Utility function to remove replay_buffer_state from state;
+    """Utility function to remove replay_buffer_state from state.
+
     Usually used when saving the off-policy workflow state to disk.
     """
     return state.replace(replay_buffer_state=None)
 
 
 def clean_trajectory(trajectory: SampleBatch) -> SampleBatch:
-    """Clean the trajectory to make it suitable for the replay buffer"""
+    """Clean the trajectory to make it suitable for the replay buffer."""
     return trajectory.replace(
         next_obs=None,
         dones=None,

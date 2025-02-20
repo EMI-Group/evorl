@@ -54,7 +54,7 @@ class DDPGNetworkParams(PyTreeData):
 
 
 class DDPGAgent(Agent):
-    """The Agnet for DDPG"""
+    """The Agnet for DDPG."""
 
     critic_network: nn.Module
     actor_network: nn.Module
@@ -101,10 +101,6 @@ class DDPGAgent(Agent):
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """Args:
-            sample_barch: [#env, ...]
-        used in sample action during rollout
-        """
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
@@ -120,9 +116,6 @@ class DDPGAgent(Agent):
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """Args:
-        sample_barch: [#env, ...]
-        """
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
@@ -134,15 +127,6 @@ class DDPGAgent(Agent):
     def critic_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
-        """Args:
-            sample_barch: [B, ...]
-
-        Return: LossDict[
-            actor_loss
-            critic_loss
-            actor_entropy_loss
-        ]
-        """
         next_obs = sample_batch.extras.env_extras.ori_obs
         obs = sample_batch.obs
         actions = sample_batch.actions
@@ -176,15 +160,6 @@ class DDPGAgent(Agent):
     def actor_loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
-        """Args:
-            sample_barch: [B, ...]
-
-        Return: LossDict[
-            actor_loss
-            critic_loss
-            actor_entropy_loss
-        ]
-        """
         obs = sample_batch.obs
 
         if self.normalize_obs:
@@ -241,7 +216,6 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        """Return workflow"""
         env = create_env(
             config.env.env_name,
             config.env.env_type,
@@ -316,7 +290,6 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
         return agent_state, opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """The basic step function for the workflow to update agent"""
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
 
         # the trajectory [T, B, ...]

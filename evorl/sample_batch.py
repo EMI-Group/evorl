@@ -8,10 +8,14 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 
 from .types import ExtraInfo, PyTreeData, Reward, RewardDict
+from .utils.jax_utils import right_shift_with_padding
+
+__all__ = ["SampleBatch", "Episode"]
 
 
 class SampleBatch(PyTreeData):
-    """Batched transitions w/ additional first axis as batch_axis.
+    """Batched transitions w/ additional prefix axis as batch_axis.
+
     Could also be used as a trajectory.
     """
 
@@ -64,16 +68,10 @@ class SampleBatch(PyTreeData):
         """Creates a new object with parameters set.
 
         Args:
-          params: a dictionary of key value pairs to replace
+            params: a dictionary of key value pairs to replace
 
         Returns:
-          data clas with new values
-
-        Example:
-          If a system has 3 links, the following code replaces the mass
-          of each link in the System:
-          >>> sys = sys.tree_replace(
-          >>>     {'link.inertia.mass', jnp.array([1.0, 1.2, 1.3])})
+            data clas with new values
         """
         new = self
         for k, v in params.items():
@@ -113,19 +111,11 @@ def _tree_replace(
     )
 
 
-def right_shift(arr: chex.Array, shift: int, pad_val=None) -> chex.Array:
-    padding_shape = (shift, *arr.shape[1:])
-    if pad_val is None:
-        padding = jnp.zeros(padding_shape, dtype=arr.dtype)
-    else:
-        padding = jnp.full(padding_shape, pad_val, dtype=arr.dtype)
-    return jnp.concatenate([padding, arr[:-shift]], axis=0)
-
-
 class Episode(PyTreeData):
+    """The container for an episode trajectory."""
+
     trajectory: SampleBatch
-    ori_obs: chex.ArrayTree
 
     @property
     def valid_mask(self) -> chex.Array:
-        return 1 - right_shift(self.trajectory.dones, 1)
+        return 1 - right_shift_with_padding(self.trajectory.dones, 1)

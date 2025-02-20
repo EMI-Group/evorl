@@ -9,6 +9,17 @@ import numpy as np
 from .distributed import pmean
 from .types import LossDict, PyTreeData, PyTreeDict
 
+__all__ = [
+    "metric_field",
+    "MetricBase",
+    "WorkflowMetric",
+    "TrainMetric",
+    "EvaluateMetric",
+    "ECWorkflowMetric",
+    "MultiObjectiveECWorkflowMetric",
+    "ECTrainMetric",
+]
+
 
 def metric_field(
     *,
@@ -16,7 +27,15 @@ def metric_field(
     static=False,
     **kwargs,
 ):
-    """"""
+    """Define a metric field in `MetricBase`.
+
+    Args:
+        reduce_fn: A function to reduce the metric value across different devices.
+        static: Whether the field is static related to pytree.
+
+    Returns:
+        A dataclass field.
+    """
     metadata = {"static": static, "reduce_fn": reduce_fn}
     kwargs.setdefault("metadata", {}).update(metadata)
 
@@ -24,6 +43,8 @@ def metric_field(
 
 
 class MetricBase(PyTreeData, kw_only=True):
+    """Base class for all metrics."""
+
     def all_reduce(self, pmap_axis_name: str | None = None):
         field_dict = {}
         for field in dataclasses.fields(self):
@@ -39,18 +60,26 @@ class MetricBase(PyTreeData, kw_only=True):
         return self.replace(**field_dict)
 
     def to_local_dict(self):
-        """Convert all dataclass to dict and convert
-        jax array and numpy array to python list
+        """Convert all dataclass to dict recursively.
+
+        The data in the metric object will be converted to local data types, such as jax array and numpy array.
+
+        Returns:
+            A converted dict.
         """
         return to_local_dict(self)
 
 
 class WorkflowMetric(MetricBase):
+    """Workflow metrics for RLWorkflow."""
+
     sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class TrainMetric(MetricBase):
+    """Training metrics for RLWorkflow."""
+
     # manually reduce in the step()
     train_episode_return: chex.Array | None = None
 
@@ -60,12 +89,37 @@ class TrainMetric(MetricBase):
 
 
 class EvaluateMetric(MetricBase):
+    """Evaluation metrics for RLWorkflow."""
+
     episode_returns: chex.Array = metric_field(reduce_fn=pmean)
     episode_lengths: chex.Array = metric_field(reduce_fn=pmean)
 
 
+class ECWorkflowMetric(MetricBase):
+    """Workflow metrics for ECWorkflow."""
+
+    best_objective: chex.Array
+    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
+    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+
+
+class MultiObjectiveECWorkflowMetric(MetricBase):
+    """Workflow metrics for MultiObjectiveECWorkflow."""
+
+    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
+    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+
+
+class ECTrainMetric(MetricBase):
+    """Training metrics for ECWorkflow."""
+
+    objectives: chex.Array
+    ec_metrics: chex.ArrayTree
+
+
 def _is_dataclass_instance(obj):
-    """Returns True if obj is an instance of a dataclass."""
     return hasattr(type(obj), "__dataclass_fields__")
 
 

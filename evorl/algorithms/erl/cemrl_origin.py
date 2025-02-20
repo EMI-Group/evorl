@@ -34,6 +34,7 @@ class WorkflowMetric(MetricBase):
 
 class CEMRLWorkflow(_CEMRLWorkflow):
     """1 critic + n actors + 1 replay buffer.
+
     We use shard_map to split and parallel the population.
     """
 
@@ -126,7 +127,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
     def _rollout_and_update(
         self, pop_agent_state, replay_buffer_state, ec_opt_state, key
     ):
-        """Calculate the fitness and update the replay buffer and ec_optimizer"""
+        """Calculate the fitness and update the replay buffer and ec_optimizer."""
         # the trajectory [T, #pop*B, ...]
         # metrics: [#pop, B]
         eval_metrics, trajectory, replay_buffer_state = self._rollout(
@@ -139,7 +140,6 @@ class CEMRLWorkflow(_CEMRLWorkflow):
         return eval_metrics, ec_metrics, fitnesses, replay_buffer_state, ec_opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """The basic step function for the workflow to update agent"""
         start_t = time.perf_counter()
         pop_size = self.config.pop_size
         agent_state = state.agent_state

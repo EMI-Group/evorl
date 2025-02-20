@@ -6,41 +6,46 @@ from evorl.types import PyTreeData
 
 
 class Space(PyTreeData):
-    """A jax version of the gym.Space."""
+    """Base class for Space like `gym.Space`."""
 
     def sample(self, key: chex.PRNGKey) -> chex.Array:
         """Randomly sample an element of this space.
 
-        Can be uniform or non-uniform sampling based on boundedness of space.
+        Can be uniform or non-uniform sampling based on the boundedness of space.
 
         Returns:
-            A sampled actions from the space
+            A sample from the space
         """
         raise NotImplementedError
 
     @property
     def shape(self) -> chex.Shape:
-        """The shape of the space."""
+        """The shape of the space.
+
+        Returns:
+            The shape of the space.
+        """
         raise NotImplementedError
 
     def contains(self, x: chex.Array) -> bool:
-        """Return True if x is a valid member of the space."""
+        """Return True if x is a valid member of the space.
+
+        Returns:
+            Whether x is in the space.
+        """
         raise NotImplementedError
 
 
 class Box(Space):
+    """Continuous space in R^n.
+
+    Attributes:
+        low: The lower bounds of the box
+        high: The upper bounds of the box
+    """
+
     low: chex.Array
     high: chex.Array
-
-    # def __post_init__(self):
-    #     chex.assert_trees_all_equal_dtypes(
-    #         self.low,
-    #         self.high,
-    #         custom_message="low and high should have the same shape and dtype!",
-    #     )
-    #     assert (
-    #         self.high >= self.low
-    #     ).all(), "high should be greater than or equal to low"
 
     def sample(self, key: chex.PRNGKey) -> chex.Array:
         return jax.random.uniform(
@@ -60,10 +65,13 @@ class Box(Space):
 
 
 class Discrete(Space):
-    n: int
+    """Discrete space in {0, 1, ..., n-1}.
 
-    # def __post_init__(self):
-    #     assert self.n > 0, "n should be a positive integer"
+    Attributes:
+        n: The number of discrete values.
+    """
+
+    n: int
 
     def sample(self, key: chex.PRNGKey) -> chex.Array:
         return jax.random.randint(key, shape=(), minval=0, maxval=self.n)

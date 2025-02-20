@@ -32,9 +32,13 @@ class EvaluateMetric(MetricBase):
 
 
 class ERLGAWorkflow(ERLWorkflowTemplate):
-    """EC: n actors
-    RL: k actors + k critics
-    Shared replay buffer
+    """ERL w/ GA.
+
+    Config:
+
+    - EC: n actors
+    - RL: k actors + k critics
+    - Shared replay buffer
     """
 
     @classmethod
@@ -204,7 +208,7 @@ class ERLGAWorkflow(ERLWorkflowTemplate):
         return ec_opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
-        """The basic step function for the workflow to update agent"""
+        """The basic step function for the workflow to update agent."""
         pop_size = self.config.pop_size
         agent_state = state.agent_state
         opt_state = state.opt_state

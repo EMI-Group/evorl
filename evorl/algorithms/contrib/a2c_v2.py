@@ -68,7 +68,7 @@ def _default_episode_return_reduce_fn(x):
 def get_train_episode_return(
     episode_return_arr: Sequence[float], reduce_fn=_default_episode_return_reduce_fn
 ):
-    """Handle episode return array with MISSING_REWARD, i.e., returned from multiple call of average_episode_discount_return"""
+    """Handle episode return array with MISSING_REWARD, i.e., returned from multiple call of average_episode_discount_return."""
     episode_return_arr = np.array(episode_return_arr)
     mask = episode_return_arr == MISSING_REWARD
     if mask.all():

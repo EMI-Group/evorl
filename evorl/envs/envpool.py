@@ -33,9 +33,9 @@ def _to_numpy(x):
 
 
 class GymAdapter(EnvAdapter):
-    """Adapter for EnvPool to support gym(>=0.26.2) and gymnasium environments.
-    TODO: multi-device support
-    """
+    """Adapter for EnvPool to support gym(>=0.26.2) and gymnasium environments."""
+
+    # TODO: multi-device support
 
     def __init__(self, env: EnvPool):
         super().__init__(env)
@@ -118,7 +118,7 @@ class OneEpisodeWrapper(Wrapper):
         super().__init__(env)
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        """Note: could add extra CPU overhead"""
+        # Note: could add extra CPU overhead
 
         def where_done(x, y):
             done = state.done
@@ -158,7 +158,10 @@ def creat_gym_env(
     autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
     **kwargs,
 ) -> GymAdapter:
-    """Tips:
+    """Create a gym env based on EnvPool.
+
+    Tips:
+
     1. unlike other jax-based env, most wrappers are handled in envpool.
     2. Don't use the env with vmap, eg: vmap(env.step), this could cause undefined behavior.
     """

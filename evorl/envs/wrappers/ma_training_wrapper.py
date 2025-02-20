@@ -3,24 +3,13 @@ import jax
 import jax.tree_util as jtu
 from jax import numpy as jnp
 
-from evorl.utils.jax_utils import vmap_rng_split
+from evorl.utils.jax_utils import rng_split
 
 from ..env import Env, EnvState
 from .wrapper import Wrapper
 
 
 class EpisodeWrapper(Wrapper):
-    """Maintains episode step count and sets done at episode end.
-
-    This is the same as brax's EpisodeWrapper, and add some new fields in transition.info.
-
-    Args:
-        env: the wrapped env should be a single un-vectorized environment.
-        episode_length: the maxiumum length of each episode for truncation
-        action_repeat: the number of times to repeat each action
-        record_episode_return: whether to record the return of each episode
-    """
-
     def __init__(self, env: Env, episode_length: int):
         super().__init__(env)
         self.episode_length = episode_length
@@ -64,16 +53,6 @@ class EpisodeWrapper(Wrapper):
 
 
 class OneEpisodeWrapper(EpisodeWrapper):
-    """Maintains episode step count and sets done at episode end.
-
-    When call step() after the env is done, stop simulation and
-    directly return last state.
-
-    Args:
-        env: the wrapped env should be a single un-vectorized environment.
-
-    """
-
     def __init__(self, env: Env, episode_length: int):
         super().__init__(env, episode_length)
 
@@ -96,9 +75,6 @@ class VmapWrapper(Wrapper):
         self.vmap_step = vmap_step
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        """Args:
-        key: support batched keys [B,2] or single key [2]
-        """
         if key.ndim <= 1:
             key = jax.random.split(key, self.num_envs)
         else:
@@ -123,9 +99,6 @@ class VmapAutoResetWrapper(Wrapper):
         self.num_envs = num_envs
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        """Args:
-        key: support batched keys [B,2] or single key [2]
-        """
         if key.ndim <= 1:
             key = jax.random.split(key, self.num_envs)
         else:
@@ -135,7 +108,7 @@ class VmapAutoResetWrapper(Wrapper):
                 custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}",
             )
 
-        reset_key, key = vmap_rng_split(key)
+        reset_key, key = rng_split(key)
         state = jax.vmap(self.env.reset)(key)
         state.info.reset_key = reset_key  # for autoreset
 
@@ -151,11 +124,6 @@ class VmapAutoResetWrapper(Wrapper):
         return state
 
     def _auto_reset(self, state: EnvState) -> EnvState:
-        """Reset the state and overwrite `timestep.observation` with the reset observation
-        if the episode has terminated.
-
-            Note: run on single env
-        """
         # Make sure that the random key in the environment changes at each call to reset.
         # State is a type variable hence it does not have key type hinted, so we type ignore.
         new_key, reset_key = jax.random.split(state.info.reset_key)
@@ -171,10 +139,6 @@ class VmapAutoResetWrapper(Wrapper):
         return state
 
     def _maybe_reset(self, state: EnvState) -> EnvState:
-        """Overwrite the state and timestep appropriately if the episode terminates.
-
-        Note: run on single env
-        """
         return jax.lax.cond(
             state.done["__all__"],
             self._auto_reset,
@@ -184,18 +148,11 @@ class VmapAutoResetWrapper(Wrapper):
 
 
 class FastVmapAutoResetWrapper(Wrapper):
-    """Brax-style AutoReset: no randomness in reset.
-    This wrapper is more efficient than VmapAutoResetWrapper.
-    """
-
     def __init__(self, env: Env, num_envs: int = 1):
         super().__init__(env)
         self.num_envs = num_envs
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        """Args:
-        key: support batched keys [B,2] or single key [2]
-        """
         if key.ndim <= 1:
             key = jax.random.split(key, self.num_envs)
         else:

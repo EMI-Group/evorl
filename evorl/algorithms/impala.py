@@ -98,9 +98,6 @@ class IMPALAAgent(Agent):
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """Args:
-        sample_barch: [#env, ...]
-        """
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
@@ -124,9 +121,6 @@ class IMPALAAgent(Agent):
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
     ) -> tuple[Action, PolicyExtraInfo]:
-        """Args:
-        sample_barch: [#env, ...]
-        """
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
@@ -145,16 +139,12 @@ class IMPALAAgent(Agent):
     def loss(
         self, agent_state: AgentState, trajectory: SampleBatch, key: chex.PRNGKey
     ) -> LossDict:
-        """Args:
+        """IMPALA loss.
+
+        Args:
             trajectory: [T, B, ...]
                 a sequence of transitions, not shuffled timesteps
 
-        Return:
-            LossDict[
-                actor_loss
-                critic_loss
-                actor_entropy_loss
-            ]
         """
         # mask invalid transitions at autoreset
         mask = jnp.logical_not(trajectory.extras.env_extras.autoreset)
@@ -287,7 +277,7 @@ def make_mlp_impala_agent(
 
 
 class IMPALAWorkflow(OnPolicyWorkflow):
-    """Syncrhonous version of IMPALA (A2C|PPO w/ V-Trace)"""
+    """Syncrhonous version of IMPALA (A2C|PPO w/ V-Trace)."""
 
     @classmethod
     def name(cls):

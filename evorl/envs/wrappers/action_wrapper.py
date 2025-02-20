@@ -8,7 +8,7 @@ from .wrapper import Wrapper
 
 
 class ActionSquashWrapper(Wrapper):
-    """Convert continuous action space from [-1, 1] to [low, high]"""
+    """Convert continuous action space from [-1, 1] to [low, high]."""
 
     def __init__(self, env: Env):
         super().__init__(env)

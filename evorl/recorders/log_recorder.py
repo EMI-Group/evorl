@@ -18,7 +18,7 @@ from .recorder import Recorder
 
 
 class LogRecorder(Recorder):
-    """Log file recorder"""
+    """Log file recorder."""
 
     def __init__(self, log_path: str, console: bool = True):
         self.log_path = log_path

@@ -9,10 +9,16 @@ import jax.numpy as jnp
 from evorl.agent import AgentActionFn, AgentState
 from evorl.envs import EnvState, EnvStepFn
 from evorl.sample_batch import SampleBatch
-from evorl.types import PyTreeDict, Reward, RewardDict
+from evorl.types import PyTreeDict
 from evorl.utils.jax_utils import rng_split
 
 # TODO: add RNN Policy support
+
+__all__ = [
+    "rollout",
+    "eval_rollout_episode",
+    "fast_eval_rollout_episode",
+]
 
 
 class RolloutFn(Protocol):
@@ -92,20 +98,24 @@ def rollout(
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
     """Collect given rollout_length trajectory.
-    Tips: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
 
     Args:
-        env: vmapped env w/ autoreset
+        env_fn: step() of a vmapped env w/ autoreset.
+        action_fn: the agent's action function.
+        env_state: State of the environment.
+        agent_state: State of the agent.
+        key: PRNG key.
+        rollout_length: The length of the episodes. This value usually keeps the same as the env's `max_episode_steps`.
+        env_extra_fields: Extra fields collected into `trajectory.extras.env_extras`.
 
     Returns:
-        env_state: last env_state after rollout
-        trajectory: SampleBatch [T, B, ...], T=rollout_length, B=#envs
+        A tuple (trajectory, env_state).
+            - trajectory: SampleBatch with shape (T, B, ...), where T=rollout_length, B=#envs
+            - env_state: last env_state after rollout
+
     """
 
     def _one_step_rollout(carry, unused_t):
-        """sample_batch: one-step obs
-        transition: one-step full info
-        """
         env_state, current_key = carry
         next_key, current_key = rng_split(current_key, 2)
 
@@ -216,45 +226,42 @@ def rollout(
 #     return env_state, episodes
 
 
-def eval_rollout(
-    env_fn: EnvStepFn,
-    action_fn: AgentActionFn,
-    env_state: EnvState,
-    agent_state: AgentState,
-    key: chex.PRNGKey,
-    rollout_length: int,
-) -> tuple[EnvState, Reward | RewardDict]:
-    """Collect given rollout_length trajectory.
+# def eval_rollout(
+#     env_fn: EnvStepFn,
+#     action_fn: AgentActionFn,
+#     env_state: EnvState,
+#     agent_state: AgentState,
+#     key: chex.PRNGKey,
+#     rollout_length: int,
+# ) -> tuple[EnvState, Reward | RewardDict]:
+#     """Collect a batch of trajectories with `rollout_length` length.
 
-    Args:
-        env: vmapped env w/o autoreset
-        discount: discount factor. When discount=1.0, return undiscounted return.
+#     Args:
+#         env: vmapped env w/o autoreset
+#         discount: discount factor. When discount=1.0, return undiscounted return.
 
-    Returns:
-        env_state: last env_state after rollout
-        trajectory: shape: [T, #envs, ...]
-    """
+#     Returns:
+#         env_state: last env_state after rollout
+#         trajectory: shape: [T, #envs, ...]
+#     """
 
-    def _one_step_rollout(carry, unused_t):
-        """sample_batch: one-step obs
-        transition: one-step full info
-        """
-        env_state, current_key = carry
-        next_key, current_key = rng_split(current_key, 2)
+#     def _one_step_rollout(carry, unused_t):
+#         env_state, current_key = carry
+#         next_key, current_key = rng_split(current_key, 2)
 
-        # transition: [#envs, ...]
-        transition, env_nstate = eval_env_step(
-            env_fn, action_fn, env_state, agent_state, current_key
-        )
+#         # transition: [#envs, ...]
+#         transition, env_nstate = eval_env_step(
+#             env_fn, action_fn, env_state, agent_state, current_key
+#         )
 
-        return (env_nstate, next_key), transition
+#         return (env_nstate, next_key), transition
 
-    # trajectory: [T, #envs, ...]
-    (env_state, _), trajectory = jax.lax.scan(
-        _one_step_rollout, (env_state, key), (), length=rollout_length
-    )
+#     # trajectory: [T, #envs, ...]
+#     (env_state, _), trajectory = jax.lax.scan(
+#         _one_step_rollout, (env_state, key), (), length=rollout_length
+#     )
 
-    return trajectory, env_state
+#     return trajectory, env_state
 
 
 def eval_rollout_episode(
@@ -265,18 +272,26 @@ def eval_rollout_episode(
     key: chex.PRNGKey,
     rollout_length: int,
 ) -> tuple[SampleBatch, EnvState]:
-    """Collect given rollout_length trajectory.
-    Avoid unnecessary env_step()
+    """Evaulate a batch of episodic trajectories.
+
+    It avoids unnecessary `env_step()` when all environments are done. However, the agent's action function will still be called. When the function is wrapped by `jax.vmap()`, this mechanism will not work.
 
     Args:
-        env: vmapped env w/o autoreset
+        env_fn: step() of a vmapped env w/o autoreset.
+        action_fn: the agent's action function.
+        env_state: State of the environment.
+        agent_state: State of the agent.
+        key: PRNG key.
+        rollout_length: The length of the episodes. This value usually keeps the same as the env's `max_episode_steps` or be smllar than that.
+
+    Returns:
+        A tuple (trajectory, env_state).
+            - trajectory: SampleBatch with shape (T, B, ...), where T=rollout_length, B=#envs. When a episode is terminated
+            - env_state: last env_state after rollout
     """
     _eval_env_step = partial(eval_env_step, env_fn, action_fn)
 
     def _one_step_rollout(carry, unused_t):
-        """sample_batch: one-step obs
-        transition: one-step full info
-        """
         env_state, current_key, prev_transition = carry
         next_key, current_key = rng_split(current_key, 2)
 
@@ -314,8 +329,21 @@ def fast_eval_rollout_episode(
     key: chex.PRNGKey,
     rollout_length: int,
 ) -> tuple[PyTreeDict, EnvState]:
-    """Args:
-    env: vmapped env w/o autoreset
+    """Fast evaulate a batch of episodic trajectories.
+
+    A even faster implementation than `eval_rollout_episode()`. It achieves early termination when it is not wrapped by `jax.vmap()`. Besides, this method does not collect the trajectory data, it only returns the aggregated metrics dict with keys (episode_returns, episode_lengths), which is useful in cases like evaluation.
+
+    Args:
+        env_fn: step() of a vmapped env w/o autoreset.
+        action_fn: the agent's action function.
+        env_state: State of the environment.
+        agent_state: State of the agent.
+        key: PRNG key.
+        rollout_length: The length of the episodes. This value usually keeps the same as the env's `max_episode_steps`.
+
+    Returns:
+        metrics: Dict(episode_returns, episode_lengths)
+        env_state: Last env_state after evaluation.
     """
     _eval_env_step = partial(eval_env_step, env_fn, action_fn)
 
@@ -326,9 +354,6 @@ def fast_eval_rollout_episode(
         )
 
     def _one_step_rollout(carry):
-        """sample_batch: one-step obs
-        transition: one-step full info
-        """
         env_state, current_key, prev_metrics = carry
         next_key, current_key = rng_split(current_key, 2)
 

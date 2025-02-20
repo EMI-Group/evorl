@@ -9,6 +9,11 @@ class Wrapper(Env):
     """Wraps an environment to allow modular transformations."""
 
     def __init__(self, env: Env):
+        """Initialize the env wrapper.
+
+        Args:
+            env: the orginal env.
+        """
         self.env = env
 
     def reset(self, key: chex.PRNGKey) -> EnvState:

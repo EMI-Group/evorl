@@ -9,7 +9,12 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 
 from evorl.distributed import POP_AXIS_NAME, all_gather
-from evorl.metrics import MetricBase
+from evorl.metrics import (
+    MetricBase,
+    ECWorkflowMetric,
+    MultiObjectiveECWorkflowMetric,
+    ECTrainMetric,
+)
 from evorl.ec.optimizers import EvoOptimizer, ECState
 from evorl.envs import Env
 from evorl.sample_batch import SampleBatch
@@ -22,31 +27,8 @@ from evorl.utils.jax_utils import tree_stop_gradient
 
 from .workflow import Workflow
 
+
 logger = logging.getLogger(__name__)
-
-
-class ECWorkflowMetric(MetricBase):
-    """Workflow metric for ECWorkflow."""
-
-    best_objective: chex.Array
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-
-
-class MultiObjectiveECWorkflowMetric(MetricBase):
-    """Workflow metric for MultiObjectiveECWorkflow."""
-
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-
-
-class TrainMetric(MetricBase):
-    """Training Metrics for ECWorkflow."""
-
-    objectives: chex.Array
-    ec_metrics: chex.ArrayTree
 
 
 class DistributedInfo(PyTreeData):
@@ -348,7 +330,7 @@ class ECWorkflowTemplate(ECWorkflow):
             ),
         )
 
-        train_metrics = TrainMetric(
+        train_metrics = ECTrainMetric(
             objectives=fitnesses,
             ec_metrics=ec_metrics,
         )
@@ -450,7 +432,7 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
             iterations=state.metrics.iterations + 1,
         )
 
-        train_metrics = TrainMetric(objectives=fitnesses)
+        train_metrics = ECTrainMetric(objectives=fitnesses)
 
         return train_metrics, state.replace(
             key=key,

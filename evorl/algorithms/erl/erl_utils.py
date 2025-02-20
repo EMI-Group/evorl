@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class ERLWorkflowTemplate(ERLWorkflowBase):
-    """A template for ERL workflow on TD3 Agent"""
+    """A template for ERL workflow on TD3 Agent."""
 
     # Note: Turn off the warmup logging in PBT or parallel training
     LOGGING_WARMUP_FLAG = True
@@ -220,7 +220,7 @@ class ERLWorkflowTemplate(ERLWorkflowBase):
 
 
 class CEMRLWorkflowTemplate(CEMRLWorkflowBase):
-    """A template for ERL workflow on TD3 Agent"""
+    """A template for ERL workflow on TD3 Agent."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -321,7 +321,8 @@ def erl_replace_td3_actor_params(
 def cemrl_replace_td3_actor_params(
     agent_state: AgentState, pop_actor_params: Params
 ) -> AgentState:
-    """Keep the critic params unchanged"""
+    # Keep the critic params unchanged.
+
     return agent_state.replace(
         params=agent_state.params.replace(
             actor_params=pop_actor_params,
@@ -393,7 +394,7 @@ def build_erl_rl_update_fn(
     config: DictConfig,
     agent_state_vmap_axes: AgentState,
 ):
-    """K (actor, critic) pairs"""
+    """K (actor, critic) pairs."""
     num_rl_agents = config.num_rl_agents
 
     def critic_loss_fn(agent_state, sample_batch, key):
@@ -519,7 +520,7 @@ def build_cemrl_rl_update_fn(
     config: DictConfig,
     agent_state_vmap_axes: AgentState,
 ):
-    """K actors + 1 shared critic"""
+    """K actors + 1 shared critic."""
     num_learning_offspring = config.num_learning_offspring
 
     def critic_loss_fn(agent_state, sample_batch, key):

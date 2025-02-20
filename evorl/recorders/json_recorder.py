@@ -8,7 +8,7 @@ from .recorder import Recorder
 
 # TODO: test it
 class JsonRecorder(Recorder):
-    """Log file recorder"""
+    """Json file recorder."""
 
     def __init__(self, path: str):
         self.path = path
