@@ -34,7 +34,7 @@
     - [Train multiple agents in parallel (Advanced)](#train-multiple-agents-in-parallel-advanced)
   - [Logging](#logging)
 - [Algorithms](#algorithms)
-- [Environments](#environments)
+- [RL Environments](#rl-environments)
   - [Supported Environments](#supported-environments)
 - [Performance](#performance)
 - [Acknowledgement](#acknowledgement)
@@ -55,20 +55,24 @@ EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 
 ## Highlight
 
-* **Implementation of EvoRL algorithms**: We provide two popular paradigms in Evolutionary Reinforcement Learning: Evolution-guided Reinforcement Learning (ERL), e.g.: ERL, CEM-RL; and Population-based AutoRL: e.g.: PBT
-* **End-to-end training pipelines**: The training pipelines for RL, EC and EvoRL are executed on GPUs, eliminating dense communication between CPUs and GPUs in traditional implementations and fully utilizing the parallel computing capabilities of modern GPU architectures. Besides, most algorithms has a `Workflow.step()` function that is capable of `jax.jit` and `jax.vmap()`, supporting parallel training and JIT on full computation graph.
-* **Easy integration between EC to RL**: Due to modular design, EC components can be easily plug-and-play in workflows.
-* **Object-oriented functional programming model**: Classes define the static execution logic and their running states are stored externally.
+
+- **End-to-end training pipelines**: The training pipelines for RL, EC and EvoRL are executed on GPUs, eliminating dense communication between CPUs and GPUs in traditional implementations and fully utilizing the parallel computing capabilities of modern GPU architectures. 
+  - Most algorithms has a `Workflow.step()` function that is capable of `jax.jit` and `jax.vmap()`, supporting parallel training and JIT on full computation graph.
+  - The maximum seed-up is up to 60x depend on the algorithms, see [Performance](Performance).
+- **Easy integration between EC to RL**: Due to modular design, EC components can be easily plug-and-play in workflows and cooperate with RL.
+- **Implementation of EvoRL algorithms**: Currently, we provide two popular paradigms in Evolutionary Reinforcement Learning: Evolution-guided Reinforcement Learning (ERL): ERL, CEM-RL; and Population-based AutoRL: PBT.
+- **Unified Environment API**: Support multiple GPU-accelerated RL environment packages (eg: Brax, gymnax, ...). Multiple Env Wrappers are also provided.
+- **Object-oriented functional programming model**: Classes define the static execution logic and their running states are stored externally.
 
 ## Overview of Key Concepts in EvoRL
 
 ![](./figs/evorl_arch.svg)
 
-* **Workflow** defines the training logic of algorithms.
-* **Agent** defines the behavior of a learning agent, and its optional loss functions.
-* **Env** provides a unified interface for different environments.
-* **SampleBatch** is a data structure for continuous trajectories or shuffled transition batch.
-* **EC** module provide EC components like Evolutionary Algorithms (EAs) and related operators.
+- **Workflow** defines the training logic of algorithms.
+- **Agent** defines the behavior of a learning agent, and its optional loss functions.
+- **Env** provides a unified interface for different environments.
+- **SampleBatch** is a data structure for continuous trajectories or shuffled transition batch.
+- **EC** module provide EC components like Evolutionary Algorithms (EAs) and related operators.
 
 
 
@@ -179,7 +183,7 @@ Besides these recorders, we also provide the `JsonRecorder` and allow users to c
 
 Currently, EvoRL supports 4 types of algorithms
 
-| Type                    | Algorithms                                                                                                       |
+| Type                    | Algorithms                                                                                                    |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
 | RL                      | A2C, PPO, IMPALA, DQN, DDPG, TD3, SAC                                                                         |
 | EA                      | OpenES, VanillaES, ARS, CMA-ES, algorithms from [EvoX](https://github.com/EMI-Group/evox) (PSO, NSGA-II, ...) |
@@ -187,7 +191,7 @@ Currently, EvoRL supports 4 types of algorithms
 | Population-based AutoRL | PBT family (e.g: PBT-PPO, PBT-SAC, PBT-CSO-PPO)                                                               |
 
 
-# Environments
+# RL Environments
 
 By default, `pip install evorl` will automatically install envs on `brax` and `gymnax`. We also experimentally support other envs, which need to be manually installed:
 

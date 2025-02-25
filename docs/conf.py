@@ -39,7 +39,6 @@ autodoc2_docstring_parser_regexes = [
 
 autodoc2_module_all_regexes = [
     r"evorl\.agent",
-    r"evorl\.algorithms",
     r"evorl\.distributed",
     r"evorl\.distribution",
     r"evorl\.ec\.[a-zA-Z_]+",
