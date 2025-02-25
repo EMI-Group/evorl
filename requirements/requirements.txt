@@ -1,7 +1,7 @@
 brax
 chex
 distrax
-evox @ git+https://github.com/ZaberKo/evox@main
+evox<0.9 # currently incompatible with the pytorch-version evox
 gymnax
 hydra-core
 
