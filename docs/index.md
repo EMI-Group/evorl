@@ -12,7 +12,7 @@ guide/key-concepts
 
 ```{toctree}
 :caption: 'API Reference'
-:maxdepth: 1
+:maxdepth: 3
 :hidden:
 
 apidocs/index
