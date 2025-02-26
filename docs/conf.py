@@ -7,6 +7,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath("."))
+sys.path.insert(0, os.path.abspath(".."))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -19,10 +20,11 @@ author = "Bowen Zheng"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
     "myst_parser",
     # "sphinx.ext.coverage",
-    # "sphinx_copybutton",
+    "sphinx_copybutton",
     "autodoc2",
 ]
 
@@ -56,17 +58,25 @@ autodoc2_module_all_regexes = [
 ]
 autodoc2_class_docstring = "both"
 autodoc2_hidden_objects = [
+    # "undoc",
     "inherited",
     "private",
     "dunder",
 ]
 autodoc2_hidden_regexes = [r"evorl\.(train|train_dist)"]
 
+viewcode_line_numbers = True
+
 myst_enable_extensions = [
     # "colon_fence",
     "dollarmath",
     # "fieldlist",
+    # "linkify",
 ]
+
+# fix duplicate object description issue for class attributes (e.g.: dataclass)
+napoleon_use_ivar = True
+napoleon_include_special_with_doc = False
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]

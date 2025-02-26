@@ -7,9 +7,15 @@ from sphinx.ext.napoleon import docstring
 
 class NapoleonParser(MystParser):
     def parse(self, input_string: str, document: nodes.document) -> None:
+        # Get the Sphinx configuration
+        config = document.settings.env.config
+
         parsed_content = "```{eval-rst}\n"
         parsed_content += str(
-            docstring.GoogleDocstring(str(docstring.NumpyDocstring(input_string)))
+            docstring.GoogleDocstring(
+                str(docstring.NumpyDocstring(input_string, config)),
+                config,
+            )
         )
         parsed_content += "\n```\n"
         return super().parse(parsed_content, document)
