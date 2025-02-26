@@ -70,7 +70,7 @@ viewcode_line_numbers = True
 myst_enable_extensions = [
     # "colon_fence",
     "dollarmath",
-    # "fieldlist",
+    "fieldlist",
     # "linkify",
 ]
 
