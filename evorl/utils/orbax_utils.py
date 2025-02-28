@@ -1,7 +1,9 @@
+import os
 import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import jax.tree_util as jtu
 import chex
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig, OmegaConf
@@ -21,11 +23,13 @@ def save(path, state: chex.ArrayTree):
     """Save state to a file.
 
     Args:
-        path: Checkpoint path
+        path: Checkpoint path.
         state: The state to be saved.
     """
-    ckpt = ocp.StandardCheckpointer()
-    ckpt.save(path, args=ocp.args.StandardSave(state))
+    path = os.path.abspath(os.path.expanduser(path))
+
+    with ocp.StandardCheckpointer() as ckpt:
+        ckpt.save(path, state)
 
 
 def load(path, state: chex.ArrayTree) -> chex.ArrayTree:
@@ -33,14 +37,17 @@ def load(path, state: chex.ArrayTree) -> chex.ArrayTree:
 
     Args:
         path: Checkpoint path
-        state: The same structure as the saved state. Can be a dummy state or its abstract_state by `jtu.tree_map(ocp.utils.to_shape_dtype_struct, state)`
+        state: The same structure as the saved state for restore. Can be a dummy state or its abstract_state by `jtu.tree_map(ocp.utils.to_shape_dtype_struct, state)`
 
     Returns:
         The loaded state.
     """
-    ckpt = ocp.StandardCheckpointer()
-    state = ckpt.restore(path, args=ocp.args.StandardRestore(state))
-    return state
+    path = os.path.abspath(os.path.expanduser(path))
+    abstract_state = jtu.tree_map(ocp.utils.to_shape_dtype_struct, state)
+
+    with ocp.StandardCheckpointer() as ckpt:
+        new_state = ckpt.restore(path, abstract_state)
+    return new_state
 
 
 class DummyCheckpointManager(ocp.AbstractCheckpointManager):
