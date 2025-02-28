@@ -1,14 +1,8 @@
-[tool.black]
-line-length = 88
-
-[tool.isort]
-profile = "black"
-
 [tool.ruff]
 line-length = 88
 target-version = "py310"
-# src = ["evorl", "tests"]
-src = ["evorl"]
+src = ["evorl", "tests"]
+include = ["evorl/**/*.py"]
 
 [tool.ruff.format]
 docstring-code-format = true
