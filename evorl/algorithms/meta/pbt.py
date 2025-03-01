@@ -6,7 +6,7 @@ from optax.schedules import InjectStatefulHyperparamsState
 
 from evorl.types import PyTreeDict, State
 
-from .pbt_base import PBTWorkflowTemplate, PBTOptState
+from .pbt_workflow import PBTWorkflowTemplate, PBTOptState
 from .pbt_utils import deepcopy_opt_state, log_uniform_init
 
 logger = logging.getLogger(__name__)

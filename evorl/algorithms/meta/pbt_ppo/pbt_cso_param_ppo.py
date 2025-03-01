@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import tree_zeros_like, tree_set, tree_get
 
-from ..pbt_base import PBTOptState
+from ..pbt_workflow import PBTOptState
 from ..pbt_utils import uniform_init, log_uniform_init
 from .pbt_param_ppo import PBTParamPPOWorkflow
 
