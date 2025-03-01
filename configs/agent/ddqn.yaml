@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - dqn
+  - _self_
+
+tau: 0.005 # soft update rate, 1.0 means hard update
+target_network_update_freq: 1 # unit: num of training updates
+target_type: DDQN

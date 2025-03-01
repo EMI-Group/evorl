@@ -41,8 +41,6 @@ logger = logging.getLogger(__name__)
 
 
 class DQNNetworkParams(PyTreeData):
-    """Contains training state for the learner."""
-
     q_params: Params
     target_q_params: Params
     exploration_epsilon: float
@@ -59,11 +57,10 @@ class DQNWorkflowMetric(WorkflowMetric):
 
 
 class DQNAgent(Agent):
-    """Double-DQN."""
-
     q_network: nn.Module
     obs_preprocessor: Any = pytree_field(default=None, static=True)
     discount: float = 0.99
+    target_type: str = "DDQN"
 
     @property
     def normalize_obs(self):
@@ -146,27 +143,36 @@ class DQNAgent(Agent):
         # [B,n]->[B]
         qs = jnp.take_along_axis(qs, actions[..., None], axis=-1).squeeze(-1)
 
-        # Double DQN_target
+        # DQN_target: [B,n]
         next_qs = self.q_network.apply(agent_state.params.target_q_params, next_obs)
-        # [B,n]->[B]
-        next_qs = next_qs.max(axis=-1)
+
+        if self.target_type == "DDQN":
+            next_actions = self.q_network.apply(
+                agent_state.params.q_params, next_obs
+            ).argmax(axis=-1, keepdims=True)  # [B,1]
+            next_qs = jnp.take_along_axis(next_qs, next_actions, axis=-1).squeeze(-1)
+        elif self.target_type == "DQN":
+            next_qs = next_qs.max(axis=-1)  # [B,n]->[B]
+        else:
+            raise ValueError(f"Unknown target_type: {self.target_type}")
 
         qs_target = jax.lax.stop_gradient(rewards + discounts * next_qs)
 
         q_loss = optax.squared_error(qs, qs_target).mean()
 
-        return PyTreeDict(q_loss=q_loss)
+        return PyTreeDict(q_loss=q_loss, q_value=qs.mean())
 
 
 def make_mlp_discrete_dqn_agent(
     action_space: Space,
     discount: float = 0.99,
+    target_type: str = "DDQN",
     q_hidden_layer_sizes: tuple[int] = (256, 256),
     normalize_obs: bool = False,
 ):
-    assert isinstance(
-        action_space, Discrete
-    ), "Only Discrete action space is supported."
+    assert isinstance(action_space, Discrete), (
+        "Only Discrete action space is supported."
+    )
 
     action_size = action_space.n
     q_network = make_discrete_q_network(
@@ -183,6 +189,7 @@ def make_mlp_discrete_dqn_agent(
         q_network=q_network,
         obs_preprocessor=obs_preprocessor,
         discount=discount,
+        target_type=target_type,
     )
 
 
@@ -202,14 +209,15 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             record_ori_obs=True,
         )
 
-        assert isinstance(
-            env.action_space, Discrete
-        ), "Only Discrete action space is supported."
+        assert isinstance(env.action_space, Discrete), (
+            "Only Discrete action space is supported."
+        )
 
         agent = make_mlp_discrete_dqn_agent(
             action_space=env.action_space,
-            q_hidden_layer_sizes=config.agent_network.q_hidden_layer_sizes,
             discount=config.discount,
+            target_type=config.target_type,
+            q_hidden_layer_sizes=config.agent_network.q_hidden_layer_sizes,
             normalize_obs=config.normalize_obs,
         )
 
@@ -359,7 +367,8 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
                 )
 
             agent_state = jax.lax.cond(
-                wf_metrics.training_updates % self.config.target_network_frequency == 0,
+                wf_metrics.training_updates % self.config.target_network_update_freq
+                == 0,
                 _soft_update_q,
                 lambda agent_state: agent_state,
                 agent_state,
