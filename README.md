@@ -30,8 +30,6 @@
 - [Installation](#installation)
 - [Quickstart](#quickstart)
   - [Training](#training)
-    - [Advanced usage](#advanced-usage)
-    - [Train multiple agents in parallel (Advanced)](#train-multiple-agents-in-parallel-advanced)
   - [Logging](#logging)
 - [Algorithms](#algorithms)
 - [RL Environments](#rl-environments)
@@ -43,23 +41,22 @@
 
 # Introduction
 
-EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learning, which is implemented by JAX and provides end-to-end training pipelines, including following processes optimized on GPUs:
+EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learning, which is implemented by JAX and provides end-to-end GPU-acclerated training pipelines, including following processes:
 
 - Reinforcement Learning (RL)
 - Evolutionary Computation (EC)
 - Environment Simulation
 
 EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
-EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 
+EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 
 ## Highlight
 
-
-- **End-to-end training pipelines**: The training pipelines for RL, EC and EvoRL are executed on GPUs, eliminating dense communication between CPUs and GPUs in traditional implementations and fully utilizing the parallel computing capabilities of modern GPU architectures.
+- **End-to-end training pipelines**: The training pipelines for RL, EC and EvoRL are entirely executed on GPUs, eliminating dense communication between CPUs and GPUs in traditional implementations and fully utilizing the parallel computing capabilities of modern GPU architectures.
   - Most algorithms has a `Workflow.step()` function that is capable of `jax.jit` and `jax.vmap()`, supporting parallel training and JIT on full computation graph.
-  - The maximum seed-up is up to 60x depend on the algorithms, see [Performance](Performance).
-- **Easy integration between EC to RL**: Due to modular design, EC components can be easily plug-and-play in workflows and cooperate with RL.
+  - The maximum seed-up is up to 60x depend on the algorithms, see [Performance](#performance).
+- **Easy integration between EC and RL**: Due to modular design, EC components can be easily plug-and-play in workflows and cooperate with RL.
 - **Implementation of EvoRL algorithms**: Currently, we provide two popular paradigms in Evolutionary Reinforcement Learning: Evolution-guided Reinforcement Learning (ERL): ERL, CEM-RL; and Population-based AutoRL: PBT.
 - **Unified Environment API**: Support multiple GPU-accelerated RL environment packages (eg: Brax, gymnax, ...). Multiple Env Wrappers are also provided.
 - **Object-oriented functional programming model**: Classes define the static execution logic and their running states are stored externally.
@@ -78,7 +75,7 @@ EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 
 # Installation
 
-For normal users, `jax` should be installed first, please following their [official guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Then you can use EvoRL by cloning the repo and install the package in editable mode.
+For normal users, `jax` should be installed first, please following their [official guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Since EvoRL is currently under development, we recommend installing the package from source.
 
 ```shell
 # Install the evorl package from source
@@ -93,7 +90,7 @@ For developers: see [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## Training
 
-EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. We provide training script `python -m evorl.train` to run algorithms from CLI. You can specify the `agent` (algorithm) and `env` field based on the related config file path (`*.yaml`) in `configs` folder.
+EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. Users can use `python -m evorl.train` to run algorithms from CLI. Specify the `agent` and `env` field based on the related config file path (`*.yaml`) in `configs` folder.
 
 ```text
 # hierarchy of folder `configs/`
@@ -121,62 +118,17 @@ python -m evorl.train agent=ppo env=brax/ant
 
 Then the PPO algorithm starts training. If multiple GPUs are detected, most algorithms will automatically be trained in distributed mode.
 
-### Advanced usage
-
-
-```shell
-# Train agent with config file in `configs/agnet/exp/ppo/brax/ant.yaml`,
-# and override some options from cli
-python -m evorl.train agent=exp/ppo/brax/ant env=gymnax/CartPole-v1 agent_network.continuous_action=false
-
-# By adding -m option, enable multi runs in sequential
-# eg: sweep over multiple config values (seed=114 or seed=514):
-# Note: the log are stored in `./multirun/train/<timestamp>/<exp-name>/` instead.
-python -m evorl.train -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514
-```
-
-### Train multiple agents in parallel (Advanced)
-
-We also provide a script `python -m evorl.train_dist` to train multiple algorithms with different options in parallel.
-
-Additional packages are required:
-
-```shell
-# need to install joblib plugin before the first run
-pip install -U hydra-joblib-launcher
-```
-
-```shell
-# sweep over multiple config values in parallel (for multi-GPU case)
-python -m evorl.train_dist -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514 hydra/launcher=joblib
-
-# sweep over multiple config values in sequence
-python -m evorl.train_dist -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514
-
-# optional: specify the gpu ids used for parallel training
-CUDA_VISIBLE_DEVICES=0,5 python -m evorl.train_dist -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514 hydra/launcher=joblib
-
-```
-
-Note:
-
-- It's recommended to run every job on a single device. By default, the script will use all detected GPUs and run every job on a dedicated GPU.
-
-- If you persist in parallel training on a single device, set environment variables like `XLA_PYTHON_CLIENT_MEM_FRACTION=.10` or `XLA_PYTHON_CLIENT_PREALLOCATE=false` to avoid the OOM from the JAX's pre-allocation.
-
-- If the number of submitted jobs exceeds the number of CPU cores, `joblib` will wait and reuse previous processes. This could cause misconfigured GPU settings. To solve it, append `hydra.launcher.n_jobs=<#jobs>` to the script.
+For more advanced usage, see our documentation [Training]().
 
 ## Logging
 
-When launching algorithms from the training scripts, the log file and checkpoint files will be stored in `./outputs/train|train_dist/<timestamp>/<exp-name>/`, or in `./multirun/train|train_dist/<timestamp>/<exp-name>/` when using `-m` option for multiple runs.
+When not using multi-run mode (without `-m`), the outputs will be stored in `./outputs`. When using multi-run mode (`-m`), the outputs will be stored in `./multirun`. Specifically, when launching algorithms from the training scripts, the log file and checkpoint files will be stored in `./outputs|multirun/train|train_dist/<timestamp>/<exp-name>/`.
 
 By default, the script will enable two recorders for logging: `LogRecorder` and `WandbRecorder`. `LogRecorder` will save logs (`*.log`) in the above path, and `WandbRecorder` will upload the data to [WandB](https://wandb.ai/site/), which provides beautiful visualizations.
 
-An example of screenshot in WandB dashboard:
+Screenshot in WandB dashboard:
 
 ![](./figs/evorl_wandb.png)
-
-Besides these recorders, EvoRL also allows users to customize their own recorders by inheriting the `evorl.Recorder` class.
 
 # Algorithms
 
@@ -191,7 +143,7 @@ Currently, EvoRL supports 4 types of algorithms
 
 # RL Environments
 
-By default, `pip install evorl` will automatically install environments on `brax` and `gymnax`. If you want to install other supported environments, you need manually install the related environment packages. For example:
+By default, `pip install evorl` will automatically install environments on `brax` and `gymnax`. If you want to install other supported environments, you need additionally install the related environment packages. For example:
 
 ```shell
 # EnvPool Envs:
@@ -202,7 +154,7 @@ pip install jumanji
 pip install jaxmarl
 ```
 
-Note: these environments has limited supports, some algorithms are incompatible with them.
+Note: these additional environments have limited supports and some algorithms are incompatible with them.
 
 ## Supported Environments
 
