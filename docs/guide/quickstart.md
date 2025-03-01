@@ -49,6 +49,12 @@ We list some common fields in the final config, which is useful as options passi
 - `checkpoint.enable`: Whether to save the checkpoint files during training. Default is `false`.
 - `enable_jit`: Whether to enable JIT compilation for the workflow.
 
+Moreover, to use the own config folders instead of the EvoRL's `configs/`, you can specify the config path by the `-cp` and `-cn` option. This is helpful when you want to use EvoRL as a package and build your own project. More details can be found in the [hydra's CLI syntax](https://hydra.cc/docs/advanced/hydra-command-line-flags/).
+
+```shell
+python -m evorl.train -cp /path/to/your/configs -cn /path/to/your/configs/your_global_cfg.yaml agent=ppo env=brax/ant
+```
+
 ### Advanced usage
 
 Module `evorl.train` also supports hydra's [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/). For example, if you want to perform 5 runs with different seeds, you can use the following command:
