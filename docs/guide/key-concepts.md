@@ -44,7 +44,7 @@ for _ in range(10):
 
 Functional programming requires that the functions are [Pure function](https://en.wikipedia.org/wiki/Pure_function), which have no side effects, i.e., no mutation of external variables out of the function. In this example, after creating the `foo` object, we should not change `foo.n` & `foo.i` and should view them as read-only variables. The `init()` function defines the initial values of `foo`. These initial values represent the object's **state** and are stored outside the object. Then the state is utilized to execute the static logic defined in `foo.increment()`.
 
-## Basic PyTree Data Contrainers
+## Basic PyTree Data Containers
 
 We provide some basic data containers to support the object-oriented functional programming model, simplify the procedures of writing corresponding codes, and increase the flexibility.
 
@@ -93,7 +93,7 @@ Conversely, the `jax.Array` objects are viewed as **pure data**. When the data i
     bar = Bar(a=jnp.ones((3, 4)), b=5)
     ```
 
-- [`PyTreeNode`](#evorl.types.PyTreeNode) is similar to `PyTreeData` for [dataclasses](https://docs.python.org/3/library/dataclasses.html). However, it has an additional method [`set_frozen_attr()`](#evorl.types.PyTreeNode.set_frozen_attr) that allows changing some fields after creation. This feature makes it suitable for general classes, ensuring the fields are read-only in most time. For example, `Agent`, `Evaluator`, `EvoOptimizer`, etc. use `PyTreeNode` as the parent class.
+- [`PyTreeNode`](#evorl.types.PyTreeNode) is similar to `PyTreeData` for [dataclasses](https://docs.python.org/3/library/dataclasses.html). However, it has an additional method [`set_frozen_attr()`](#evorl.types.PyTreeNode.set_frozen_attr) that allows changing some fields with `lazy_init=True` after creation. This feature makes it suitable for general classes, ensuring fields are read-only in most time. For example, `Agent`, `Evaluator`, `EvoOptimizer`, etc. use `PyTreeNode` as the parent class.
 
     ```python
     class OpenES(EvoOptimizer):
@@ -257,5 +257,5 @@ An example about how to use `Workflow`:
 
 ```{include} ../_static/workflow_api.py
 :literal:
-:language: python
+:lang: python
 ```

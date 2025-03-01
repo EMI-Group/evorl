@@ -8,7 +8,5 @@ hydra:
     subdir: ${sanitize_dirname:${hydra.job.override_dirname}}
   verbose: false
 
-wandb:
-  enable: true
-  project: "EvoRL"
-  tags: []
+project: "EvoRL"
+tags: []

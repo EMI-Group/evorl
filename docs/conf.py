@@ -23,16 +23,18 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
     "myst_parser",
-    # "sphinx.ext.coverage",
     "sphinx_copybutton",
     "autodoc2",
 ]
 
+# autodoc2_packages = [
+#     {
+#         "path": "../evorl",
+#         "auto_mode": True,
+#     }
+# ]
 autodoc2_packages = [
-    {
-        "path": "../evorl",
-        "auto_mode": True,
-    }
+    "../evorl",
 ]
 autodoc2_render_plugin = "myst"
 autodoc2_docstring_parser_regexes = [
@@ -64,7 +66,11 @@ autodoc2_hidden_objects = [
     "private",
     "dunder",
 ]
-autodoc2_hidden_regexes = [r"evorl\.(train|train_dist)"]
+autodoc2_hidden_regexes = [
+    r"evorl\..*logger$",
+]
+autodoc2_skip_module_regexes = [r"evorl\.(train|train_dist)"]
+autodoc2_sort_names = True
 
 viewcode_line_numbers = True
 

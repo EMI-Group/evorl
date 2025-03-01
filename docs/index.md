@@ -11,13 +11,11 @@ guide/key-concepts
 ```
 
 ```{toctree}
-:caption: Getting started
+:caption: Tutorials
 :maxdepth: 1
 :hidden:
 
-guide/installation
-guide/quickstart
-guide/key-concepts
+tutorial/algorithms
 ```
 
 ```{toctree}

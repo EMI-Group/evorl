@@ -22,6 +22,7 @@ Supported RL Algorithms:
 | IMPALA    | [`IMPALAWorkflow`](#evorl.algorithms.impala.IMPALAWorkflow)                 | Stochastic    | Discrete & Continuous  |
 | DQN       | [`DQNWorkflow`](#evorl.algorithms.dqn.DQNWorkflow)                          | Value-based   | Discrete               |
 | DDPG      | [`DDPGWorkflow`](#evorl.algorithms.ddpg.DDPGWorkflow)                       | Deterministic | Continuous             |
+| TD3       | [`TD3Workflow`](#evorl.algorithms.td3.TD3Workflow)                          | Deterministic | Continuous             |
 | SAC       | [`SACWorkflow`](#evorl.algorithms.sac.SACWorkflow)                          | Stochastic    | Discrete & Continuous  |
 
 ## EC Algorithms
