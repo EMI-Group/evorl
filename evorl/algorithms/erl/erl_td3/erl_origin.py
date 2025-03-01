@@ -10,10 +10,10 @@ import jax.tree_util as jtu
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import is_jitted
+from evorl.algorithms.td3 import TD3TrainMetric
 
-from ..td3 import TD3TrainMetric
-from .erl_base import ERLTrainMetric as ERLTrainMetricBase
-from .erl_utils import create_dummy_td3_trainmetric, erl_replace_td3_actor_params
+from ..erl_workflow import ERLTrainMetric as ERLTrainMetricBase
+from .erl_td3_workflow import create_dummy_td3_trainmetric, erl_replace_td3_actor_params
 from .erl_ga import ERLGAWorkflow
 
 
@@ -28,8 +28,7 @@ class ERLTrainMetric(ERLTrainMetricBase):
 class ERLWorkflow(ERLGAWorkflow):
     """Original ERL impl.
 
-    Have dynamic training updates per iteration, i.e., #rl_updates = #sampled_timesteps_this_iter
-
+    Have dynamic training updates per iteration, i.e., #rl_updates = #sampled_timesteps_this_iter. Therefore the `step()` function cannot be directly jitted.
     """
 
     @classmethod

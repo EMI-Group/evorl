@@ -18,11 +18,11 @@ from evorl.agent import AgentState
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix, get_1d_array
 from evorl.ec.optimizers import ECState, VanillaESMod, ExponentialScheduleSpec
+from evorl.algorithms.td3 import make_mlp_td3_agent
+from evorl.algorithms.offpolicy_utils import skip_replay_buffer_state
 
-from ..td3 import make_mlp_td3_agent
-from ..offpolicy_utils import skip_replay_buffer_state
-from .erl_base import ERLTrainMetric
-from .erl_utils import ERLWorkflowTemplate, erl_replace_td3_actor_params
+from ..erl_workflow import ERLTrainMetric
+from .erl_td3_workflow import ERLTD3WorkflowTemplate, erl_replace_td3_actor_params
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class EvaluateMetric(MetricBase):
     pop_center_episode_lengths: chex.Array
 
 
-class ERLESWorkflow(ERLWorkflowTemplate):
+class ERLESWorkflow(ERLTD3WorkflowTemplate):
     """ERL w/ ES.
 
     Configs:

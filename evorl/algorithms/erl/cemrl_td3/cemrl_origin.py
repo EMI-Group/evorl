@@ -13,11 +13,11 @@ from evorl.utils.jax_utils import (
     scan_and_last,
     is_jitted,
 )
+from evorl.algorithms.td3 import TD3TrainMetric
 
-from ..td3 import TD3TrainMetric
-from .cemrl_base import CEMRLTrainMetric as CEMRLTrainMetricBase
+from ..cemrl_workflow import CEMRLTrainMetric as CEMRLTrainMetricBase
+from .cemrl_td3_workflow import cemrl_replace_td3_actor_params
 from .cemrl import CEMRLWorkflow as _CEMRLWorkflow
-from .erl_utils import cemrl_replace_td3_actor_params
 
 
 class CEMRLTrainMetric(CEMRLTrainMetricBase):

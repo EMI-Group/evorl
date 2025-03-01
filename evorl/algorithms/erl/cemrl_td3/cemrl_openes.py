@@ -1,6 +1,4 @@
 import math
-import numpy as np
-from typing_extensions import Self  # pytype: disable=not-supported-yet]
 from omegaconf import DictConfig
 
 import chex
@@ -12,30 +10,26 @@ import orbax.checkpoint as ocp
 
 from evorl.replay_buffers import ReplayBuffer
 from evorl.metrics import MetricBase
-from evorl.types import PyTreeDict, State, Params
-from evorl.utils.jax_utils import tree_get, tree_set
+from evorl.types import State, PyTreeDict
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import AgentState
+from evorl.types import Params
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
-from evorl.ec.optimizers import SepCEM, ECState, ExponentialScheduleSpec
+from evorl.ec.optimizers import OpenES, ExponentialScheduleSpec, ECState
+from evorl.utils.jax_utils import tree_set, tree_get
+from evorl.algorithms.td3 import make_mlp_td3_agent, TD3NetworkParams
+from evorl.algorithms.offpolicy_utils import skip_replay_buffer_state
 
-from ..offpolicy_utils import skip_replay_buffer_state
-from ..td3 import make_mlp_td3_agent, TD3NetworkParams
-from .erl_utils import (
-    CEMRLWorkflowTemplate,
-    cemrl_replace_td3_actor_params,
+from .cemrl_td3_workflow import (
     create_dummy_td3_trainmetric,
+    cemrl_replace_td3_actor_params,
+    CEMRLTD3WorkflowTemplate,
 )
-from .cemrl_base import CEMRLTrainMetric
+from ..cemrl_workflow import CEMRLTrainMetric
 
 
-class EvaluateMetric(MetricBase):
-    pop_center_episode_returns: chex.Array
-    pop_center_episode_lengths: chex.Array
-
-
-class CEMRLWorkflow(CEMRLWorkflowTemplate):
+class CEMRLOpenESWorkflow(CEMRLTD3WorkflowTemplate):
     """1 critic + n actors + 1 replay buffer.
 
     We use shard_map to split and parallel the population.
@@ -43,10 +37,10 @@ class CEMRLWorkflow(CEMRLWorkflowTemplate):
 
     @classmethod
     def name(cls):
-        return "CEMRL"
+        return "CEMRL-OpenES"
 
     @classmethod
-    def _build_from_config(cls, config: DictConfig) -> Self:
+    def _build_from_config(cls, config: DictConfig):
         assert config.warmup_iters > 0 or config.random_timesteps > 0, (
             "Either warmup_iters or random_timesteps should be positive to pre-fill some data in the replay buffer"
         )
@@ -86,12 +80,10 @@ class CEMRLWorkflow(CEMRLWorkflowTemplate):
         else:
             optimizer = optax.adam(config.optimizer.lr)
 
-        ec_optimizer = SepCEM(
+        ec_optimizer = OpenES(
             pop_size=config.pop_size,
-            num_elites=config.num_elites,
-            cov_eps_schedule=ExponentialScheduleSpec(**config.cov_eps),
-            weighted_update=config.weighted_update,
-            rank_weight_shift=config.rank_weight_shift,
+            lr_schedule=ExponentialScheduleSpec(**config.ec_lr),
+            noise_std_schedule=ExponentialScheduleSpec(**config.ec_noise_std),
             mirror_sampling=config.mirror_sampling,
         )
 
@@ -175,8 +167,22 @@ class CEMRLWorkflow(CEMRLWorkflowTemplate):
 
         return agent_state, opt_state, ec_opt_state
 
-    def _rl_injection(self, ec_opt_state: ECState, pop: Params) -> ECState:
-        return ec_opt_state.replace(pop=pop)
+    def _rl_injection(
+        self, ec_opt_state: ECState, pop: Params, external_indices
+    ) -> ECState:
+        external_noise = jtu.tree_map(
+            lambda x, m: (x - m) / ec_opt_state.noise_std,
+            tree_get(pop, external_indices),
+            ec_opt_state.mean,
+        )
+        noise = tree_set(
+            ec_opt_state.noise,
+            external_noise,
+            external_indices,
+            unique_indices=True,
+        )
+
+        return ec_opt_state.replace(noise=noise)
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         pop_size = self.config.pop_size
@@ -186,15 +192,14 @@ class CEMRLWorkflow(CEMRLWorkflowTemplate):
         replay_buffer_state = state.replay_buffer_state
         iterations = state.metrics.iterations + 1
 
-        key, perm_key, rollout_key, learn_key = jax.random.split(state.key, num=4)
+        pop_actor_params = agent_state.params.actor_params
+
+        key, rollout_key, perm_key, learn_key = jax.random.split(state.key, num=4)
 
         # ======= CEM Sample ========
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
 
         # ======== RL update ========
-        # learning_actor_indices = slice(
-        #     self.config.num_learning_offspring
-        # )  # [:self.config.num_learning_offspring]
         learning_actor_indices = jax.random.choice(
             perm_key,
             self.config.pop_size,
@@ -261,40 +266,22 @@ class CEMRLWorkflow(CEMRLWorkflowTemplate):
 
         fitnesses = eval_metrics.episode_returns.mean(axis=-1)
 
-        ec_opt_state = self._rl_injection(ec_opt_state, pop_actor_params)
-        ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
-
-        # adding debug info for CEM
-        ec_info = PyTreeDict(ec_metrics)
-        ec_info.cov_eps = ec_opt_state.cov_eps
-
-        def _calc_elites_stats(ec_info):
-            elites_indices = jax.lax.top_k(fitnesses, self.config.num_elites)[1]
-            elites_from_rl = jnp.isin(learning_actor_indices, elites_indices).astype(
-                jnp.int32
-            )
-            ec_info.elites_from_rl = elites_from_rl.sum()
-            ec_info.elites_from_rl_ratio = elites_from_rl.mean()
-            return ec_info
-
-        def _dummy_calc_elites_stats(ec_info):
-            ec_info.elites_from_rl = jnp.zeros((), dtype=jnp.int32)
-            ec_info.elites_from_rl_ratio = jnp.zeros(())
-            return ec_info
-
-        ec_info = jax.lax.cond(
+        ec_opt_state = jax.lax.cond(
             iterations > self.config.warmup_iters,
-            _calc_elites_stats,
-            _dummy_calc_elites_stats,
-            ec_info,
+            self._rl_injection,
+            lambda ec_opt_state, pop, external_indices: ec_opt_state,
+            ec_opt_state,
+            pop_actor_params,
+            learning_actor_indices,
         )
+        ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         train_metrics = CEMRLTrainMetric(
             rb_size=replay_buffer_state.buffer_size,
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
             rl_metrics=td3_metrics,
-            ec_info=ec_info,
+            ec_info=ec_metrics,
         )
 
         # calculate the number of timestep
@@ -317,29 +304,6 @@ class CEMRLWorkflow(CEMRLWorkflowTemplate):
         )
 
         return train_metrics, state
-
-    def evaluate(self, state: State) -> tuple[MetricBase, State]:
-        pop_mean_actor_params = state.ec_opt_state.mean
-
-        pop_mean_agent_state = cemrl_replace_td3_actor_params(
-            state.agent_state, pop_mean_actor_params
-        )
-
-        key, eval_key = jax.random.split(state.key, num=2)
-
-        # [#episodes]
-        raw_eval_metrics = self.evaluator.evaluate(
-            pop_mean_agent_state, eval_key, num_episodes=self.config.eval_episodes
-        )
-
-        eval_metrics = EvaluateMetric(
-            pop_center_episode_returns=raw_eval_metrics.episode_returns.mean(),
-            pop_center_episode_lengths=raw_eval_metrics.episode_lengths.mean(),
-        )
-
-        state = state.replace(key=key)
-
-        return eval_metrics, state
 
     def learn(self, state: State) -> State:
         num_iters = math.ceil(
@@ -373,9 +337,6 @@ class CEMRLWorkflow(CEMRLWorkflowTemplate):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            std_statistics = get_std_statistics(state.ec_opt_state.variance["params"])
-            self.recorder.write({"ec/std": std_statistics}, iters)
-
             if iters % self.config.eval_interval == 0 or iters == final_iters:
                 eval_metrics, state = self.evaluate(state)
 
@@ -390,15 +351,3 @@ class CEMRLWorkflow(CEMRLWorkflowTemplate):
             self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(saved_state))
 
         return state
-
-
-def get_std_statistics(variance):
-    def _get_stats(x):
-        x = np.sqrt(x)
-        return dict(
-            min=np.min(x).tolist(),
-            max=np.max(x).tolist(),
-            mean=np.mean(x).tolist(),
-        )
-
-    return jtu.tree_map(_get_stats, variance)
