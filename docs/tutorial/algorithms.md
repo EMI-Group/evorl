@@ -8,7 +8,7 @@ Currently, EvoRL supports various training pipelines (workflows):
     - Evolution-guided Reinforcement Learning (ERL)
     - Population-based AutoRL
 
-This document introduces these types of algorithms implemented in EvoRL. All algorithms are defined in `evorl.algorithms`.
+This document introduces these types of algorithms implemented in EvoRL. All algorithms are defined in [`evorl.algorithms`](#evorl.algorithms).
 
 ## RL Algorithms
 
@@ -39,12 +39,12 @@ Workflows for Single objective EC are derived from [`ECWorkflowTemplate`](#evorl
 | CMA-ES    | [`CMAESWorkflow`](#evorl.algorithms.ec.so.cmaes.CMAESWorkflow)              | Deterministic | Continuous             |
 
 
-Workflows from Multi-objective EC are derived from [`MultiObjectiveECWorkflowTemplate`](#evorl.workflows.ec_workflow.MultiObjectiveECWorkflowTemplate). Currently, we provide NSGA-II with [`NSGA2Workflow`](#evorl.algorithms.ec.mo.nsga2_brax.NSGA2Workflow) for brax environments.
+Workflows for Multi-objective EC are derived from [`MultiObjectiveECWorkflowTemplate`](#evorl.workflows.ec_workflow.MultiObjectiveECWorkflowTemplate). Currently, we provide NSGA-II with [`NSGA2Workflow`](#evorl.algorithms.ec.mo.nsga2_brax.NSGA2Workflow) for brax environments.
 
 ## ERL Algorithms
 
-The ERL algorithms are defined in the subpackage `evorl.algorithms.erl`. Currently, we provide ERL and CEM-RL and their variants.
+The ERL algorithms are defined in the subpackage [`evorl.algorithms.erl`](#evorl.algorithms.erl). We provide ERL and CEM-RL and their variants.
 
 ## Population-based AutoRL Algorithms
 
-The Population-based AutoRL algorithms are defined in the subpackage `evorl.algorithms.meta`. Currently, we provide some general population-based training pipelines for RL hyperparameter tuning.
+The Population-based AutoRL algorithms are defined in the subpackage [`evorl.algorithms.meta`](#evorl.algorithms.meta). We provide some general population-based training pipelines for RL hyperparameter tuning.

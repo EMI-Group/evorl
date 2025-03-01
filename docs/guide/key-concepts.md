@@ -46,7 +46,7 @@ Functional programming requires that the functions are [Pure function](https://e
 
 ## Basic PyTree Data Containers
 
-We provide some basic data containers to support the object-oriented functional programming model, simplify the procedures of writing corresponding codes, and increase the flexibility.
+We provide some basic data containers to support the object-oriented functional programming model, to simplify the procedures of writing corresponding codes and increase the flexibility.
 
 In package [`evorl.types`](#evorl.types), there are three basic data containers, as listed in the table. They are registered as [JAX PyTree](https://docs.jax.dev/en/latest/pytrees.html). With JAX PyTree API support, we can define which part of the data in the container is **static**.
 
@@ -56,13 +56,13 @@ The term of **static** cames from `jax.jit`. Jitted functions only allow PyTree 
 Conversely, the `jax.Array` objects are viewed as **pure data**. When the data in these objects are changed (`dtype` and `shape` are still the same), the jitted function will not be compiled again.
 ```
 
-| Type                                  | Description                     | Usage             |
-| ------------------------------------- | ------------------------------- | ----------------- |
+| Type                                    | Description                     | Usage             |
+| --------------------------------------- | ------------------------------- | ----------------- |
 | [`PyTreeDict`](#evorl.types.PyTreeDict) | An easydict with pytree support | Store pure data   |
 | [`PyTreeData`](#evorl.types.PyTreeData) | A pytree dataclass for Data     | Store data        |
 | [`PyTreeNode`](#evorl.types.PyTreeNode) | A pytree dataclass for Node     | Build logic class |
 
-- [`PyTreeDict`](#evorl.types.PyTreeDict) provides an [easydict](https://github.com/makinacorpus/easydict) like API for general storage of pure data.
+- [`PyTreeDict`](#evorl.types.PyTreeDict) provides an [easydict](https://github.com/makinacorpus/easydict) like API for general storage of pure data (`jax.Array`).
 
     ```python
     from evorl.types import PyTreeDict
@@ -72,7 +72,7 @@ Conversely, the `jax.Array` objects are viewed as **pure data**. When the data i
     d.c = jnp.zeros((5,))
     ```
 
-- [`PyTreeData`](#evorl.types.PyTreeData) provides python [dataclasses](https://docs.python.org/3/library/dataclasses.html) API. Data classes can inherit this class and explicitly define each field. Compared to `PyTreeDict`, it allows defining static data via [`pytree_field`](#evorl.types.pytree_field) and its fileds cannot be modified after the creation.
+- [`PyTreeData`](#evorl.types.PyTreeData) provides python [dataclasses](https://docs.python.org/3/library/dataclasses.html) API. New data classes can inherit this class and explicitly define each field. Compared to `PyTreeDict`, it allows defining static data via [`pytree_field`](#evorl.types.pytree_field), and it ensures that all fields cannot be modified after the creation.
 
     ```python
     from evorl.types import PyTreeData
@@ -85,15 +85,24 @@ Conversely, the `jax.Array` objects are viewed as **pure data**. When the data i
         dones: jax.Array | None = None
 
     sample_batch = SampleBatch(obs=jnp.ones((3, 4)))
+    ```
 
+    ```python
     class Bar(PyTreeData):
         a: jax.Array
         b: int = pytree_field(static=True, default=1) # b is static
 
     bar = Bar(a=jnp.ones((3, 4)), b=5)
+
+    # The PyTreeData object is immutable
+    # bar.a = jnp.zeros((3, 4)) # raise FrozenInstanceError
+
+    # To change the field, use the `replace` method,
+    # which will return a new data instance.
+    new_bar = bar.replace(a=jnp.zeros((3, 4)))
     ```
 
-- [`PyTreeNode`](#evorl.types.PyTreeNode) is similar to `PyTreeData` for [dataclasses](https://docs.python.org/3/library/dataclasses.html). However, it has an additional method [`set_frozen_attr()`](#evorl.types.PyTreeNode.set_frozen_attr) that allows changing some fields with `lazy_init=True` after creation. This feature makes it suitable for general classes, ensuring fields are read-only in most time. For example, `Agent`, `Evaluator`, `EvoOptimizer`, etc. use `PyTreeNode` as the parent class.
+- [`PyTreeNode`](#evorl.types.PyTreeNode) is similar to `PyTreeData`. However, it has an additional method [`set_frozen_attr()`](#evorl.types.PyTreeNode.set_frozen_attr) that allows changing some fields with `lazy_init=True` after creation. This feature makes it suitable for general classes. For example, `Agent`, `Evaluator`, `EvoOptimizer`, etc. use `PyTreeNode` as the parent class.
 
     ```python
     class OpenES(EvoOptimizer):
@@ -123,8 +132,7 @@ Conversely, the `jax.Array` objects are viewed as **pure data**. When the data i
 
 `Agent` encapsulates the learning agent and defines its actions for both training
 and evaluation. It manages the networks for the learning agent, including the policy network, which determines the agent’s decisions for actions, and an optional value network used for estimating state or
-state-action values. This class also specifies optional loss functions required for gradient-based
-updates.
+state-action values. This class also specifies optional loss functions required for gradient-based updates.
 
 In summary, it has two public methods:
 
@@ -156,6 +164,7 @@ env_nstate = env.step(env_state, actions)
 ```
 
 We provide multiple [`Wrapper`](#evorl.envs.wrappers.Wrapper)s for `Env`, they are defined in [`evorl.envs.wrappers`](#evorl.envs.wrappers). For instance, [`ActionSquashWrapper`](#evorl.envs.wrappers.ActionSquashWrapper) converts the action space from [-1,1] to [low, high], [`VmapAutoResetWrapper`](#evorl.envs.wrappers.VmapAutoResetWrapper) converts a single env to k parallel envs.
+
 Based on the top of them, we provide some helper functions for environment creation:
 
 ```python
@@ -173,13 +182,6 @@ eval_vec_env = create_wrapped_brax_env(
 
 [`SampleBatch`](#evorl.sample_batch.SampleBatch) is a data container for trajectory data from the rollout between the agent and the environment. It is a subclass of `PyTreeData` and has 6 fields, where some of the fields can be empty for different usages:
 
-- `obs`
-- `actions`
-- `rewards`
-- `next_obs`
-- `dones`
-- `extras`: Other trajectory information.
-
 - `obs: chex.ArrayTree | None = None`
 - `actions: chex.ArrayTree | None = None`
 - `rewards: Reward | RewardDict | None = None`
@@ -187,7 +189,7 @@ eval_vec_env = create_wrapped_brax_env(
 - `dones: chex.Array | None = None`
 - `extras: ExtraInfo | None = None`: Other trajectory information.
 
-To execute the rollout for a given agent and environment object, we provide various functions in [`evorl.rollout`](#evorl.rollout). Below example demonstrates how to collect training data from a vectorized environment:
+To execute the rollout for a given agent and environment object, we provide various functions in [`evorl.rollout`](#evorl.rollout). The example below demonstrates how to collect training data from a vectorized environment:
 
 ```python
 from evorl import RandomAgent
@@ -216,7 +218,7 @@ trajectory, env_nstate = rollout(
 )
 ```
 
-Beside collecting trajectory data, algorithms also need methods to evaluation the agent from rollout complete episodes. We provide various evaluators in [`evorl.evaluators`](#evorl.evaluators).
+Besides collecting trajectory data, algorithms also need evaluations for the agent by complete episodes. We provide various evaluators in [`evorl.evaluators`](#evorl.evaluators).
 
 ```python
 from evorl import RandomAgent
@@ -247,9 +249,13 @@ print("Avg Length:", eval_metrics.episode_lengths.mean())
 
 ## Workflow
 
-A complete algorithm consists of three components: (1) a config file, (2) a `Workflow` subclass, (3) and a corresponding `Agent` subclass. `Workflow` defines the entire training logic for a given algorithm. Its `step()` method encapsulates a single training iteration. Meanwhile, `learn()` method orchestrates the training loop. Beside calling `step()` repeatedly, it also manages other tasks
-such as termination condition checks, performance evaluation, periodic logging, and model
-checkpointing.
+A complete algorithm consists of three components:
+
+1. a config file,
+2. a `Workflow` subclass
+3. a corresponding `Agent` subclass.
+
+`Workflow` defines the entire training logic for a given algorithm. Its `step()` method encapsulates a single training iteration. Meanwhile, `learn()` method orchestrates the training loop. Beside calling `step()` repeatedly, it also manages other tasks such as termination condition checks, performance evaluation, periodic logging, and model checkpointing.
 
 Algorithms are defined in `evorl.algorithm`. Most algorithms follow the single-file style, defining their `Agent` class and `Workflow` class in their `*.py` file. A workflow receives a config object during the creation, which is linked to a `*.yaml` config file in path `configs/agent`.
 

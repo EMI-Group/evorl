@@ -20,7 +20,7 @@ tutorial/algorithms
 
 ```{toctree}
 :caption: 'API Reference'
-:maxdepth: 3
+:maxdepth: 1
 :hidden:
 
 apidocs/index

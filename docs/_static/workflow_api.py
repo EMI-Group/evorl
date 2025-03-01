@@ -6,7 +6,7 @@ from evorl.algorithms.ppo import PPOWorkflow
 
 with initialize(version_base=None, config_path="configs"):
     # choose the config file:
-    # env: configs/bra/hopper.yaml
+    # env: configs/brax/hopper.yaml
     # algorithm: configs/agent/ppo.yaml
     config = compose(config_name="config", overrides=["env=brax/hopper", "agent=ppo"])
 
