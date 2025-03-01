@@ -158,7 +158,7 @@ Note: these additional environments have limited supports and some algorithms ar
 
 ## Supported Environments
 
-| Envrionment Library                                              | Descriptions                            |
+| Environment Library                                              | Descriptions                            |
 | ---------------------------------------------------------------- | --------------------------------------- |
 | [Brax](https://github.com/google/brax)                           | Robotic control                         |
 | [gymnax](https://github.com/RobertTLange/gymnax)                 | classic control, bsuite, MinAtar        |
