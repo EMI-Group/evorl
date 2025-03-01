@@ -33,7 +33,6 @@
                 // "env=brax/ant",
                 // "env=gymnax/Breakout-MinAtar",
                 "env=gymnax/Acrobot-v1",
-                "debug=true",
                 "checkpoint.enable=true",
             ],
             "env": {
@@ -41,7 +40,8 @@
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",
                 // "JAX_DISABLE_JIT": "true"
                 "JAX_COMPILATION_CACHE_DIR": "./jax_cache",
-                "JAX_DEBUG_NANS": "True"
+                "JAX_DEBUG_NANS": "True",
+                "WANDB_MODE": "disabled",
             },
             "justMyCode": false
         },
@@ -55,10 +55,10 @@
                 "agent=ppo",
                 "env=brax/ant",
                 "seed=0,1",
-                "debug=true",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "WANDB_MODE": "disabled",
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",
                 // "JAX_DISABLE_JIT": "true"
             },
@@ -75,10 +75,10 @@
                 "agent_network.continuous_action=false",
                 // "agent=exp/ppo/acrobat",
                 // "env=gymnax/Acrobot-v1",
-                "debug=true",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "WANDB_MODE": "disabled",
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",
                 // "JAX_DISABLE_JIT": "true"
             },
@@ -94,10 +94,10 @@
                 "env=envpool/gymnasium/ant_v4",
                 // "agent=exp/ppo/acrobat",
                 // "env=gymnax/Acrobot-v1",
-                "debug=true",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "WANDB_MODE": "disabled",
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",
                 // "JAX_DISABLE_JIT": "true"
             },
@@ -113,9 +113,9 @@
                 "agent=meta/pbt-cso-paramppo",
                 // "agent=pbt-ppo",
                 "env=brax/ant",
-                "debug=true",
             ],
             "env": {
+                "WANDB_MODE": "disabled",
                 // "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",
                 // "JAX_DISABLE_JIT": "true"
@@ -133,12 +133,12 @@
                 // "agent=erl/cemrl",
                 // "agent=exp/cemrl/fastpbrl-ori",
                 "env=brax/ant",
-                "debug=true",
                 // "mirror_sampling=true",
                 "warmup_iters=3",
                 "random_timesteps=1000",
             ],
             "env": {
+                "WANDB_MODE": "disabled",
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
                 // "CUDA_VISIBLE_DEVICES": "0,1"
                 // "JAX_DISABLE_JIT": "true"
@@ -154,10 +154,10 @@
                 "agent=exp/erl-ga/ori/ant",
                 // "agent=erl/erl-ga",
                 "env=brax/ant",
-                "debug=true",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "WANDB_MODE": "disabled",
                 // "CUDA_VISIBLE_DEVICES": "0,1"
                 // "JAX_DISABLE_JIT": "true"
             },
@@ -171,11 +171,11 @@
             "args": [
                 "agent=erl/erl-ves",
                 "env=brax/hopper",
-                "debug=true",
                 // "mix_strategy=normal",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "WANDB_MODE": "disabled",
                 // "CUDA_VISIBLE_DEVICES": "0,1"
                 // "JAX_DISABLE_JIT": "true"
             },
@@ -190,10 +190,10 @@
                 // "agent=erl/erl-openes",
                 "agent=exp/erl-openes/brax-default",
                 "env=brax/walker2d",
-                "debug=true",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "WANDB_MODE": "disabled",
                 // "CUDA_VISIBLE_DEVICES": "0,1"
                 // "JAX_DISABLE_JIT": "true"
             },
@@ -211,11 +211,11 @@
                 // "agent=exp/ec/vanilla_es/brax-default",
                 "agent=contrib/openes-noise-table",
                 "env=brax/hopper",
-                "debug=true",
                 // "normalize_obs_mode=VBN"
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "WANDB_MODE": "disabled",
                 // "CUDA_VISIBLE_DEVICES": "4,5,6",
                 // "JAX_DISABLE_JIT": "true"
             },

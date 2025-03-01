@@ -40,22 +40,20 @@ def train(config: DictConfig) -> None:
         )
 
     output_dir = get_output_dir()
-    wandb_project = config.wandb.project
-    cfg_wandb_tags = OmegaConf.to_container(config.wandb.tags, resolve=True)
+    tags = OmegaConf.to_container(config.tags, resolve=True)
     wandb_tags = [
         workflow_cls.name(),
         config.env.env_name,
         config.env.env_type,
-    ] + cfg_wandb_tags
+    ] + tags
     wandb_name = "_".join(
         [workflow_cls.name(), config.env.env_name, config.env.env_type]
     )
-    if len(cfg_wandb_tags) > 0:
-        wandb_name = wandb_name + "|" + ",".join(cfg_wandb_tags)
-    wandb_mode = None if config.wandb.enable and not config.debug else "disabled"
+    if len(tags) > 0:
+        wandb_name = wandb_name + "|" + ",".join(tags)
 
     wandb_recorder = WandbRecorder(
-        project=wandb_project,
+        project=config.project,
         name=wandb_name,
         group="dev",
         config=OmegaConf.to_container(
@@ -63,7 +61,6 @@ def train(config: DictConfig) -> None:
         ),  # save the unrescaled config
         tags=wandb_tags,
         path=output_dir,
-        mode=wandb_mode,
     )
     log_recorder = LogRecorder(log_path=output_dir / f"{wandb_name}.log", console=True)
     workflow.add_recorders([wandb_recorder, log_recorder])
