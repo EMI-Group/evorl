@@ -12,11 +12,19 @@ from .ec_optimizer import EvoOptimizer
 
 
 class VanillaGAState(PyTreeData):
+    """State of the VanillaGA."""
+
     pop: chex.ArrayTree
     key: chex.PRNGKey
 
 
 class VanillaGA(EvoOptimizer):
+    """Vanilla Genetic Algorithm.
+
+    The Genetic Algorithm used in the original ERL.
+    Paper: [Evolution-Guided Policy Gradient in Reinforcement Learning](https://arxiv.org/abs/1805.07917)
+    """
+
     pop_size: int
     num_elites: int
 
@@ -40,8 +48,10 @@ class VanillaGA(EvoOptimizer):
 
     def __post_init__(self):
         assert (
-            (self.pop_size - self.num_elites) % 2 == 0 or not self.enable_crossover
-        ), "(pop_size - num_elites) must be even when enable crossover"
+            self.pop_size - self.num_elites
+        ) % 2 == 0 or not self.enable_crossover, (
+            "(pop_size - num_elites) must be even when enable crossover"
+        )
 
         selection_op = TournamentSelection(tournament_size=self.tournament_size)
         mutation_op = MLPMutation(

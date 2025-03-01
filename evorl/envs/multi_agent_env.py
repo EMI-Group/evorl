@@ -1,16 +1,17 @@
 from abc import abstractmethod
 from collections.abc import Mapping
+from typing import Any
 
 import chex
 
-from evorl.types import Action, AgentID, EnvLike
+from evorl.types import Action, AgentID
 
 from .env import Env, EnvState
 from .space import Space
 
 
 class MultiAgentEnv(Env):
-    """Unified EvoRL Env API."""
+    """Unified EvoRL Multi-Agent Env API."""
 
     @abstractmethod
     def reset(self, key: chex.PRNGKey) -> EnvState:
@@ -38,11 +39,16 @@ class MultiAgentEnv(Env):
     def agents(self) -> list[AgentID]:
         raise NotImplementedError
 
-    @property
-    def unwrapped(self) -> EnvLike:
-        return self.env
-
 
 class MultiAgentEnvAdapter(MultiAgentEnv):
-    def __init__(self, env: EnvLike):
+    """Base class for an multi-agent environment adapter.
+
+    Convert envs from other packages to EvoRL's MultiAgentEnv API.
+    """
+
+    def __init__(self, env: Any):
         self.env = env
+
+    @property
+    def unwrapped(self) -> Any:
+        return self.env

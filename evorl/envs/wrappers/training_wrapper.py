@@ -142,7 +142,7 @@ class OneEpisodeWrapper(EpisodeWrapper):
 
 
 class VmapWrapper(Wrapper):
-    """Vectorizes Brax env."""
+    """Vectorize env."""
 
     def __init__(self, env: Env, num_envs: int = 1, vmap_step: bool = False):
         """Initialize the env wrapper.
@@ -181,6 +181,8 @@ class VmapWrapper(Wrapper):
 
 
 class VmapAutoResetWrapper(Wrapper):
+    """Vectorize env and Autoreset."""
+
     def __init__(self, env: Env, num_envs: int = 1):
         """Initialize the env wrapper.
 
@@ -252,7 +254,7 @@ class VmapAutoResetWrapper(Wrapper):
 class FastVmapAutoResetWrapper(Wrapper):
     """Brax-style AutoReset: no randomness in reset.
 
-    This wrapper is more efficient than VmapAutoResetWrapper.
+    This wrapper reuses the state in the return of `env.reset()`. When the episodes have short length or the `env.reset()` is expensive, This wrapper is more efficient than `VmapAutoResetWrapper`.
     """
 
     def __init__(self, env: Env, num_envs: int = 1):
@@ -306,7 +308,8 @@ class FastVmapAutoResetWrapper(Wrapper):
 class VmapEnvPoolAutoResetWrapper(Wrapper):
     """EnvPool style AutoReset.
 
-    An additional reset step after the episode ends.
+    When the episode ends, an additional reset step is performed.
+    See https://envpool.readthedocs.io/en/latest/content/python_interface.html#auto-reset
     """
 
     def __init__(self, env: Env, num_envs: int = 1):

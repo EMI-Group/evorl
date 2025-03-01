@@ -22,9 +22,9 @@ class ObsPreprocessor(PyTreeNode):
 
     def __post_init__(self):
         if self.static:
-            assert (
-                self.random_timesteps > 0
-            ), "init_timesteps should be greater than 0 if static is True"
+            assert self.random_timesteps > 0, (
+                "init_timesteps should be greater than 0 if static is True"
+            )
 
 
 def init_obs_preprocessor(agent_state, config, key, pmap_axis_name=None):

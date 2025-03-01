@@ -84,6 +84,6 @@ def test_vtrace():
     )
 
     assert jnp.allclose(vtrace, gae_v), f"{vtrace} != {gae_v}"
-    assert jnp.allclose(
-        vtrace - vs[:-1], gae_adv
-    ).all(), f"{vtrace - vs[:-1]} != {gae_adv}"
+    assert jnp.allclose(vtrace - vs[:-1], gae_adv).all(), (
+        f"{vtrace - vs[:-1]} != {gae_adv}"
+    )

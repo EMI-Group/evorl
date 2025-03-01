@@ -261,7 +261,7 @@ class PPOWorkflow(OnPolicyWorkflow):
         if config.minibatch_size % num_devices != 0:
             logger.warning(
                 f"minibatch_size({config.minibatch_size}) cannot be divided by num_devices({num_devices}), "
-                f"rescale minibatch_size to {config.minibatch_size//num_devices}"
+                f"rescale minibatch_size to {config.minibatch_size // num_devices}"
             )
 
         config.num_envs = config.num_envs // num_devices

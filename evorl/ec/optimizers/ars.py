@@ -17,6 +17,8 @@ from .ec_optimizer import EvoOptimizer, ECState
 
 
 class ARSState(PyTreeData):
+    """State of the ARS."""
+
     mean: chex.ArrayTree
     opt_state: optax.OptState
     key: chex.PRNGKey
@@ -24,6 +26,11 @@ class ARSState(PyTreeData):
 
 
 class ARS(EvoOptimizer):
+    """Augmented Random Search.
+
+    Paper: [Simple random search of static linear policies is competitive for reinforcement learning](https://proceedings.neurips.cc/paper_files/paper/2018/file/7634ea65a4e6d9041cfd3f7de18e334a-Paper.pdf)
+    """
+
     pop_size: int
     num_elites: int
     lr: float
@@ -34,9 +41,9 @@ class ARS(EvoOptimizer):
     optimizer: optax.GradientTransformation = pytree_field(static=True, lazy_init=True)
 
     def __post_init__(self):
-        assert (
-            self.pop_size > 0 and self.pop_size % 2 == 0
-        ), "pop_size must be positive even number"
+        assert self.pop_size > 0 and self.pop_size % 2 == 0, (
+            "pop_size must be positive even number"
+        )
 
         optimizer = optimizer_map[self.optimizer_name](learning_rate=self.lr)
         self.set_frozen_attr("optimizer", optimizer)

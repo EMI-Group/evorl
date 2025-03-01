@@ -1,9 +1,10 @@
 brax
 chex
 distrax
-evox<0.9 # currently incompatible with the pytorch-version evox
+evox==0.9.0 # currently incompatible with the pytorch-version evox
 gymnax
 hydra-core
+hydra-joblib-launcher
 
 jax>=0.4.28
 jaxlib>=0.4.28

@@ -23,6 +23,11 @@ class CSOState:
 
 @dataclass
 class CSO(Algorithm):
+    """Competitive Swarm Optimizer.
+
+    Paper: [A Competitive Swarm Optimizer for Large Scale Optimization](https://ieeexplore.ieee.org/document/6819057)
+    """
+
     lb: jax.Array
     ub: jax.Array
     pop_size: int

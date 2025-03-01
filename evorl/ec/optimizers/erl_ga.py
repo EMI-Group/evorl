@@ -107,9 +107,9 @@ class ERLGAMod(ERLGA):
     external_size: int
 
     def __post_init__(self):
-        assert self.pop_size >= (
-            self.num_elites + self.external_size
-        ), "num_elites+external_size must be <= pop_size"
+        assert self.pop_size >= (self.num_elites + self.external_size), (
+            "num_elites+external_size must be <= pop_size"
+        )
         super().__post_init__()
 
     def init(self, pop, key) -> ERLGAModState:

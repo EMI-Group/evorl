@@ -17,6 +17,8 @@ from .ec_optimizer import EvoOptimizer, ECState
 
 
 class SepCEMState(PyTreeData):
+    """State of the SepCEM."""
+
     mean: chex.ArrayTree
     variance: chex.ArrayTree
     cov_eps: chex.ArrayTree
@@ -25,6 +27,8 @@ class SepCEMState(PyTreeData):
 
 
 class SepCEM(EvoOptimizer):
+    """Sep Cross-Entropy Method."""
+
     pop_size: int
     num_elites: int  # number of good offspring to update the pop
     cov_eps_schedule: ExponentialScheduleSpec

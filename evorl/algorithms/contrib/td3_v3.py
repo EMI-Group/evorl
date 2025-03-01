@@ -209,9 +209,9 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
             record_ori_obs=True,
         )
 
-        assert isinstance(
-            env.action_space, Box
-        ), "Only continue action space is supported."
+        assert isinstance(env.action_space, Box), (
+            "Only continue action space is supported."
+        )
 
         agent = make_mlp_td3_agent(
             action_space=env.action_space,

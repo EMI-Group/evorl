@@ -10,6 +10,8 @@ from .wrapper import Wrapper
 
 
 class ObsFlattenWrapper(Wrapper):
+    """Flatten the multi-dimention observation array into a 1D vector."""
+
     def __init__(self, env: Env):
         super().__init__(env)
 

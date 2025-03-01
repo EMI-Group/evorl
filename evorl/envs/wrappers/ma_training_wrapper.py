@@ -10,6 +10,8 @@ from .wrapper import Wrapper
 
 
 class EpisodeWrapper(Wrapper):
+    """Multi-Agent version of the [EpisodeWrapper](#training_wrapper.EpisodeWrapper)."""
+
     def __init__(self, env: Env, episode_length: int):
         super().__init__(env)
         self.episode_length = episode_length
@@ -53,6 +55,8 @@ class EpisodeWrapper(Wrapper):
 
 
 class OneEpisodeWrapper(EpisodeWrapper):
+    """Multi-Agent version of the [OneEpisodeWrapper](#training_wrapper.OneEpisodeWrapper)."""
+
     def __init__(self, env: Env, episode_length: int):
         super().__init__(env, episode_length)
 
@@ -67,7 +71,7 @@ class OneEpisodeWrapper(EpisodeWrapper):
 
 
 class VmapWrapper(Wrapper):
-    """Vectorizes Brax env."""
+    """Multi-Agent version of the [VmapWrapper](#training_wrapper.VmapWrapper)."""
 
     def __init__(self, env: Env, num_envs: int = 1, vmap_step: bool = False):
         super().__init__(env)
@@ -94,6 +98,8 @@ class VmapWrapper(Wrapper):
 
 
 class VmapAutoResetWrapper(Wrapper):
+    """Multi-Agent version of the [VmapAutoResetWrapper](#training_wrapper.VmapAutoResetWrapper)."""
+
     def __init__(self, env: Env, num_envs: int = 1):
         super().__init__(env)
         self.num_envs = num_envs
@@ -148,6 +154,8 @@ class VmapAutoResetWrapper(Wrapper):
 
 
 class FastVmapAutoResetWrapper(Wrapper):
+    """Multi-Agent version of the [FastVmapAutoResetWrapper](#training_wrapper.FastVmapAutoResetWrapper)."""
+
     def __init__(self, env: Env, num_envs: int = 1):
         super().__init__(env)
         self.num_envs = num_envs

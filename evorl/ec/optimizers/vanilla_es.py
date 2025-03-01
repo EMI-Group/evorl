@@ -12,6 +12,8 @@ from .ec_optimizer import EvoOptimizer
 
 
 class VanillaESState(PyTreeData):
+    """State of the VanillaES."""
+
     mean: chex.ArrayTree
     noise_std: chex.Array
     key: chex.PRNGKey
@@ -19,6 +21,11 @@ class VanillaESState(PyTreeData):
 
 
 class VanillaES(EvoOptimizer):
+    """Canonical Evolution Strategies.
+
+    Paper: [Back to basics: Benchmarking canonical evolution strategies for playing atari](https://arxiv.org/abs/1802.08842)
+    """
+
     pop_size: int
     num_elites: int
     noise_std_schedule: ExponentialScheduleSpec
@@ -77,6 +84,17 @@ class VanillaES(EvoOptimizer):
 
 
 class VanillaESMod(VanillaES):
+    """Variant of VanillaES.
+
+    Add `external_size` number of external individuals and corresponding fitnesses during the ES update by `tell_external()`
+
+    Attributes:
+        external_size: number of external individuals
+        mix_strategy: strategy to mix external individuals with the elites.
+            - "always": always mix external individuals with elites
+            - "normal": concat external individuals to the population and select `num_elites` elites from the combined population.
+    """
+
     external_size: int
     mix_strategy: str = "always"
 
@@ -84,13 +102,6 @@ class VanillaESMod(VanillaES):
         super().__post_init__()
         assert self.num_elites >= self.external_size
         assert self.mix_strategy in ["always", "normal"]
-
-    def init(self, mean: Params, key: chex.PRNGKey) -> VanillaESState:
-        return VanillaESState(
-            mean=mean,
-            noise_std=jnp.float32(self.noise_std_schedule.init),
-            key=key,
-        )
 
     def tell_external(
         self, state: VanillaESState, fitnesses: chex.Array
@@ -101,7 +112,11 @@ class VanillaESMod(VanillaES):
         )
 
         if self.mix_strategy == "always":
-            # select (self.num_elites-self.external_size) elites from pop, then insert all external individuals and sort them.
+            # select (self.num_elites-self.external_size) elites from pop
+            # then insert all external individuals and sort them.
+
+            # Note: user should ensure external individuals and fitnesses are concated behind the pop.
+            # TODO: need to improve
             pop_fitnesses = fitnesses[: self.pop_size]
             external_fitnesses = fitnesses[self.pop_size :]
 

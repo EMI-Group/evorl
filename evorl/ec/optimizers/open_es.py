@@ -15,7 +15,7 @@ from .ec_optimizer import EvoOptimizer, ECState
 
 
 def compute_ranks(x):
-    """Returns ranks in [0, len(x)-1].
+    """Get ranks in [0, len(x)-1].
 
     This is different from `scipy.stats.rankdata`, which returns ranks in [1, len(x)].
     """
@@ -25,6 +25,7 @@ def compute_ranks(x):
 
 
 def compute_centered_ranks(x):
+    """Get centered ranks in [-0.5, 0.5]."""
     y = compute_ranks(x)
     y /= x.size - 1
     y -= 0.5
@@ -32,6 +33,8 @@ def compute_centered_ranks(x):
 
 
 class OpenESState(PyTreeData):
+    """State of the OpenES."""
+
     mean: chex.ArrayTree
     opt_state: optax.OptState
     noise_std: chex.Array
@@ -40,6 +43,8 @@ class OpenESState(PyTreeData):
 
 
 class OpenES(EvoOptimizer):
+    """OpenAI ES."""
+
     pop_size: int
     lr_schedule: ExponentialScheduleSpec
     noise_std_schedule: ExponentialScheduleSpec
@@ -147,6 +152,8 @@ class OpenES(EvoOptimizer):
 
 
 class OpenESNoiseTableState(PyTreeData):
+    """State of the OpenES with noise table."""
+
     mean: chex.ArrayTree
     opt_state: optax.OptState
     noise_std: chex.Array
@@ -156,6 +163,8 @@ class OpenESNoiseTableState(PyTreeData):
 
 
 class OpenESNoiseTable(EvoOptimizer):
+    """OpenAI ES with noise table."""
+
     pop_size: int
     noise_table_size: int
     lr_schedule: ExponentialScheduleSpec

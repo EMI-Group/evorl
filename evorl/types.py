@@ -1,6 +1,8 @@
+"""Common type annotations and data structures."""
+
 import dataclasses
 from collections.abc import Mapping, Sequence
-from typing import Any, Protocol, Union, TypeVar
+from typing import Any, Union, TypeVar
 
 import chex
 import jax
@@ -107,18 +109,6 @@ class State(PyTreeDict):
     """
 
     pass
-
-
-class EnvLike(Protocol):
-    """A protocol for environment objects."""
-
-    def reset(self, *args, **kwargs) -> Any:
-        """Resets the environment to an initial state."""
-        pass
-
-    def step(self, *args, **kwargs) -> Any:
-        """Run one timestep of the environment's dynamics."""
-        pass
 
 
 def pytree_field(*, lazy_init=False, static=False, **kwargs):

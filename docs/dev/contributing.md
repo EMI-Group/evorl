@@ -8,7 +8,7 @@
 pyenv virtualenv 3.10 evorl-dev
 pyenv activate evorl-dev
 
-# Step 2: Install JAX in advance 
+# Step 2: Install JAX in advance
 # Note: the installation command depends on your platform.
 # See https://docs.jax.dev/en/latest/installation.html
 pip install -U "jax[cuda12]"

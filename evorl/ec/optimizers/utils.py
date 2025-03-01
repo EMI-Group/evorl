@@ -14,6 +14,8 @@ optimizer_map = dict(
 
 
 class ExponentialScheduleSpec(PyTreeData):
+    """Specification for an exponential schedule for HyperParam."""
+
     init: float
     final: float
     decay: float

@@ -432,7 +432,7 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
             iterations=state.metrics.iterations + 1,
         )
 
-        train_metrics = ECTrainMetric(objectives=fitnesses)
+        train_metrics = ECTrainMetric(objectives=fitnesses, ec_metrics=ec_metrics)
 
         return train_metrics, state.replace(
             key=key,

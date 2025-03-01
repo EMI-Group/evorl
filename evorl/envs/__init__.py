@@ -1,23 +1,10 @@
 import importlib
 
-from .brax import create_brax_env, create_wrapped_brax_env
+from .space import Space, Box, Discrete
 from .env import Env, EnvState, EnvStepFn, EnvResetFn
 from .multi_agent_env import MultiAgentEnv
-from .space import Space, Box, Discrete
-from .wrappers.wrapper import get_wrapper
 from .wrappers.training_wrapper import AutoresetMode
-
-if importlib.util.find_spec("gymnax") is not None:
-    from .gymnax import create_gymnax_env, create_wrapped_gymnax_env
-
-if importlib.util.find_spec("jumanji") is not None:
-    from .jumanji import create_jumanji_env
-
-if importlib.util.find_spec("jaxmarl") is not None:
-    from .jaxmarl import create_mabrax_env, create_wrapped_mabrax_env
-
-if importlib.util.find_spec("envpool") is not None:
-    from .envpool import creat_gym_env
+from .brax import create_brax_env, create_wrapped_brax_env
 
 
 # TODO: unifiy env creator
@@ -58,14 +45,27 @@ __all__ = [
     "Box",
     "Discrete",
     "AutoresetMode",
-    "get_wrapper",
     "create_env",
     "create_brax_env",
     "create_wrapped_brax_env",
-    # "create_gymnax_env",
-    # "create_wrapped_gymnax_env",
-    # "create_jumanji_env",
-    # "create_mabrax_env",
-    # "create_wrapped_mabrax_env",
-    # "creat_gym_env",
 ]
+
+if importlib.util.find_spec("gymnax") is not None:
+    from .gymnax import create_gymnax_env, create_wrapped_gymnax_env
+
+    __all__.extend(["create_gymnax_env", "create_wrapped_gymnax_env"])
+
+if importlib.util.find_spec("jumanji") is not None:
+    from .jumanji import create_jumanji_env
+
+    __all__.extend(["create_jumanji_env"])
+
+if importlib.util.find_spec("jaxmarl") is not None:
+    from .jaxmarl import create_mabrax_env, create_wrapped_mabrax_env
+
+    __all__.extend(["create_mabrax_env", "create_wrapped_mabrax_env"])
+
+if importlib.util.find_spec("envpool") is not None:
+    from .envpool import creat_gym_env
+
+    __all__.extend(["creat_gym_env"])

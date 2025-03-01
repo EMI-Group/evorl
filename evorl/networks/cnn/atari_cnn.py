@@ -81,12 +81,16 @@ class CNN_AgentStem(nn.Module):
 
 
 class Critic(nn.Module):
+    """Lineat Critic Head."""
+
     @nn.compact
     def __call__(self, x):
         return nn.Dense(1, kernel_init=orthogonal(1), bias_init=constant(0.0))(x)
 
 
 class Actor(nn.Module):
+    """Linear Actor Head."""
+
     action_dim: Sequence[int]
 
     @nn.compact

@@ -45,6 +45,7 @@ autodoc2_module_all_regexes = [
     r"evorl\.distribution",
     r"evorl\.ec\.[a-zA-Z_]+",
     r"evorl\.envs",
+    r"evorl\.envs\.wrappers",
     r"evorl\.evaluators",
     r"evorl\.metrics",
     r"evorl\.multi_agent_rollout",
@@ -68,7 +69,7 @@ autodoc2_hidden_regexes = [r"evorl\.(train|train_dist)"]
 viewcode_line_numbers = True
 
 myst_enable_extensions = [
-    # "colon_fence",
+    "colon_fence",
     "dollarmath",
     "fieldlist",
     # "linkify",

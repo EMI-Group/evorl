@@ -14,10 +14,7 @@ __all__ = ["SampleBatch", "Episode"]
 
 
 class SampleBatch(PyTreeData):
-    """Batched transitions w/ additional prefix axis as batch_axis.
-
-    Could also be used as a trajectory.
-    """
+    """Data container for trajectory data."""
 
     obs: chex.ArrayTree | None = None
     actions: chex.ArrayTree | None = None
@@ -79,7 +76,7 @@ class SampleBatch(PyTreeData):
         return new
 
     @property
-    def T(self):  # pylint:disable=invalid-name
+    def T(self):
         return jtu.tree_map(lambda x: x.T, self)
 
 

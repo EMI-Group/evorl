@@ -41,9 +41,9 @@ class CEMRLOpenESWorkflow(CEMRLWorkflowTemplate):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
-        assert (
-            config.warmup_iters > 0 or config.random_timesteps > 0
-        ), "Either warmup_iters or random_timesteps should be positive to pre-fill some data in the replay buffer"
+        assert config.warmup_iters > 0 or config.random_timesteps > 0, (
+            "Either warmup_iters or random_timesteps should be positive to pre-fill some data in the replay buffer"
+        )
 
         # env for one actor
         env = create_env(

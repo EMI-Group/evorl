@@ -74,9 +74,9 @@ class MLPCrossover(PyTreeNode):
     crossover_fn: Callable = pytree_field(lazy_init=True, static=True)
 
     def __post_init__(self):
-        assert (
-            self.num_crossover_frac >= 0 and self.num_crossover_frac <= 1
-        ), "num_crossover_frac should be in [0, 1]"
+        assert self.num_crossover_frac >= 0 and self.num_crossover_frac <= 1, (
+            "num_crossover_frac should be in [0, 1]"
+        )
 
         crossover_fn = jax.vmap(
             partial(mlp_crossover, num_crossover_frac=self.num_crossover_frac),

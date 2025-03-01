@@ -25,6 +25,8 @@ from .wrappers.training_wrapper import (
 
 
 class GymnaxAdapter(EnvAdapter):
+    """Adapter for Gymnax environments."""
+
     def __init__(self, env: GymnaxEnv, env_params: chex.ArrayTree | None = None):
         super().__init__(env)
         self.env_params = env_params or env.default_params

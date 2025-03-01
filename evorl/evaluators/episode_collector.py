@@ -47,7 +47,7 @@ class EpisodeCollector(PyTreeNode):
         if num_episodes % num_envs != 0:
             logger.warning(
                 f"num_episode ({num_episodes}) cannot be divided by parallel_envs ({num_envs}),"
-                f"set new num_episodes={num_iters*num_envs}"
+                f"set new num_episodes={num_iters * num_envs}"
             )
 
         action_fn = self.action_fn

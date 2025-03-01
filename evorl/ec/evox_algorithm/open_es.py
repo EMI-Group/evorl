@@ -53,9 +53,9 @@ class OpenES(Algorithm):
         assert pop_size > 0
 
         if mirror_sampling is True:
-            assert (
-                pop_size % 2 == 0
-            ), "When mirrored_sampling is True, pop_size must be a multiple of 2."
+            assert pop_size % 2 == 0, (
+                "When mirrored_sampling is True, pop_size must be a multiple of 2."
+            )
 
         self.dim = center_init.shape[0]
         self.center_init = center_init

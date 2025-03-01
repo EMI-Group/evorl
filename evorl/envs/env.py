@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from typing import Any
 
 import chex
 
@@ -7,7 +8,6 @@ from evorl.types import (
     Action,
     Done,
     EnvInternalState,
-    EnvLike,
     Observation,
     PyTreeData,
     PyTreeDict,
@@ -22,6 +22,14 @@ class EnvState(PyTreeData):
     """State of the environment.
 
     Include all the data needed to represent the state of the environment.
+
+    Attributes:
+        env_state: The internal state of the environment.
+        obs: The observation of the environment.
+        reward: The reward of the environment.
+        done: Whether the environment is done.
+        info: Extra info from the environment.
+        _internal: Extra internal data for the environment.
     """
 
     env_state: EnvInternalState
@@ -32,10 +40,6 @@ class EnvState(PyTreeData):
     _internal: PyTreeDict = pytree_field(
         default_factory=PyTreeDict
     )  # extra data for interal use
-
-
-EnvStepFn = Callable[[EnvState, Action], EnvState]
-EnvResetFn = Callable[[chex.PRNGKey], EnvState]
 
 
 class Env(ABC):
@@ -54,22 +58,29 @@ class Env(ABC):
     @property
     @abstractmethod
     def action_space(self) -> Space:
-        """Return the action space of the environment."""
+        """Get the action space of the environment."""
         raise NotImplementedError
 
     @property
     @abstractmethod
     def obs_space(self) -> Space:
-        """Return the observation space of the environment."""
+        """Get the observation space of the environment."""
         raise NotImplementedError
 
 
 class EnvAdapter(Env):
-    """Convert envs from other packages to EvoRL's Env API."""
+    """Base class for an environment adapter.
 
-    def __init__(self, env: EnvLike):
+    Convert envs from other packages to EvoRL's Env API.
+    """
+
+    def __init__(self, env: Any):
         self.env = env
 
     @property
-    def unwrapped(self) -> EnvLike:
+    def unwrapped(self) -> Any:
         return self.env
+
+
+EnvStepFn = Callable[[EnvState, Action], EnvState]
+EnvResetFn = Callable[[chex.PRNGKey], EnvState]

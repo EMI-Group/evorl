@@ -21,6 +21,7 @@ __all__ = [
     "decentralized_rollout_with_shared_model",
 ]
 
+
 def decentralized_env_step(
     env: MultiAgentEnv,
     agents: Mapping[AgentID, Agent],
@@ -74,6 +75,7 @@ def decentralized_rollout(
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
     """Collect given rollout_length trajectory.
+
     Tips: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
 
     Args:
@@ -85,9 +87,6 @@ def decentralized_rollout(
     """
 
     def _one_step_rollout(carry, unused_t):
-        """sample_batch: one-step obs
-        transition: one-step full info
-        """
         env_state, current_key = carry
         next_key, current_key = jax.random.split(current_key, 2)
 
@@ -179,9 +178,6 @@ def decentralized_rollout_with_shared_model(
         action_unbatchify_fn = partial(unbatchify, agent_list=env.agents)
 
     def _one_step_rollout(carry, unused_t):
-        """sample_batch: one-step obs
-        transition: one-step full info
-        """
         env_state, current_key = carry
         next_key, current_key = jax.random.split(current_key, 2)
 

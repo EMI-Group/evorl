@@ -70,9 +70,9 @@ class MLPMutation(PyTreeNode):
     mutate_fn: Callable = pytree_field(lazy_init=True, static=True)
 
     def __post_init__(self):
-        assert (
-            self.num_mutation_frac >= 0 and self.num_mutation_frac <= 1
-        ), "num_mutation_frac should be in [0, 1]"
+        assert self.num_mutation_frac >= 0 and self.num_mutation_frac <= 1, (
+            "num_mutation_frac should be in [0, 1]"
+        )
 
         mutate_fn = jax.vmap(
             partial(

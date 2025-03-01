@@ -60,19 +60,19 @@ class CMAES(Algorithm):
             )
             self.weights = weights / np.sum(weights)
         else:
-            assert (
-                recombination_weights.shape[0] == self.mu
-            ), "recombination_weights' length must match mu"
+            assert recombination_weights.shape[0] == self.mu, (
+                "recombination_weights' length must match mu"
+            )
             # currently, we don't support negative weights
-            assert (
-                recombination_weights[1:] <= recombination_weights[:-1]
-            ).all(), "recombination_weights must be non-increasing"
-            assert (
-                jnp.abs(jnp.sum(recombination_weights) - 1) < 1e-6
-            ), "sum of recombination_weights must be 1"
-            assert (
-                recombination_weights > 0
-            ).all(), "recombination_weights must be positive"
+            assert (recombination_weights[1:] <= recombination_weights[:-1]).all(), (
+                "recombination_weights must be non-increasing"
+            )
+            assert jnp.abs(jnp.sum(recombination_weights) - 1) < 1e-6, (
+                "sum of recombination_weights must be 1"
+            )
+            assert (recombination_weights > 0).all(), (
+                "recombination_weights must be positive"
+            )
             self.weights = np.asarray(recombination_weights, dtype=np.float32)
 
         self.mueff = (

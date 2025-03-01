@@ -101,7 +101,7 @@ class SNDense(linen.Module):
         # Handle scalars.
         if kernel.ndim <= 1:
             raise ValueError(
-                "Spectral normalization is not well defined for " "scalar inputs."
+                "Spectral normalization is not well defined for scalar inputs."
             )
         # Handle higher-order tensors.
         elif kernel.ndim > 2:

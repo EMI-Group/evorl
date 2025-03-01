@@ -8,30 +8,24 @@ from evorl.types import PyTreeData
 class Space(PyTreeData):
     """Base class for Space like `gym.Space`."""
 
-    def sample(self, key: chex.PRNGKey) -> chex.Array:
-        """Randomly sample an element of this space.
+    @property
+    def shape(self) -> chex.Shape:
+        """Get the shape of the space."""
+        raise NotImplementedError
 
-        Can be uniform or non-uniform sampling based on the boundedness of space.
+    def sample(self, key: chex.PRNGKey) -> chex.Array:
+        """Randomly sample a data in this space.
 
         Returns:
             A sample from the space
         """
         raise NotImplementedError
 
-    @property
-    def shape(self) -> chex.Shape:
-        """The shape of the space.
-
-        Returns:
-            The shape of the space.
-        """
-        raise NotImplementedError
-
     def contains(self, x: chex.Array) -> bool:
-        """Return True if x is a valid member of the space.
+        """Determine whether the input is in the space.
 
         Returns:
-            Whether x is in the space.
+            A boolean value about whether x is in the space.
         """
         raise NotImplementedError
 
@@ -40,8 +34,8 @@ class Box(Space):
     """Continuous space in R^n.
 
     Attributes:
-        low: The lower bounds of the box
-        high: The upper bounds of the box
+        low: The lower bounds of the box.
+        high: The upper bounds of the box.
     """
 
     low: chex.Array

@@ -45,9 +45,9 @@
 
 EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learning, which is implemented by JAX and provides end-to-end training pipelines, including following processes optimized on GPUs:
 
-* Reinforcement Learning (RL)
-* Evolutionary Computation (EC)
-* Environment Simulation
+- Reinforcement Learning (RL)
+- Evolutionary Computation (EC)
+- Environment Simulation
 
 EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
 EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
@@ -56,7 +56,7 @@ EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 ## Highlight
 
 
-- **End-to-end training pipelines**: The training pipelines for RL, EC and EvoRL are executed on GPUs, eliminating dense communication between CPUs and GPUs in traditional implementations and fully utilizing the parallel computing capabilities of modern GPU architectures. 
+- **End-to-end training pipelines**: The training pipelines for RL, EC and EvoRL are executed on GPUs, eliminating dense communication between CPUs and GPUs in traditional implementations and fully utilizing the parallel computing capabilities of modern GPU architectures.
   - Most algorithms has a `Workflow.step()` function that is capable of `jax.jit` and `jax.vmap()`, supporting parallel training and JIT on full computation graph.
   - The maximum seed-up is up to 60x depend on the algorithms, see [Performance](Performance).
 - **Easy integration between EC to RL**: Due to modular design, EC components can be easily plug-and-play in workflows and cooperate with RL.
@@ -78,16 +78,16 @@ EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 
 # Installation
 
-For normal users, `jax` should be installed first, please following their [official guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Then you can use EvoRL by cloning the repo and pip install in editable mode.
+For normal users, `jax` should be installed first, please following their [official guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Then you can use EvoRL by cloning the repo and install the package in editable mode.
 
 ```shell
-# It will install the evorl package from source
+# Install the evorl package from source
 git clone https://github.com/EMI-Group/evorl.git
 cd evorl
 pip install -e .
 ```
-For developers: see [CONTRIBUTING.md](./CONTRIBUTING.md)
 
+For developers: see [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 # Quickstart
 
@@ -140,6 +140,7 @@ python -m evorl.train -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514
 We also provide a script `python -m evorl.train_dist` to train multiple algorithms with different options in parallel.
 
 Additional packages are required:
+
 ```shell
 # need to install joblib plugin before the first run
 pip install -U hydra-joblib-launcher
@@ -161,10 +162,9 @@ Note:
 
 - It's recommended to run every job on a single device. By default, the script will use all detected GPUs and run every job on a dedicated GPU.
 
-- If you persist in parallel training on a single device, set environment variables like `XLA_PYTHON_CLIENT_MEM_FRACTION=.10` or `XLA_PYTHON_CLIENT_PREALLOCATE=false` to avoid the OOM from JAX's pre-allocation.
+- If you persist in parallel training on a single device, set environment variables like `XLA_PYTHON_CLIENT_MEM_FRACTION=.10` or `XLA_PYTHON_CLIENT_PREALLOCATE=false` to avoid the OOM from the JAX's pre-allocation.
 
 - If the number of submitted jobs exceeds the number of CPU cores, `joblib` will wait and reuse previous processes. This could cause misconfigured GPU settings. To solve it, append `hydra.launcher.n_jobs=<#jobs>` to the script.
-
 
 ## Logging
 
@@ -176,8 +176,7 @@ An example of screenshot in WandB dashboard:
 
 ![](./figs/evorl_wandb.png)
 
-Besides these recorders, we also provide the `JsonRecorder` and allow users to customize their own recorders.
-
+Besides these recorders, EvoRL also allows users to customize their own recorders by inheriting the `evorl.Recorder` class.
 
 # Algorithms
 
@@ -190,16 +189,20 @@ Currently, EvoRL supports 4 types of algorithms
 | Evolution-guided RL     | ERL-GA, ERL-ES, ERL-EDA, CEMRL, CEMRL-OpenES                                                                  |
 | Population-based AutoRL | PBT family (e.g: PBT-PPO, PBT-SAC, PBT-CSO-PPO)                                                               |
 
-
 # RL Environments
 
-By default, `pip install evorl` will automatically install envs on `brax` and `gymnax`. We also experimentally support other envs, which need to be manually installed:
+By default, `pip install evorl` will automatically install environments on `brax` and `gymnax`. If you want to install other supported environments, you need manually install the related environment packages. For example:
 
 ```shell
+# EnvPool Envs:
 pip install envpool
+# Jumanji Envs:
 pip install jumanji
+# JaxMARL Envs:
 pip install jaxmarl
 ```
+
+Note: these environments has limited supports, some algorithms are incompatible with them.
 
 ## Supported Environments
 
@@ -211,21 +214,18 @@ pip install jaxmarl
 | [Jumanji (experimental)](https://github.com/instadeepai/jumanji) | Game, Combinatorial optimization        |
 | [EnvPool (experimental)](https://github.com/sail-sg/envpool)     | High-performance CPU-based environments |
 
-
 # Performance
 
 Test settings:
 
-* Hardware:
-  * 2x Intel Xeon Gold 6132 (56 logical cores in total)
-  * 128 GiB RAM
-  * 1x Nvidia RTX 3090
-* Task: Swimmer
-
+- Hardware:
+  - 2x Intel Xeon Gold 6132 (56 logical cores in total)
+  - 128 GiB RAM
+  - 1x Nvidia RTX 3090
+- Task: Swimmer
 
 ![](./figs/es-perf.png)
 ![](./figs/erl-pbt-perf.png)
-
 
 # Acknowledgement
 

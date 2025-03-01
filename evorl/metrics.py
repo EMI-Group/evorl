@@ -30,7 +30,7 @@ def metric_field(
     """Define a metric field in `MetricBase`.
 
     Args:
-        reduce_fn: A function to reduce the metric value across different devices.
+        reduce_fn: A function to reduce the metric value across different devices. For example, `jax.mean`
         static: Whether the field is static related to pytree.
 
     Returns:
@@ -62,7 +62,7 @@ class MetricBase(PyTreeData, kw_only=True):
     def to_local_dict(self):
         """Convert all dataclass to dict recursively.
 
-        The data in the metric object will be converted to local data types, such as jax array and numpy array.
+        The data in the metric object will be converted to local data types: jax array will be convert to numpy array,
 
         Returns:
             A converted dict.
@@ -71,14 +71,25 @@ class MetricBase(PyTreeData, kw_only=True):
 
 
 class WorkflowMetric(MetricBase):
-    """Workflow metrics for RLWorkflow."""
+    """Workflow metrics for RLWorkflow.
+
+    Attributes:
+        sampled_timesteps: The total number of sampled timesteps from environments.
+        iterations: The total number of workflow iterations.
+    """
 
     sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class TrainMetric(MetricBase):
-    """Training metrics for RLWorkflow."""
+    """Training metrics for RLWorkflow.
+
+    Attributes:
+        train_episode_return: The return of the training episode.
+        loss: The loss value of the training step.
+        raw_loss_dict: The raw loss dict of the training step.
+    """
 
     # manually reduce in the step()
     train_episode_return: chex.Array | None = None
@@ -89,14 +100,26 @@ class TrainMetric(MetricBase):
 
 
 class EvaluateMetric(MetricBase):
-    """Evaluation metrics for RLWorkflow."""
+    """Evaluation metrics for RLWorkflow.
+
+    Attributes:
+        episode_returns: The return array of evaluation episodes.
+        episode_lengths: The length array of evaluation episodes.
+    """
 
     episode_returns: chex.Array = metric_field(reduce_fn=pmean)
     episode_lengths: chex.Array = metric_field(reduce_fn=pmean)
 
 
 class ECWorkflowMetric(MetricBase):
-    """Workflow metrics for ECWorkflow."""
+    """Workflow metrics for ECWorkflow.
+
+    Attributes:
+        best_objective: The best objective value found so far.
+        sampled_episodes: The total number of sampled episodes from environments..
+        sampled_timesteps_m: The total number of sampled timesteps from environments, measured in millions.
+        iterations: The total number of workflow iterations.
+    """
 
     best_objective: chex.Array
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
@@ -105,7 +128,13 @@ class ECWorkflowMetric(MetricBase):
 
 
 class MultiObjectiveECWorkflowMetric(MetricBase):
-    """Workflow metrics for MultiObjectiveECWorkflow."""
+    """Workflow metrics for MultiObjectiveECWorkflow.
+
+    Attributes:
+        sampled_episodes: The total number of sampled episodes from environments..
+        sampled_timesteps_m: The total number of sampled timesteps from environments, measured in millions.
+        iterations: The total number of workflow iterations.
+    """
 
     sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
@@ -113,24 +142,25 @@ class MultiObjectiveECWorkflowMetric(MetricBase):
 
 
 class ECTrainMetric(MetricBase):
-    """Training metrics for ECWorkflow."""
+    """Training metrics for ECWorkflow.
+
+    Attributes:
+        objectives: The objective values for current step.
+        ec_metrics: The extra metrics of the training step.
+    """
 
     objectives: chex.Array
     ec_metrics: chex.ArrayTree
 
 
-def _is_dataclass_instance(obj):
-    return hasattr(type(obj), "__dataclass_fields__")
-
-
 def to_local_dict(obj, *, dict_factory=dict):
-    if not _is_dataclass_instance(obj):
+    if not dataclasses.is_dataclass(obj):
         raise TypeError("to_local_dict() should be called on dataclass instances")
     return _to_local_dict_inner(obj, dict_factory)
 
 
 def _to_local_dict_inner(obj, dict_factory):
-    if _is_dataclass_instance(obj):
+    if dataclasses.is_dataclass(obj):
         result = []
         for f in dataclasses.fields(obj):
             value = _to_local_dict_inner(getattr(obj, f.name), dict_factory)

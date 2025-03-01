@@ -21,6 +21,8 @@ from .wrappers.training_wrapper import (
 
 
 class BraxAdapter(EnvAdapter):
+    """Adapter for Brax environments."""
+
     def __init__(self, env: BraxEnv):
         super().__init__(env)
 

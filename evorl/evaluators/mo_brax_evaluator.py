@@ -35,9 +35,9 @@ class BraxEvaluator(Evaluator):
 
     def __post_init__(self):
         super().__post_init__()
-        assert isinstance(
-            self.env.unwrapped, BraxAdapter
-        ), "only support Brax environments"
+        assert isinstance(self.env.unwrapped, BraxAdapter), (
+            "only support Brax environments"
+        )
 
     def evaluate(
         self, agent_state: chex.ArrayTree, key: chex.PRNGKey, num_episodes: int
@@ -47,7 +47,7 @@ class BraxEvaluator(Evaluator):
         if num_episodes % num_envs != 0:
             logger.warning(
                 f"num_episode ({num_episodes}) cannot be divided by parallel_envs ({num_envs}),"
-                f"set new num_episodes={num_iters*num_envs}"
+                f"set new num_episodes={num_iters * num_envs}"
             )
 
         action_fn = self.action_fn

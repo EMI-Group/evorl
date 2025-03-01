@@ -11,6 +11,16 @@ guide/key-concepts
 ```
 
 ```{toctree}
+:caption: Getting started
+:maxdepth: 1
+:hidden:
+
+guide/installation
+guide/quickstart
+guide/key-concepts
+```
+
+```{toctree}
 :caption: 'API Reference'
 :maxdepth: 3
 :hidden:

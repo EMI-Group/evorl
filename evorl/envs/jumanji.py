@@ -13,6 +13,8 @@ from .utils import sort_dict
 
 # Note: this is used for singel agent envs.
 class JumanjiAdapter(EnvAdapter):
+    """Adapter for Jumanji environments."""
+
     def __init__(self, env: JumanjiEnv):
         super().__init__(env)
 
