@@ -2,7 +2,7 @@
 
 ## Object-oriented functional programming model
 
-EvoRL uses an object-oriented functional programming model, where classes define the static execution logic and their running states are stored externally. This is different from the concepts for commonly used object-oriented programming model, where the class's state are stored insides the class as its properties.
+EvoRL uses an object-oriented functional programming model, where classes define the static execution logic and their running states are stored externally. This is different from the concepts for commonly used object-oriented programming model, where the class's states are stored insides the class as its properties.
 
 This object-oriented functional programming model is to support JAX's functional programming style while taking advantage of object-oriented programming's modularity and composability. Below is a toy example to demonstrate what the codes look like.
 
