@@ -1,9 +1,9 @@
 <h1 align="center">
   <a href="https://github.com/EMI-Group/evox">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="./figs/evox_logo_dark.png">
-      <source media="(prefers-color-scheme: light)" srcset="./figs/evox_logo_light.png">
-      <img alt="EvoX Logo" height="50" src="./figs/evox_logo_light.png">
+      <source media="(prefers-color-scheme: dark)" srcset="docs/_static/evox_logo_dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="docs/_static/evox_logo_light.png">
+      <img alt="EvoX Logo" height="50" src="docs/_static/evox_logo_light.png">
     </picture>
   </a>
 </h1>
@@ -68,7 +68,7 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 
 ## Overview of Key Concepts in EvoRL
 
-![](./figs/evorl_arch.svg)
+![](docs/_static/evorl_arch.svg)
 
 - **Workflow** defines the training logic of algorithms.
 - **Agent** defines the behavior of a learning agent, and its optional loss functions.
@@ -133,7 +133,7 @@ By default, the script will enable two recorders for logging: `LogRecorder` and 
 
 Screenshot in WandB dashboard:
 
-![](./figs/evorl_wandb.png)
+![](docs/_static/evorl_wandb.png)
 
 # Algorithms
 
@@ -182,8 +182,8 @@ Test settings:
   - 1x Nvidia RTX 3090
 - Task: Swimmer
 
-![](./figs/es-perf.png)
-![](./figs/erl-pbt-perf.png)
+![](docs/_static/es-perf.png)
+![](docs/_static/erl-pbt-perf.png)
 
 # Issues and Discussions
 
