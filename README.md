@@ -125,7 +125,7 @@ For more advanced usage, see our documentation: [Training](https://evorl.readthe
 
 ## Logging
 
-When not using multi-run mode (without `-m`), the outputs will be stored in `./outputs`. When using multi-run mode (`-m`), the outputs will be stored in `./multirun`. Specifically, when launching algorithms from the training scripts, the log file and checkpoint files will be stored in `./outputs|multirun/train|train_dist/<timestamp>/<exp-name>/`.
+When not using [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/) (without `-m`), the outputs will be stored in `./outputs`. When using [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/) (`-m`), the outputs will be stored in `./multirun`. Specifically, when launching algorithms from the training scripts, the log file and checkpoint files will be stored in `./outputs|multirun/train|train_dist/<timestamp>/<exp-name>/`.
 
 By default, the script will enable two recorders for logging: `LogRecorder` and `WandbRecorder`. `LogRecorder` will save logs (`*.log`) in the above path, and `WandbRecorder` will upload the data to [WandB](https://wandb.ai/site/), which provides beautiful visualizations.
 
