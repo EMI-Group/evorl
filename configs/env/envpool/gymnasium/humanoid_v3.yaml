@@ -1,3 +1,4 @@
 env_name: Humanoid-v3
-env_type: envpool_gymnasium
+env_type: envpool
+env_backend: gymnasium
 max_episode_steps: 1000

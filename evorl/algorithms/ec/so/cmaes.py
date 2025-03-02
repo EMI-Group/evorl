@@ -42,8 +42,7 @@ class CMAESWorkflow(ESWorkflowTemplate):
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:
         env = create_env(
-            config.env.env_name,
-            config.env.env_type,
+            config.env,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
@@ -86,8 +85,7 @@ class CMAESWorkflow(ESWorkflowTemplate):
 
         # to evaluate the pop-mean actor
         eval_env = create_env(
-            config.env.env_name,
-            config.env.env_type,
+            config.env,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,
@@ -179,8 +177,7 @@ class SepCMAESWorkflow(CMAESWorkflow):
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:
         env = create_env(
-            config.env.env_name,
-            config.env.env_type,
+            config.env,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
@@ -223,8 +220,7 @@ class SepCMAESWorkflow(CMAESWorkflow):
 
         # to evaluate the pop-mean actor
         eval_env = create_env(
-            config.env.env_name,
-            config.env.env_type,
+            config.env,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,

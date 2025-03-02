@@ -1,3 +1,4 @@
 env_name: Reacher-v4
-env_type: envpool_gym
+env_type: envpool
+env_backend: gym
 max_episode_steps: 50
