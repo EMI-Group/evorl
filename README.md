@@ -35,6 +35,7 @@
 - [RL Environments](#rl-environments)
   - [Supported Environments](#supported-environments)
 - [Performance](#performance)
+- [Issues and Discussions](#issues-and-discussions)
 - [Acknowledgement](#acknowledgement)
   - [Citing EvoRL](#citing-evorl)
 
@@ -49,7 +50,11 @@ EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learnin
 
 EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
 
-EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
+> [!Note]
+> Full Documentation is available at [Documentation](https://evorl.readthedocs.io/latest/).
+
+> [!Note]
+> EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 
 ## Highlight
 
@@ -87,9 +92,6 @@ pip install -e .
 For developers, see [Contributing to EvoRL](https://evorl.readthedocs.io/latest/dev/contributing.html)
 
 # Quickstart
-
-> [!Note]
-> Full Documentation is available at [ReadTheDocs](https://evorl.readthedocs.io/latest/).
 
 ## Training
 
@@ -181,6 +183,15 @@ Test settings:
 
 ![](./figs/es-perf.png)
 ![](./figs/erl-pbt-perf.png)
+
+# Issues and Discussions
+
+To keep our project organized, please use the appropriate section for your topics:
+
+- Issues – For reporting **bugs** and **PR** only. When submitting an issue, please provide clear details to help with troubleshooting.
+- Discussions – For general questions, feature requests, and other topics.
+
+Before posting, kindly check existing issues and discussions to avoid duplicates. Thank you for your contributions!
 
 # Acknowledgement
 

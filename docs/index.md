@@ -19,7 +19,7 @@ tutorial/algorithms
 ```
 
 ```{toctree}
-:caption: 'API Reference'
+:caption: 'References'
 :maxdepth: 1
 :hidden:
 
