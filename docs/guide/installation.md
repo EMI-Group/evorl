@@ -28,4 +28,6 @@ pip install jumanji
 pip install jaxmarl
 ```
 
-Note: these experimental environments have limited supports, some algorithms are incompatible with them.
+```{attention}
+These experimental environments have limited supports, some algorithms are incompatible with them.
+```
