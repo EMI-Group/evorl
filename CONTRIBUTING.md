@@ -1,3 +1,3 @@
 # Contributing to EvoRL
 
-See []()
+See the documentation [Contributing to EvoRL](https://evorl.readthedocs.io/latest/dev/contributing.html)

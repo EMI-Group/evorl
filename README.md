@@ -84,7 +84,7 @@ cd evorl
 pip install -e .
 ```
 
-For developers: see [CONTRIBUTING.md](./CONTRIBUTING.md)
+For developers, see [Contributing to EvoRL](https://evorl.readthedocs.io/latest/dev/contributing.html)
 
 # Quickstart
 
@@ -118,7 +118,7 @@ python -m evorl.train agent=ppo env=brax/ant
 
 Then the PPO algorithm starts training. If multiple GPUs are detected, most algorithms will automatically be trained in distributed mode.
 
-For more advanced usage, see our documentation [Training]().
+For more advanced usage, see our documentation: [Training](https://evorl.readthedocs.io/latest/guide/quickstart.html#advanced-usage).
 
 ## Logging
 
