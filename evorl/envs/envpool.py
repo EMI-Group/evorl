@@ -1,4 +1,5 @@
 from functools import partial
+import warnings
 
 import chex
 import envpool
@@ -9,6 +10,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import numpy as np
+import math
 
 from evorl.types import Action, PyTreeDict
 
@@ -17,22 +19,18 @@ from .space import Box, Discrete, Space
 from .wrappers import Wrapper, AutoresetMode
 
 
-def _to_jax(x):
-    return jtu.tree_map(lambda x: jnp.asarray(x), x)
+def _to_jax(pytree):
+    return jtu.tree_map(lambda x: jnp.asarray(x), pytree)
 
 
-def _to_jax_spec(x):
-    x = _to_jax(x)
-    return jtu.tree_map(lambda x: jax.ShapeDtypeStruct(x.shape, x.dtype), x)
+def _to_jax_spec(pytree):
+    pytree = _to_jax(pytree)
+    return jtu.tree_map(lambda x: jax.ShapeDtypeStruct(x.shape, x.dtype), pytree)
 
 
-def _to_numpy(x):
-    return jtu.tree_map(lambda x: np.asarray(x), x)
-
-
-def _reshape_batch_dims(x, batch_shape, num_envs):
-    new_shape = batch_shape + (num_envs,) + x.shape[1:]
-    return jtu.tree_map(lambda x: jnp.reshape(x, new_shape), x)
+def _reshape_batch_dims(pytree, batch_shape):
+    # [B1*...*Bn*#envs, *] -> [B1, ..., Bn, #envs, *]
+    return jtu.tree_map(lambda x: jnp.reshape(x, batch_shape + x.shape[1:]), pytree)
 
 
 class EnvPoolAdapter(EnvAdapter):
@@ -53,18 +51,18 @@ class EnvPoolAdapter(EnvAdapter):
         self.num_envs = num_envs
         self.env_specs = env_specs
 
-        def _create_env(num_envs):
+        def _create_env(_num_envs):
             if self.env_backend == "gymnasium":
                 env = envpool.make_gymnasium(
                     self.env_name,
-                    num_envs=num_envs,
+                    num_envs=_num_envs,
                     max_episode_steps=episode_length,
                     **env_specs,
                 )
             elif self.env_backend == "gym":
                 env = envpool.make_gym(
-                    env_name,
-                    num_envs=num_envs,
+                    self.env_name,
+                    num_envs=_num_envs,
                     max_episode_steps=episode_length,
                     **env_specs,
                 )
@@ -73,39 +71,43 @@ class EnvPoolAdapter(EnvAdapter):
 
             return env
 
-        dummy_env = _create_env(self.num_envs)
+        self.env = _create_env(self.num_envs)
 
-        reset_spec = _to_jax_spec(dummy_env.reset())
-
-        dummy_action = dummy_env.action_space.sample()
+        reset_spec = _to_jax_spec(self.env.reset()[0])
+        dummy_action = self.env.action_space.sample()
         dummy_actions = np.broadcast_to(
             dummy_action, (self.num_envs,) + dummy_action.shape
         )
-        step_spec = _to_jax_spec(dummy_env.step(dummy_actions))
+        step_spec = _to_jax_spec(self.env.step(dummy_actions))
 
         def _reset(key):
             batch_shape = key.shape[:-1]
-            num_envs = jnp.prod(batch_shape) * self.num_envs
-            if self.env is None:
-                self.env = _create_env(num_envs)
+            num_envs = math.prod(batch_shape) * self.num_envs
+
+            self.env = _create_env(num_envs)
 
             assert self.env.config["num_envs"] == num_envs
 
-            # Note: ret will auto convert to jax array
-            return _reshape_batch_dims(self.env.reset(), batch_shape, self.num_envs)
+            obs, info = _reshape_batch_dims(
+                self.env.reset(), batch_shape + (self.num_envs,)
+            )
+
+            # Note: we drop the original info dict as they do not have static shape.
+            return obs
 
         def _step(actions):
+            # Note: we are not sure if self.env is always updated by _reset in JIT mode.
+
             # [B1, ..., Bn, #envs]
             batch_shape = actions.shape[: -len(self.action_space.shape)]
 
             # [B1, ..., Bn, #envs, *] -> [B1*...*Bn*#envs, *]
-            actions = jax.lax.collapse(actions, 0, len(batch_shape) + 1)
+            actions = jax.lax.collapse(actions, 0, len(batch_shape))
 
-            # Note: ret will auto convert to jax array
-            return _reshape_batch_dims(
-                self.env.step(np.asarray(actions)), batch_shape, self.num_envs
-            )
+            return _reshape_batch_dims(self.env.step(np.asarray(actions)), batch_shape)
 
+        # You are entring the dangerous zone!!!
+        # _reset and _step are not pure functions. Use with caution.
         self._reset = partial(
             jax.pure_callback, _reset, reset_spec, vmap_method="expand_dims"
         )
@@ -114,9 +116,7 @@ class EnvPoolAdapter(EnvAdapter):
         )
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        obs, _info = _to_jax(self._reset(key))
-
-        # Note: we drop the original info as they are not static
+        obs = _to_jax(self._reset(key))
 
         info = PyTreeDict(
             termination=jnp.zeros((self.num_envs,)),
@@ -216,10 +216,11 @@ def create_envpool_gym_env(
     1. Unlike other jax-based env, most wrappers are handled inside the envpool.
     2. Don't use the env with vmap, eg: vmap(env.step), this could cause undefined behavior.
     """
-    if autoreset_mode not in [AutoresetMode.ENVPOOL, AutoresetMode.DISABLED]:
-        raise ValueError(
-            "Only AutoresetMode.ENVPOOL and AutoresetMode.DISABLED are supported for envpool based env."
+    if autoreset_mode in [AutoresetMode.NORMAL, AutoresetMode.FAST]:
+        warnings.warn(
+            f"{autoreset_mode} is not supported for EnvPool Envs. Fallback to AutoresetMode.ENVPOOL!",
         )
+        autoreset_mode = AutoresetMode.ENVPOOL
 
     env = EnvPoolAdapter(
         env_name=env_name,
