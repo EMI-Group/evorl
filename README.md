@@ -50,10 +50,10 @@ EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learnin
 
 EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
 
-> [!Note]
+> [!NOTE]
 > Full Documentation is available at [Documentation](https://evorl.readthedocs.io/latest/).
 
-> [!Note]
+> [!NOTE]
 > EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 
 ## Highlight
@@ -80,7 +80,7 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 
 # Installation
 
-For normal users, `jax` should be installed first, please following their [official guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Since EvoRL is currently under development, we recommend installing the package from source.
+EvoRL is based on `jax`. So `jax` should be installed first, please follow [JAX official installation guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Since EvoRL is currently under development, we recommend installing the package from source.
 
 ```shell
 # Install the evorl package from source
@@ -159,7 +159,8 @@ pip install jumanji
 pip install jaxmarl
 ```
 
-Note: these additional environments have limited supports and some algorithms are incompatible with them.
+> [!WARNING]
+> These additional environments have limited supports and some algorithms are incompatible with them.
 
 ## Supported Environments
 
