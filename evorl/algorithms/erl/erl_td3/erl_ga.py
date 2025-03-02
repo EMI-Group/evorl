@@ -51,8 +51,7 @@ class ERLGAWorkflow(ERLTD3WorkflowTemplate):
 
         # env for rl&ec rollout
         env = create_env(
-            config.env.env_name,
-            config.env.env_type,
+            config.env,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
@@ -131,8 +130,7 @@ class ERLGAWorkflow(ERLTD3WorkflowTemplate):
 
         # to evaluate the pop-mean actor
         eval_env = create_env(
-            config.env.env_name,
-            config.env.env_type,
+            config.env,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,

@@ -8,13 +8,16 @@ from .brax import create_brax_env, create_wrapped_brax_env
 
 
 # TODO: unifiy env creator
-def create_env(env_name: str, env_type: str, **kwargs):
+def create_env(env_cfg, **kwargs):
     """Unified env creator.
 
     Args:
         env_name: environment name
         env_type: env package name, eg: 'brax'
     """
+    env_type = env_cfg.env_type
+    env_name = env_cfg.env_name
+
     if env_type == "brax":
         env = create_wrapped_brax_env(env_name, **kwargs)
     elif env_type == "gymnax":
@@ -23,14 +26,13 @@ def create_env(env_name: str, env_type: str, **kwargs):
         env = create_jumanji_env(env_name, **kwargs)
     elif env_type == "jaxmarl":
         env = create_wrapped_mabrax_env(env_name, **kwargs)
-    elif env_type.startswith("envpool"):
-        _env_type = env_type.split("_")[1]
-        if _env_type in ["gym", "gymnasium"]:
-            env = creat_gym_env(
-                env_name, gymnasium_env=(_env_type == "gymnasium"), **kwargs
+    elif env_type == "envpool":
+        if env_cfg.env_backend in ["gym", "gymnasium"]:
+            env = create_envpool_gym_env(
+                env_name, env_backend=env_cfg.env_backend, **kwargs
             )
         else:
-            raise ValueError(f"env_type {env_type} not supported")
+            raise ValueError(f"env_backend {env_cfg.env_backend} not supported")
     else:
         raise ValueError(f"env_type {env_type} not supported")
 
@@ -66,6 +68,6 @@ if importlib.util.find_spec("jaxmarl") is not None:
     __all__.extend(["create_mabrax_env", "create_wrapped_mabrax_env"])
 
 if importlib.util.find_spec("envpool") is not None:
-    from .envpool import creat_gym_env
+    from .envpool import create_envpool_gym_env
 
-    __all__.extend(["creat_gym_env"])
+    __all__.extend(["create_envpool_gym_env"])

@@ -9,8 +9,6 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import numpy as np
-from envpool.python.protocol import EnvPool
-from jax.experimental import io_callback
 
 from evorl.types import Action, PyTreeDict
 
@@ -32,34 +30,91 @@ def _to_numpy(x):
     return jtu.tree_map(lambda x: np.asarray(x), x)
 
 
-class GymAdapter(EnvAdapter):
-    """Adapter for EnvPool to support gym(>=0.26.2) and gymnasium environments."""
+def _reshape_batch_dims(x, batch_shape, num_envs):
+    new_shape = batch_shape + (num_envs,) + x.shape[1:]
+    return jtu.tree_map(lambda x: jnp.reshape(x, new_shape), x)
+
+
+class EnvPoolAdapter(EnvAdapter):
+    """Adapter for EnvPool to support EnvPool environments.
+
+    By default, it is already a vectorized environment.
+    """
 
     # TODO: multi-device support
 
-    def __init__(self, env: EnvPool):
-        super().__init__(env)
-        self.num_envs = env.config["num_envs"]
+    def __init__(self, env_name, env_backend, episode_length, num_envs, **env_specs):
+        super().__init__(env=None)
+        # self.num_envs = env.config["num_envs"]
 
-        reset_spec = _to_jax_spec(self.env.reset())
+        self.env_name = env_name
+        self.env_backend = env_backend
+        self.episode_length = episode_length
+        self.num_envs = num_envs
+        self.env_specs = env_specs
 
-        dummy_action = self.env.action_space.sample()
+        def _create_env(num_envs):
+            if self.env_backend == "gymnasium":
+                env = envpool.make_gymnasium(
+                    self.env_name,
+                    num_envs=num_envs,
+                    max_episode_steps=episode_length,
+                    **env_specs,
+                )
+            elif self.env_backend == "gym":
+                env = envpool.make_gym(
+                    env_name,
+                    num_envs=num_envs,
+                    max_episode_steps=episode_length,
+                    **env_specs,
+                )
+            else:
+                raise ValueError(f"Unsupported env_backend: {self.env_backend}")
+
+            return env
+
+        dummy_env = _create_env(self.num_envs)
+
+        reset_spec = _to_jax_spec(dummy_env.reset())
+
+        dummy_action = dummy_env.action_space.sample()
         dummy_actions = np.broadcast_to(
             dummy_action, (self.num_envs,) + dummy_action.shape
         )
-        step_spec = _to_jax_spec(self.env.step(dummy_actions))
+        step_spec = _to_jax_spec(dummy_env.step(dummy_actions))
 
-        def _reset():
-            return self.env.reset()
+        def _reset(key):
+            batch_shape = key.shape[:-1]
+            num_envs = jnp.prod(batch_shape) * self.num_envs
+            if self.env is None:
+                self.env = _create_env(num_envs)
 
-        def _step(action):
-            return self.env.step(np.asarray(action))
+            assert self.env.config["num_envs"] == num_envs
 
-        self._reset = partial(io_callback, _reset, reset_spec)
-        self._step = partial(io_callback, _step, step_spec)
+            # Note: ret will auto convert to jax array
+            return _reshape_batch_dims(self.env.reset(), batch_shape, self.num_envs)
+
+        def _step(actions):
+            # [B1, ..., Bn, #envs]
+            batch_shape = actions.shape[: -len(self.action_space.shape)]
+
+            # [B1, ..., Bn, #envs, *] -> [B1*...*Bn*#envs, *]
+            actions = jax.lax.collapse(actions, 0, len(batch_shape) + 1)
+
+            # Note: ret will auto convert to jax array
+            return _reshape_batch_dims(
+                self.env.step(np.asarray(actions)), batch_shape, self.num_envs
+            )
+
+        self._reset = partial(
+            jax.pure_callback, _reset, reset_spec, vmap_method="expand_dims"
+        )
+        self._step = partial(
+            jax.pure_callback, _step, step_spec, vmap_method="expand_dims"
+        )
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        obs, info = _to_jax(self._reset())
+        obs, _info = _to_jax(self._reset(key))
 
         # Note: we drop the original info as they are not static
 
@@ -81,11 +136,7 @@ class GymAdapter(EnvAdapter):
     def step(self, state: EnvState, action: Action) -> EnvState:
         episode_return = state.info.episode_return * (1 - state.done)
 
-        obs, reward, termination, truncation, info = _to_jax(
-            self._step(
-                action,
-            )
-        )
+        obs, reward, termination, truncation, info = _to_jax(self._step(action))
 
         reward = reward.astype(jnp.float32)
         done = (jnp.logical_or(termination, truncation)).astype(jnp.float32)
@@ -150,19 +201,19 @@ def gym_space_to_evorl_space(space: gymnasium.Space | gym.Space) -> Space:
         raise NotImplementedError(f"Unsupported space type: {type(space)}")
 
 
-def creat_gym_env(
+def create_envpool_gym_env(
     env_name,
-    gymnasium_env=True,
+    env_backend: str = "gymnasium",
     episode_length: int = 1000,
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
     **kwargs,
-) -> GymAdapter:
+) -> EnvPoolAdapter:
     """Create a gym env based on EnvPool.
 
     Tips:
 
-    1. unlike other jax-based env, most wrappers are handled in envpool.
+    1. Unlike other jax-based env, most wrappers are handled inside the envpool.
     2. Don't use the env with vmap, eg: vmap(env.step), this could cause undefined behavior.
     """
     if autoreset_mode not in [AutoresetMode.ENVPOOL, AutoresetMode.DISABLED]:
@@ -170,16 +221,13 @@ def creat_gym_env(
             "Only AutoresetMode.ENVPOOL and AutoresetMode.DISABLED are supported for envpool based env."
         )
 
-    if gymnasium_env:
-        env = envpool.make_gymnasium(
-            env_name, num_envs=parallel, max_episode_steps=episode_length, **kwargs
-        )
-    else:
-        env = envpool.make_gym(
-            env_name, num_envs=parallel, max_episode_steps=episode_length, **kwargs
-        )
-
-    env = GymAdapter(env)
+    env = EnvPoolAdapter(
+        env_name=env_name,
+        env_backend=env_backend,
+        episode_length=episode_length,
+        num_envs=parallel,
+        **kwargs,
+    )
 
     if autoreset_mode == AutoresetMode.DISABLED:
         env = OneEpisodeWrapper(env)

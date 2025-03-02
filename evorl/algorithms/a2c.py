@@ -248,8 +248,7 @@ class A2CWorkflow(OnPolicyWorkflow):
         max_episode_steps = config.env.max_episode_steps
 
         env = create_env(
-            config.env.env_name,
-            config.env.env_type,
+            config.env,
             episode_length=max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.ENVPOOL,
@@ -275,8 +274,7 @@ class A2CWorkflow(OnPolicyWorkflow):
             optimizer = optax.adam(config.optimizer.lr)
 
         eval_env = create_env(
-            config.env.env_name,
-            config.env.env_type,
+            config.env,
             episode_length=max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,

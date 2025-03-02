@@ -140,8 +140,7 @@ class PBTWorkflowBase(Workflow):
         target_workflow.devices = devices
 
         eval_env = create_env(
-            config.env.env_name,
-            config.env.env_type,
+            config.env,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,

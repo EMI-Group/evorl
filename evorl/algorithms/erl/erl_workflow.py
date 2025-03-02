@@ -171,8 +171,7 @@ class ERLWorkflowBase(Workflow):
 
         # We need a separate autoreset env to fill the replay buffer
         env = create_env(
-            config.env.env_name,
-            config.env.env_type,
+            config.env,
             episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.NORMAL,
