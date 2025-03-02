@@ -95,3 +95,10 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 html_theme = "furo"
 # html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
+
+html_theme_options = {
+    "light_logo": "evox_logo_light.png",
+    "dark_logo": "evox_logo_dark.png",
+}
+
+html_favicon = "_static/favicon-32x32.ico"
