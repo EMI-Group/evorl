@@ -55,6 +55,21 @@ class Workflow(AbstractWorkflow):
         self.checkpoint_manager = setup_checkpoint_manager(config)
 ```
 
+```python
+class ReplayBufferState(PyTreeData):
+    """Contains data related to a replay buffer.
+
+    Attributes:
+        data: the stored replay buffer data.
+        current_index: the pointer used for adding data.
+        buffer_size: the current size of the replay buffer.
+    """
+
+    data: chex.ArrayTree
+    current_index: chex.Array = jnp.zeros((), jnp.int32)
+    buffer_size: chex.Array = jnp.zeros((), jnp.int32)
+```
+
 Developers do not need to worry about whether the submitted code satisfy the above code style. Before submitting any commit, the `pre-commit` will raise warning or errors to remind you what is wrong. Besides, developers can manually execute this process by running
 
 ```shell
