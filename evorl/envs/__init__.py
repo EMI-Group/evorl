@@ -28,7 +28,7 @@ def create_env(env_cfg, **kwargs):
         env = create_wrapped_mabrax_env(env_name, **kwargs)
     elif env_type == "envpool":
         if env_cfg.env_backend in ["gym", "gymnasium"]:
-            env = create_envpool_gym_env(
+            env = create_envpool_env(
                 env_name, env_backend=env_cfg.env_backend, **kwargs
             )
         else:
@@ -68,6 +68,6 @@ if importlib.util.find_spec("jaxmarl") is not None:
     __all__.extend(["create_mabrax_env", "create_wrapped_mabrax_env"])
 
 if importlib.util.find_spec("envpool") is not None:
-    from .envpool import create_envpool_gym_env
+    from .envpool import create_envpool_env
 
-    __all__.extend(["create_envpool_gym_env"])
+    __all__.extend(["create_envpool_env"])
