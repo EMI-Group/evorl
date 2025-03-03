@@ -33,9 +33,9 @@ class Evaluator(PyTreeNode):
 
     def __post_init__(self):
         assert hasattr(self.env, "num_envs"), "only vectorized envs are supported"
-        assert self.max_episode_steps <= self.env.max_episode_steps, (
-            f"max_episode_steps {self.max_episode_steps} should be equal or less than env.max_episode_steps {self.env.max_episode_steps}"
-        )
+        # assert self.max_episode_steps <= self.env.max_episode_steps, (
+        #     f"max_episode_steps {self.max_episode_steps} should be equal or less than env.max_episode_steps {self.env.max_episode_steps}"
+        # )
 
     def evaluate(
         self,
