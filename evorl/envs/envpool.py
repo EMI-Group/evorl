@@ -33,7 +33,7 @@ def _reshape_batch_dims(pytree, batch_shape):
     return jtu.tree_map(lambda x: jnp.reshape(x, batch_shape + x.shape[1:]), pytree)
 
 
-class EnvPoolAdapter(EnvAdapter):
+class EnvPoolGymAdapter(EnvAdapter):
     """Adapter for EnvPool to support EnvPool environments.
 
     This env already is a vectorized environment and has experimental supports. It is not recommended to direcly replace other jax-based envs with this env in EvoRL's existing workflows. Users should carefully check the compatibility and modify the corresponding code to avoid the side-effects and other undefined behaviors.
@@ -170,6 +170,7 @@ class EnvPoolAdapter(EnvAdapter):
         return gym_space_to_evorl_space(self.env.observation_space)
 
 
+# TODO: EnvPoolDMAdapter
 class OneEpisodeWrapper(Wrapper):
     """Vectorized one-episode wrapper for evaluation."""
 
@@ -209,14 +210,14 @@ def gym_space_to_evorl_space(space: gymnasium.Space | gym.Space) -> Space:
         raise NotImplementedError(f"Unsupported space type: {type(space)}")
 
 
-def create_envpool_gym_env(
+def create_envpool_env(
     env_name,
     env_backend: str = "gymnasium",
     episode_length: int = 1000,
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
     **kwargs,
-) -> EnvPoolAdapter:
+) -> EnvPoolGymAdapter:
     """Create a gym env based on EnvPool.
 
     Tips:
@@ -230,13 +231,16 @@ def create_envpool_gym_env(
         )
         autoreset_mode = AutoresetMode.ENVPOOL
 
-    env = EnvPoolAdapter(
-        env_name=env_name,
-        env_backend=env_backend,
-        episode_length=episode_length,
-        num_envs=parallel,
-        **kwargs,
-    )
+    if env_backend in ["gym", "gymnasium"]:
+        env = EnvPoolGymAdapter(
+            env_name=env_name,
+            env_backend=env_backend,
+            episode_length=episode_length,
+            num_envs=parallel,
+            **kwargs,
+        )
+    else:
+        raise ValueError(f"env_backend {env_backend} not supported")
 
     if autoreset_mode == AutoresetMode.DISABLED:
         env = OneEpisodeWrapper(env)
