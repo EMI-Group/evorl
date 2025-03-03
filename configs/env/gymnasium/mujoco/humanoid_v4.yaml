@@ -1,0 +1,3 @@
+env_type: gymnasium
+env_name: Humanoid-v4
+max_episode_steps: 1000
