@@ -99,10 +99,10 @@ def rollout(
 ) -> tuple[SampleBatch, EnvState]:
     """Collect trajectories with length of `rollout_length`.
 
-    This method is used for collecting trajectories from envs with autoreset. The returned sequential trajactory data could contains segments from multiple episodes.
+    This method is a general rollout method used for collecting trajectories from a vectorized env. When the env enables autoreset, the returned sequential trajactory data could contain segments from multiple episodes.
 
     Args:
-        env_fn: `step` function of a vmapped env with autoreset.
+        env_fn: `step` function of a vmapped env.
         action_fn: The agent's action function. Eg: `agent.compute_actions`.
         env_state: State of the environment.
         agent_state: State of the agent.
@@ -151,10 +151,7 @@ def eval_rollout_episode(
 ) -> tuple[SampleBatch, EnvState]:
     """Evaulate a batch of episodic trajectories.
 
-    This method is used for collecting trajectories
-
-    It avoids unnecessary calls of `env_step()` when all environments are done. However, the agent's action function will still be called after that.
-    When the function is wrapped by `jax.vmap()`, this mechanism will not work.
+    It avoids unnecessary calls of `env_step()` when all environments are done. However, the agent's action function will still be called after that. When the function is wrapped by `jax.vmap()`, this mechanism will not work.
 
     Args:
         env_fn: `step` function of a vmapped env without autoreset.
@@ -211,7 +208,7 @@ def fast_eval_rollout_episode(
 ) -> tuple[PyTreeDict, EnvState]:
     """Fast evaulate a batch of episodic trajectories.
 
-    A even faster implementation than `eval_rollout_episode()`. It achieves early termination when it is not wrapped by `jax.vmap()`. Besides, this method does not collect the trajectory data, it only returns the aggregated metrics dict with keys (episode_returns, episode_lengths), which is useful in cases like evaluation.
+    A even faster implementation than `eval_rollout_episode()`. It achieves early termination when it is not wrapped by `jax.vmap()`. However, this method does not collect the trajectory data, it only returns the aggregated metrics dict with keys (episode_returns, episode_lengths), which is useful in cases like evaluation.
 
     Args:
         env_fn: `step` function of a vmapped env without autoreset.

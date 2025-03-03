@@ -7,7 +7,7 @@ import jax
 from evorl.agent import AgentState
 from evorl.envs import Env
 from evorl.metrics import EvaluateMetric
-from evorl.rollout import eval_rollout_episode, fast_eval_rollout_episode
+from evorl.rollout import rollout, fast_eval_rollout_episode
 from evorl.types import PyTreeNode, pytree_field
 from evorl.agent import AgentActionFn
 from evorl.utils.jax_utils import rng_split
@@ -17,7 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 class Evaluator(PyTreeNode):
-    """Evaluate the agent in the environments."""
+    """Evaluate the agent in the environments.
+
+    Attributes:
+        env: Vectorized environment w/o autoreset.
+        action_fn: The agent action function.
+        max_episode_steps: The maximum number of steps in an episode.
+        discount: The discount factor.
+    """
 
     env: Env = pytree_field(static=True)
     action_fn: AgentActionFn = pytree_field(static=True)
@@ -25,7 +32,10 @@ class Evaluator(PyTreeNode):
     discount: float = pytree_field(default=1.0, static=True)
 
     def __post_init__(self):
-        assert hasattr(self.env, "num_envs"), "only parrallel envs are supported"
+        assert hasattr(self.env, "num_envs"), "only vectorized envs are supported"
+        assert self.max_episode_steps <= self.env.max_episode_steps, (
+            f"max_episode_steps {self.max_episode_steps} should be equal or less than env.max_episode_steps {self.env.max_episode_steps}"
+        )
 
     def evaluate(
         self,
@@ -70,7 +80,7 @@ class Evaluator(PyTreeNode):
                 episode_returns = episode_metrics.episode_returns
                 episode_lengths = episode_metrics.episode_lengths
             else:
-                episode_trajectory, env_state = eval_rollout_episode(
+                episode_trajectory, env_state = rollout(
                     env_step_fn,
                     action_fn,
                     env_state,
@@ -81,6 +91,7 @@ class Evaluator(PyTreeNode):
 
                 # Note: be careful when self.max_episode_steps < env.max_episode_steps,
                 # where dones could all be zeros.
+                # compute_discount_return & compute_episode_length are fine!
                 episode_returns = compute_discount_return(
                     episode_trajectory.rewards, episode_trajectory.dones, self.discount
                 )

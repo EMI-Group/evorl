@@ -45,6 +45,9 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
     def _get_pop_center(self, state: State) -> AgentState:
         raise NotImplementedError
 
+    def _record_callback(self, state: State, iters: int) -> None:
+        pass
+
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         """Evaluate the policy with the mean of ES."""
         key, eval_key = jax.random.split(state.key, num=2)
@@ -62,9 +65,6 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
         return eval_metrics, state.replace(key=key)
-
-    def _record_callback(self, state: State, iters: int) -> None:
-        pass
 
     def learn(self, state: State) -> State:
         start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)

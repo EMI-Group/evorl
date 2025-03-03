@@ -36,7 +36,15 @@ def _reshape_batch_dims(pytree, batch_shape):
 class EnvPoolAdapter(EnvAdapter):
     """Adapter for EnvPool to support EnvPool environments.
 
-    By default, it is already a vectorized environment.
+    This env already is a vectorized environment and has experimental supports. It is not recommended to direcly replace other jax-based envs with this env in EvoRL's existing workflows. Users should carefully check the compatibility and modify the corresponding code to avoid the side-effects and other undefined behaviors.
+
+    :::{caution}
+    This env breaks the rule of pure functions. Its env state is maintained inside the envpool. Thesefore, users should use it with caution. Unlike other jax-based envs, this env has following limitations:
+
+    - No support for recovering from previous env state.
+        - In other word, you can't rewind after calling `env.step`.
+        - For example, you can't resume the training from a checkpoint exactly as before; Similarly, `evorl.rollout.eval_rollout_episode` will also result in undefined behavior.
+    :::
     """
 
     # TODO: multi-device support
@@ -163,7 +171,7 @@ class EnvPoolAdapter(EnvAdapter):
 
 
 class OneEpisodeWrapper(Wrapper):
-    """Vectorized one episode wrapper for evaluation."""
+    """Vectorized one-episode wrapper for evaluation."""
 
     def __init__(self, env: Env):
         super().__init__(env)
