@@ -13,16 +13,13 @@ from .recorder import Recorder
 class WandbRecorder(Recorder):
     """Recorder for Weights & Biases."""
 
-    def __init__(
-        self, *, project, name, config, tags, path, mode="disabled", **wandb_kwargs
-    ):
+    def __init__(self, *, project, name, config, tags, path, **wandb_kwargs):
         self.wandb_kwargs = {
             "project": project,
             "name": name,
             "config": config,
             "tags": tags,
             "dir": path,
-            "mode": mode,
             **wandb_kwargs,
         }
 
