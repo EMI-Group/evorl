@@ -5,10 +5,10 @@ from .env import Env, EnvState, EnvStepFn, EnvResetFn
 from .multi_agent_env import MultiAgentEnv
 from .wrappers.training_wrapper import AutoresetMode
 from .brax import create_brax_env, create_wrapped_brax_env
+from .gymnasium import create_gymnasium_env
 
 
-# TODO: unifiy env creator
-def create_env(env_cfg, **kwargs):
+def create_env(env_cfg, **kwargs) -> Env:
     """Unified env creator.
 
     Args:
@@ -18,23 +18,26 @@ def create_env(env_cfg, **kwargs):
     env_type = env_cfg.env_type
     env_name = env_cfg.env_name
 
-    if env_type == "brax":
-        env = create_wrapped_brax_env(env_name, **kwargs)
-    elif env_type == "gymnax":
-        env = create_wrapped_gymnax_env(env_name, **kwargs)
-    elif env_type == "jumanji":
-        env = create_jumanji_env(env_name, **kwargs)
-    elif env_type == "jaxmarl":
-        env = create_wrapped_mabrax_env(env_name, **kwargs)
-    elif env_type == "envpool":
-        if env_cfg.env_backend in ["gym", "gymnasium"]:
-            env = create_envpool_env(
-                env_name, env_backend=env_cfg.env_backend, **kwargs
-            )
-        else:
-            raise ValueError(f"env_backend {env_cfg.env_backend} not supported")
-    else:
-        raise ValueError(f"env_type {env_type} not supported")
+    match env_type:
+        case "brax":
+            env = create_wrapped_brax_env(env_name, **kwargs)
+        case "gymnax":
+            env = create_wrapped_gymnax_env(env_name, **kwargs)
+        case "jumanji":
+            env = create_jumanji_env(env_name, **kwargs)
+        case "jaxmarl":
+            env = create_mabrax_env(env_name, **kwargs)
+        case "envpool":
+            if env_cfg.env_backend in ["gym", "gymnasium"]:
+                env = create_envpool_env(
+                    env_name, env_backend=env_cfg.env_backend, **kwargs
+                )
+            else:
+                raise ValueError(f"env_backend {env_cfg.env_backend} not supported")
+        case "gymnasium":
+            env = create_gymnasium_env(env_name, **kwargs)
+        case _:
+            raise ValueError(f"env_type {env_type} not supported")
 
     return env
 
@@ -50,6 +53,7 @@ __all__ = [
     "create_env",
     "create_brax_env",
     "create_wrapped_brax_env",
+    "create_gymnasium_env",
 ]
 
 if importlib.util.find_spec("gymnax") is not None:

@@ -49,15 +49,12 @@ class EnvPoolGymAdapter(EnvAdapter):
 
     # TODO: multi-device support
 
-    def __init__(self, env_name, env_backend, episode_length, num_envs, **env_specs):
-        super().__init__(env=None)
-        # self.num_envs = env.config["num_envs"]
-
+    def __init__(self, env_name, env_backend, episode_length, num_envs, **env_kwargs):
         self.env_name = env_name
         self.env_backend = env_backend
         self.episode_length = episode_length
         self.num_envs = num_envs
-        self.env_specs = env_specs
+        self.env_kwargs = env_kwargs
 
         def _create_env(_num_envs):
             if self.env_backend == "gymnasium":
@@ -65,14 +62,14 @@ class EnvPoolGymAdapter(EnvAdapter):
                     self.env_name,
                     num_envs=_num_envs,
                     max_episode_steps=episode_length,
-                    **env_specs,
+                    **env_kwargs,
                 )
             elif self.env_backend == "gym":
                 env = envpool.make_gym(
                     self.env_name,
                     num_envs=_num_envs,
                     max_episode_steps=episode_length,
-                    **env_specs,
+                    **env_kwargs,
                 )
             else:
                 raise ValueError(f"Unsupported env_backend: {self.env_backend}")
