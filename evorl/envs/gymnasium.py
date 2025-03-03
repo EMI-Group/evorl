@@ -211,10 +211,11 @@ def create_gymnasium_env(
 ) -> GymnasiumAdapter:
     """Create a gym env based on Gymnasium.
 
-    Tips:
-
+    :::{tip}
     1. Unlike other jax-based env, most wrappers are handled inside the gymnasium.
     2. Don't use the env with vmap, eg: vmap(env.step), this could cause undefined behavior.
+    3. When use AutoresetMode.NORMAL, we don't provide the option of `record_ori_obs` as in Jax-based envs. Therefore, the real final obs at the end of the episode is not recorded. Please read gymnasium's [`AutoresetMode`](https://farama.org/Vector-Autoreset-Mode) for more details.
+    :::
     """
     match autoreset_mode:
         case AutoresetMode.FAST:
