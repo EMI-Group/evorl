@@ -21,7 +21,7 @@ By default, `pip install evorl` will automatically install environments on `brax
 
 ```shell
 # EnvPool Envs:
-pip install envpool
+pip install envpool "numpy<2.0.0"
 # Jumanji Envs:
 pip install jumanji
 # JaxMARL Envs:
