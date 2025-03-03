@@ -19,7 +19,6 @@ def env_step(
     agent_state: AgentState,  # readonly
     key: chex.PRNGKey,
 ) -> tuple[SampleBatch, EnvState]:
-    """Collect one-step data."""
     # sample_batch: [#envs, ...]
     sample_batch = SampleBatch(obs=env_state.obs)
 
@@ -44,18 +43,6 @@ def rollout(
     rollout_length: int,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
-    """Collect given rollout_length trajectory.
-
-    Note: when use jax.jit, use: jax.jit(partial(rollout, env, agent))
-
-    Args:
-        env: vmapped env w/ autoreset
-
-    Returns:
-        trajectory: SampleBatch [T, B, ...], T=rollout_length, B=#envs
-        env_state: Last env_state after rollout
-    """
-
     def _one_step_rollout(carry, unused_t):
         env_state, current_key = carry
         next_key, current_key = rng_split(current_key, 2)

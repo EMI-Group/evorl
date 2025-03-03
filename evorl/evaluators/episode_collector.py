@@ -22,7 +22,14 @@ logger = logging.getLogger(__name__)
 class EpisodeCollector(PyTreeNode):
     """Evaluate and return eval metrics and episodic trajectory.
 
-    Like `Evaluator`, but also returns the trajectories. When evaluating the agent, call `rollout()`.
+    EpisodeCollector is similar as `Evaluator`, but it also returns the trajectories. When evaluating the agent, call `rollout()`.
+
+    Attributes:
+        env: Vectorized environment w/o autoreset.
+        action_fn: The agent action function.
+        max_episode_steps: The maximum number of steps in an episode.
+        env_extra_fields: The extra fields to collect from the environment.
+        discount: The discount factor.
     """
 
     env: Env
