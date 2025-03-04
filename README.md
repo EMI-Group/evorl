@@ -148,17 +148,22 @@ Currently, EvoRL supports 4 types of algorithms
 
 # RL Environments
 
-By default, `pip install evorl` will automatically install environments on `brax` and `gymnasium`. If you want to use other supported environments, please install the additional environment packages. For example:
+By default, `pip install evorl` will automatically install environments on `brax`. If you want to use other supported environments, please install the additional environment packages. For example:
 
 ```shell
+# ===== GPU-accelerated Environments =====
 # gymnax Envs:
 pip install gymnax
-# EnvPool Envs:
-pip install envpool "numpy<2.0.0"
 # Jumanji Envs:
 pip install jumanji
 # JaxMARL Envs:
 pip install jaxmarl
+
+# ===== CPU-based Environments =====
+# EnvPool Envs: (also require py<3.12)
+pip install envpool "numpy<2.0.0"
+# Gymnasium Envs:
+pip install "gymnasium[atari,mujoco,classic-control,box2d]>=1.1.0"
 ```
 
 > [!WARNING]

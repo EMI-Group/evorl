@@ -70,10 +70,10 @@ class EpisodeWrapper(Wrapper):
             # reset the episode_return when the episode is done
             episode_return = state.info.episode_return * (1 - prev_done)
 
-        # ==============
+        # ============== pre update ==============
         state = self.env.step(state, action)
 
-        # ============== post update =========
+        # ============== post update ==============
         steps = steps + 1
 
         done = jnp.where(
@@ -347,18 +347,18 @@ class VmapEnvPoolAutoResetWrapper(Wrapper):
     def step(self, state: EnvState, action: jax.Array) -> EnvState:
         autoreset = state.done  # i.e. prev_done
 
-        def _where_done(x, y):
-            done = autoreset
-            if done.ndim > 0:
-                done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))
-            return jnp.where(done, x, y)
+        def _where_autoreset(x, y):
+            # where prev_done
+            if autoreset.ndim > 0:
+                cond = jnp.reshape(autoreset, [x.shape[0]] + [1] * (len(x.shape) - 1))
+            return jnp.where(cond, x, y)
 
         reset_state = self.reset(state._internal.reset_key)
         new_state = jax.vmap(self.env.step)(state, action)
         new_state.info.autoreset = autoreset
 
         state = jtu.tree_map(
-            _where_done,
+            _where_autoreset,
             reset_state,
             new_state,
         )

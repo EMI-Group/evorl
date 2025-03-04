@@ -100,7 +100,7 @@ def create_wrapped_brax_env(
         parallel: Number of parallel environments.
         autoreset_mode: Autoreset mode.
         discount: Discount factor.
-        record_ori_obs: Whether record original observation.
+        record_ori_obs: Whether record original observation in AutoresetMode.NORMAL and AutoresetMode.FAST mode.
         kwargs: Other arguments passing into Brax.
 
     Returns:
