@@ -49,26 +49,36 @@ class EnvPoolGymAdapter(EnvAdapter):
 
     # TODO: multi-device support
 
-    def __init__(self, env_name, env_backend, episode_length, num_envs, **env_kwargs):
+    def __init__(
+        self,
+        env_name: str,
+        env_backend: str,
+        max_episode_steps: int,
+        num_envs: int,
+        discount: float | None = None,
+        **env_kwargs,
+    ):
         self.env_name = env_name
         self.env_backend = env_backend
-        self.episode_length = episode_length
+        self.max_episode_steps = max_episode_steps
         self.num_envs = num_envs
+        self.record_episode_return = discount is not None
+        self.discount = discount
         self.env_kwargs = env_kwargs
 
-        def _create_env(_num_envs):
+        def _env_fn(_num_envs):
             if self.env_backend == "gymnasium":
                 env = envpool.make_gymnasium(
                     self.env_name,
                     num_envs=_num_envs,
-                    max_episode_steps=episode_length,
+                    max_episode_steps=max_episode_steps,
                     **env_kwargs,
                 )
             elif self.env_backend == "gym":
                 env = envpool.make_gym(
                     self.env_name,
                     num_envs=_num_envs,
-                    max_episode_steps=episode_length,
+                    max_episode_steps=max_episode_steps,
                     **env_kwargs,
                 )
             else:
@@ -76,29 +86,41 @@ class EnvPoolGymAdapter(EnvAdapter):
 
             return env
 
-        self.env = _create_env(self.num_envs)
+        self._env_fn = _env_fn
+        self.env = _env_fn(self.num_envs)
 
-        reset_spec = _to_jax_spec(self.env.reset()[0])
+        self.setup_env_callback()
+
+    def setup_env_callback(self):
+        dummy_obs, _ = self.env.reset()
+        # define your own dummy reset info
+        dummy_reset_info = PyTreeDict()
+        reset_spec = _to_jax_spec((dummy_obs, dummy_reset_info))
+
         dummy_action = self.env.action_space.sample()
         dummy_actions = np.broadcast_to(
             dummy_action, (self.num_envs,) + dummy_action.shape
         )
-        step_spec = _to_jax_spec(self.env.step(dummy_actions))
+        # define your own dummy step info
+        dummy_step_info = PyTreeDict()
+        step_spec = _to_jax_spec(self.env.step(dummy_actions)[:-1] + (dummy_step_info,))
 
         def _reset(key):
             batch_shape = key.shape[:-1]
             num_envs = math.prod(batch_shape) * self.num_envs
 
-            self.env = _create_env(num_envs)
+            self.env = self._env_fn(num_envs)
 
             assert self.env.config["num_envs"] == num_envs
 
-            obs, info = _reshape_batch_dims(
+            obs, _info = _reshape_batch_dims(
                 self.env.reset(), batch_shape + (self.num_envs,)
             )
 
-            # Note: we drop the original info dict as they do not have static shape.
-            return obs
+            # drop the original info dict as they do not have static shape.
+            info = PyTreeDict()
+
+            return obs, info
 
         def _step(actions):
             # Note: we are not sure if self.env is always updated by _reset in JIT mode.
@@ -109,7 +131,16 @@ class EnvPoolGymAdapter(EnvAdapter):
             # [B1, ..., Bn, #envs, *] -> [B1*...*Bn*#envs, *]
             actions = jax.lax.collapse(actions, 0, len(batch_shape))
 
-            return _reshape_batch_dims(self.env.step(np.asarray(actions)), batch_shape)
+            obs, reward, termination, truncation, _info = self.env.step(
+                np.asarray(actions)
+            )
+
+            # drop the original info dict as they do not have static shape.
+            info = PyTreeDict()
+
+            return _reshape_batch_dims(
+                (obs, reward, termination, truncation, info), batch_shape
+            )
 
         # You are entring the dangerous zone!!!
         # _reset and _step are not pure functions. Use with caution.
@@ -121,14 +152,16 @@ class EnvPoolGymAdapter(EnvAdapter):
         )
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        obs = _to_jax(self._reset(key))
+        obs, info = _to_jax(self._reset(key))
 
-        info = PyTreeDict(
-            termination=jnp.zeros((self.num_envs,)),
-            truncation=jnp.zeros((self.num_envs,)),
-            episode_return=jnp.zeros((self.num_envs,)),
-            autoreset=jnp.zeros((self.num_envs,)),
-        )
+        info.steps = jnp.zeros((self.num_envs,), dtype=jnp.int32)
+        info.termination = jnp.zeros((self.num_envs,))
+        info.truncation = jnp.zeros((self.num_envs,))
+        info.episode_return = jnp.zeros((self.num_envs,))
+        info.autoreset = jnp.zeros((self.num_envs,))
+
+        if self.record_episode_return:
+            info.episode_return = jnp.zeros((self.num_envs,))
 
         return EnvState(
             env_state=None,
@@ -139,22 +172,25 @@ class EnvPoolGymAdapter(EnvAdapter):
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        episode_return = state.info.episode_return * (1 - state.done)
+        autorest = state.done  # True = this step is the reset() step
 
         obs, reward, termination, truncation, info = _to_jax(self._step(action))
 
         reward = reward.astype(jnp.float32)
         done = (jnp.logical_or(termination, truncation)).astype(jnp.float32)
 
-        # when autoreset happens (indicated by prev_done)
-        # we add a new field `autoreset` to mark invalid transition for the additional reset() step in envpool.
-        # use it in q-learning based algorithms
-        info = state.info.replace(
-            termination=termination.astype(jnp.float32),
-            truncation=truncation.astype(jnp.float32),
-            episode_return=episode_return + reward,
-            autoreset=state.done,  # prev_done
-        )
+        info.steps = (state.info.steps + 1) * (1 - autorest).astype(jnp.int32)
+        info.termination = termination.astype(jnp.float32)
+        info.truncation = truncation.astype(jnp.float32)
+        info.autoreset = autorest  # prev_done
+
+        if self.record_episode_return:
+            episode_return = state.info.episode_return
+            if self.discount == 1.0:
+                episode_return += reward
+            else:
+                episode_return += jnp.power(self.discount, state.info.steps) * reward
+            info.episode_return = episode_return * (1 - autorest)
 
         return state.replace(obs=obs, reward=reward, done=done, info=info)
 
@@ -213,14 +249,12 @@ def create_envpool_env(
     episode_length: int = 1000,
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
+    discount: float = 1.0,
     **kwargs,
 ) -> EnvPoolGymAdapter:
     """Create a gym env based on EnvPool.
 
-    Tips:
-
-    1. Unlike other jax-based env, most wrappers are handled inside the envpool.
-    2. Don't use the env with vmap, eg: vmap(env.step), this could cause undefined behavior.
+    Unlike other jax-based env, most wrappers are handled inside the envpool.
     """
     if autoreset_mode in [AutoresetMode.NORMAL, AutoresetMode.FAST]:
         warnings.warn(
@@ -232,8 +266,10 @@ def create_envpool_env(
         env = EnvPoolGymAdapter(
             env_name=env_name,
             env_backend=env_backend,
-            episode_length=episode_length,
+            max_episode_steps=episode_length,
             num_envs=parallel,
+            record_episode_return=True,
+            discount=discount,
             **kwargs,
         )
     else:

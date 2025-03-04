@@ -49,48 +49,84 @@ class GymnasiumAdapter(EnvAdapter):
 
     # TODO: multi-device support
 
-    def __init__(self, env_name, episode_length, num_envs, vecenv_kwargs, **env_kwargs):
+    def __init__(
+        self,
+        env_name: str,
+        max_episode_steps: int,
+        num_envs: int,
+        record_ori_obs: bool = False,
+        discount: float | None = None,
+        vecenv_kwargs: dict | None = None,
+        **env_kwargs,
+    ):
         self.env_name = env_name
-        self.episode_length = episode_length
+        self.max_episode_steps = max_episode_steps
         self.num_envs = num_envs
+        self.record_episode_return = discount is not None
+        self.discount = discount
         self.vecenv_kwargs = vecenv_kwargs
         self.env_specs = env_kwargs
 
-        def _create_env(_num_envs):
+        def _env_fn(num_envs):
             env = gymnasium.make_vec(
                 self.env_name,
-                num_envs=_num_envs,
-                max_episode_steps=self.episode_length,
+                num_envs=num_envs,
+                max_episode_steps=self.max_episode_steps,
                 vectorization_mode=gymnasium.VectorizeMode.ASYNC,
-                vector_kwargs=self.env_specs,
+                vector_kwargs=self.vecenv_kwargs,
                 **self.env_specs,
             )
 
             return env
 
-        self.env = _create_env(self.num_envs)
+        self._env_fn = _env_fn
+        self.env = _env_fn(num_envs)
+        self.autoreset_mode = self.env.metadata["autoreset_mode"]
 
-        reset_spec = _to_jax_spec(self.env.reset()[0])
+        # only record the original observation in the SAME_STEP mode
+        self.record_ori_obs = (
+            record_ori_obs
+            and self.autoreset_mode == gymnasium.vector.AutoresetMode.SAME_STEP
+        )
+
+        self.setup_env_callback()
+
+    def setup_env_callback(self):
+        dummy_obs, _ = self.env.reset()
+        # define your own dummy reset info here
+        dummy_reset_info = PyTreeDict()
+        if self.record_ori_obs:
+            dummy_reset_info.ori_obs = dummy_obs
+        reset_spec = _to_jax_spec((dummy_obs, dummy_reset_info))
+
         dummy_action = self.env.single_action_space.sample()
         dummy_actions = np.broadcast_to(
             dummy_action, (self.num_envs,) + dummy_action.shape
         )
-        step_spec = _to_jax_spec(self.env.step(dummy_actions)[:-1])
+        # define your own dummy step info here
+        dummy_step_info = PyTreeDict()
+        if self.record_ori_obs:
+            dummy_step_info.ori_obs = dummy_obs
+
+        step_spec = _to_jax_spec(self.env.step(dummy_actions)[:-1] + (dummy_step_info,))
 
         def _reset(key):
             batch_shape = key.shape[:-1]
             num_envs = math.prod(batch_shape) * self.num_envs
 
-            self.env = _create_env(num_envs)
+            self.env = self._env_fn(num_envs)
 
             assert self.env.num_envs == num_envs
 
-            obs, info = _reshape_batch_dims(
+            obs, _info = _reshape_batch_dims(
                 self.env.reset(), batch_shape + (self.num_envs,)
             )
+            # drop the original info dict as they do not have static shape.
+            info = PyTreeDict()
+            if self.record_ori_obs:
+                info.ori_obs = jnp.zeros_like(obs)
 
-            # Note: we drop the original info dict as they do not have static shape.
-            return obs
+            return obs, info
 
         def _step(actions):
             # Note: we are not sure if self.env is always updated by _reset in JIT mode.
@@ -101,12 +137,28 @@ class GymnasiumAdapter(EnvAdapter):
             # [B1, ..., Bn, #envs, *] -> [B1*...*Bn*#envs, *]
             actions = jax.lax.collapse(actions, 0, len(batch_shape))
 
-            obs, reward, termination, truncation, info = self.env.step(
+            # [B1*...*Bn*#envs, *]
+            obs, reward, termination, truncation, _info = self.env.step(
                 np.asarray(actions)
             )
 
+            # drop the original info dict as they do not have static shape.
+            info = PyTreeDict()
+            if self.record_ori_obs:
+                ori_obs = obs.copy()
+                final_obs_list = _info.get("final_obs", None)
+                if final_obs_list is not None:
+                    valid_indices = np.array(
+                        [o is not None for o in final_obs_list]
+                    ).nonzero()[0]
+                    ori_obs[valid_indices] = np.stack(
+                        [final_obs_list[i] for i in valid_indices]
+                    )
+
+                info.ori_obs = ori_obs
+
             return _reshape_batch_dims(
-                (obs, reward, termination, truncation), batch_shape
+                (obs, reward, termination, truncation, info), batch_shape
             )
 
         # You are entring the dangerous zone!!!
@@ -119,14 +171,16 @@ class GymnasiumAdapter(EnvAdapter):
         )
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
-        obs = _to_jax(self._reset(key))
+        obs, info = _to_jax(self._reset(key))
 
-        info = PyTreeDict(
-            termination=jnp.zeros((self.num_envs,)),
-            truncation=jnp.zeros((self.num_envs,)),
-            episode_return=jnp.zeros((self.num_envs,)),
-            autoreset=jnp.zeros((self.num_envs,)),
-        )
+        info.steps = jnp.zeros((self.num_envs,), dtype=jnp.int32)
+        info.termination = jnp.zeros((self.num_envs,))
+        info.truncation = jnp.zeros((self.num_envs,))
+
+        if self.autoreset_mode == gymnasium.vector.AutoresetMode.NEXT_STEP:
+            info.autoreset = jnp.zeros((self.num_envs,))
+        if self.record_episode_return:
+            info.episode_return = jnp.zeros((self.num_envs,))
 
         return EnvState(
             env_state=None,
@@ -137,22 +191,61 @@ class GymnasiumAdapter(EnvAdapter):
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        episode_return = state.info.episode_return * (1 - state.done)
+        if self.autoreset_mode == gymnasium.vector.AutoresetMode.NEXT_STEP:
+            return self._envpool_autoreset_step(state, action)
+        elif self.autoreset_mode == gymnasium.vector.AutoresetMode.SAME_STEP:
+            return self._normal_autoreset_step(state, action)
+        else:
+            raise NotImplementedError(
+                f"Unsupported autoreset mode: {self.autoreset_mode}"
+            )
 
-        obs, reward, termination, truncation = _to_jax(self._step(action))
+    def _envpool_autoreset_step(self, state: EnvState, action: Action) -> EnvState:
+        """Step for Next-Step mode."""
+        autorest = state.done  # True = this step is the reset() step
+
+        obs, reward, termination, truncation, info = _to_jax(self._step(action))
 
         reward = reward.astype(jnp.float32)
-        done = (jnp.logical_or(termination, truncation)).astype(jnp.float32)
+        done = jnp.logical_or(termination, truncation).astype(jnp.float32)
 
-        # when autoreset happens (indicated by prev_done)
-        # we add a new field `autoreset` to mark invalid transition for the additional reset() step in gymnasium.
-        # use it in q-learning based algorithms
-        info = state.info.replace(
-            termination=termination.astype(jnp.float32),
-            truncation=truncation.astype(jnp.float32),
-            episode_return=episode_return + reward,
-            autoreset=state.done,  # prev_done
-        )
+        info.steps = (state.info.steps + 1) * (1 - autorest).astype(jnp.int32)
+        info.termination = termination.astype(jnp.float32)
+        info.truncation = truncation.astype(jnp.float32)
+        info.autoreset = autorest  # prev_done
+
+        if self.record_episode_return:
+            episode_return = state.info.episode_return
+            if self.discount == 1.0:
+                episode_return += reward
+            else:
+                episode_return += jnp.power(self.discount, state.info.steps) * reward
+            info.episode_return = episode_return * (1 - autorest)
+
+        return state.replace(obs=obs, reward=reward, done=done, info=info)
+
+    def _normal_autoreset_step(self, state: EnvState, action: Action) -> EnvState:
+        """Step for Same-Step mode."""
+        prev_done = state.done
+
+        steps = state.info.steps * (1 - prev_done).astype(jnp.int32)
+        if self.record_episode_return:
+            episode_return = state.info.episode_return * (1 - prev_done)
+
+        obs, reward, termination, truncation, info = _to_jax(self._step(action))
+        steps = steps + 1
+        reward = reward.astype(jnp.float32)
+        done = jnp.logical_or(termination, truncation).astype(jnp.float32)
+
+        info.steps = steps
+        info.termination = termination.astype(jnp.float32)
+        info.truncation = truncation.astype(jnp.float32)
+        if self.record_episode_return:
+            if self.discount == 1.0:
+                episode_return += reward
+            else:
+                episode_return += jnp.power(self.discount, steps - 1) * reward
+            info.episode_return = episode_return
 
         return state.replace(obs=obs, reward=reward, done=done, info=info)
 
@@ -207,23 +300,19 @@ def create_gymnasium_env(
     episode_length: int = 1000,
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
+    discount: float | None = 1.0,
+    record_ori_obs: bool = False,
     **kwargs,
 ) -> GymnasiumAdapter:
     """Create a gym env based on Gymnasium.
 
-    :::{tip}
-    1. Unlike other jax-based env, most wrappers are handled inside the gymnasium.
-    2. Don't use the env with vmap, eg: vmap(env.step), this could cause undefined behavior.
-    3. When use AutoresetMode.NORMAL, we don't provide the option of `record_ori_obs` as in Jax-based envs. Therefore, the real final obs at the end of the episode is not recorded. Please read gymnasium's [`AutoresetMode`](https://farama.org/Vector-Autoreset-Mode) for more details.
-    :::
+    Unlike other jax-based env, most wrappers are handled inside the gymnasium.
     """
     match autoreset_mode:
         case AutoresetMode.FAST:
             warnings.warn(
                 f"{autoreset_mode} is not supported for Gymnasium Envs. Fallback to AutoresetMode.NORMAL!",
             )
-            autoreset_mode = AutoresetMode.NORMAL
-
             gymnasium_autoreset_mode = gymnasium.vector.AutoresetMode.SAME_STEP
         case AutoresetMode.NORMAL:
             gymnasium_autoreset_mode = gymnasium.vector.AutoresetMode.SAME_STEP
@@ -233,15 +322,17 @@ def create_gymnasium_env(
     mp.get_start_method("spawn")
     vecenv_kwargs = dict(
         autoreset_mode=gymnasium_autoreset_mode,
-        context="spawn",  #
+        context="spawn",  # jax's os.fork() warning remains
     )
     if "vecenv_kwargs" in kwargs:
         vecenv_kwargs.update(kwargs.pop("vecenv_kwargs"))
 
     env = GymnasiumAdapter(
         env_name=env_name,
-        episode_length=episode_length,
+        max_episode_steps=episode_length,
         num_envs=parallel,
+        record_ori_obs=record_ori_obs,
+        discount=discount,
         vecenv_kwargs=vecenv_kwargs,
         **kwargs,
     )
