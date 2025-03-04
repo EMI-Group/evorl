@@ -51,7 +51,7 @@ EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learnin
 EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
 
 > [!NOTE]
-> Full Documentation is available at [Documentation](https://evorl.readthedocs.io/latest/).
+> Full Documentation is available at [Documentation](https://evorl.readthedocs.io/latest/), including detailed installation guide, use cases, and API references.
 
 > [!NOTE]
 > EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
