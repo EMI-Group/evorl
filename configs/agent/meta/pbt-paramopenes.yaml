@@ -37,7 +37,7 @@ target_workflow:
 # independent evaluation
 num_eval_envs: 128
 eval_episodes: 128
-eval_interval: 25
+eval_interval: 10000000 # default: disable independent evaluation
 
 checkpoint:
   save_interval_steps: 50

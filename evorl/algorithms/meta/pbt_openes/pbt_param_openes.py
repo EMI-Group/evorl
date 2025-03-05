@@ -2,9 +2,11 @@ import chex
 import jax
 
 from evorl.types import PyTreeDict, State
+from evorl.metrics import EvaluateMetric
 from evorl.utils.jax_utils import tree_deepcopy
+from evorl.distributed import shmap_vmap
 
-from ..pbt_workflow import PBTWorkflowTemplate, PBTOptState
+from ..pbt_workflow import PBTWorkflowTemplate, PBTOptState, PBTEvalMetric
 from ..pbt_utils import log_uniform_init
 
 
@@ -49,3 +51,40 @@ class PBTParamOpenESWorkflow(PBTWorkflowTemplate):
         )
 
         return workflow_state.replace(ec_opt_state=ec_opt_state)
+
+    def evaluate(self, state: State) -> State:
+        key, eval_key = jax.random.split(state.key, num=2)
+
+        def _evaluate(wf_state, key):
+            # eval pop-center
+            agent_state = self.workflow._get_pop_center(wf_state)
+
+            # [#episodes]
+            raw_eval_metrics = self.evaluator.evaluate(
+                agent_state, key, num_episodes=self.config.eval_episodes
+            )
+
+            eval_metrics = EvaluateMetric(
+                episode_returns=raw_eval_metrics.episode_returns.mean(),
+                episode_lengths=raw_eval_metrics.episode_lengths.mean(),
+            )
+            return eval_metrics
+
+        eval_fn = shmap_vmap(
+            _evaluate,
+            mesh=self.sharding.mesh,
+            in_specs=self.sharding.spec,
+            out_specs=self.sharding.spec,
+            check_rep=False,
+        )
+
+        pop_eval_metrics = eval_fn(
+            state.pop_workflow_state, jax.random.split(eval_key, self.config.pop_size)
+        )
+
+        eval_metrics = PBTEvalMetric(
+            pop_episode_returns=pop_eval_metrics.episode_returns,
+            pop_episode_lengths=pop_eval_metrics.episode_lengths,
+        )
+
+        return eval_metrics, state.replace(key=key)

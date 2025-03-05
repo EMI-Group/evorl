@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
-from evorl.types import State, Params, pytree_field, PyTreeDict
+from evorl.types import Params, pytree_field, PyTreeDict
 from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
@@ -19,7 +19,6 @@ from evorl.ec.optimizers.openes import compute_centered_ranks, OpenESState
 from evorl.ec.optimizers.utils import weight_sum
 
 from evorl.algorithms.ec.so.openes import OpenESWorkflow
-from evorl.algorithms.ec.obs_utils import init_obs_preprocessor
 from evorl.algorithms.ec.ec_agent import make_deterministic_ec_agent
 
 
@@ -184,48 +183,3 @@ class ParamOpenESWorkflow(OpenESWorkflow):
             evaluator=evaluator,
             agent_state_vmap_axes=agent_state_vmap_axes,
         )
-
-    def _setup_agent_and_optimizer(self, key: jax.Array) -> tuple[AgentState, ECState]:
-        agent_key, ec_key = jax.random.split(key)
-        agent_state = self.agent.init(
-            self.env.obs_space, self.env.action_space, agent_key
-        )
-
-        init_actor_params = agent_state.params.policy_params
-        ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
-
-        # remove params
-        agent_state = self._replace_actor_params(agent_state, params=None)
-
-        return agent_state, ec_opt_state
-
-    def _postsetup(self, state: State) -> State:
-        # setup obs_preprocessor_state
-        if self.config.normalize_obs:
-            key, obs_key = jax.random.split(state.key, 2)
-            agent_state = init_obs_preprocessor(
-                agent_state=state.agent_state,
-                config=self.config,
-                key=obs_key,
-                pmap_axis_name=self.pmap_axis_name,
-            )
-
-            # Note: we don't count these random timesteps in state.metrics
-            return state.replace(
-                agent_state=agent_state,
-                key=key,
-            )
-        else:
-            return state
-
-    def _replace_actor_params(
-        self, agent_state: AgentState, params: Params
-    ) -> AgentState:
-        return agent_state.replace(
-            params=agent_state.params.replace(policy_params=params)
-        )
-
-    def _get_pop_center(self, state: State) -> AgentState:
-        pop_center = state.ec_opt_state.mean
-
-        return self._replace_actor_params(state.agent_state, pop_center)
