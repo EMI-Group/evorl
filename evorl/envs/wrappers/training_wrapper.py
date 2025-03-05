@@ -130,7 +130,6 @@ class OneEpisodeWrapper(EpisodeWrapper):
             env,
             episode_length,
             record_ori_obs=record_ori_obs,
-            record_episode_return=False,
         )
 
     def _dummy_step(self, state: EnvState, action: jax.Array) -> EnvState:
