@@ -5,8 +5,8 @@ evox==0.9.0 # currently incompatible with the pytorch-version evox
 gymnasium>=1.1.0
 hydra-core
 hydra-joblib-launcher
-jax>=0.4.28
-jaxlib>=0.4.28
+jax>=0.4.35
+jaxlib>=0.4.35
 numpy
 optax
 orbax-checkpoint
