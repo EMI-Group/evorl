@@ -17,7 +17,7 @@ from evorl.ec.optimizers import ARS, ECState
 from evorl.utils import running_statistics
 from evorl.networks import make_mlp, ActivationFn
 
-from ..ec.so.es_base import ESWorkflowTemplate
+from ..ec.so.es_workflow import ESWorkflowTemplate
 from ..ec.obs_utils import init_obs_preprocessor
 from ..ec.ec_agent import DeterministicECAgent
 

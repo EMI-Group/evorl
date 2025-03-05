@@ -11,7 +11,7 @@ from evorl.agent import AgentState
 from evorl.ec.optimizers import VanillaES, ExponentialScheduleSpec, ECState
 
 
-from .es_base import ESWorkflowTemplate
+from .es_workflow import ESWorkflowTemplate
 from ..obs_utils import init_obs_preprocessor
 from ..ec_agent import make_deterministic_ec_agent
 

@@ -15,7 +15,7 @@ from evorl.ec.optimizers import EvoXAlgorithmAdapter, ECState
 from evorl.ec.evox_algorithm import CMAES, SepCMAES
 from evorl.utils.ec_utils import ParamVectorSpec
 
-from .es_base import ESWorkflowTemplate
+from .es_workflow import ESWorkflowTemplate
 from ..obs_utils import init_obs_preprocessor
 from ..ec_agent import make_deterministic_ec_agent
 
