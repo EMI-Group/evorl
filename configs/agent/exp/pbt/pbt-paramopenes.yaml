@@ -1,0 +1,16 @@
+# @package _global_
+
+defaults:
+  - /agent/meta/pbt-paramopenes
+  - _self_
+
+pop_size: 128
+
+workflow_steps_per_iter: 4
+
+warmup_steps: 20 # 5 warmup iters
+
+num_iters: 500
+
+checkpoint:
+  save_interval_steps: 50
