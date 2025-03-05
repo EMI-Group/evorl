@@ -88,7 +88,7 @@ def create_wrapped_brax_env(
     episode_length: int = 1000,
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
-    discount: float = 1.0,
+    discount: float | None = 1.0,
     record_ori_obs: bool = False,
     **kwargs,
 ) -> Env:
@@ -118,7 +118,6 @@ def create_wrapped_brax_env(
             env,
             episode_length,
             record_ori_obs=record_ori_obs,
-            record_episode_return=True,
             discount=discount,
         )
         if autoreset_mode == AutoresetMode.FAST:

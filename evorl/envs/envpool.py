@@ -249,18 +249,21 @@ def create_envpool_env(
     episode_length: int = 1000,
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
-    discount: float = 1.0,
+    discount: float | None = 1.0,
     **kwargs,
 ) -> EnvPoolGymAdapter:
     """Create a gym env based on EnvPool.
 
     Unlike other jax-based env, most wrappers are handled inside the envpool.
     """
-    if autoreset_mode in [AutoresetMode.NORMAL, AutoresetMode.FAST]:
-        warnings.warn(
-            f"{autoreset_mode} is not supported for EnvPool Envs. Fallback to AutoresetMode.ENVPOOL!",
-        )
-        autoreset_mode = AutoresetMode.ENVPOOL
+    match autoreset_mode:
+        case AutoresetMode.NORMAL | AutoresetMode.FAST:
+            warnings.warn(
+                f"{autoreset_mode} is not supported for EnvPool Envs. Fallback to AutoresetMode.ENVPOOL.",
+            )
+            autoreset_mode = AutoresetMode.ENVPOOL
+        case AutoresetMode.DISABLED:
+            discount = None
 
     if env_backend in ["gym", "gymnasium"]:
         env = EnvPoolGymAdapter(
@@ -268,12 +271,11 @@ def create_envpool_env(
             env_backend=env_backend,
             max_episode_steps=episode_length,
             num_envs=parallel,
-            record_episode_return=True,
             discount=discount,
             **kwargs,
         )
     else:
-        raise ValueError(f"env_backend {env_backend} not supported")
+        raise ValueError(f"env_backend {env_backend} is not supported")
 
     if autoreset_mode == AutoresetMode.DISABLED:
         env = OneEpisodeWrapper(env)

@@ -19,6 +19,7 @@ class EpisodeWrapper(Wrapper):
     - trunction: whether the episode is truncated
     - termination: whether the episode is terminated
     - ori_obs: the next observation without autoreset
+    - episode_return: the current sum of dicounted reward of the episode
     """
 
     def __init__(
@@ -26,8 +27,7 @@ class EpisodeWrapper(Wrapper):
         env: Env,
         episode_length: int,
         record_ori_obs: bool = True,
-        record_episode_return: bool = False,
-        discount: float = 1.0,
+        discount: float | None = None,
     ):
         """Initializes the env wrapper.
 
@@ -36,13 +36,12 @@ class EpisodeWrapper(Wrapper):
             episode_length: the maxiumum length of each episode for truncation
             action_repeat: the number of times to repeat each action
             record_ori_obs: whether to record the real next observation of each episode
-            record_episode_return: whether to record the return of each episode
-            discount: the discount factor for computing the return when setting record_episode_return=True
+            discount: the discount factor for computing the return. Default is None, which means do not reacord the episode_return.
         """
         super().__init__(env)
         self.episode_length = episode_length
         self.record_ori_obs = record_ori_obs
-        self.record_episode_return = record_episode_return
+        self.record_episode_return = discount is not None
         self.discount = discount
 
     def reset(self, key: chex.PRNGKey) -> EnvState:

@@ -62,6 +62,7 @@ class GymnasiumAdapter(EnvAdapter):
         self.env_name = env_name
         self.max_episode_steps = max_episode_steps
         self.num_envs = num_envs
+        self.record_ori_obs = record_ori_obs
         self.record_episode_return = discount is not None
         self.discount = discount
         self.vecenv_kwargs = vecenv_kwargs
@@ -82,12 +83,6 @@ class GymnasiumAdapter(EnvAdapter):
         self._env_fn = _env_fn
         self.env = _env_fn(num_envs)
         self.autoreset_mode = self.env.metadata["autoreset_mode"]
-
-        # only record the original observation in the SAME_STEP mode
-        self.record_ori_obs = (
-            record_ori_obs
-            and self.autoreset_mode == gymnasium.vector.AutoresetMode.SAME_STEP
-        )
 
         self.setup_env_callback()
 
@@ -114,6 +109,8 @@ class GymnasiumAdapter(EnvAdapter):
             batch_shape = key.shape[:-1]
             num_envs = math.prod(batch_shape) * self.num_envs
 
+            # TODO: reuse the multiprocessing workers from prev self.env,
+            # to avoid creating new processes.
             self.env = self._env_fn(num_envs)
 
             assert self.env.num_envs == num_envs
@@ -311,13 +308,20 @@ def create_gymnasium_env(
     match autoreset_mode:
         case AutoresetMode.FAST:
             warnings.warn(
-                f"{autoreset_mode} is not supported for Gymnasium Envs. Fallback to AutoresetMode.NORMAL!",
+                f"{autoreset_mode} is not supported for Gymnasium Envs. Fallback to AutoresetMode.NORMAL.",
             )
             gymnasium_autoreset_mode = gymnasium.vector.AutoresetMode.SAME_STEP
         case AutoresetMode.NORMAL:
             gymnasium_autoreset_mode = gymnasium.vector.AutoresetMode.SAME_STEP
-        case _:
+        case AutoresetMode.ENVPOOL:
             gymnasium_autoreset_mode = gymnasium.vector.AutoresetMode.NEXT_STEP
+            if record_ori_obs:
+                warnings.warn(
+                    f"{autoreset_mode} does not need record_ori_obs. Fallback to False.",
+                )
+        case AutoresetMode.DISABLED:
+            gymnasium_autoreset_mode = gymnasium.vector.AutoresetMode.NEXT_STEP
+            discount = None
 
     mp.get_start_method("spawn")
     vecenv_kwargs = dict(
