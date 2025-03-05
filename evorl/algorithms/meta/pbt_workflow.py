@@ -269,10 +269,20 @@ class PBTWorkflowBase(Workflow):
         )
 
         # ===== record metrics ======
-        workflow_metrics = state.metrics.replace(
-            sampled_timesteps_m=jnp.sum(
+        if hasattr(pop_workflow_state.metrics, "sampled_timesteps"):
+            sampled_timesteps_m = jnp.sum(
                 pop_workflow_state.metrics.sampled_timesteps / 1e6
-            ),  # convert uint32 to float32
+            )
+        elif hasattr(pop_workflow_state.metrics, "sampled_timesteps_m"):
+            sampled_timesteps_m = jnp.sum(
+                pop_workflow_state.metrics.sampled_timesteps_m
+            )
+        else:
+            sampled_timesteps_m = jnp.zeros((), dtype=jnp.float32)
+
+        # Note: sampled_timesteps_m is already accumulated in target_workflow
+        workflow_metrics = state.metrics.replace(
+            sampled_timesteps_m=sampled_timesteps_m,
             iterations=state.metrics.iterations + 1,
         )
 

@@ -27,7 +27,7 @@ from evorl.utils.rl_toolkits import (
     approximate_kl,
 )
 
-from ...ppo import PPOWorkflow, PPOAgent
+from evorl.algorithms.ppo import PPOWorkflow, PPOAgent
 
 logger = logging.getLogger(__name__)
 

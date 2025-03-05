@@ -5,9 +5,10 @@ import optax
 from optax.schedules import InjectStatefulHyperparamsState
 
 from evorl.types import PyTreeDict, State
+from evorl.utils.jax_utils import tree_deepcopy
 
 from .pbt_workflow import PBTWorkflowTemplate, PBTOptState
-from .pbt_utils import deepcopy_opt_state, log_uniform_init
+from .pbt_utils import log_uniform_init
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +38,9 @@ class PBTWorkflow(PBTWorkflowTemplate):
     def apply_hyperparams_to_workflow_state(
         self, workflow_state: State, hyperparams: PyTreeDict[str, chex.Numeric]
     ) -> State:
-        # Note1: InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
-        # Note2: try to avoid deepcopy unnessary state
-
         opt_state = workflow_state.opt_state
         assert isinstance(opt_state, InjectStatefulHyperparamsState)
-
-        opt_state = deepcopy_opt_state(opt_state)
+        # InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
+        opt_state = tree_deepcopy(opt_state)
         opt_state.hyperparams["learning_rate"] = hyperparams.lr
         return workflow_state.replace(opt_state=opt_state)

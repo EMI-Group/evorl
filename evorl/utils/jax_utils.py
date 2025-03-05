@@ -2,6 +2,7 @@ import os
 from collections.abc import Iterable, Sequence, Callable
 from functools import partial
 import math
+import copy
 
 import chex
 import jax
@@ -301,6 +302,22 @@ def tree_has_nan(tree: chex.ArrayTree) -> chex.ArrayTree:
 def invert_permutation(i: jax.Array) -> jax.Array:
     """Helper function that inverts a permutation array."""
     return jnp.empty_like(i).at[i].set(jnp.arange(i.size, dtype=i.dtype))
+
+
+def _deepcopy(x):
+    if isinstance(x, jax.Array):
+        # we don't copy jax arrays, since they are immutable
+        return x
+    else:
+        return copy.deepcopy(x)
+
+
+def tree_deepcopy(tree: chex.ArrayTree) -> chex.ArrayTree:
+    """Deep copy the pytree.
+
+    Useful for mutable pytree structure like dict. The return also includes a deepcopy of these mutable structures.
+    """
+    return jtu.tree_map(_deepcopy, tree)
 
 
 def right_shift_with_padding(

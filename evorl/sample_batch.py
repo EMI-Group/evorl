@@ -1,4 +1,3 @@
-import copy
 from collections.abc import Sequence
 from typing import Any
 
@@ -59,53 +58,9 @@ class SampleBatch(PyTreeData):
     def index_sum(self, idx: jax.Array | Sequence[jax.Array], o: Any) -> Any:
         return jtu.tree_map(lambda x, y: x.at[idx].add(y), self, o)
 
-    def tree_replace(
-        self, params: dict[str, jax.typing.ArrayLike | None]
-    ) -> "PyTreeData":
-        """Creates a new object with parameters set.
-
-        Args:
-            params: a dictionary of key value pairs to replace
-
-        Returns:
-            data clas with new values
-        """
-        new = self
-        for k, v in params.items():
-            new = _tree_replace(new, k.split("."), v)
-        return new
-
     @property
     def T(self):
         return jtu.tree_map(lambda x: x.T, self)
-
-
-def _tree_replace(
-    base: PyTreeData,
-    attr: Sequence[str],
-    val: jax.typing.ArrayLike | None,
-) -> PyTreeData:
-    if not attr:
-        return base
-
-    # special case for List attribute
-    if len(attr) > 1 and isinstance(getattr(base, attr[0]), list):
-        lst = copy.deepcopy(getattr(base, attr[0]))
-
-        for i, g in enumerate(lst):
-            if not hasattr(g, attr[1]):
-                continue
-            v = val if not hasattr(val, "__iter__") else val[i]
-            lst[i] = _tree_replace(g, attr[1:], v)
-
-        return base.replace(**{attr[0]: lst})
-
-    if len(attr) == 1:
-        return base.replace(**{attr[0]: val})
-
-    return base.replace(
-        **{attr[0]: _tree_replace(getattr(base, attr[0]), attr[1:], val)}
-    )
 
 
 class Episode(PyTreeData):

@@ -21,8 +21,8 @@ from evorl.utils import running_statistics
 from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
-from ...offpolicy_utils import clean_trajectory, OffPolicyWorkflowTemplate
-from ...sac import SACTrainMetric, SACAgent
+from evorl.algorithms.offpolicy_utils import clean_trajectory, OffPolicyWorkflowTemplate
+from evorl.algorithms.sac import SACTrainMetric, SACAgent
 
 
 logger = logging.getLogger(__name__)
