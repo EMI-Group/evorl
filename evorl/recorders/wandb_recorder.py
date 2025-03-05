@@ -52,6 +52,13 @@ def get_1d_array_statistics(data, histogram=False):
     """Get raw value and statistics of a 1D array.
 
     Helper function for logging in WandB.
+
+    Args:
+        data: 1D numpy array. If data has multiple dimensions, it will be viewed as flattened.
+        histogram: If True, return raw data in `pd.Series`, which will be futher converted to histogram in `WandBRecorder`.
+
+    Returns:
+        A dictionary containing min, max, mean, and optional raw data.
     """
     if data is None:
         res = dict(min=None, max=None, mean=None)
@@ -79,7 +86,7 @@ def get_1d_array_statistics(data, histogram=False):
 def get_1d_array(data):
     """Get statistics of a 1D array.
 
-    Helper function for logging in WandB.
+    Similar to `get_1d_array_statistics`, but instead of recording histogram, WandB will record the raw data.
     """
     res = dict(
         min=np.min(data).tolist(),

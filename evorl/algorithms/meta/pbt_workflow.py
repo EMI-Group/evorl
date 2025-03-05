@@ -408,41 +408,43 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
 
         return pop, pop_workflow_state, pbt_opt_state
 
+    def _record_step_metrics(self, train_metrics, workflow_metrics, iters):
+        train_metrics_dict = train_metrics.to_local_dict()
+
+        pop_train_metric = train_metrics_dict["pop_train_metrics"]
+        if "train_episode_return" in pop_train_metric:
+            train_episode_return = pop_train_metric["train_episode_return"]
+            # Note: the order does not matter, since we use
+            train_episode_return = train_episode_return[
+                train_episode_return != MISSING_REWARD
+            ]
+
+            if len(train_episode_return) == 0:
+                train_episode_return = None
+
+            pop_train_metric["train_episode_return"] = train_episode_return
+
+        train_metrics_dict.update(
+            pop_episode_returns=get_1d_array_statistics(
+                train_metrics_dict["pop_episode_returns"], histogram=True
+            ),
+            pop_episode_lengths=get_1d_array_statistics(
+                train_metrics_dict["pop_episode_lengths"], histogram=True
+            ),
+            pop=convert_pop_to_df(train_metrics_dict["pop"]),
+            pop_train_metrics=jtu.tree_map(get_1d_array_statistics, pop_train_metric),
+        )
+
+        self.recorder.write(workflow_metrics.to_local_dict(), iters)
+        self.recorder.write(train_metrics_dict, iters)
+
     def learn(self, state: State) -> State:
         for i in range(state.metrics.iterations, self.config.num_iters):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            train_metrics_dict = train_metrics.to_local_dict()
-            if "train_episode_return" in train_metrics_dict["pop_train_metrics"]:
-                train_episode_return = train_metrics_dict["pop_train_metrics"][
-                    "train_episode_return"
-                ]
-                train_episode_return = train_episode_return[
-                    train_episode_return != MISSING_REWARD
-                ]
-
-                if len(train_episode_return) == 0:
-                    train_episode_return = None
-
-                train_metrics_dict["pop_train_metrics"]["train_episode_return"] = (
-                    train_episode_return
-                )
-
-            train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_returns"], histogram=True
-            )
-            train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_lengths"], histogram=True
-            )
-            train_metrics_dict["pop"] = convert_pop_to_df(train_metrics_dict["pop"])
-            train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
-                get_1d_array_statistics, train_metrics_dict["pop_train_metrics"]
-            )
-
-            self.recorder.write(workflow_metrics.to_local_dict(), iters)
-            self.recorder.write(train_metrics_dict, iters)
+            self._record_step_metrics(train_metrics, workflow_metrics, iters)
 
             if iters % self.config.eval_interval == 0 or iters == self.config.num_iters:
                 eval_metrics, state = self.evaluate(state)
@@ -681,27 +683,30 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             replay_buffer_state=replay_buffer_state,
         )
 
+    def _record_step_metrics(self, train_metrics, workflow_metrics, iters):
+        train_metrics_dict = train_metrics.to_local_dict()
+
+        train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
+            train_metrics_dict["pop_episode_returns"], histogram=True
+        )
+        train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
+            train_metrics_dict["pop_episode_lengths"], histogram=True
+        )
+        train_metrics_dict["pop"] = convert_pop_to_df(train_metrics_dict["pop"])
+        train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
+            get_1d_array_statistics, train_metrics_dict["pop_train_metrics"]
+        )
+
+        self.recorder.write(workflow_metrics.to_local_dict(), iters)
+        self.recorder.write(train_metrics_dict, iters)
+
     def learn(self, state: State) -> State:
         for i in range(state.metrics.iterations, self.config.num_iters):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            train_metrics_dict = train_metrics.to_local_dict()
-
-            train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_returns"], histogram=True
-            )
-            train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_lengths"], histogram=True
-            )
-            train_metrics_dict["pop"] = convert_pop_to_df(train_metrics_dict["pop"])
-            train_metrics_dict["pop_train_metrics"] = jtu.tree_map(
-                get_1d_array_statistics, train_metrics_dict["pop_train_metrics"]
-            )
-
-            self.recorder.write(workflow_metrics.to_local_dict(), iters)
-            self.recorder.write(train_metrics_dict, iters)
+            self._record_step_metrics(train_metrics, workflow_metrics, iters)
 
             if iters % self.config.eval_interval == 0 or iters == self.config.num_iters:
                 eval_metrics, state = self.evaluate(state)
