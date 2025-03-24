@@ -1,8 +1,0 @@
-furo
-myst-parser
-pre-commit
-pytest
-ruff
-sphinx
-sphinx-autodoc2
-sphinx-copybutton

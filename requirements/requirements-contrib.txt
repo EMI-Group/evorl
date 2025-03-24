@@ -1,8 +1,0 @@
--e ".[dev]"
-jupyterlab
-matplotlib
-numpy
-pandas
-scipy
-seaborn
-tqdm
