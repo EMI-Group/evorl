@@ -23,7 +23,7 @@ ignore = [
     "D104", # Missing docstring in public package
     "D105", # Missing docstring in magic method
     "D107", # Missing docstring in public __init__ method
-    "D417", # equires documentation for every function parameter.
+    "D417", # Requires documentation for every function parameter.
 ]
 
 [tool.ruff.lint.pydocstyle]
