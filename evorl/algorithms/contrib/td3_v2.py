@@ -19,8 +19,8 @@ from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 from evorl.recorders import add_prefix
 
-from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from ..td3 import TD3TrainMetric, TD3Workflow
+from evorl.algorithms.offpolicy_utils import clean_trajectory, skip_replay_buffer_state
+from evorl.algorithms.td3 import TD3TrainMetric, TD3Workflow
 
 logger = logging.getLogger(__name__)
 

@@ -27,7 +27,7 @@ from evorl.agent import Agent, AgentState
 from evorl.recorders import add_prefix
 from evorl.workflows import OnPolicyWorkflow
 
-from ..td3 import make_mlp_td3_agent, clean_trajectory, TD3TrainMetric
+from evorl.algorithms.td3 import make_mlp_td3_agent, clean_trajectory, TD3TrainMetric
 
 logger = logging.getLogger(__name__)
 

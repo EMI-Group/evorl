@@ -23,8 +23,8 @@ from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajectory
 from evorl.recorders import add_prefix, get_1d_array_statistics, get_1d_array
 
-from ..offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from ..td3 import TD3TrainMetric, TD3Workflow
+from evorl.algorithms.offpolicy_utils import clean_trajectory, skip_replay_buffer_state
+from evorl.algorithms.td3 import TD3TrainMetric, TD3Workflow
 
 
 logger = logging.getLogger(__name__)

@@ -11,9 +11,9 @@ from evorl.agent import AgentState
 from evorl.ec.optimizers import OpenESNoiseTable, ExponentialScheduleSpec, ECState
 
 
-from ..ec.so.es_workflow import ESWorkflowTemplate
-from ..ec.obs_utils import init_obs_preprocessor
-from ..ec.ec_agent import make_deterministic_ec_agent
+from evorl.algorithms.ec.so.es_workflow import ESWorkflowTemplate
+from evorl.algorithms.ec.obs_utils import init_obs_preprocessor
+from evorl.algorithms.ec.ec_agent import make_deterministic_ec_agent
 
 
 logger = logging.getLogger(__name__)
