@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import optax
 
 from evorl.agent import AgentStateAxis
-from evorl.metrics import MetricBase, metric_field
+from evorl.metrics import MetricBase, WorkflowMetric, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient
@@ -34,12 +34,6 @@ class CEMRLTrainMetric(MetricBase):
     pop_episode_lengths: chex.Array
     rl_metrics: MetricBase | None = None
     ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
-
-
-class WorkflowMetric(MetricBase):
-    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class CEMRLWorkflowBase(Workflow):

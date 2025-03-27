@@ -79,6 +79,7 @@ class WorkflowMetric(MetricBase):
     """
 
     sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 

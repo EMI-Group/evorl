@@ -1,6 +1,8 @@
 import logging
 from functools import partial
 import math
+from typing_extensions import Self  # pytype: disable=not-supported-yet]
+from omegaconf import DictConfig
 
 import chex
 import jax
@@ -33,6 +35,7 @@ logger = logging.getLogger(__name__)
 class WorkflowMetric(MetricBase):
     sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     sampled_timesteps_per_agent: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
     iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
@@ -43,6 +46,20 @@ class PopTD3Workflow(TD3Workflow):
     def name(cls):
         return "PopTD3"
 
+    @classmethod
+    def build_from_config(
+        cls,
+        config: DictConfig,
+        enable_multi_devices: bool = False,
+        enable_jit: bool = True,
+    ) -> Self:
+        devices = jax.local_devices()
+
+        if enable_multi_devices or len(devices) > 1:
+            raise NotImplementedError("Multi-devices is not supported yet.")
+
+        return super().build_from_config(config, enable_multi_devices, enable_jit)
+
     def _setup_workflow_metrics(self) -> MetricBase:
         return WorkflowMetric()
 
@@ -52,27 +69,11 @@ class PopTD3Workflow(TD3Workflow):
         agent_state, opt_state = self._setup_agent_and_optimizer(agent_key)
         workflow_metrics = self._setup_workflow_metrics()
 
-        if self.enable_multi_devices:
-            # workflow_metrics, agent_state, opt_state = jax.device_put_replicated(
-            #     (workflow_metrics, agent_state, opt_state), self.devices
-            # )
-
-            # # key and env_state should be different over devices
-            # key = split_key_to_devices(key, self.devices)
-
-            # env_key = split_key_to_devices(env_key, self.devices)
-            # env_state = jax.pmap(self.env.reset, axis_name=self.pmap_axis_name)(env_key)
-            # rb_key = split_key_to_devices(rb_key, self.devices)
-            # replay_buffer_state = jax.pmap(
-            #     self._setup_replaybuffer, axis_name=self.pmap_axis_name
-            # )(rb_key)
-            raise NotImplementedError("multi_devices is not supported yet")
-        else:
-            # TODO: what about using shared init env_state?
-            env_state = jax.vmap(self.env.reset)(
-                jax.random.split(env_key, self.config.pop_size)
-            )
-            replay_buffer_state = self._setup_replaybuffer(rb_key)
+        # TODO: what about using shared init env_state?
+        env_state = jax.vmap(self.env.reset)(
+            jax.random.split(env_key, self.config.pop_size)
+        )
+        replay_buffer_state = self._setup_replaybuffer(rb_key)
 
         state = State(
             key=key,
@@ -84,12 +85,8 @@ class PopTD3Workflow(TD3Workflow):
         )
 
         logger.info("Start replay buffer post-setup")
-        if self.enable_multi_devices:
-            state = jax.pmap(
-                self._postsetup_replaybuffer, axis_name=self.pmap_axis_name
-            )(state)
-        else:
-            state = self._postsetup_replaybuffer(state)
+
+        state = self._postsetup_replaybuffer(state)
 
         logger.info("Complete replay buffer post-setup")
 
@@ -403,12 +400,16 @@ class PopTD3Workflow(TD3Workflow):
             ),
             axis_name=self.pmap_axis_name,
         )
+        sampled_epsiodes = psum(
+            trajectory.dones.sum().astype(jnp.uint32), axis_name=self.pmap_axis_name
+        )
 
         # iterations is the number of updates of the agent
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_timesteps_per_agent=state.metrics.sampled_timesteps_per_agent
             + sampled_timesteps_per_agent,
+            sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 

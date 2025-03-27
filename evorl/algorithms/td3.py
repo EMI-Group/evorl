@@ -518,9 +518,14 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             axis_name=self.pmap_axis_name,
         )
 
+        sampled_epsiodes = psum(
+            trajectory.dones.sum().astype(jnp.uint32), axis_name=self.pmap_axis_name
+        )
+
         # iterations is the number of updates of the agent
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
+            sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
