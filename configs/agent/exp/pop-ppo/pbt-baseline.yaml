@@ -10,6 +10,6 @@ num_eval_envs: 128
 eval_episodes: 128
 eval_interval: 1600 # 25*64
 
-fold_iters: 80
+fold_iters: 100
 
 total_timesteps: 65536000 # 4*512*64*500
