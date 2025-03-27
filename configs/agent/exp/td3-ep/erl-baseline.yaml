@@ -1,0 +1,26 @@
+# @package _global_
+
+defaults:
+  - /agent/contrib/td3-ep
+  - _self_
+
+num_envs: 1
+normalize_obs: false
+rollout_length: 2
+total_episodes: 20000
+fold_iters: 8192
+num_updates_per_iter: 1 # each update contains 1 actor update + `actor_update_interval` critic updates
+
+random_timesteps: 25600 # steps filled into the replay buffer
+learning_start_timesteps: 25600 # steps before training starts
+batch_size: 256
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 8192 # unit: num of iterations
+
+checkpoint:
+  save_interval_steps: 81920
+
+wandb:
+  tags: ["erl-baseline"]
