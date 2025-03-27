@@ -304,6 +304,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             env_extra_fields=("ori_obs", "termination"),
         )
 
+        trajectory_dones = trajectory.dones
         trajectory = clean_trajectory(trajectory)
         trajectory = flatten_rollout_trajectory(trajectory)
         trajectory = tree_stop_gradient(trajectory)
@@ -402,7 +403,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             axis_name=self.pmap_axis_name,
         )
         sampled_epsiodes = psum(
-            trajectory.dones.sum().astype(jnp.uint32), axis_name=self.pmap_axis_name
+            trajectory_dones.sum().astype(jnp.uint32), axis_name=self.pmap_axis_name
         )
 
         workflow_metrics = workflow_metrics.replace(
