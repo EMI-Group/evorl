@@ -56,7 +56,7 @@ dependencies = [
     "brax",
     "chex",
     "distrax",
-    "evox==0.9.0",
+    "evox<1.0.0",
     "gymnasium>=1.1.0",
     "hydra-core",
     "hydra-joblib-launcher",
@@ -74,7 +74,7 @@ dependencies = [
 gymnax = ["gymnax"]
 jumanji = ["jumanji"]
 jaxmarl = ["jaxmarl"]
-envpool = ["envpool", "numpy<2.0.0"]
+envpool = ["envpool", "numpy<2.0.0"] # also requires python<=3.11
 gymnasium = ["gymnasium[atari,mujoco,classic-control,box2d]>=1.1.0"]
 dev = [
     "furo",
