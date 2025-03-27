@@ -16,7 +16,7 @@ from evorl.types import State, PyTreeDict
 from evorl.rollout import rollout
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, tree_last
+from evorl.utils.jax_utils import tree_stop_gradient, scan_and_last
 from evorl.agent import RandomAgent
 from evorl.recorders import add_prefix
 
@@ -197,10 +197,9 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             train_metrics, state = self.step(state)
             return state, train_metrics
 
-        state, train_metrics = jax.lax.scan(
+        state, train_metrics = scan_and_last(
             _step, state, (), length=self.config.fold_iters
         )
-        train_metrics = tree_last(train_metrics)
 
         # jax.debug.print("train_metrics: {}", tree_has_nan(train_metrics))
         # jax.debug.print("state: {}", tree_has_nan(state))

@@ -1,0 +1,10 @@
+# @package _global_
+
+defaults:
+  - /agent/ppo
+  - _self_
+
+workflow_cls: evorl.algorithms.contrib.pop_ppo.PopPPOWorkflow
+
+pop_size: 16
+fold_iters: 50 # match eval_interval

@@ -1,0 +1,15 @@
+# @package _global_
+
+defaults:
+  - /agent/contrib/pop-ppo
+  - _self_
+
+pop_size: 128
+
+num_eval_envs: 128
+eval_episodes: 128
+eval_interval: 1600 # 25*64
+
+fold_iters: 80
+
+total_timesteps: 65536000 # 4*512*64*500

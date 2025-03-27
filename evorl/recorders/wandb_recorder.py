@@ -1,6 +1,5 @@
 from collections.abc import Mapping
 from typing import Any
-import warnings
 
 import jax.tree_util as jtu
 import numpy as np
@@ -63,18 +62,13 @@ def get_1d_array_statistics(data, histogram=False):
     if data is None:
         res = dict(min=None, max=None, mean=None)
         if histogram:
-            res["val"] = pd.Series(data)
+            res["val"] = pd.Series()
         return res
 
-    nan_mask = np.isnan(data)
-    if nan_mask.any():
-        warnings.warn("data contains nan, removing them...")
-        data = data[~nan_mask]
-
     res = dict(
-        min=np.min(data).tolist(),
-        max=np.max(data).tolist(),
-        mean=np.mean(data).tolist(),
+        min=np.nanmin(data).tolist(),
+        max=np.nanmax(data).tolist(),
+        mean=np.nanmean(data).tolist(),
     )
 
     if histogram:
@@ -88,10 +82,14 @@ def get_1d_array(data):
 
     Similar to `get_1d_array_statistics`, but instead of recording histogram, WandB will record the raw data.
     """
+    if data is None:
+        res = dict(min=None, max=None, mean=None, val=[])
+        return res
+
     res = dict(
-        min=np.min(data).tolist(),
-        max=np.max(data).tolist(),
-        mean=np.mean(data).tolist(),
+        min=np.nanmin(data).tolist(),
+        max=np.nanmax(data).tolist(),
+        mean=np.nanmean(data).tolist(),
     )
 
     res["val"] = data
