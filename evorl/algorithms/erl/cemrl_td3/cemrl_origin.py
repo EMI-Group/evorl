@@ -33,9 +33,9 @@ class WorkflowMetric(MetricBase):
 
 
 class CEMRLWorkflow(_CEMRLWorkflow):
-    """1 critic + n actors + 1 replay buffer.
+    """Original CEMRL impl.
 
-    We use shard_map to split and parallel the population.
+    1 critic + n actors + 1 replay buffer.
     """
 
     @classmethod
