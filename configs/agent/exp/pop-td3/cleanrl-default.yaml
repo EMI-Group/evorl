@@ -4,8 +4,6 @@ defaults:
   - /agent/contrib/pop-td3
   - _self_
 
-workflow_cls: evorl.algorithms.contrib.pop_independent_td3.PopTD3Workflow
-
 pop_size: 16
 
 num_envs: 1

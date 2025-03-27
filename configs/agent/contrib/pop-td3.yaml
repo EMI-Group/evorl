@@ -4,14 +4,6 @@ defaults:
   - /agent/td3
   - _self_
 
-random_timesteps: 25600 # steps filled into the replay buffer
-learning_start_timesteps: 25600 # steps before training starts
-
-workflow_cls: evorl.algorithms.contrib.pop_independent_td3.PopTD3Workflow
+workflow_cls: evorl.algorithms.contrib.pop_td3.PopTD3Workflow
 
 pop_size: 16
-
-# increase num_eval_envs to ensure the top individual is really the best
-num_eval_envs: 128
-eval_episodes: 128 # should be divided by num_eval_envs
-eval_interval: 8192 # unit: num of iterations
