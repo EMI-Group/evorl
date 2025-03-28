@@ -6,7 +6,6 @@ num_envs: 1
 normalize_obs: false
 rollout_length: 2
 discount: 0.99
-# total_timesteps: 5000000
 total_episodes: 20000
 
 fold_iters: 8192
