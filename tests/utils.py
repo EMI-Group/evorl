@@ -8,6 +8,9 @@ from evorl.sample_batch import SampleBatch
 from evorl.types import PolicyExtraInfo, PyTreeDict, Action
 
 
+def set_default_device_cpu():
+    os.environ["JAX_PLATFORM_NAME"] = "cpu"
+
 def disable_gpu_preallocation():
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 

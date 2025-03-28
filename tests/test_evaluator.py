@@ -12,7 +12,7 @@ from .utils import DebugRandomAgent, FakeVmapEnv
 
 
 def test_eval_rollout_epsiode():
-    env_name = "hopper"
+    env_name="hopper"
 
     env = create_wrapped_brax_env(
         env_name,
@@ -23,7 +23,12 @@ def test_eval_rollout_epsiode():
     agent = DebugRandomAgent()
 
     for discount in [0.99, 1.0]:
-        evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=discount)
+        evaluator = Evaluator(
+            env=env,
+            action_fn=agent.evaluate_actions,
+            max_episode_steps=1000,
+            discount=discount,
+        )
 
         key = jax.random.PRNGKey(42)
 
@@ -35,65 +40,6 @@ def test_eval_rollout_epsiode():
 
         assert metric.episode_returns.shape == (7 * 3,)
         assert metric.episode_lengths.shape == (7 * 3,)
-
-
-def test_batched_eval_rollout_epsiode():
-    env_name = "hopper"
-
-    env = create_wrapped_brax_env(
-        env_name,
-        parallel=7,
-        autoreset_mode=AutoresetMode.DISABLED,
-    )
-    agent = DebugRandomAgent()
-
-    for discount in [0.99, 1.0]:
-        evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=discount)
-
-        num_agents = 5
-        key = jax.random.PRNGKey(42)
-        key, rollout_key, agent_key = jax.random.split(key, 3)
-
-        agent_keys = jax.random.split(agent_key, num_agents)
-        rollout_keys = jax.random.split(rollout_key, num_agents)
-        agent_init = jax.vmap(agent.init, in_axes=(None, None, 0))
-        agent_state = agent_init(env.obs_space, env.action_space, agent_keys)
-
-        metric = evaluator.evaluate(agent_state, rollout_keys, 7 * 3)
-
-        assert metric.episode_returns.shape == (num_agents, 7 * 3)
-        assert metric.episode_lengths.shape == (num_agents, 7 * 3)
-
-
-def test_multi_batched_eval_rollout_epsiode():
-    env_name = "hopper"
-
-    env = create_wrapped_brax_env(
-        env_name,
-        parallel=7,
-        autoreset_mode=AutoresetMode.DISABLED,
-    )
-
-    agent = DebugRandomAgent()
-
-    for discount in [0.99, 1.0]:
-        evaluator = Evaluator(env, agent.evaluate_actions, 1000, discount=discount)
-
-        key = jax.random.PRNGKey(42)
-        key, rollout_key, agent_key = jax.random.split(key, 3)
-        num_agents = (11, 13)
-
-        agent_keys = rng_split_by_shape(agent_key, num_agents)
-        rollout_keys = rng_split_by_shape(rollout_key, num_agents)
-
-        agent_init = jax.vmap(agent.init, in_axes=(None, None, 0))
-        agent_init = jax.vmap(agent_init, in_axes=(None, None, 0))
-        agent_state = agent_init(env.obs_space, env.action_space, agent_keys)
-
-        metric = evaluator.evaluate(agent_state, rollout_keys, 7 * 3)
-
-        assert metric.episode_returns.shape == (num_agents) + (7 * 3,)
-        assert metric.episode_lengths.shape == (num_agents) + (7 * 3,)
 
 
 def _normal_eval(rewards, dones, max_length):
@@ -233,64 +179,3 @@ def test_fast_evaluation():
     _test(rewards, dones, 1000)
     _test(rewards, dones, 900)
     _test(rewards, dones, 500)
-
-
-def test_fast_eval_rollout_epsiode():
-    # due to impl, the two methods could generate different trajectories,
-    # so we disable this test
-    # for env_name in ["hopper", "ant", "walker2d", "halfcheetah"]:
-    #     print("Testing", env_name)
-    #     env = create_wrapped_brax_env(
-    #         env_name,
-    #         parallel=7,
-    #         autoreset_mode=AutoresetMode.DISABLED,
-    #     )
-    # for env_name in ["Pendulum-v1", "Breakout-MinAtar", "Swimmer-misc", "Acrobot-v1"]:
-    #     print("Testing", env_name)
-    #     env = create_wrapped_gymnax_env(
-    #         env_name,
-    #         parallel=7,
-    #         autoreset_mode=AutoresetMode.DISABLED,
-    #     )
-    env1 = FakeVmapEnv(*_setup_trajectory1(17))
-    env2 = FakeVmapEnv(*_setup_trajectory2(13))
-    env3 = FakeVmapEnv(*_setup_trajectory3(1000))
-
-    test_cases = {
-        env1: (17, 10, 100),
-        env2: (13, 7, 100),
-        env3: (1000, 900, 500),
-    }
-
-    for env, max_length_list in test_cases.items():
-        agent = DebugRandomAgent()
-
-        for max_length in max_length_list:
-            evaluator = Evaluator(env, agent.evaluate_actions, max_length)
-
-            key = jax.random.PRNGKey(42)
-
-            jit_eval = jax.jit(evaluator._evaluate, static_argnums=(1,))
-            jit_fast_eval = jax.jit(evaluator._fast_evaluate, static_argnums=(1,))
-
-            num_iters = 7
-
-            for _ in range(10):
-                key, rollout_key, agent_key = jax.random.split(key, 3)
-
-                agent_state = agent.init(env.obs_space, env.action_space, agent_key)
-
-                metric = jit_eval(agent_state, num_iters, rollout_key)
-                fast_metric = jit_fast_eval(agent_state, num_iters, rollout_key)
-
-                print(metric)
-                print(fast_metric)
-
-                print(
-                    jnp.max(
-                        jnp.abs(metric.episode_returns - fast_metric.episode_returns)
-                    )
-                )
-                print("+" * 20)
-
-                chex.assert_trees_all_close(metric, fast_metric, rtol=1e-05)

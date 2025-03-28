@@ -21,16 +21,15 @@ def test_mutation():
     state = jtu.tree_map(lambda *x: jnp.stack(x), state1, state2, state3, state4)
 
     mlp_mutate(state1, key5)
+
+
     jax.jit(
         mlp_mutate,
         static_argnames=(
             "weight_max_magnitude",
             "mut_strength",
-            "num_mutation_frac",
-            "super_mut_strength",
-            "super_mut_prob",
-            "reset_prob",
-            "vec_relative_prob",
+            "vector_num_mutation_frac",
+            "matrix_num_mutation_frac",
         ),
     )(state1, key5)
 

@@ -4,13 +4,17 @@ import jax.numpy as jnp
 from evorl.rollout import (
     rollout,
 )
-
+from evorl.types import PyTreeDict
+from evorl.envs import create_env, AutoresetMode
 from .utils import DebugRandomAgent
-from evorl.envs import create_env
-
 
 def test_rollout():
-    env = create_env("ant", "brax", parallel=7, record_ori_obs=True)
+    env_cfg = PyTreeDict(
+        env_name="ant",
+        env_type="brax",
+    )
+
+    env = create_env(env_cfg, parallel=7, record_ori_obs=True, autoreset_mode=AutoresetMode.NORMAL)
 
     agent = DebugRandomAgent()
 
@@ -46,7 +50,11 @@ def test_rollout():
 
 
 def test_autoreset():
-    env = create_env("ant", "brax", parallel=7, record_ori_obs=True)
+    env_cfg = PyTreeDict(
+        env_name="ant",
+        env_type="brax",
+    )
+    env = create_env(env_cfg, parallel=7, record_ori_obs=True, autoreset_mode=AutoresetMode.NORMAL)
 
     agent = DebugRandomAgent()
 

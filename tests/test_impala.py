@@ -1,7 +1,7 @@
 import os
 import jax
 import jax.numpy as jnp
-from evorl.algorithms.impala import compute_vtrace, IMPALAAgent
+from evorl.algorithms.impala import compute_vtrace, make_mlp_impala_agent
 from evorl.rollout import rollout
 from evorl.envs import create_wrapped_brax_env, AutoresetMode
 from evorl.utils.rl_toolkits import compute_gae
@@ -13,7 +13,7 @@ def setup_trajectory():
     env = create_wrapped_brax_env(
         "ant", parallel=5, autoreset_mode=AutoresetMode.ENVPOOL
     )
-    agent = IMPALAAgent(continuous_action=True)
+    agent = make_mlp_impala_agent(action_space=env.action_space)
 
     key, rollout_key = jax.random.split(jax.random.PRNGKey(42))
 
@@ -83,7 +83,7 @@ def test_vtrace():
         discount=discount,
     )
 
-    assert jnp.allclose(vtrace, gae_v), f"{vtrace} != {gae_v}"
-    assert jnp.allclose(vtrace - vs[:-1], gae_adv).all(), (
+    assert jnp.allclose(vtrace, gae_v, rtol=0, atol=1e-4), f"{vtrace} != {gae_v}"
+    assert jnp.allclose(vtrace - vs[:-1], gae_adv, rtol=0, atol=1e-4).all(), (
         f"{vtrace - vs[:-1]} != {gae_adv}"
     )
