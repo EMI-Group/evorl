@@ -259,7 +259,6 @@ class A2CWorkflow(OnPolicyWorkflow):
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             normalize_obs=config.normalize_obs,
-            continuous_action=config.agent_network.continuous_action,
         )
 
         if (
