@@ -15,7 +15,7 @@ from evorl.distributed import (
 from evorl.types import State, MISSING_REWARD
 from evorl.metrics import MetricBase
 from evorl.utils.jax_utils import scan_and_last
-from evorl.recorders import add_prefix, get_1d_array_statistics
+from evorl.recorders import add_prefix, get_1d_array_statistics, get_1d_array
 
 from evorl.algorithms.ppo import PPOWorkflow
 
@@ -104,9 +104,13 @@ class PopPPOWorkflow(PPOWorkflow):
             if iters % self.config.eval_interval == 0 or iters == num_iters:
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write(
-                    add_prefix(eval_metrics.to_local_dict(), "eval"), iters
+
+                eval_metrics_dict = jtu.tree_map(
+                    get_1d_array,
+                    eval_metrics.to_local_dict(),
                 )
+
+                self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iters)
 
             self.checkpoint_manager.save(
                 iters,

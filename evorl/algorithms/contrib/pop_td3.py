@@ -427,10 +427,11 @@ class PopTD3Workflow(TD3Workflow):
         key, eval_key = jax.random.split(state.key, num=2)
 
         # [#pop, #episodes]
-        raw_eval_metrics = jax.vmap(self.evaluator.evaluate, in_axes=(0, 0, None))(
+        raw_eval_metrics = jax.vmap(
+            partial(self.evaluator.evaluate, num_episodes=self.config.eval_episodes),
+        )(
             state.agent_state,
             jax.random.split(eval_key, self.config.pop_size),
-            self.config.eval_episodes,
         )
 
         eval_metrics = EvaluateMetric(
