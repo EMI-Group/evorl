@@ -29,7 +29,7 @@ def mlp_mutate(
     """
     leaves, treedef = jtu.tree_flatten_with_path(x)
 
-    def _mutate(x, key, num_mutation_frac):
+    def _mutate(param, key, num_mutation_frac):
         num_mutations = round(num_mutation_frac * param.size)
         key, ind_key, normal_update_key = jax.random.split(key, 3)
         # unlike ERL, we sample elements without replacement
@@ -70,8 +70,11 @@ class MLPMutation(PyTreeNode):
     mutate_fn: Callable = pytree_field(lazy_init=True, static=True)
 
     def __post_init__(self):
-        assert self.num_mutation_frac >= 0 and self.num_mutation_frac <= 1, (
-            "num_mutation_frac should be in [0, 1]"
+        assert 0 <= self.vector_num_mutation_frac <= 1, (
+            "vector_num_mutation_frac should be in [0, 1]"
+        )
+        assert 0 <= self.matrix_num_mutation_frac <= 1, (
+            "matrix_num_mutation_frac should be in [0, 1]"
         )
 
         mutate_fn = jax.vmap(
