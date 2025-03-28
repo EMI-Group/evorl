@@ -4,13 +4,13 @@ This document provides a quick overview about how to use EvoRL to train differen
 
 ## Training
 
-EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. We provide a module `evorl.train` to run algorithms from CLI. It follows [hydra's CLI syntax](https://hydra.cc/docs/advanced/hydra-command-line-flags/).
+EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. We provide a script `script/train.py` to run algorithms from CLI. It follows [hydra's CLI syntax](https://hydra.cc/docs/advanced/hydra-command-line-flags/).
 
 ```shell
-python -m evorl.train agent=ppo env=brax/ant
+python script/train.py agent=ppo env=brax/ant
 
 # override some configs
-python -m evorl.train agent=ppo env=brax/ant seed=42 discount=0.995 \
+python script/train.py agent=ppo env=brax/ant seed=42 discount=0.995 \
     agent_network.actor_hidden_layer_sizes="[128,128]"
 ```
 
@@ -51,61 +51,61 @@ We list some common fields in the final config, which is useful as options passi
 Moreover, to use the own config folders instead of the EvoRL's `configs/`, you can specify the config path by the `-cp` and `-cn` option. This is helpful when you want to use EvoRL as a package and build your own project. More details can be found in the [hydra's CLI syntax](https://hydra.cc/docs/advanced/hydra-command-line-flags/).
 
 ```shell
-python -m evorl.train -cp /path/to/your/configs -cn /path/to/your/configs/your_global_cfg.yaml agent=ppo env=brax/ant
+python script/train.py -cp /path/to/your/configs -cn /path/to/your/configs/your_global_cfg.yaml agent=ppo env=brax/ant
 ```
 
 ### Advanced usage
 
-Module `evorl.train` also supports hydra's [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/). For example, if you want to perform 5 runs with different seeds, you can use the following command:
+Script `script/train.py` also supports hydra's [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/). For example, if you want to perform 5 runs with different seeds, you can use the following command:
 
 ```shell
 # specify the seed manually
-python -m evorl.train -m agent=exp/ppo/brax/ant env=brax/ant seed=0,1,2,3,4
+python script/train.py -m agent=exp/ppo/brax/ant env=brax/ant seed=0,1,2,3,4
 # or use hydra's extended override syntax:
-python -m evorl.train -m agent=exp/ppo/brax/ant env=brax/ant seed=range(5)
+python script/train.py -m agent=exp/ppo/brax/ant env=brax/ant seed=range(5)
 ```
 
 Similarly, it allows seeping the configs with hydra's [extended override syntax](https://hydra.cc/docs/advanced/override_grammar/extended/). It is easy to perform a hyperparameter grid search, for example:
 
 ```shell
-python -m evorl.train -m agent=exp/ppo/brax/ant env=brax/ant \
+python script/train.py -m agent=exp/ppo/brax/ant env=brax/ant \
     gae_lambda=range(0.8,0.95,0.01) discount=0.99,0.999,0.9999
 ```
 
-However, `evorl.train` is used to run experiments sequentially. To support massive number of experiments in parallel, we also provide the module `evorl.train_dist` to run multiple experiments synchronously across different GPUs. Below are some examples:
+However, `script/train.py` is used to run experiments sequentially. To support massive number of experiments in parallel, we also provide the module `script/train_dist.py` to run multiple experiments synchronously across different GPUs. Below are some examples:
 
 For single GPU case:
 
 ```shell
-# this is similar to evorl.train for a single GPU case,
+# this is similar to train.py for a single GPU case,
 # except the wandb's group name is different.
-python -m evorl.train_dist -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514
+python script/train_dist.py -m agent=exp/ppo/brax/ant env=brax/ant seed=114,514
 ```
 
 For multiple GPUs case:
 
 ```shell
 # sweep over multiple config values in parallel (using multi-process)
-python -m evorl.train_dist -m hydra/launcher=joblib \
+python script/train_dist.py -m hydra/launcher=joblib \
     agent=exp/ppo/brax/ant env=brax/ant seed=114,514
 
 # optional: specify the gpu ids used for parallel training
-CUDA_VISIBLE_DEVICES=0,5 python -m evorl.train_dist -m hydra/launcher=joblib \
+CUDA_VISIBLE_DEVICES=0,5 python script/train_dist.py -m hydra/launcher=joblib \
     agent=exp/ppo/brax/ant env=brax/ant seed=114,514
 ```
 
-For [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/), `evorl.train_dist` has the similar behavior as `evorl.train` when lauching without `joblib`. The only difference is that `evorl.train_dist` will set the group name of WandB by the experiment name, while `evorl.train` uses `"dev"` as the group name for all runs.
+For [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/), `script/train_dist.py` has the similar behavior as `script/train.py` when lauching without `joblib`. The only difference is that `script/train_dist.py` will set the group name of WandB by the experiment name, while `script/train.py` uses `"dev"` as the group name for all runs.
 
-However, when there are multiple GPUs, `evorl.train` will sequentially run a single run across multiple GPUs if the related algorithm supports distributed training. Instead, if enabling `joblib`, `evorl.train_dist` will run multiple jobs in parallel, where each job is running on a single GPU. If there are more jobs than #GPUs, multiple jobs will parallelly execute on the same GPU. For example, if there are 3 jobs to be executed on 2 GPUs, GPU1 will run job1 and job3, while GPU2 will run job2.
+However, when there are multiple GPUs, `script/train.py` will sequentially run a single run across multiple GPUs if the related algorithm supports distributed training. Instead, if enabling `joblib`, `script/train_dist.py` will run multiple jobs in parallel, where each job is running on a single GPU. If there are more jobs than #GPUs, multiple jobs will parallelly execute on the same GPU. For example, if there are 3 jobs to be executed on 2 GPUs, GPU1 will run job1 and job3, while GPU2 will run job2.
 
-:::{admonition} Tips for `evorl.train_dist`
+:::{admonition} Tips for `script/train_dist.py`
 :class: tip
 
-- It only supports multi-run mode, i.e, using `python -m evorl.train_dist -m` to launch the training, even if there is only one config to run.
+- It only supports multi-run mode, i.e, using `python script/train_dist.py -m` to launch the training, even if there is only one config to run.
 - It's recommended to run every job on a single device. By default, the script will use all detected GPUs and run every job on a dedicated GPU.
   - If you want to run mulitple jobs on a single device, set environment variables like `XLA_PYTHON_CLIENT_MEM_FRACTION=.10` or `XLA_PYTHON_CLIENT_PREALLOCATE=false` to avoid the OOM due to the JAX's pre-allocation.
 - If the number of submitted jobs exceeds the number of CPU cores, `joblib` will wait and reuse previous processes.  This is a caveat of `joblib` and could cause misconfigured GPU settings. However, this is a rare case. To solve it, append `hydra.launcher.n_jobs=<#jobs>` to the script.
-- Unlike `evorl.train`, this module only supports Nvidia GPUs.
+- Unlike `script/train.py`, this module only supports Nvidia GPUs.
 :::
 
 ### Logging
@@ -118,8 +118,8 @@ By default, the script will enable two recorders for logging: `LogRecorder` and 
 To disable the WandB logging or use its offline mode, set environment variable `WANDB_MODE` before launching the training:
 
 ```shell
-WANDB_MODE=disabled python -m evorl.train agent=ppo env=brax/ant
-WANDB_MODE=offline python -m evorl.train agent=ppo env=brax/ant
+WANDB_MODE=disabled python script/train.py agent=ppo env=brax/ant
+WANDB_MODE=offline python script/train.py agent=ppo env=brax/ant
 ```
 ````
 
