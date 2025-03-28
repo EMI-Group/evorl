@@ -66,16 +66,19 @@ class PopPPOWorkflow(PPOWorkflow):
         return train_metrics, state
 
     def learn(self, state: State) -> State:
-        one_step_timesteps = self.config.rollout_length * self.config.num_envs
-        num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
+        one_step_timesteps = (
+            self.config.rollout_length * self.config.num_envs * self.config.fold_iters
+        )
+        sampled_timesteps = unpmap(state.metrics.sampled_timesteps).tolist()[0]
+        num_iters = math.ceil(
+            (self.config.total_timesteps - sampled_timesteps) / one_step_timesteps
+        )
 
-        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)[0]
-
-        for i in range(start_iteration, num_iters):
+        for i in range(num_iters):
             train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
 
-            iters = i + 1
+            iters = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()[0]
             train_metrics = unpmap(train_metrics, self.pmap_axis_name)
             workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
 
