@@ -72,11 +72,7 @@ python -m evorl.train -m agent=exp/ppo/brax/ant env=brax/ant \
     gae_lambda=range(0.8,0.95,0.01) discount=0.99,0.999,0.9999
 ```
 
-However, `evorl.train` is used to running experiments sequentially. To support massive number of experiments in parallel, we also provide the module `evorl.train_dist` to run multiple experiments synchronously across different GPUs.
-
-For [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/), `evorl.train_dist` has the similar behavior as `evorl.train` when lauching without `joblib`. The only difference is that `evorl.train_dist` will set the group name of WandB by the experiment name, while `evorl.train` uses `"dev"` as the group name for all runs.
-
-However, when there are multiple GPUs, `evorl.train` will sequentially run a single run across multiple GPUs if the related algorithm supports distributed training. Instead, `evorl.train_dist` will run multiple jobs in parallel, where each job is running on a single GPU. If there are more jobs than #GPUs, multiple jobs could parallely execute on the same GPU. Below are some examples:
+However, `evorl.train` is used to run experiments sequentially. To support massive number of experiments in parallel, we also provide the module `evorl.train_dist` to run multiple experiments synchronously across different GPUs. Below are some examples:
 
 For single GPU case:
 
@@ -98,9 +94,14 @@ CUDA_VISIBLE_DEVICES=0,5 python -m evorl.train_dist -m hydra/launcher=joblib \
     agent=exp/ppo/brax/ant env=brax/ant seed=114,514
 ```
 
+For [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/), `evorl.train_dist` has the similar behavior as `evorl.train` when lauching without `joblib`. The only difference is that `evorl.train_dist` will set the group name of WandB by the experiment name, while `evorl.train` uses `"dev"` as the group name for all runs.
+
+However, when there are multiple GPUs, `evorl.train` will sequentially run a single run across multiple GPUs if the related algorithm supports distributed training. Instead, if enabling `joblib`, `evorl.train_dist` will run multiple jobs in parallel, where each job is running on a single GPU. If there are more jobs than #GPUs, multiple jobs will parallelly execute on the same GPU. For example, if there are 3 jobs to be executed on 2 GPUs, GPU1 will run job1 and job3, while GPU2 will run job2.
+
 :::{admonition} Tips for `evorl.train_dist`
 :class: tip
 
+- It only supports multi-run mode, i.e, using `python -m evorl.train_dist -m` to launch the training, even if there is only one config to run.
 - It's recommended to run every job on a single device. By default, the script will use all detected GPUs and run every job on a dedicated GPU.
   - If you want to run mulitple jobs on a single device, set environment variables like `XLA_PYTHON_CLIENT_MEM_FRACTION=.10` or `XLA_PYTHON_CLIENT_PREALLOCATE=false` to avoid the OOM due to the JAX's pre-allocation.
 - If the number of submitted jobs exceeds the number of CPU cores, `joblib` will wait and reuse previous processes.  This is a caveat of `joblib` and could cause misconfigured GPU settings. However, this is a rare case. To solve it, append `hydra.launcher.n_jobs=<#jobs>` to the script.
