@@ -1,0 +1,22 @@
+# @package _global_
+
+defaults:
+  - /agent/contrib/pop-ep-td3
+  - _self_
+
+total_episodes: 20000
+
+random_timesteps: 25600
+
+actor_update_interval: 2 # use default TD3 setting
+
+pop_size: 10
+num_learning_offspring: 10
+
+fitness_with_exploration: false
+episodes_for_fitness: 1 # must be devided by num_envs
+num_rl_updates_per_iter: 4096
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 40960 # 4096*10
