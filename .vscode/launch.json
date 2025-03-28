@@ -21,19 +21,29 @@
             "name": "Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train.py",
             "args": [
-                "agent=ddqn",
+                // "agent=exp/td3-ep/erl-baseline",
+                // "agent=exp/pop-ppo/pbt-baseline",
+                // "agent=exp/pop-td3/cleanrl-default"
+                // "agent=contrib/pop-td3",
+                "agent=contrib/td3-ep",
+                // "agent=contrib/pop-ep-td3",
+                // "agent=exp/pop-ppo/pbt-baseline",
+                // "agent=ddqn",
                 // "agent=exp/a2c/brax/ant",
                 // "agent=exp/sac/gymnax/batch1",
                 // "agent=exp/td3/brax/batch2",
                 // "agent=dqn",
                 // "agent=contrib/td3-onpolicy",
                 // "agent=exp/pop-td3/cleanrl-default",
-                // "env=brax/ant",
+                "env=brax/ant",
+                // "env=brax/swimmer",
                 // "env=gymnax/Breakout-MinAtar",
-                "env=gymnax/Acrobot-v1",
-                "checkpoint.enable=true",
+                // "env=gymnax/Acrobot-v1",
+                // "checkpoint.enable=true",
+                // "random_timesteps=256"
+                "pop_size=8",
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
@@ -49,7 +59,7 @@
             "name": "Train multirun",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train_dist.py",
             "args": [
                 "-m",
                 "agent=ppo",
@@ -68,7 +78,7 @@
             "name": "Train gymnax",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train.py",
             "args": [
                 "agent=impala",
                 "env=gymnax/SpaceInvaders-MinAtar",
@@ -88,7 +98,7 @@
             "name": "Train EnvPool",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train.py",
             "args": [
                 "agent=ppo",
                 "env=envpool/gymnasium/ant_v4",
@@ -104,15 +114,46 @@
             "justMyCode": false
         },
         {
+            "name": "Train Gym",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/train.py",
+            "args": [
+                // "agent=td3",
+                // "agent=meta/pbt-paramppo",
+                // "agent=exp/cemrl/brax-default",
+                "agent=exp/erl-ga/brax-default",
+                "env=gymnasium/mujoco/ant_v5",
+                "num_eval_envs=1",
+                "eval_episodes=1",
+                "warmup_iters=2",
+                // "agent=exp/ppo/acrobat",
+                // "env=gymnax/Acrobot-v1",
+            ],
+            "env": {
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                "WANDB_MODE": "disabled",
+                // "CUDA_VISIBLE_DEVICES": "4,5,6",
+                // "JAX_DISABLE_JIT": "true"
+            },
+            "justMyCode": false
+        },
+        {
             "name": "PBT Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train.py",
             "args": [
                 // "agent=meta/pbt-paramppo",
-                "agent=meta/pbt-cso-paramppo",
+                // "agent=meta/pbt-cso-paramppo",
+                "agent=meta/pbt-paramopenes",
                 // "agent=pbt-ppo",
                 "env=brax/ant",
+                "warmup_steps=1",
+                "workflow_steps_per_iter=1",
+                "eval_interval=1",
+                "num_eval_envs=1",
+                "eval_episodes=1",
             ],
             "env": {
                 "WANDB_MODE": "disabled",
@@ -126,7 +167,7 @@
             "name": "CEMRL Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train.py",
             "args": [
                 "agent=erl/cemrl-openes",
                 // "agent=exp/cemrl/brax-default",
@@ -149,7 +190,7 @@
             "name": "ERL Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train.py",
             "args": [
                 "agent=exp/erl-ga/ori/ant",
                 // "agent=erl/erl-ga",
@@ -167,7 +208,7 @@
             "name": "ERL-ES Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train.py",
             "args": [
                 "agent=erl/erl-ves",
                 "env=brax/hopper",
@@ -185,7 +226,7 @@
             "name": "ERL-EDA Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train.py",
             "args": [
                 // "agent=erl/erl-openes",
                 "agent=exp/erl-openes/brax-default",
@@ -203,7 +244,7 @@
             "name": "EC-SO Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train.py",
             "args": [
                 // "agent=ec/vanilla_es",
                 // "agent=contrib/openes-evox",
@@ -225,7 +266,7 @@
             "name": "EC-MO Train",
             "type": "debugpy",
             "request": "launch",
-            "module": "evorl.train",
+            "program": "scripts/train.py",
             "args": [
                 // "agent=exp/ec/nsga2/hopper",
                 "agent=contrib/rvea-evox",

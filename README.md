@@ -96,7 +96,7 @@ For developers, see [Contributing to EvoRL](https://evorl.readthedocs.io/latest/
 
 ## Training
 
-EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. Users can use `script/train.py` to run algorithms from CLI. Specify the `agent` and `env` field based on the related config file path (`*.yaml`) in `configs` folder.
+EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. Users can use `scripts/train.py` to run algorithms from CLI. Specify the `agent` and `env` field based on the related config file path (`*.yaml`) in `configs` folder.
 
 ```text
 # hierarchy of folder `configs/`
@@ -119,7 +119,7 @@ configs
 For example: To train the PPO agent with config file in `configs/agent/ppo.yaml` on environment Ant with config file in `configs/env/brax/ant.yaml`, type the following command:
 
 ```shell
-python script/train.py agent=ppo env=brax/ant
+python scripts/train.py agent=ppo env=brax/ant
 ```
 
 Then the PPO algorithm starts training. If multiple GPUs are detected, most algorithms will automatically be trained in distributed mode.
