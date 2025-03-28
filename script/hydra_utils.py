@@ -1,16 +1,8 @@
 import re
 from pathlib import Path
-
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf
-
 from absl import logging
-
-__all__ = [
-    "set_omegaconf_resolvers",
-    "get_output_dir",
-    "set_absl_log_level",
-]
 
 
 def set_omegaconf_resolvers():
@@ -23,12 +15,14 @@ def set_omegaconf_resolvers():
 def get_output_dir(default_path: str = "./debug"):
     """Return the output directory of hydra."""
     if HydraConfig.initialized():
-        output_dir = Path(HydraConfig.get().runtime.output_dir).absolute()
+        output_dir = HydraConfig.get().runtime.output_dir
     else:
-        output_dir = Path(default_path).absolute()
+        output_dir = default_path
 
-        if not output_dir.exists():
-            output_dir.mkdir(parents=True)
+    output_dir = Path(output_dir).expanduser().resolve()
+
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True)
 
     return output_dir
 

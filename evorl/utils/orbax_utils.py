@@ -8,8 +8,6 @@ import chex
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig, OmegaConf
 
-from evorl.utils.hydra_utils import get_output_dir
-
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -120,12 +118,13 @@ class DummyCheckpointManager(ocp.AbstractCheckpointManager):
 def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
     """Setup checkpoint manager."""
     if config.checkpoint.enable:
-        output_dir = get_output_dir()
         ckpt_options = ocp.CheckpointManagerOptions(
             save_interval_steps=config.checkpoint.save_interval_steps,
             max_to_keep=config.checkpoint.max_to_keep,
         )
-        ckpt_path = output_dir / "checkpoints"
+        # Note: orbax only supports absolute path
+        output_dir = os.path.abspath(os.path.expanduser(config.output_dir))
+        ckpt_path = os.path.join(output_dir, "checkpoints")
         logger.info(f"set checkpoint path: {ckpt_path}")
         checkpoint_manager = ocp.CheckpointManager(
             ckpt_path,
