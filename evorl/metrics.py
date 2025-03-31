@@ -60,9 +60,9 @@ class MetricBase(PyTreeData, kw_only=True):
         return self.replace(**field_dict)
 
     def to_local_dict(self):
-        """Convert all dataclass to dict recursively.
+        """Convert the dataclass to native python structures recursively.
 
-        The data in the metric object will be converted to local data types: jax array will be convert to numpy array,
+        The data in the metric object will be converted to local data types: list, tuple, dict, NamedTuple, etc. Jax array will be convert to numpy array,
 
         Returns:
             A converted dict.
