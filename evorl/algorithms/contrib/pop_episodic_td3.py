@@ -30,7 +30,12 @@ from evorl.algorithms.erl.cemrl_workflow import CEMRLTrainMetric
 
 
 class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
-    """A batched TD3 workflow like CEMERL."""
+    """A batched TD3 workflow like CEMERL.
+
+    The differences from CEMRL are:
+    - Each individual has an actor and a critic.
+    - All individuals are updated by RL.
+    """
 
     def __init__(self, **kwargs):
         super(CEMRLTD3WorkflowTemplate, self).__init__(**kwargs)
