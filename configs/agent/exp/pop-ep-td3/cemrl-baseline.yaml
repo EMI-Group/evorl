@@ -11,7 +11,7 @@ actor_update_interval: 2 # use default TD3 setting
 pop_size: 10
 num_learning_offspring: 10
 
-fitness_with_exploration: false
+fitness_with_exploration: true
 episodes_for_fitness: 1 # must be devided by num_envs
 num_rl_updates_per_iter: 4096
 
