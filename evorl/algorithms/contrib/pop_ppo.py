@@ -83,9 +83,10 @@ class PopPPOWorkflow(PPOWorkflow):
             workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
 
             workflow_metrics_data = jtu.tree_map(
-                partial(get_1d_array_statistics, histogram=True),
+                lambda x: x[0],
                 workflow_metrics.to_local_dict(),
             )
+
             self.recorder.write(workflow_metrics_data, iters)
 
             train_metric_data = train_metrics.to_local_dict()
