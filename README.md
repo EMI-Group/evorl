@@ -218,9 +218,10 @@ Before posting, kindly check existing issues and discussions to avoid duplicates
 - [acme](https://github.com/google-deepmind/acme)
 - [EvoX](https://github.com/EMI-Group/evox)
 - [Brax](https://github.com/google/brax)
-- [gymnax](https://github.com/RobertTLange/gymnax)
+- [MuJoCo Playground](https://github.com/google-deepmind/mujoco_playground)
 - [Jumanji](https://github.com/instadeepai/jumanji)
 - [JaxMARL](https://github.com/FLAIROx/JaxMARL)
+- [gymnax](https://github.com/RobertTLange/gymnax)
 - [EnvPool](https://github.com/sail-sg/envpool)
 
 ## Citing EvoRL
