@@ -1,0 +1,3 @@
+env_type: mujoco_playground
+env_name: PandaPickCube
+max_episode_steps: 150

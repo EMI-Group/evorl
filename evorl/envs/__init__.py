@@ -21,6 +21,8 @@ def create_env(env_cfg, **kwargs) -> Env:
     match env_type:
         case "brax":
             env = create_wrapped_brax_env(env_name, **kwargs)
+        case "mujoco_playground":
+            env = create_wrapped_mujoco_playground_env(env_name, **kwargs)
         case "gymnax":
             env = create_wrapped_gymnax_env(env_name, **kwargs)
         case "jumanji":
@@ -75,3 +77,13 @@ if importlib.util.find_spec("envpool") is not None:
     from .envpool import create_envpool_env
 
     __all__.extend(["create_envpool_env"])
+
+if importlib.util.find_spec("mujoco_playground") is not None:
+    from .mujoco_playground import (
+        create_mujco_playground_env,
+        create_wrapped_mujoco_playground_env,
+    )
+
+    __all__.extend(
+        ["create_mujco_playground_env", "create_wrapped_mujoco_playground_env"]
+    )

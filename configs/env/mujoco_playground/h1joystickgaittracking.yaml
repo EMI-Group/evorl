@@ -1,0 +1,3 @@
+env_type: mujoco_playground
+env_name: H1JoystickGaitTracking
+max_episode_steps: 1000
