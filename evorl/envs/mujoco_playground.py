@@ -33,9 +33,18 @@ class MjxEnvAdapter(EnvAdapter):
         info = PyTreeDict(sort_dict(mjxenv_state.info))
         info.metrics = PyTreeDict(sort_dict(mjxenv_state.metrics))
 
+        obs = mjxenv_state.obs
+        if not isinstance(obs, jax.Array):
+            if "state" in obs:
+                obs = obs["state"]
+            else:
+                raise ImportError(
+                    f"This Pytree observation space is not supported yet: {obs}"
+                )
+
         return EnvState(
             env_state=mjxenv_state,
-            obs=mjxenv_state.obs,
+            obs=obs,
             reward=mjxenv_state.reward,
             done=mjxenv_state.done,
             info=info,
@@ -48,9 +57,18 @@ class MjxEnvAdapter(EnvAdapter):
 
         info = state.info.replace(**mjxenv_state.info, metrics=metrics)
 
+        obs = mjxenv_state.obs
+        if not isinstance(obs, jax.Array):
+            if "state" in obs:
+                obs = obs["state"]
+            else:
+                raise ImportError(
+                    f"This Pytree observation space is not supported yet: {obs}"
+                )
+
         return state.replace(
             env_state=mjxenv_state,
-            obs=mjxenv_state.obs,
+            obs=obs,
             reward=mjxenv_state.reward,
             done=mjxenv_state.done,
             info=info,
@@ -63,7 +81,15 @@ class MjxEnvAdapter(EnvAdapter):
 
     @property
     def obs_space(self) -> Space:
-        obs_spec = jnp.full((self.env.observation_size,), 1e10, dtype=jnp.float32)
+        obs_size = self.env.observation_size
+        if not isinstance(obs_size, jax.Array):
+            if "state" in obs_size:
+                obs_size = obs_size["state"][0]
+            else:
+                raise ImportError(
+                    f"This Pytree observation space is not supported yet: {obs_size}"
+                )
+        obs_spec = jnp.full((obs_size,), 1e10, dtype=jnp.float32)
         return Box(low=-obs_spec, high=obs_spec)
 
 
