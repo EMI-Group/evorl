@@ -17,27 +17,30 @@ pip install -e .
 
 ## RL Environments
 
-By default, `pip install evorl` will automatically install environments on `brax`. If you want to install other supported environments, you need manually install the related environment packages. For example:
+By default, `pip install evorl` will automatically install environments on `brax`. If you want to install other supported environments, you need manually install the related environment packages. We provide useful extras for different environments.
 
 ```shell
 # ===== GPU-accelerated Environments =====
+# Mujoco playground Envs:
+pip install -e ".[mujoco-playground]"
 # gymnax Envs:
-pip install gymnax
+pip install -e ".[gymnax]"
 # Jumanji Envs:
-pip install jumanji
+pip install -e ".[jumanji]"
 # JaxMARL Envs:
-pip install jaxmarl
+pip install -e ".[jaxmarl]"
 
 # ===== CPU-based Environments =====
 # EnvPool Envs: (also require py<3.12)
-pip install envpool "numpy<2.0.0"
+pip install -e ".[envpool]"
 # Gymnasium Envs:
-pip install "gymnasium[atari,mujoco,classic-control,box2d]>=1.1.0"
+pip install -e ".[gymnasium]"
 ```
 
 | Environment Library                                                        | Descriptions                            |
 | -------------------------------------------------------------------------- | --------------------------------------- |
 | [Brax](https://github.com/google/brax)                                     | Robotic control                         |
+| [MuJoCo Playground](https://github.com/google-deepmind/mujoco_playground)  | Robotic control                         |
 | [gymnax (experimental)](https://github.com/RobertTLange/gymnax)            | classic control, bsuite, MinAtar        |
 | [JaxMARL (experimental)](https://github.com/FLAIROx/JaxMARL)               | Multi-agent Envs                        |
 | [Jumanji (experimental)](https://github.com/instadeepai/jumanji)           | Game, Combinatorial optimization        |

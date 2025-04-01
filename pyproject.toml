@@ -74,6 +74,7 @@ dependencies = [
 gymnax = ["gymnax"]
 jumanji = ["jumanji"]
 jaxmarl = ["jaxmarl"]
+mujoco-playground = ["playground"]
 envpool = ["envpool", "numpy<2.0.0"] # also requires python<=3.11
 gymnasium = ["gymnasium[atari,mujoco,classic-control,box2d]>=1.1.0"]
 dev = [

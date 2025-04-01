@@ -26,6 +26,7 @@
 - [Table of Contents](#table-of-contents)
 - [Introduction](#introduction)
   - [Highlight](#highlight)
+    - [Update](#update)
   - [Overview of Key Concepts in EvoRL](#overview-of-key-concepts-in-evorl)
 - [Installation](#installation)
 - [Quickstart](#quickstart)
@@ -66,6 +67,10 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 - **Implementation of EvoRL algorithms**: Currently, we provide two popular paradigms in Evolutionary Reinforcement Learning: Evolution-guided Reinforcement Learning (ERL): ERL, CEM-RL; and Population-based AutoRL: PBT.
 - **Unified Environment API**: Support multiple GPU-accelerated RL environment packages (eg: Brax, gymnax, ...). Multiple Env Wrappers are also provided.
 - **Object-oriented functional programming model**: Classes define the static execution logic and their running states are stored externally.
+
+### Update
+
+- 2025-04-01: Add support for Mujoco Playground Environments.
 
 ## Overview of Key Concepts in EvoRL
 
@@ -149,22 +154,26 @@ Currently, EvoRL supports 4 types of algorithms
 
 # RL Environments
 
-By default, `pip install evorl` will automatically install environments on `brax`. If you want to use other supported environments, please install the additional environment packages. For example:
+By default, `pip install evorl` will automatically install environments on `brax`. If you want to use other supported environments, please install the additional environment packages. We provide useful extras for different environments.
+
+For example:
 
 ```shell
 # ===== GPU-accelerated Environments =====
+# Mujoco playground Envs:
+pip install -e ".[mujoco-playground]"
 # gymnax Envs:
-pip install gymnax
+pip install -e ".[gymnax]"
 # Jumanji Envs:
-pip install jumanji
+pip install -e ".[jumanji]"
 # JaxMARL Envs:
-pip install jaxmarl
+pip install -e ".[jaxmarl]"
 
 # ===== CPU-based Environments =====
 # EnvPool Envs: (also require py<3.12)
-pip install envpool "numpy<2.0.0"
+pip install -e ".[envpool]"
 # Gymnasium Envs:
-pip install "gymnasium[atari,mujoco,classic-control,box2d]>=1.1.0"
+pip install -e ".[gymnasium]"
 ```
 
 > [!WARNING]
@@ -175,6 +184,7 @@ pip install "gymnasium[atari,mujoco,classic-control,box2d]>=1.1.0"
 | Environment Library                                                        | Descriptions                            |
 | -------------------------------------------------------------------------- | --------------------------------------- |
 | [Brax](https://github.com/google/brax)                                     | Robotic control                         |
+| [MuJoCo Playground](https://github.com/google-deepmind/mujoco_playground)  | Robotic control                         |
 | [gymnax (experimental)](https://github.com/RobertTLange/gymnax)            | classic control, bsuite, MinAtar        |
 | [JaxMARL (experimental)](https://github.com/FLAIROx/JaxMARL)               | Multi-agent Envs                        |
 | [Jumanji (experimental)](https://github.com/instadeepai/jumanji)           | Game, Combinatorial optimization        |
