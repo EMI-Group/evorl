@@ -28,5 +28,5 @@ agent_network:
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
 
-wandb:
-  tags: ["32pop"]
+
+tags: ["32pop"]

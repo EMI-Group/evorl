@@ -22,5 +22,5 @@ eval_interval: 8192 # unit: num of iterations
 checkpoint:
   save_interval_steps: 81920
 
-wandb:
-  tags: ["erl-baseline"]
+
+tags: ["ep", "erl-baseline"]

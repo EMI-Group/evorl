@@ -22,5 +22,5 @@ agent_network:
   actor_hidden_layer_sizes: [256, 256]
   norm_layer_type: "none"
 
-wandb:
-  tags: ["256net", "1eval"]
+
+tags: ["256net", "1eval"]

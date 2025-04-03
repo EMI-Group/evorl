@@ -16,5 +16,5 @@ reward_scale: 1.0 # Note: unlike cfg in brax, we don"t change reward_scale
 adaptive_alpha: true
 alpha: 1.0 # used as initial alpha value if adaptive_alpha is true
 
-wandb:
-  tags: ["paramsac"]
+
+tags: ["paramsac"]

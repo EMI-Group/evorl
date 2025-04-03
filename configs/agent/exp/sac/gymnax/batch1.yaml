@@ -26,5 +26,5 @@ eval_interval: 32 # unit: num of iterations
 checkpoint:
   save_interval_steps: 5120
 
-wandb:
-  tags: ["batch1"]
+
+tags: ["batch1"]

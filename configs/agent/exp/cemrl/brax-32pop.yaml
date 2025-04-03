@@ -28,5 +28,5 @@ num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs
 eval_interval: 10
 
-wandb:
-  tags: ["32pop"]
+
+tags: ["32pop"]

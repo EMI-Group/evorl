@@ -31,5 +31,5 @@ eval_interval: 256 # unit: num of iterations
 checkpoint:
   save_interval_steps: 2560
 
-wandb:
-  tags: ["batch-brax"]
+
+tags: ["batch-brax"]

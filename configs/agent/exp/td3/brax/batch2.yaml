@@ -25,5 +25,5 @@ num_updates_per_iter: 32 # each update contains 1 actor update + `actor_update_i
 checkpoint:
   save_interval_steps: 1280
 
-wandb:
-  tags: ["batch2"]
+
+tags: ["batch2"]
