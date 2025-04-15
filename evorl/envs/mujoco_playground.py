@@ -66,13 +66,22 @@ class MjxEnvAdapter(EnvAdapter):
         obs_spec = self.env.observation_size
 
         def get_space(obs_size):
-            obs_spec = jnp.full((obs_size,), 1e10, dtype=jnp.float32)
+            if not isinstance(obs_size, tuple):
+                obs_size = (obs_size,)
+            obs_spec = jnp.full(obs_size, 1e10, dtype=jnp.float32)
             return Box(low=-obs_spec, high=obs_spec)
 
         if isinstance(obs_spec, int):
             return get_space(obs_spec)
         else:
-            return SpaceContainer(spaces=jtu.tree_map(get_space, obs_spec))
+            return SpaceContainer(
+                spaces=jtu.tree_map(
+                    get_space,
+                    obs_spec,
+                    is_leaf=lambda obj: isinstance(obj, tuple)
+                    and all(isinstance(x, int) for x in obj),
+                )
+            )
 
 
 def create_mujco_playground_env(env_name: str, **kwargs) -> MjxEnvAdapter:
