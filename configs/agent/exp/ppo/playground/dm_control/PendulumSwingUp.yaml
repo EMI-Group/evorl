@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - dm_control_suite_default
+  - dm_control_default
   - _self_
 
 reuse_rollout_epochs: 4
