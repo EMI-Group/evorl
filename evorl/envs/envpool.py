@@ -216,7 +216,7 @@ class OneEpisodeWrapper(Wrapper):
         def where_done(x, y):
             done = state.done
             if done.ndim > 0:
-                done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
+                done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))
             return jnp.where(done, x, y)
 
         return jtu.tree_map(

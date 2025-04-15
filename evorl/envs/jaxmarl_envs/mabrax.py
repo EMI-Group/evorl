@@ -105,7 +105,7 @@ class MABraxEnvV2(MABraxEnv):
     ) -> tuple[
         dict[str, chex.Array], envs.State, dict[str, float], dict[str, bool], dict
     ]:
-        next_state = self.env.step(state, global_action)  # type: ignore
+        next_state = self.env.step(state, global_action)
         observations = self.get_obs(next_state)
         rewards = {agent: next_state.reward for agent in self.agents}
         rewards["__all__"] = next_state.reward
@@ -113,7 +113,7 @@ class MABraxEnvV2(MABraxEnv):
         dones["__all__"] = next_state.done.astype(jnp.bool_)
         return (
             observations,
-            next_state,  # type: ignore
+            next_state,
             rewards,
             dones,
             next_state.info,

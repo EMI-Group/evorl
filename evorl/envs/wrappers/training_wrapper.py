@@ -47,15 +47,18 @@ class EpisodeWrapper(Wrapper):
     def reset(self, key: chex.PRNGKey) -> EnvState:
         state = self.env.reset(key)
 
-        state.info.steps = jnp.zeros((), dtype=jnp.int32)
-        state.info.termination = jnp.zeros(())
-        state.info.truncation = jnp.zeros(())
-        if self.record_ori_obs:
-            state.info.ori_obs = jnp.zeros_like(state.obs)
-        if self.record_episode_return:
-            state.info.episode_return = jnp.zeros(())
+        info = state.info.replace(
+            steps=jnp.zeros((), dtype=jnp.int32),
+            termination=jnp.zeros(()),
+            truncation=jnp.zeros(()),
+        )
 
-        return state
+        if self.record_ori_obs:
+            info.ori_obs = jnp.zeros_like(state.obs)
+        if self.record_episode_return:
+            info.episode_return = jnp.zeros(())
+
+        return state.replace(info=info)
 
     def step(self, state: EnvState, action: jax.Array) -> EnvState:
         return self._step(state, action)
@@ -292,7 +295,7 @@ class FastVmapAutoResetWrapper(Wrapper):
         def where_done(x, y):
             done = state.done
             if done.ndim > 0:
-                done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
+                done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))
             return jnp.where(done, x, y)
 
         env_state = jax.tree_map(
