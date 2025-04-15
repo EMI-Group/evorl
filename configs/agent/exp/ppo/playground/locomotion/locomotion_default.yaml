@@ -5,6 +5,7 @@ defaults:
   - _self_
 
 normalize_obs: true
+normalize_gae: true
 num_envs: 8192
 minibatch_size: 5120 # batch_size*unroll_length = 256*20
 rollout_length: 20  # unroll_length*(batch_size * num_minibatches // num_envs) in brax = 20*(256*32//8192)

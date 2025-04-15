@@ -74,6 +74,8 @@ class ParamPPOAgent(PPOAgent):
         behavior_actions_logp = sample_batch.extras.policy_extras.logp
 
         advantages = sample_batch.extras.advantages
+        if self.normalize_gae:
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         logrho = actions_logp - behavior_actions_logp
         rho = jnp.exp(logrho)

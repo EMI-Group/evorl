@@ -5,6 +5,7 @@ workflow_cls: evorl.algorithms.ppo.PPOWorkflow
 num_envs: 4
 
 normalize_obs: false
+normalize_gae: false
 rollout_length: 512 # batch_size = rollout_length * num_envs = 2048
 discount: 0.99
 gae_lambda: 0.95

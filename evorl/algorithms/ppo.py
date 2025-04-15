@@ -60,6 +60,7 @@ class PPOAgent(Agent):
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     clip_epsilon: float = 0.2
+    normalize_gae: bool = True
     policy_obs_key: str = ""
     value_obs_key: str = ""
 
@@ -167,6 +168,8 @@ class PPOAgent(Agent):
         behavior_actions_logp = sample_batch.extras.policy_extras.logp
 
         advantages = sample_batch.extras.advantages
+        if self.normalize_gae:
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         logrho = actions_logp - behavior_actions_logp
         rho = jnp.exp(logrho)
@@ -211,6 +214,7 @@ def make_mlp_ppo_agent(
     actor_hidden_layer_sizes: tuple[int] = (256, 256),
     critic_hidden_layer_sizes: tuple[int] = (256, 256),
     normalize_obs: bool = False,
+    normalize_gae: bool = False,
     policy_obs_key: str = "",
     value_obs_key: str = "",
 ):
@@ -245,6 +249,7 @@ def make_mlp_ppo_agent(
         value_network=value_network,
         obs_preprocessor=obs_preprocessor,
         clip_epsilon=clip_epsilon,
+        normalize_gae=normalize_gae,
         policy_obs_key=policy_obs_key,
         value_obs_key=value_obs_key,
     )
@@ -296,6 +301,7 @@ class PPOWorkflow(OnPolicyWorkflow):
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             normalize_obs=config.normalize_obs,
+            normalize_gae=config.normalize_gae,
             policy_obs_key=config.agent_network.policy_obs_key,
             value_obs_key=config.agent_network.value_obs_key,
         )
