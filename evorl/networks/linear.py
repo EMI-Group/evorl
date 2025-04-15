@@ -152,16 +152,28 @@ def make_policy_network(
     activation: ActivationFn = nn.relu,
     activation_final: ActivationFn | None = None,
     norm_layer_type: str = "none",
+    obs_key: str = "",
 ) -> nn.Module:
     """Creates a policy network."""
-    policy_model = make_mlp(
-        layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
-        activation=activation,
-        kernel_init=jax.nn.initializers.lecun_uniform(),
-        activation_final=activation_final,
-        use_bias=use_bias,
-        norm_layer_type=norm_layer_type,
-    )
+
+    class PolicyModule(nn.Module):
+        @nn.compact
+        def __call__(self, obs: jax.Array):
+            if obs_key:
+                obs = obs[obs_key]
+
+            actions = make_mlp(
+                layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
+                activation=activation,
+                kernel_init=jax.nn.initializers.lecun_uniform(),
+                activation_final=activation_final,
+                use_bias=use_bias,
+                norm_layer_type=norm_layer_type,
+            )(obs)
+
+            return actions
+
+    policy_model = PolicyModule()
 
     return policy_model
 
@@ -171,14 +183,16 @@ def make_v_network(
     activation: ActivationFn = nn.relu,
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
     norm_layer_type: str = "none",
+    obs_key: str = "",
 ) -> nn.Module:
     """Creates a V network: (obs) -> value."""
 
     class VModule(nn.Module):
-        """V Module."""
-
         @nn.compact
         def __call__(self, obs: jax.Array):
+            if obs_key:
+                obs = obs[obs_key]
+
             vs = make_mlp(
                 layer_sizes=tuple(hidden_layer_sizes) + (1,),
                 activation=activation,
@@ -199,6 +213,7 @@ def make_q_network(
     activation: ActivationFn = nn.relu,
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
     norm_layer_type: str = "none",
+    obs_key: str = "",
 ) -> nn.Module:
     """Creates a Q network: (obs, action) -> value."""
 
@@ -209,6 +224,9 @@ def make_q_network(
 
         @nn.compact
         def __call__(self, obs: jax.Array, actions: jax.Array):
+            if obs_key:
+                obs = obs[obs_key]
+
             hidden = jnp.concatenate([obs, actions], axis=-1)
             if self.n == 1:
                 qs = make_mlp(
@@ -242,6 +260,7 @@ def make_discrete_q_network(
     activation: ActivationFn = nn.relu,
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
     norm_layer_type: str = "none",
+    obs_key: str = "",
 ) -> nn.Module:
     """Creates a Q network for discrete action space: (obs) -> q_values."""
 
@@ -252,6 +271,9 @@ def make_discrete_q_network(
 
         @nn.compact
         def __call__(self, obs: jax.Array):
+            if obs_key:
+                obs = obs[obs_key]
+
             if self.n == 1:
                 qs = make_mlp(
                     layer_sizes=tuple(hidden_layer_sizes) + (action_size,),

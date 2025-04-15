@@ -27,6 +27,8 @@ optimizer:
 agent_network:
   actor_hidden_layer_sizes: [32, 32, 32, 32]
   critic_hidden_layer_sizes: [256, 256, 256, 256, 256]
+  policy_obs_key: "state"
+  value_obs_key: "state"
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs

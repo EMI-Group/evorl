@@ -31,3 +31,5 @@ optimizer:
 agent_network:
   actor_hidden_layer_sizes: [256, 256]
   critic_hidden_layer_sizes: [256, 256]
+  policy_obs_key: null
+  value_obs_key: null
