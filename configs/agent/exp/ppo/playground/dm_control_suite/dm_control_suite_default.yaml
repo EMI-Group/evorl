@@ -4,16 +4,18 @@ defaults:
   - /agent/ppo
   - _self_
 
-normalize_obs: true
-num_envs: 8192
-minibatch_size: 5120 # batch_size*unroll_length = 256*20
-rollout_length: 20  # unroll_length*(batch_size * num_minibatches // num_envs) in brax = 20*(256*32//8192)
-reuse_rollout_epochs: 4
+# Note: we do not use reward_scaling=10.0 in playground
 
-discount: 0.97
+normalize_obs: true
+num_envs: 2048
+minibatch_size: 30720 # batch_size*unroll_length in brax = 1024*30
+rollout_length: 480  # unroll_length*(batch_size * num_minibatches // num_envs) in brax = 30*(1024*32//2048)
+reuse_rollout_epochs: 16
+
+discount: 0.995
 clip_epsilon: 0.3
 
-total_timesteps: 100_000_000
+total_timesteps: 60_000_000
 
 loss_weights:
   actor_loss: 1.0
@@ -21,8 +23,8 @@ loss_weights:
   actor_entropy: -0.01
 
 optimizer:
-  lr: 0.0003
-  grad_clip_norm: 1.0 # set 0 or null to turn-off
+  lr: 0.001
+  grad_clip_norm: 0 # set 0 or null to turn-off
 
 agent_network:
   actor_hidden_layer_sizes: [128, 128, 128, 128]
