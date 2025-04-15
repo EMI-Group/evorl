@@ -6,6 +6,7 @@ import chex
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import optax
 
 from evorl.replay_buffers import ReplayBuffer
@@ -68,7 +69,7 @@ class SACAgent(Agent):
     ) -> AgentState:
         key, critic_key, actor_key = jax.random.split(key, num=3)
 
-        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
         dummy_action = action_space.sample(key)[None, ...]
 
         critic_params = self.critic_network.init(critic_key, dummy_obs, dummy_action)
@@ -232,7 +233,7 @@ class SACDiscreteAgent(Agent):
     ) -> AgentState:
         key, critic_key, actor_key = jax.random.split(key, num=3)
 
-        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
 
         critic_params = self.critic_network.init(critic_key, dummy_obs)
         target_critic_params = critic_params

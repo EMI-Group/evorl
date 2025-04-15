@@ -176,7 +176,7 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
 
         dummy_obs = self.env.obs_space.sample(key)
         init_actor_params = self.agent.actor_network.init(
-            pop_agent_key, dummy_obs[None, ...]
+            pop_agent_key, jtu.tree_map(lambda x: x[None, ...], dummy_obs)
         )
 
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)

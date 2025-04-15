@@ -69,7 +69,7 @@ class TD3Agent(Agent):
     ) -> AgentState:
         key, q_key1, q_key2, actor_key = jax.random.split(key, num=4)
 
-        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
         dummy_action = action_space.sample(key)[None, ...]
 
         critic1_params = self.critic_network.init(q_key1, dummy_obs, dummy_action)

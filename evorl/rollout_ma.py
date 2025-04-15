@@ -8,6 +8,7 @@ from evorl.agent import Agent, AgentState
 from evorl.envs import EnvState, MultiAgentEnv
 from evorl.sample_batch import SampleBatch
 from evorl.types import AgentID, PyTreeDict
+from evorl.utils.jax_utils import tree_get
 from evorl.utils.ma_utils import batchify, unbatchify
 
 # TODO: add RNN Policy support
@@ -43,7 +44,7 @@ def decentralized_env_step(
 
     # assume agents have different models, non-parallel
     for (agent_id, agent), env_key in zip(agents.items(), env_keys):
-        agent_sample_batch = SampleBatch(obs=sample_batch.obs[agent_id])
+        agent_sample_batch = SampleBatch(obs=tree_get(sample_batch.obs, agent_id))
         actions[agent_id], policy_extras[agent_id] = agent.compute_actions(
             agent_states[agent_id], agent_sample_batch, env_key
         )

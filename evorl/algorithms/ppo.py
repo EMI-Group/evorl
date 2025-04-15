@@ -72,7 +72,7 @@ class PPOAgent(Agent):
     ) -> AgentState:
         policy_key, value_key = jax.random.split(key, 2)
 
-        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
 
         policy_params = self.policy_network.init(policy_key, dummy_obs)
 

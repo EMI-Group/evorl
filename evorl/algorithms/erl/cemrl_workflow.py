@@ -133,7 +133,7 @@ class CEMRLWorkflowBase(Workflow):
 
         # create dummy data to initialize the replay buffer
         dummy_action = jnp.zeros(action_space.shape)
-        dummy_obs = jnp.zeros(obs_space.shape)
+        dummy_obs = obs_space.sample(key)
 
         dummy_reward = jnp.zeros(())
         dummy_done = jnp.zeros(())

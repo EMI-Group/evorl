@@ -8,6 +8,7 @@ import distrax
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
@@ -69,7 +70,7 @@ class DQNAgent(Agent):
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
 
         q_params = self.q_network.init(key, dummy_obs)
         target_q_params = q_params

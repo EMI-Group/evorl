@@ -4,6 +4,7 @@ from typing import Any
 import chex
 import flax.linen as nn
 import jax.numpy as jnp
+import jax.tree_util as jtu
 
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.networks import make_policy_network
@@ -48,7 +49,7 @@ class StochasticECAgent(Agent):
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
         policy_params = self.policy_network.init(key, dummy_obs)
 
         params_state = ECNetworkParams(
@@ -122,7 +123,7 @@ class DeterministicECAgent(Agent):
     def init(
         self, obs_space: Space, action_space: Space, key: chex.PRNGKey
     ) -> AgentState:
-        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
         policy_params = self.policy_network.init(key, dummy_obs)
 
         params_state = ECNetworkParams(

@@ -5,6 +5,7 @@ import chex
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
@@ -72,7 +73,7 @@ class DDPGAgent(Agent):
     ) -> AgentState:
         key, q_key, actor_key = jax.random.split(key, num=3)
 
-        dummy_obs = obs_space.sample(key)[None, ...]
+        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
         dummy_action = action_space.sample(key)[None, ...]
 
         critic_params = self.critic_network.init(q_key, dummy_obs, dummy_action)
