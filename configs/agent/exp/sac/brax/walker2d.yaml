@@ -24,12 +24,11 @@ num_updates_per_iter: 16
 random_timesteps: 0
 learning_start_timesteps: 8192
 
-num_eval_envs: 16
-eval_episodes: 16 # should be divided by num_eval_envs
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
 eval_interval: 256 # unit: num of iterations
 
 checkpoint:
   save_interval_steps: 2560
-
 
 tags: ["batch-brax"]
