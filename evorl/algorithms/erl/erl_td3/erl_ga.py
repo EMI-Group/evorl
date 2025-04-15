@@ -185,7 +185,7 @@ class ERLGAWorkflow(ERLTD3WorkflowTemplate):
         dummy_obs = self.env.obs_space.sample(key)
         pop_actor_params = jax.vmap(self.agent.actor_network.init, in_axes=(0, None))(
             jax.random.split(pop_agent_key, self.config.pop_size),
-            dummy_obs[None, ...],
+            jtu.tree_map(lambda x: x[None, ...], dummy_obs),
         )
 
         ec_opt_state = self.ec_optimizer.init(pop_actor_params, ec_key)

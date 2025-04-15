@@ -247,7 +247,11 @@ class ParamPPOWorkflow(PPOWorkflow):
         )
 
         # ======== compute GAE =======
-        _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
+        _obs = jtu.tree_map(
+            lambda obs, next_obs: jnp.concatenate([obs, next_obs[-1:]], axis=0),
+            trajectory.obs,
+            trajectory.next_obs,
+        )
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(state.agent_state, SampleBatch(obs=_obs))
 

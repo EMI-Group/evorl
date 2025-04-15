@@ -1,8 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 
 from evorl.types import PyTreeData
+from evorl.utils.jax_utils import rng_split_like_tree
 
 
 class Space(PyTreeData):
@@ -76,3 +78,42 @@ class Discrete(Space):
 
     def contains(self, x: chex.Array) -> chex.Array:
         return jnp.logical_and(x >= 0, x < self.n)
+
+
+class SpaceContainer(Space):
+    """Container for structural spaces.
+
+    Attributes:
+        spaces: a pytree of spaces.
+    """
+
+    spaces: chex.ArrayTree
+
+    def sample(self, key: chex.PRNGKey) -> chex.ArrayTree:
+        keys = rng_split_like_tree(
+            key, self.spaces, is_leaf=lambda s: isinstance(s, Space)
+        )
+        return jtu.tree_map(
+            lambda s, key: s.sample(key),
+            self.spaces,
+            keys,
+            is_leaf=lambda s: isinstance(s, Space),
+        )
+
+    @property
+    def shape(self) -> chex.ArrayTree:
+        return jtu.tree_map(
+            lambda s: s.shape,
+            self.spaces,
+            is_leaf=lambda s: isinstance(s, Space),
+        )
+
+    def contains(self, data: chex.ArrayTree) -> chex.ArrayTree:
+        return jtu.tree_all(
+            jtu.tree_map(
+                lambda s, x: s.contains(x),
+                self.spaces,
+                data,
+                is_leaf=lambda s: isinstance(s, Space),
+            )
+        )

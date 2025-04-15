@@ -6,6 +6,7 @@ import chex
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
 from omegaconf import DictConfig
@@ -30,7 +31,7 @@ from evorl.types import (
     pytree_field,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_get, tree_stop_gradient
 from evorl.utils.rl_toolkits import (
     average_episode_discount_return,
     compute_gae,
@@ -79,7 +80,9 @@ class A2CAgent(Agent):
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
-            obs_preprocessor_state = running_statistics.init_state(dummy_obs[0])
+            obs_preprocessor_state = running_statistics.init_state(
+                tree_get(dummy_obs, 0)
+            )
         else:
             obs_preprocessor_state = None
 
@@ -318,7 +321,11 @@ class A2CWorkflow(OnPolicyWorkflow):
         )
 
         # ======== compute GAE =======
-        _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
+        _obs = jtu.tree_map(
+            lambda obs, next_obs: jnp.concatenate([obs, next_obs[-1:]], axis=0),
+            trajectory.obs,
+            trajectory.next_obs,
+        )
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(state.agent_state, SampleBatch(obs=_obs))
         v_targets, advantages = compute_gae(

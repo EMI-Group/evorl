@@ -1,6 +1,6 @@
 import importlib
 
-from .space import Space, Box, Discrete
+from .space import Space, Box, Discrete, SpaceContainer
 from .env import Env, EnvState, EnvStepFn, EnvResetFn
 from .multi_agent_env import MultiAgentEnv
 from .wrappers.training_wrapper import AutoresetMode
@@ -51,6 +51,7 @@ __all__ = [
     "Space",
     "Box",
     "Discrete",
+    "SpaceContainer",
     "AutoresetMode",
     "create_env",
     "create_brax_env",

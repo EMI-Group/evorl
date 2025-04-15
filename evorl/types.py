@@ -3,11 +3,12 @@
 import dataclasses
 from collections.abc import Mapping, Sequence
 from typing import Any, Union, TypeVar
+from typing_extensions import dataclass_transform  # pytype: disable=not-supported-yet
 
 import chex
 import jax
+import jax.numpy as jnp
 import jax.tree_util as jtu
-from typing_extensions import dataclass_transform  # pytype: disable=not-supported-yet
 
 Metrics = Mapping[str, chex.ArrayTree]
 Observation = Union[chex.Array, Mapping[str, chex.Array]]
@@ -43,6 +44,54 @@ __all__ = [
     "PyTreeNode",
     "PyTreeData",
 ]
+
+
+class PyTreeArrayMixin:
+    """batch operate pytree with jax.Array.
+
+    It assumes all arrays have the same head shape.
+    """
+
+    def __add__(self, o: chex.ArrayTree) -> chex.ArrayTree:
+        return jtu.tree_map(lambda x, y: x + y, self, o)
+
+    def __sub__(self, o: chex.ArrayTree) -> chex.ArrayTree:
+        return jtu.tree_map(lambda x, y: x - y, self, o)
+
+    def __mul__(self, o: chex.ArrayTree) -> chex.ArrayTree:
+        return jtu.tree_map(lambda x: x * o, self)
+
+    def __neg__(self) -> chex.ArrayTree:
+        return jtu.tree_map(lambda x: -x, self)
+
+    def __truediv__(self, o: chex.ArrayTree) -> chex.ArrayTree:
+        return jtu.tree_map(lambda x: x / o, self)
+
+    def reshape(self, shape: Sequence[int]) -> chex.ArrayTree:
+        return jtu.tree_map(lambda x: x.reshape(shape), self)
+
+    def slice(self, beg: int, end: int, strides=None) -> chex.ArrayTree:
+        return jtu.tree_map(lambda x: x[beg:end:strides], self)
+
+    def take(self, i, axis=0) -> chex.ArrayTree:
+        return jtu.tree_map(lambda x: jnp.take(x, i, axis=axis, mode="wrap"), self)
+
+    def concatenate(self, *others: chex.ArrayTree, axis: int = 0) -> chex.ArrayTree:
+        return jtu.tree_map(lambda *x: jnp.concatenate(x, axis=axis), self, *others)
+
+    def index_set(
+        self, idx: jax.Array | Sequence[jax.Array], o: chex.ArrayTree
+    ) -> chex.ArrayTree:
+        return jtu.tree_map(lambda x, y: x.at[idx].set(y), self, o)
+
+    def index_sum(
+        self, idx: jax.Array | Sequence[jax.Array], o: chex.ArrayTree
+    ) -> chex.ArrayTree:
+        return jtu.tree_map(lambda x, y: x.at[idx].add(y), self, o)
+
+    @property
+    def T(self):
+        return jtu.tree_map(lambda x: x.T, self)
 
 
 @jtu.register_pytree_node_class

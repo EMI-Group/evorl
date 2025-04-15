@@ -12,7 +12,6 @@ import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
 
-
 from evorl.distributed import agent_gradient_update, psum, unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.envs import AutoresetMode, create_env, Space, Box, Discrete
@@ -33,7 +32,7 @@ from evorl.types import (
     pytree_field,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
+from evorl.utils.jax_utils import tree_get, tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import (
     average_episode_discount_return,
     compute_gae,
@@ -61,6 +60,8 @@ class PPOAgent(Agent):
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     clip_epsilon: float = 0.2
+    policy_obs_key: str = ""
+    value_obs_key: str = ""
 
     @property
     def normalize_obs(self):
@@ -83,7 +84,9 @@ class PPOAgent(Agent):
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
-            obs_preprocessor_state = running_statistics.init_state(dummy_obs[0])
+            obs_preprocessor_state = running_statistics.init_state(
+                tree_get(dummy_obs, 0)
+            )
         else:
             obs_preprocessor_state = None
 
@@ -350,7 +353,11 @@ class PPOWorkflow(OnPolicyWorkflow):
         )
 
         # ======== compute GAE =======
-        _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
+        _obs = jtu.tree_map(
+            lambda obs, next_obs: jnp.concatenate([obs, next_obs[-1:]], axis=0),
+            trajectory.obs,
+            trajectory.next_obs,
+        )
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(state.agent_state, SampleBatch(obs=_obs))
         v_targets, advantages = compute_gae(

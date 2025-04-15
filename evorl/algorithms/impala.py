@@ -32,7 +32,7 @@ from evorl.types import (
     pytree_field,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
+from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean, tree_get
 from evorl.utils.rl_toolkits import average_episode_discount_return, approximate_kl
 from evorl.workflows import OnPolicyWorkflow
 from evorl.agent import Agent, AgentState
@@ -87,7 +87,9 @@ class IMPALAAgent(Agent):
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
-            obs_preprocessor_state = running_statistics.init_state(dummy_obs[0])
+            obs_preprocessor_state = running_statistics.init_state(
+                tree_get(dummy_obs, 0)
+            )
         else:
             obs_preprocessor_state = None
 
@@ -150,7 +152,11 @@ class IMPALAAgent(Agent):
         mask = jnp.logical_not(trajectory.extras.env_extras.autoreset)
 
         obs = trajectory.obs
-        _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
+        _obs = jtu.tree_map(
+            lambda obs, next_obs: jnp.concatenate([obs, next_obs[-1:]], axis=0),
+            trajectory.obs,
+            trajectory.next_obs,
+        )
         if self.normalize_obs:
             _obs = self.obs_preprocessor(_obs, agent_state.obs_preprocessor_state)
 

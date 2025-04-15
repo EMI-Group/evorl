@@ -1,6 +1,7 @@
 import os
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 from evorl.algorithms.impala import compute_vtrace, make_mlp_impala_agent
 from evorl.rollout import rollout
 from evorl.envs import create_wrapped_brax_env, AutoresetMode
@@ -30,7 +31,12 @@ def setup_trajectory():
         env_extra_fields=("autoreset", "episode_return"),
     )
 
-    _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
+    # _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
+    _obs = jtu.tree_map(
+        lambda obs, next_obs: jnp.concatenate([obs, next_obs[-1:]], axis=0),
+        trajectory.obs,
+        trajectory.next_obs,
+    )
 
     vs = agent.value_network.apply(agent_state.params.value_params, _obs)
 
@@ -84,6 +90,6 @@ def test_vtrace():
     )
 
     assert jnp.allclose(vtrace, gae_v, rtol=0, atol=1e-4), f"{vtrace} != {gae_v}"
-    assert jnp.allclose(vtrace - vs[:-1], gae_adv, rtol=0, atol=1e-4).all(), (
-        f"{vtrace - vs[:-1]} != {gae_adv}"
-    )
+    assert jnp.allclose(
+        vtrace - vs[:-1], gae_adv, rtol=0, atol=1e-4
+    ).all(), f"{vtrace - vs[:-1]} != {gae_adv}"

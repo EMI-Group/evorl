@@ -277,11 +277,13 @@ def rng_split_by_shape(key: chex.PRNGKey, shape: tuple[int]) -> chex.PRNGKey:
     return jnp.reshape(keys, shape + (2,))
 
 
-def rng_split_like_tree(key: chex.PRNGKey, target: chex.ArrayTree) -> chex.ArrayTree:
+def rng_split_like_tree(
+    key: chex.PRNGKey, target: chex.ArrayTree, is_leaf=None
+) -> chex.ArrayTree:
     """Split the key according to the structure of the target pytree."""
-    treedef = jax.tree_structure(target)
+    treedef = jtu.tree_structure(target, is_leaf=is_leaf)
     keys = jax.random.split(key, treedef.num_leaves)
-    return jax.tree_unflatten(treedef, keys)
+    return jtu.tree_unflatten(treedef, keys)
 
 
 def is_jitted(func: Callable):

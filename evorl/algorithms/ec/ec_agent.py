@@ -17,6 +17,7 @@ from evorl.types import (
     PyTreeData,
 )
 from evorl.utils import running_statistics
+from evorl.utils.jax_utils import tree_get
 from evorl.envs import Space, Box, Discrete
 
 from evorl.agent import Agent, AgentState
@@ -56,7 +57,9 @@ class StochasticECAgent(Agent):
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
-            obs_preprocessor_state = running_statistics.init_state(dummy_obs[0])
+            obs_preprocessor_state = running_statistics.init_state(
+                tree_get(dummy_obs, 0)
+            )
         else:
             obs_preprocessor_state = None
 
@@ -128,7 +131,9 @@ class DeterministicECAgent(Agent):
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
-            obs_preprocessor_state = running_statistics.init_state(dummy_obs[0])
+            obs_preprocessor_state = running_statistics.init_state(
+                tree_get(dummy_obs, 0)
+            )
         else:
             obs_preprocessor_state = None
 

@@ -31,7 +31,7 @@ from evorl.types import (
     pytree_field,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient
+from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient, tree_get
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
 from evorl.agent import Agent, AgentState
@@ -82,7 +82,9 @@ class DQNAgent(Agent):
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
-            obs_preprocessor_state = running_statistics.init_state(dummy_obs[0])
+            obs_preprocessor_state = running_statistics.init_state(
+                tree_get(dummy_obs, 0)
+            )
         else:
             obs_preprocessor_state = None
 

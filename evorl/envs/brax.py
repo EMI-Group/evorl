@@ -1,13 +1,16 @@
 import chex
 import jax
 import jax.numpy as jnp
-from brax.envs import Env as BraxEnv
-from brax.envs import get_environment
+import jax.tree_util as jtu
+from brax.envs import (
+    Env as BraxEnv,
+    get_environment,
+)
 
 from evorl.types import Action, PyTreeDict
 
 from .env import Env, EnvAdapter, EnvState
-from .space import Box, Space
+from .space import Box, Space, SpaceContainer
 from .utils import sort_dict
 from .wrappers.training_wrapper import (
     AutoresetMode,
@@ -63,8 +66,16 @@ class BraxAdapter(EnvAdapter):
 
     @property
     def obs_space(self) -> Space:
-        obs_spec = jnp.full((self.env.observation_size,), 1e10, dtype=jnp.float32)
-        return Box(low=-obs_spec, high=obs_spec)
+        obs_spec = self.env.observation_size
+
+        def get_space(obs_size):
+            obs_spec = jnp.full((obs_size,), 1e10, dtype=jnp.float32)
+            return Box(low=-obs_spec, high=obs_spec)
+
+        if isinstance(obs_spec, int):
+            return get_space(obs_spec)
+        else:
+            return SpaceContainer(spaces=jtu.tree_map(get_space, obs_spec))
 
 
 def create_brax_env(env_name: str, **kwargs) -> BraxAdapter:
