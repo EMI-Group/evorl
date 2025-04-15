@@ -58,7 +58,6 @@ class SACAgent(Agent):
 
     init_alpha: float = 1.0
     discount: float = 0.99
-    reward_scale: float = 1.0
 
     @property
     def normalize_obs(self):
@@ -204,7 +203,7 @@ class SACAgent(Agent):
         next_qs = self.critic_network.apply(
             agent_state.params.target_critic_params, next_obs, next_actions
         )
-        qs_target = sample_batch.rewards * self.reward_scale + discounts * (
+        qs_target = sample_batch.rewards + discounts * (
             jnp.min(next_qs, axis=-1) - alpha * next_actions_logp
         )
         qs_target = jnp.broadcast_to(qs_target[..., None], (*qs_target.shape, 2))
@@ -220,7 +219,6 @@ class SACDiscreteAgent(Agent):
 
     init_alpha: float = 1.0
     discount: float = 0.99
-    reward_scale: float = 1.0
     target_entropy_ratio: float = 0.98
 
     @property
@@ -368,9 +366,7 @@ class SACDiscreteAgent(Agent):
             next_actions_prob * (next_qs_min - alpha * next_actions_logp), axis=-1
         )  # [B]
 
-        qs_target = (
-            sample_batch.rewards * self.reward_scale + discounts * next_qs_estimate
-        )
+        qs_target = sample_batch.rewards + discounts * next_qs_estimate
         qs_target = jnp.broadcast_to(qs_target[..., None], (*qs_target.shape, 2))
 
         q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
@@ -383,7 +379,6 @@ def make_mlp_sac_agent(
     actor_hidden_layer_sizes: tuple[int] = (256, 256),
     init_alpha: float = 1.0,
     discount: float = 0.99,
-    reward_scale: float = 1.0,
     target_entropy_ratio: float = 0.98,
     normalize_obs: bool = False,
 ):
@@ -418,7 +413,6 @@ def make_mlp_sac_agent(
             obs_preprocessor=obs_preprocessor,
             init_alpha=init_alpha,
             discount=discount,
-            reward_scale=reward_scale,
         )
     else:
         critic_network = make_discrete_q_network(
@@ -432,7 +426,6 @@ def make_mlp_sac_agent(
             obs_preprocessor=obs_preprocessor,
             init_alpha=init_alpha,
             discount=discount,
-            reward_scale=reward_scale,
             target_entropy_ratio=target_entropy_ratio,
         )
 
@@ -458,7 +451,6 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             init_alpha=config.alpha,
             discount=config.discount,
-            reward_scale=config.reward_scale,
             normalize_obs=config.normalize_obs,
             target_entropy_ratio=config.target_entropy_ratio,
         )

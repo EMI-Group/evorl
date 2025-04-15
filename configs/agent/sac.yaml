@@ -18,7 +18,6 @@ learning_start_timesteps: 4096 # steps before training starts
 batch_size: 256
 replay_buffer_capacity: 1000000
 
-reward_scale: 1.0
 tau: 0.005
 adaptive_alpha: false
 alpha: 0.2 # used as initial alpha value if adaptive_alpha is true

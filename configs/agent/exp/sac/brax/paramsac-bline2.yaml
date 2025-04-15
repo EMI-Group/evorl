@@ -12,7 +12,6 @@ num_eval_envs: 128
 eval_episodes: 128
 eval_interval: 8192
 
-reward_scale: 1.0 # Note: unlike cfg in brax, we don"t change reward_scale
 adaptive_alpha: false
 alpha: 0.2 # used as initial alpha value if adaptive_alpha is true
 

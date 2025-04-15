@@ -16,7 +16,6 @@ eval_interval: 8192
 batch_size: 256
 replay_buffer_capacity: 1000000
 
-reward_scale: 1.0
 tau: 0.005
 alpha: 0.2 # used as initial alpha value (adaptive_alpha is always true)
 

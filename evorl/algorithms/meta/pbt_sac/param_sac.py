@@ -80,7 +80,7 @@ class ParamSACAgent(SACAgent):
         next_qs = self.critic_network.apply(
             agent_state.params.target_critic_params, next_obs, next_actions
         )
-        qs_target = sample_batch.rewards * self.reward_scale + discounts * (
+        qs_target = sample_batch.rewards + discounts * (
             jnp.min(next_qs, axis=-1) - alpha * next_actions_logp
         )
         qs_target = jnp.broadcast_to(qs_target[..., None], (*qs_target.shape, 2))
@@ -95,7 +95,6 @@ def make_mlp_sac_agent(
     actor_hidden_layer_sizes: tuple[int] = (256, 256),
     init_alpha: float = 1.0,
     discount: float = 0.99,
-    reward_scale: float = 1.0,
     normalize_obs: bool = False,
 ):
     if isinstance(action_space, Box):
@@ -124,7 +123,6 @@ def make_mlp_sac_agent(
         obs_preprocessor=obs_preprocessor,
         init_alpha=init_alpha,
         discount=discount,
-        reward_scale=reward_scale,
     )
 
 
@@ -154,7 +152,6 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             init_alpha=config.alpha,
             discount=config.discount,
-            reward_scale=config.reward_scale,
             normalize_obs=config.normalize_obs,
         )
 
