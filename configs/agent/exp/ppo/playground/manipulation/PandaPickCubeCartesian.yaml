@@ -1,0 +1,22 @@
+# @package _global_
+
+defaults:
+  - locomotion_default
+  - _self_
+
+num_envs: 1024
+minibatch_size: 2560 # 256 * 10
+rollout_length: 20 # 10 * (256 * 8 // 1024)
+reuse_rollout_epochs: 8
+
+total_timesteps: 5_000_000
+
+loss_weights:
+  actor_entropy: -0.0075
+
+optimizer:
+  lr: 0.0005
+  grad_clip_norm: 1.0
+
+agent_network:
+  actor_hidden_layer_sizes: [256, 256]

@@ -1,0 +1,22 @@
+# @package _global_
+
+defaults:
+  - locomotion_default
+  - _self_
+
+num_envs: 2048
+minibatch_size: 7680 # batch_size*unroll_length = 512*15
+rollout_length: 120 # unroll_length*(batch_size * num_minibatches // num_envs) = 15*(512*32//2048)
+reuse_rollout_epochs: 8
+
+total_timesteps: 100_000_000
+
+loss_weights:
+  actor_entropy: -0.02
+
+optimizer:
+  lr: 0.001
+  grad_clip_norm: 1.0 # set 0 or null to turn-off
+
+agent_network:
+  actor_hidden_layer_sizes: [256, 256, 256]

@@ -1,0 +1,33 @@
+# @package _global_
+
+defaults:
+  - /agent/ppo
+  - _self_
+
+normalize_obs: true
+num_envs: 2048
+minibatch_size: 5120 # batch_size*unroll_length = 256*20
+rollout_length: 80 # unroll_length*(batch_size * num_minibatches // num_envs) in brax = 20*(256*32//2048)
+reuse_rollout_epochs: 8
+
+discount: 0.97
+clip_epsilon: 0.3
+
+total_timesteps: 100_000_000
+
+loss_weights:
+  actor_loss: 1.0
+  critic_loss: 0.5
+  actor_entropy: -0.01
+
+optimizer:
+  lr: 0.0003
+  grad_clip_norm: 0 # set 0 or null to turn-off
+
+agent_network:
+  actor_hidden_layer_sizes: [32, 32, 32, 32]
+  critic_hidden_layer_sizes: [256, 256, 256, 256, 256]
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 5
