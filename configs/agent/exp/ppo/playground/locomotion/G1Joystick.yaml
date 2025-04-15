@@ -1,0 +1,18 @@
+# @package _global_
+
+defaults:
+  - locomotion_default
+  - _self_
+
+# used for env: "G1JoystickFlatTerrain", "G1JoystickRoughTerrain"
+
+clip_epsilon: 0.2
+
+loss_weights:
+  actor_entropy: -0.005
+
+total_timesteps: 200_000_000
+
+agent_network:
+  actor_hidden_layer_sizes: [512, 256, 128]
+  critic_hidden_layer_sizes: [512, 256, 128] # Note: we use state instead of privileged_state in playground as input

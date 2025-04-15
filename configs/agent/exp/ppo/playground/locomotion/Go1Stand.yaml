@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - locomotion_default
+  - _self_
+
+# used for env: "Go1Handstand", "Go1Footstand"
+
+total_timesteps: 100_000_000
+
+agent_network:
+  actor_hidden_layer_sizes: [512, 256, 128]
+  critic_hidden_layer_sizes: [512, 256, 128] # Note: we use state instead of privileged_state in playground as input
