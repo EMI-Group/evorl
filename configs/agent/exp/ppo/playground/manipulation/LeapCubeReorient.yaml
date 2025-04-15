@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - locomotion_default
+  - /agent/exp/ppo/playground/manipulation/manipulation_default
   - _self_
 
 num_envs: 8192

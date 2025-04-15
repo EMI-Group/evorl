@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - locomotion_default
+  - /agent/exp/ppo/playground/locomotion/locomotion_default
   - _self_
 
 # used for env: "Go1Handstand", "Go1Footstand"
