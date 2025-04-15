@@ -5,13 +5,16 @@ defaults:
   - _self_
 
 normalize_obs: true
-num_envs: 4096
-minibatch_size: 10240  # = batch_size*unroll_length in brax: 5*2048
-rollout_length: 80  # = unroll_length*(batch_size*num_minibatches//num_envs) in brax: 5*(2048*32//4096)
-reuse_rollout_epochs: 4
+num_envs: 2048
+minibatch_size: 10240 # 1024*10
+rollout_length: 160 # 10*(1024*32//2048)
+reuse_rollout_epochs: 8
 discount: 0.97
 
 total_timesteps: 50_000_000
+
+loss_weights:
+  actor_entropy: -0.001
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs

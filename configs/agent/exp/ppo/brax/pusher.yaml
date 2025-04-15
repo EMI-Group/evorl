@@ -6,15 +6,12 @@ defaults:
 
 normalize_obs: true
 num_envs: 2048
-minibatch_size: 10240 # 512*20
-rollout_length: 160 # 20*(512*32//2048)
+minibatch_size: 15360 # 512*30
+rollout_length: 120 # 30*(512*16//2048)
 reuse_rollout_epochs: 8
 discount: 0.95
 
 total_timesteps: 50_000_000
-
-loss_weights:
-  actor_entropy: -0.001
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs

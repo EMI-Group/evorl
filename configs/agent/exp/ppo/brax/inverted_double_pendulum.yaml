@@ -1,0 +1,18 @@
+# @package _global_
+
+defaults:
+  - /agent/ppo
+  - _self_
+
+normalize_obs: true
+num_envs: 2048
+minibatch_size: 5120  # = batch_size*unroll_length in brax: 5*1024
+rollout_length: 80  # = unroll_length*(batch_size*num_minibatches//num_envs) in brax: 5*(1024*32//2048)
+reuse_rollout_epochs: 4
+discount: 0.97
+
+total_timesteps: 20_000_000
+
+num_eval_envs: 128
+eval_episodes: 128 # should be divided by num_eval_envs
+eval_interval: 5

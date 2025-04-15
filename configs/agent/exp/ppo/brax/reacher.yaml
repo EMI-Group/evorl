@@ -6,8 +6,8 @@ defaults:
 
 normalize_obs: true
 num_envs: 2048
-minibatch_size: 10240 # 512*20
-rollout_length: 160 # 20*(512*32//2048)
+minibatch_size: 12800  # 50*256
+rollout_length: 200  # 50*(256*32//2048)
 reuse_rollout_epochs: 8
 discount: 0.95
 
