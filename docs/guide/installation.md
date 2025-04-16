@@ -51,6 +51,10 @@ pip install -e ".[gymnasium]"
 These experimental environments have limited supports, some algorithms are incompatible with them.
 ```
 
+```{attention}
+Users with NVIDIA Ampere architecture GPUs (e.g., RTX 30 and 40 series) may experience reproducibility issues in `mujoco_playground` due to JAX’s default use of TF32 for matrix multiplications. See [Reproducibility / GPU Precision Issues](https://github.com/google-deepmind/mujoco_playground?tab=readme-ov-file#reproducibility--gpu-precision-issues)
+```
+
 For CPU-based Envs, please refer to the following API References:
 
 - EnvPool: [`evorl.envs.envpool`](#evorl.envs.envpool)
