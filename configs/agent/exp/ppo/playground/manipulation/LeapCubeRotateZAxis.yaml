@@ -21,4 +21,5 @@ optimizer:
 agent_network:
   actor_hidden_layer_sizes: [512, 256, 128]
   critic_hidden_layer_sizes: [512, 256, 128]
+  policy_obs_key: "state"
   value_obs_key: "privileged_state"
