@@ -21,7 +21,7 @@ def create_env(env_cfg, **kwargs) -> Env:
     match env_type:
         case "brax":
             env = create_wrapped_brax_env(env_name, **kwargs)
-        case "mujoco_playground":
+        case "playground":
             env = create_wrapped_mujoco_playground_env(env_name, **kwargs)
         case "gymnax":
             env = create_wrapped_gymnax_env(env_name, **kwargs)

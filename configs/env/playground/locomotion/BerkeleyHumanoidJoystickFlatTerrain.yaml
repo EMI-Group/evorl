@@ -1,3 +1,3 @@
-env_type: mujoco_playground
+env_type: playground
 env_name: BerkeleyHumanoidJoystickFlatTerrain
 max_episode_steps: 1000
