@@ -11,7 +11,6 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax.sharding import NamedSharding, Mesh, PartitionSpec as P
 from jax.experimental.shard_map import shard_map
-import orbax.checkpoint as ocp
 
 
 from evorl.agent import RandomAgent
@@ -456,7 +455,7 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
 
                 self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iters)
 
-            self.checkpoint_manager.save(iters, args=ocp.args.StandardSave(state))
+            self.checkpoint_manager.save(iters, state)
 
         return state
 
@@ -721,10 +720,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             saved_state = state
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
-            self.checkpoint_manager.save(
-                iters,
-                args=ocp.args.StandardSave(saved_state),
-            )
+            self.checkpoint_manager.save(iters, saved_state)
 
         return state
 

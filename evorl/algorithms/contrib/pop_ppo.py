@@ -7,7 +7,6 @@ from omegaconf import DictConfig
 import chex
 import jax
 import jax.tree_util as jtu
-import orbax.checkpoint as ocp
 
 from evorl.distributed import (
     unpmap,
@@ -116,9 +115,6 @@ class PopPPOWorkflow(PPOWorkflow):
 
                 self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iters)
 
-            self.checkpoint_manager.save(
-                iters,
-                args=ocp.args.StandardSave(unpmap(state, self.pmap_axis_name)),
-            )
+            self.checkpoint_manager.save(iters, unpmap(state, self.pmap_axis_name))
 
         return state

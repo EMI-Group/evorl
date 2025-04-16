@@ -3,6 +3,7 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import jax
 import jax.tree_util as jtu
 import chex
 import orbax.checkpoint as ocp
@@ -26,6 +27,8 @@ def save(path, state: chex.ArrayTree):
     """
     path = os.path.abspath(os.path.expanduser(path))
 
+    state = filter_zero_size_arrays_on_save(state)
+
     with ocp.StandardCheckpointer() as ckpt:
         ckpt.save(path, state)
 
@@ -45,7 +48,38 @@ def load(path, state: chex.ArrayTree) -> chex.ArrayTree:
 
     with ocp.StandardCheckpointer() as ckpt:
         new_state = ckpt.restore(path, abstract_state)
+
+    new_state = filter_zero_size_arrays_on_restore(state, new_state)
+
     return new_state
+
+
+def filter_zero_size_arrays_on_save(
+    tree: chex.ArrayTree,
+) -> chex.ArrayTree:
+    """Filter out zero-size arrays from the pytree."""
+
+    def f(x):
+        if isinstance(x, jax.Array) and x.size == 0:
+            return None
+        else:
+            return x
+
+    return jtu.tree_map(f, tree)
+
+
+def filter_zero_size_arrays_on_restore(
+    src_tree: chex.ArrayTree, dst_tree: chex.ArrayTree
+) -> chex.ArrayTree:
+    """Filter out zero-size arrays from the pytree."""
+
+    def f(src, dst):
+        if isinstance(src, jax.Array) and src.size == 0:
+            return src
+        else:
+            return dst
+
+    return jtu.tree_map(f, src_tree, dst_tree)
 
 
 class DummyCheckpointManager(ocp.AbstractCheckpointManager):
@@ -90,29 +124,28 @@ class DummyCheckpointManager(ocp.AbstractCheckpointManager):
     def check_for_errors(self):
         pass
 
-    def save(
-        self,
-        step: int,
-        items=None,
-        save_kwargs=None,
-        metrics=None,
-        force=False,
-        args=None,
-    ) -> bool:
+    def save(self, step, items, **kwargs):
         return True
 
-    def restore(
-        self,
-        step,
-        items=None,
-        restore_kwargs=None,
-        directory=None,
-        args=None,
-    ):
+    def restore(self, step, items, **kwargs):
         raise NotImplementedError("UwU")
 
     def close(self):
         pass
+
+
+class CheckpointManager(ocp.CheckpointManager):
+    def save(self, step, items, **kwargs):
+        args = ocp.args.StandardSave(filter_zero_size_arrays_on_save(items))
+        return super().save(step, args=args, **kwargs)
+
+    def restore(self, step, items, **kwargs):
+        new_items = super().restore(
+            step, args=ocp.args.StandardRestore(items), **kwargs
+        )
+
+        new_items = filter_zero_size_arrays_on_restore(items, new_items)
+        return new_items
 
 
 def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
@@ -126,7 +159,7 @@ def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
         output_dir = os.path.abspath(os.path.expanduser(config.output_dir))
         ckpt_path = os.path.join(output_dir, "checkpoints")
         logger.info(f"set checkpoint path: {ckpt_path}")
-        checkpoint_manager = ocp.CheckpointManager(
+        checkpoint_manager = CheckpointManager(
             ckpt_path,
             options=ckpt_options,
             metadata=OmegaConf.to_container(

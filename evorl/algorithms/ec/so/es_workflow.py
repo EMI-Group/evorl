@@ -4,7 +4,6 @@ from omegaconf import DictConfig
 
 import jax
 import jax.tree_util as jtu
-import orbax.checkpoint as ocp
 
 from evorl.distributed import unpmap
 from evorl.agent import Agent, AgentState, AgentStateAxis
@@ -94,12 +93,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
 
             self._record_callback(state, iters)
 
-            self.checkpoint_manager.save(
-                iters,
-                args=ocp.args.StandardSave(
-                    unpmap(state, self.pmap_axis_name),
-                ),
-            )
+            self.checkpoint_manager.save(iters, unpmap(state, self.pmap_axis_name))
 
     @classmethod
     def enable_jit(cls) -> None:

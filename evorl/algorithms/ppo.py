@@ -10,7 +10,6 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
-import orbax.checkpoint as ocp
 
 from evorl.distributed import agent_gradient_update, psum, unpmap
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
@@ -504,9 +503,6 @@ class PPOWorkflow(OnPolicyWorkflow):
                     add_prefix(eval_metrics.to_local_dict(), "eval"), iters
                 )
 
-            self.checkpoint_manager.save(
-                iters,
-                args=ocp.args.StandardSave(unpmap(state, self.pmap_axis_name)),
-            )
+            self.checkpoint_manager.save(iters, unpmap(state, self.pmap_axis_name))
 
         return state

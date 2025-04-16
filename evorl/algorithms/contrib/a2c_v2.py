@@ -4,7 +4,6 @@ from collections.abc import Sequence
 
 import jax.tree_util as jtu
 import numpy as np
-import orbax.checkpoint as ocp
 
 from evorl.distributed import unpmap
 from evorl.types import MISSING_REWARD, State
@@ -53,10 +52,7 @@ class A2CWorkflow(_A2CWorkflow):
                 add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
             )
 
-            self.checkpoint_manager.save(
-                iterations,
-                args=ocp.args.StandardSave(unpmap(state, self.pmap_axis_name)),
-            )
+            self.checkpoint_manager.save(iterations, unpmap(state, self.pmap_axis_name))
 
         return state
 

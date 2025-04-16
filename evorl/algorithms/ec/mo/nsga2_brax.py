@@ -5,7 +5,6 @@ from typing_extensions import Self  # pytype: disable=not-supported-yet]
 
 import jax
 import jax.numpy as jnp
-import orbax.checkpoint as ocp
 
 from evox.algorithms import NSGA2
 from evox.operators import non_dominated_sort
@@ -180,9 +179,4 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            self.checkpoint_manager.save(
-                iters,
-                args=ocp.args.StandardSave(
-                    unpmap(state, self.pmap_axis_name),
-                ),
-            )
+            self.checkpoint_manager.save(iters, unpmap(state, self.pmap_axis_name))

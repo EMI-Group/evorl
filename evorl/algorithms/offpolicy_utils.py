@@ -5,7 +5,6 @@ from omegaconf import DictConfig
 import jax
 import jax.numpy as jnp
 import chex
-import orbax.checkpoint as ocp
 
 from evorl.replay_buffers import ReplayBufferState
 from evorl.envs import Discrete
@@ -237,10 +236,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             saved_state = unpmap(state, self.pmap_axis_name)
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
-            self.checkpoint_manager.save(
-                iterations,
-                args=ocp.args.StandardSave(saved_state),
-            )
+            self.checkpoint_manager.save(iterations, saved_state)
 
         return state
 

@@ -8,7 +8,6 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
-import orbax.checkpoint as ocp
 from omegaconf import DictConfig
 
 from evorl.replay_buffers import ReplayBuffer
@@ -559,9 +558,6 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
             saved_state = unpmap(state, self.pmap_axis_name)
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
-            self.checkpoint_manager.save(
-                iterations,
-                args=ocp.args.StandardSave(saved_state),
-            )
+            self.checkpoint_manager.save(iterations, saved_state)
 
         return state

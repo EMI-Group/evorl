@@ -4,7 +4,6 @@ import math
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import orbax.checkpoint as ocp
 
 from evorl.distributed import psum, unpmap
 from evorl.distributed.gradients import agent_gradient_update
@@ -252,9 +251,6 @@ class TD3V2Workflow(TD3Workflow):
             saved_state = unpmap(state, self.pmap_axis_name)
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
-            self.checkpoint_manager.save(
-                iterations,
-                args=ocp.args.StandardSave(saved_state),
-            )
+            self.checkpoint_manager.save(iterations, saved_state)
 
         return state
