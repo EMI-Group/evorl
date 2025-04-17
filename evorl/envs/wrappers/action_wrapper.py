@@ -35,7 +35,7 @@ class ActionRepeatWrapper(Wrapper):
     """Repeat action for a number of steps.
 
     :::{note}
-    This wrapper only accumulates `state.reward`. If you want accumulate other metrics in `state.info`, inherit this class and add your own logic.
+    This wrapper only accumulates `state.reward`. It is safe to use `ActionRepeatWrapper(EpisodeWrapper(env))`. However, if you want accumulate other metrics in `state.info`, inherit this class and add your own logic.
     :::
     """
 
