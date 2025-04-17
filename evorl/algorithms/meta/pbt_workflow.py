@@ -455,7 +455,11 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
 
                 self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iters)
 
-            self.checkpoint_manager.save(iters, state)
+            self.checkpoint_manager.save(
+                iters,
+                state,
+                force=iters == self.config.num_iters,
+            )
 
         return state
 
@@ -720,7 +724,11 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             saved_state = state
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
-            self.checkpoint_manager.save(iters, saved_state)
+            self.checkpoint_manager.save(
+                iters,
+                saved_state,
+                force=iters == self.config.num_iters,
+            )
 
         return state
 

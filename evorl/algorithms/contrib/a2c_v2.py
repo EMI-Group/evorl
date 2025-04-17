@@ -52,7 +52,11 @@ class A2CWorkflow(_A2CWorkflow):
                 add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
             )
 
-            self.checkpoint_manager.save(iterations, unpmap(state, self.pmap_axis_name))
+            self.checkpoint_manager.save(
+                iterations,
+                unpmap(state, self.pmap_axis_name),
+                force=i == num_fold_iters - 1,
+            )
 
         return state
 

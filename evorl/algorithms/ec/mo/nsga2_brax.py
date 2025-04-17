@@ -179,4 +179,8 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            self.checkpoint_manager.save(iters, unpmap(state, self.pmap_axis_name))
+            self.checkpoint_manager.save(
+                iters,
+                unpmap(state, self.pmap_axis_name),
+                force=i == self.config.num_iters,
+            )

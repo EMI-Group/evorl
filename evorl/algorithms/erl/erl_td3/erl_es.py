@@ -349,8 +349,8 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
             / sampled_episodes_per_iter
         )
 
-        final_iters = num_iters + state.metrics.iterations
-        for i in range(state.metrics.iterations, final_iters):
+        final_iteration = num_iters + state.metrics.iterations
+        for i in range(state.metrics.iterations, final_iteration):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
@@ -388,7 +388,7 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            if iters % self.config.eval_interval == 0 or iters == final_iters:
+            if iters % self.config.eval_interval == 0 or iters == final_iteration:
                 eval_metrics, state = self.evaluate(state)
 
                 eval_metrics_dict = eval_metrics.to_local_dict()
@@ -400,6 +400,10 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
 
-            self.checkpoint_manager.save(iters, saved_state)
+            self.checkpoint_manager.save(
+                iters,
+                saved_state,
+                force=iters == final_iteration,
+            )
 
         return state

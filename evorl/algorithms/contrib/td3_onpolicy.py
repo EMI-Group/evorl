@@ -250,7 +250,7 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
         start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
-        final_iters = num_iters + start_iteration
+        final_iteration = num_iters + start_iteration
 
         for i in range(num_iters):
             train_metrics, state = self.step(state)
@@ -263,14 +263,21 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
             self.recorder.write(workflow_metrics.to_local_dict(), iterations)
             self.recorder.write(train_metrics.to_local_dict(), iterations)
 
-            if iterations % self.config.eval_interval == 0 or iterations == final_iters:
+            if (
+                iterations % self.config.eval_interval == 0
+                or iterations == final_iteration
+            ):
                 eval_metrics, state = self.evaluate(state)
                 eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(
                     add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
                 )
 
-            self.checkpoint_manager.save(iterations, unpmap(state, self.pmap_axis_name))
+            self.checkpoint_manager.save(
+                iterations,
+                unpmap(state, self.pmap_axis_name),
+                force=iterations == final_iteration,
+            )
 
         return state
 

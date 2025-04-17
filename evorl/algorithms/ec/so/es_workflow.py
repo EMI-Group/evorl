@@ -93,7 +93,11 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
 
             self._record_callback(state, iters)
 
-            self.checkpoint_manager.save(iters, unpmap(state, self.pmap_axis_name))
+            self.checkpoint_manager.save(
+                iters,
+                unpmap(state, self.pmap_axis_name),
+                force=i == self.config.num_iters,
+            )
 
     @classmethod
     def enable_jit(cls) -> None:

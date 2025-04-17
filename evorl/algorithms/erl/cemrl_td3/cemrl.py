@@ -344,8 +344,8 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
             / (self.config.episodes_for_fitness * self.config.pop_size)
         )
 
-        final_iters = num_iters + state.metrics.iterations
-        for i in range(state.metrics.iterations, final_iters):
+        final_iteration = num_iters + state.metrics.iterations
+        for i in range(state.metrics.iterations, final_iteration):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
@@ -373,7 +373,7 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
             std_statistics = get_std_statistics(state.ec_opt_state.variance["params"])
             self.recorder.write({"ec/std": std_statistics}, iters)
 
-            if iters % self.config.eval_interval == 0 or iters == final_iters:
+            if iters % self.config.eval_interval == 0 or iters == final_iteration:
                 eval_metrics, state = self.evaluate(state)
 
                 self.recorder.write(
@@ -384,7 +384,11 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
 
-            self.checkpoint_manager.save(iters, saved_state)
+            self.checkpoint_manager.save(
+                iters,
+                saved_state,
+                iters == final_iteration,
+            )
 
         return state
 

@@ -115,6 +115,10 @@ class PopPPOWorkflow(PPOWorkflow):
 
                 self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iters)
 
-            self.checkpoint_manager.save(iters, unpmap(state, self.pmap_axis_name))
+            self.checkpoint_manager.save(
+                iters,
+                unpmap(state, self.pmap_axis_name),
+                force=iters == num_iters,
+            )
 
         return state

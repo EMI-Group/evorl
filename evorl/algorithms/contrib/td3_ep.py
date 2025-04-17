@@ -39,5 +39,6 @@ class TD3WorkflowMod(TD3Workflow):
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
             self.checkpoint_manager.save(iterations, saved_state)
+        self.checkpoint_manager.save(iterations, saved_state, force=True)
 
         return state
