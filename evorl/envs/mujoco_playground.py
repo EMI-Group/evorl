@@ -84,7 +84,7 @@ class MjxEnvAdapter(EnvAdapter):
             )
 
 
-def create_mujco_playground_env(env_name: str, **kwargs) -> MjxEnvAdapter:
+def create_mujoco_playground_env(env_name: str, **kwargs) -> MjxEnvAdapter:
     """Create Brax environment.
 
     Args:
@@ -124,7 +124,7 @@ def create_wrapped_mujoco_playground_env(
         Wrapped Brax env.
 
     """
-    env = create_mujco_playground_env(env_name, **kwargs)
+    env = create_mujoco_playground_env(env_name, **kwargs)
 
     if autoreset_mode == AutoresetMode.ENVPOOL:
         # envpool mode will always record last obs

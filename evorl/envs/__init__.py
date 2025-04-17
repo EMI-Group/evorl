@@ -81,10 +81,10 @@ if importlib.util.find_spec("envpool") is not None:
 
 if importlib.util.find_spec("mujoco_playground") is not None:
     from .mujoco_playground import (
-        create_mujco_playground_env,
+        create_mujoco_playground_env,
         create_wrapped_mujoco_playground_env,
     )
 
     __all__.extend(
-        ["create_mujco_playground_env", "create_wrapped_mujoco_playground_env"]
+        ["create_mujoco_playground_env", "create_wrapped_mujoco_playground_env"]
     )
