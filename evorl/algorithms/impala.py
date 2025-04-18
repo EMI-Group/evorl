@@ -185,6 +185,7 @@ class IMPALAAgent(Agent):
             v_t_plus_1=vs[1:],
             rewards=trajectory.rewards,
             dones=trajectory.dones,
+            terminations=trajectory.extras.env_extras.termination,
             discount=self.discount,
             lambda_=self.vtrace_lambda,
             clip_rho_threshold=self.clip_rho_threshold,
@@ -205,7 +206,7 @@ class IMPALAAgent(Agent):
             v_t=vs[:-1],
             v_t_plus_1=vs[1:],
             rewards=trajectory.rewards,
-            dones=trajectory.dones,
+            terminations=trajectory.extras.env_extras.termination,
             discount=self.discount,
             lambda_=self.vtrace_lambda,
             mode=self.adv_mode,
@@ -223,7 +224,7 @@ class IMPALAAgent(Agent):
         else:
             actor_entropy = actions_dist.entropy().mean(where=mask)
 
-        approx_kl = approximate_kl(logrho)
+        approx_kl = approximate_kl(logrho).mean()
 
         return PyTreeDict(
             actor_loss=policy_loss,
@@ -372,7 +373,7 @@ class IMPALAWorkflow(OnPolicyWorkflow):
             state.agent_state,
             rollout_key,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("autoreset", "episode_return"),
+            env_extra_fields=("autoreset", "episode_return", "termination"),
         )
 
         agent_state = state.agent_state
@@ -523,6 +524,7 @@ def compute_vtrace(
     v_t_plus_1,
     rewards,
     dones,
+    terminations,
     discount=0.99,
     lambda_=1.0,
     clip_rho_threshold=1.0,
@@ -532,14 +534,14 @@ def compute_vtrace(
         rho_t, v_t, v_t_plus_1, rewards, dones
     )
 
-    discounts = discount * (1 - dones)
-
     # clip c and rho
     clipped_c_t = jnp.minimum(clip_c_threshold, rho_t) * lambda_
     clipped_rho_t = jnp.minimum(clip_rho_threshold, rho_t)
 
     # calculate δV_t
-    td_error = clipped_rho_t * (rewards + discounts * v_t_plus_1 - v_t)
+    td_error = clipped_rho_t * (
+        rewards + discount * (1 - terminations) * v_t_plus_1 - v_t
+    )
 
     # calculate delta = vtrace - v_t
     def _compute_delta(delta, params):
@@ -551,7 +553,7 @@ def compute_vtrace(
     _, delta = jax.lax.scan(
         _compute_delta,
         bootstrap_delta,
-        (td_error, discounts, clipped_c_t),
+        (td_error, discount * (1 - dones), clipped_c_t),
         reverse=True,
         unroll=16,
     )
@@ -567,12 +569,12 @@ def compute_pg_advantage(
     v_t,
     v_t_plus_1,
     rewards,
-    dones,
+    terminations,
     discount=0.99,
     lambda_=1.0,
     mode="official",
 ):
-    discounts = discount * (1 - dones)
+    discounts = discount * (1 - terminations)
     # calculate advantage function
     if mode == "official":
         # Note: rllib also follows this implementation
