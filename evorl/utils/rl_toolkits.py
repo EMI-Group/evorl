@@ -229,13 +229,12 @@ def approximate_kl(logratio: jax.Array, mode="k3", axis=-1) -> jax.Array:
     Returns:
         Approximated KL(q||p) (Forward KL)
     """
-    ratio = jnp.exp(logratio)
-
     if mode == "k1":
         approx_kl = -jnp.mean(logratio, axis=axis)
     elif mode == "k2":
         approx_kl = jnp.mean(0.5 * jnp.square(logratio), axis=axis)
     elif mode == "k3":
+        ratio = jnp.exp(logratio)
         approx_kl = jnp.mean((ratio - 1) * logratio, axis=axis)
     return approx_kl
 
