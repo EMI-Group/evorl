@@ -229,7 +229,7 @@ class ParamPPOWorkflow(PPOWorkflow):
             state.agent_state,
             rollout_key,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("autoreset", "episode_return"),
+            env_extra_fields=("autoreset", "episode_return", "termination"),
         )
 
         agent_state = state.agent_state
@@ -264,6 +264,7 @@ class ParamPPOWorkflow(PPOWorkflow):
             rewards=trajectory.rewards,  # peb_rewards
             values=vs,
             dones=trajectory.dones,
+            terminations=trajectory.extras.env_extras.termination,
             gae_lambda=gae_lambda,
             discount=discount,
         )

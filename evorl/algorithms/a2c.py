@@ -300,7 +300,7 @@ class A2CWorkflow(OnPolicyWorkflow):
             state.agent_state,
             rollout_key,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("autoreset", "episode_return"),
+            env_extra_fields=("autoreset", "episode_return", "termination"),
         )
 
         agent_state = state.agent_state
@@ -331,6 +331,7 @@ class A2CWorkflow(OnPolicyWorkflow):
             rewards=trajectory.rewards,
             values=vs,
             dones=trajectory.dones,
+            terminations=trajectory.extras.env_extras.termination,
             gae_lambda=self.config.gae_lambda,
             discount=self.config.discount,
         )

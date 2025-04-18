@@ -18,7 +18,7 @@ def test_gae():
     for i in range(B):
         dones = dones.at[term_steps[i] - 1 :, i].set(1)
 
-    compute_gae(rewards, values, dones, 0.95, 0.99)
+    compute_gae(rewards, values, dones, dones, 0.95, 0.99)
 
 
 def test_discount_return():

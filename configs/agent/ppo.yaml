@@ -11,6 +11,8 @@ discount: 0.99
 gae_lambda: 0.95
 clip_epsilon: 0.2
 
+gae_horizon: 0 # equal to unroll_length in brax
+
 minibatch_size: 256 # num_minibatches = batch_size / minibatch_size = 8
 reuse_rollout_epochs: 4 # apply multiple epochs (one epoch contains multiple minibatches) on the same rollout data
 

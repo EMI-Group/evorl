@@ -28,7 +28,7 @@ def setup_trajectory():
         agent_state,
         rollout_key,
         rollout_length=1000,
-        env_extra_fields=("autoreset", "episode_return"),
+        env_extra_fields=("autoreset", "episode_return", "termination"),
     )
 
     # _obs = jnp.concatenate([trajectory.obs, trajectory.next_obs[-1:]], axis=0)
@@ -85,6 +85,7 @@ def test_vtrace():
         rewards=trajectory.rewards,
         values=vs,
         dones=trajectory.dones,
+        terminations=trajectory.extras.env_extras.termination,
         gae_lambda=lambda_,
         discount=discount,
     )

@@ -31,10 +31,14 @@ from evorl.types import (
     pytree_field,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_get, tree_stop_gradient, scan_and_mean
+from evorl.utils.jax_utils import (
+    tree_get,
+    tree_stop_gradient,
+    scan_and_mean,
+)
 from evorl.utils.rl_toolkits import (
     average_episode_discount_return,
-    compute_gae,
+    compute_gae_with_horizon,
     flatten_rollout_trajectory,
     approximate_kl,
 )
@@ -348,7 +352,7 @@ class PPOWorkflow(OnPolicyWorkflow):
             state.agent_state,
             rollout_key,
             rollout_length=self.config.rollout_length,
-            env_extra_fields=("autoreset", "episode_return"),
+            env_extra_fields=("autoreset", "episode_return", "termination"),
         )
 
         agent_state = state.agent_state
@@ -375,13 +379,17 @@ class PPOWorkflow(OnPolicyWorkflow):
         )
         # concat [values, bootstrap_value]
         vs = self.agent.compute_values(state.agent_state, SampleBatch(obs=_obs))
-        v_targets, advantages = compute_gae(
+
+        v_targets, advantages = compute_gae_with_horizon(
             rewards=trajectory.rewards,
             values=vs,
             dones=trajectory.dones,
+            terminations=trajectory.extras.env_extras.termination,
+            gae_horizon=self.config.gae_horizon,
             gae_lambda=self.config.gae_lambda,
             discount=self.config.discount,
         )
+
         trajectory.extras.v_targets = jax.lax.stop_gradient(v_targets)
         trajectory.extras.advantages = jax.lax.stop_gradient(advantages)
         # [T,B,...] -> [T*B,...]

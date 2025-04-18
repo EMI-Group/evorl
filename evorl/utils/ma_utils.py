@@ -4,15 +4,6 @@ import jax.numpy as jnp
 
 from evorl.types import AgentID, Done
 
-"""Utils for Multi-Agent RL.
-"""
-
-__all__ = [
-    "batchify",
-    "unbatchify",
-    "multi_agent_episode_done",
-]
-
 
 def batchify(x: dict[AgentID, jax.Array], agent_list, padding=False) -> jax.Array:
     """Batchify the data for multi-agent training.

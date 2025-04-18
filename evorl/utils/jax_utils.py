@@ -9,31 +9,6 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-__all__ = [
-    "disable_gpu_preallocation",
-    "enable_deterministic_mode",
-    "tree_zeros_like",
-    "tree_ones_like",
-    "tree_concat",
-    "tree_stop_gradient",
-    "tree_astype",
-    "tree_last",
-    "tree_get",
-    "tree_set",
-    "scan_and_mean",
-    "scan_and_last",
-    "jit_method",
-    "pmap_method",
-    "rng_split",
-    "rng_split_by_shape",
-    "rng_split_like_tree",
-    "is_jitted",
-    "has_nan",
-    "tree_has_nan",
-    "invert_permutation",
-    "right_shift_with_padding",
-]
-
 
 def disable_gpu_preallocation():
     """Disable GPU memory preallocation for XLA.
@@ -336,3 +311,13 @@ def right_shift_with_padding(
     shifted_matrix = shifted_matrix.at[:shift].set(padding)
 
     return shifted_matrix
+
+
+def sliding_window(arr, length, stride):
+    """Slide a window over the fist axis of the array.
+
+    Change shape from [T, ...] to [L, W, ...], where W: (T - L) // S + 1 is the number of windows.
+    """
+    starts = jnp.arange(0, arr.shape[0] - length + 1, stride)
+    idx = starts[:, None] + jnp.arange(length)
+    return arr[idx]
