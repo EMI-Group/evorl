@@ -41,22 +41,19 @@ autodoc2_docstring_parser_regexes = [
     (r".*", "autodoc2_docstrings_parser"),
 ]
 
+# avoid recursive apidoc build in these paths
+# use __all__
 autodoc2_module_all_regexes = [
     r"evorl\.agent",
     r"evorl\.distributed",
     r"evorl\.distribution",
     r"evorl\.ec\.[a-zA-Z_]+",
-    r"evorl\.envs",
     r"evorl\.envs\.wrappers",
+    # r"evorl\.envs",
     r"evorl\.evaluators",
-    r"evorl\.metrics",
-    r"evorl\.multi_agent_rollout",
     r"evorl\.networks",
     r"evorl\.recorders",
     r"evorl\.replay_buffers",
-    r"evorl\.rollout",
-    r"evorl\.rollout_ma",
-    r"evorl\.sample_batch",
     r"evorl\.workflows",
 ]
 autodoc2_class_docstring = "both"
@@ -69,7 +66,13 @@ autodoc2_hidden_objects = [
 autodoc2_hidden_regexes = [
     r"evorl\..*logger$",
 ]
-autodoc2_skip_module_regexes = [r"evorl\.(train|train_dist)"]
+# package with unstable API:
+autodoc2_skip_module_regexes = [
+    r"evorl\.rollout_ma",
+    r"evorl\.multi_agent_rollout",
+    r"evorl\.envs\.jaxmarl_envs",
+    r"evorl\.envs\.multi_agent_env",
+]
 autodoc2_sort_names = True
 
 viewcode_line_numbers = True

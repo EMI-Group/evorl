@@ -143,7 +143,7 @@ Besides, most RL-based Agents also include one or multiple loss functions, which
 
 ## RL Environments
 
-We provide a unified environment API in [`Env`](#evorl.envs.Env) to adapt multiple env libraries.
+We provide a unified environment API in [`Env`](#evorl.envs.env.Env) to adapt multiple env libraries.
 
 An example about how to interact with the environment:
 
