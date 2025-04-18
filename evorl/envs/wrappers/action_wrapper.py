@@ -37,6 +37,9 @@ class ActionRepeatWrapper(Wrapper):
     :::{note}
     This wrapper only accumulates `state.reward`. It is safe to use `ActionRepeatWrapper(EpisodeWrapper(env))`. However, if you want accumulate other metrics in `state.info`, inherit this class and add your own logic.
     :::
+    :::{caution}
+    When using rollout functions like `rollout`, `eval_rollout_episode` with `rollout_length=env.max_episode_steps`, users should manually handle the `env.max_episode_steps` by using `env.max_episode_steps//action_repeat` to matach the real rollout_length.
+    :::
     """
 
     def __init__(self, env: Env, action_repeat: int, accumulate_info_fn=None):
