@@ -356,13 +356,13 @@ class VmapEnvPoolAutoResetWrapper(Wrapper):
 
         reset_state = self.reset(state._internal.reset_key)
         new_state = jax.vmap(self.env.step)(state, action)
-        new_state.info.autoreset = autoreset
 
         state = jtu.tree_map(
             _where_autoreset,
             reset_state,
             new_state,
         )
+        state.info.autoreset = autoreset
 
         return state
 
