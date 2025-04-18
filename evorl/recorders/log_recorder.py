@@ -53,6 +53,8 @@ class LogRecorder(Recorder):
 def _convert_data(val):
     if isinstance(val, np.ndarray):
         return val.tolist()
+    elif isinstance(val, np.generic):
+        return val.item()
     elif isinstance(val, pd.Series) or isinstance(val, pd.DataFrame):
         # escape the special data for wandb
         return None
