@@ -3,8 +3,6 @@ import chex
 from .types import PyTreeData, PyTreeArrayMixin, ExtraInfo, Reward, RewardDict
 from .utils.jax_utils import right_shift_with_padding
 
-__all__ = ["SampleBatch", "Episode"]
-
 
 class SampleBatch(PyTreeData, PyTreeArrayMixin):
     """Data container for trajectory data."""

@@ -44,9 +44,7 @@ autodoc2_docstring_parser_regexes = [
 # avoid recursive apidoc build in these paths
 # use __all__
 autodoc2_module_all_regexes = [
-    r"evorl\.agent",
     r"evorl\.distributed",
-    r"evorl\.distribution",
     r"evorl\.ec\.[a-zA-Z_]+",
     r"evorl\.envs\.wrappers",
     # r"evorl\.envs",
@@ -55,6 +53,11 @@ autodoc2_module_all_regexes = [
     r"evorl\.recorders",
     r"evorl\.replay_buffers",
     r"evorl\.workflows",
+    # file level modules with __all__
+    # r"evorl\.distribution",
+    # r"evorl\.types",
+
+
 ]
 autodoc2_class_docstring = "both"
 autodoc2_hidden_objects = [

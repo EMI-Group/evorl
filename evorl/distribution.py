@@ -6,12 +6,6 @@ from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions  # note: tfp use lazy init.
 
-__all__ = [
-    "get_categorical_dist",
-    "get_tanh_norm_dist",
-    "get_trancated_norm_dist",
-]
-
 
 def get_categorical_dist(logits: jax.Array):
     """Get a categorical distribution."""

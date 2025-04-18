@@ -19,15 +19,6 @@ from evorl.types import (
     PyTreeDict,
 )
 
-__all__ = [
-    "AgentState",
-    "Agent",
-    "RandomAgent",
-]
-
-
-AgentParams = Mapping[str, Params]
-
 
 class AgentState(PyTreeData):
     """State of the agent.
@@ -39,7 +30,7 @@ class AgentState(PyTreeData):
         extra_state: Extra state of the agent.
     """
 
-    params: AgentParams
+    params: Mapping[str, Params]
     obs_preprocessor_state: Any = None
     # TODO: define the action_postprocessor_state
     action_postprocessor_state: Any = None
