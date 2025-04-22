@@ -6,7 +6,6 @@ defaults:
 
 
 seed: 42
-debug: false
 enable_jit: true
 checkpoint:
   enable: false
