@@ -32,6 +32,7 @@
 - [Quickstart](#quickstart)
   - [Training](#training)
   - [Logging](#logging)
+    - [Env Rendering](#env-rendering)
 - [Algorithms](#algorithms)
 - [RL Environments](#rl-environments)
   - [Supported Environments](#supported-environments)
@@ -140,6 +141,10 @@ By default, the script will enable two recorders for logging: `LogRecorder` and 
 Screenshot in WandB dashboard:
 
 ![](docs/_static/evorl_wandb.png)
+
+### Env Rendering
+
+We provide some example visualization scripts for brax and playground environments: [visualize_mjx.ipynb](./scripts/visualize_mjx.ipynb).
 
 # Algorithms
 
