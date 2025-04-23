@@ -32,3 +32,4 @@ agent_network:
   actor_hidden_layer_sizes: [16, 16]
   use_bias: true
   norm_layer_type: "none"
+  policy_obs_key: ""

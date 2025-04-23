@@ -34,6 +34,7 @@ class SepCEMWorkflow(ESWorkflowTemplate):
             use_bias=config.agent_network.use_bias,
             normalize_obs=config.normalize_obs,
             norm_layer_type=config.agent_network.norm_layer_type,
+            policy_obs_key=config.agent_network.policy_obs_key,
         )
 
         ec_optimizer = SepCEM(

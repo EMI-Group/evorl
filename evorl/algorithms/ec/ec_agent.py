@@ -165,6 +165,7 @@ def make_stochastic_ec_agent(
     use_bias: bool = True,
     norm_layer_type: str = "none",
     normalize_obs: bool = False,
+    policy_obs_key: str = "",
 ):
     if isinstance(action_space, Box):
         action_size = action_space.shape[0] * 2
@@ -180,6 +181,7 @@ def make_stochastic_ec_agent(
         hidden_layer_sizes=actor_hidden_layer_sizes,
         norm_layer_type=norm_layer_type,
         use_bias=use_bias,
+        obs_key=policy_obs_key,
     )
 
     if normalize_obs:
@@ -200,6 +202,7 @@ def make_deterministic_ec_agent(
     use_bias: bool = True,
     norm_layer_type: str = "none",
     normalize_obs: bool = False,
+    policy_obs_key: str = "",
 ):
     assert isinstance(action_space, Box), "Only continue action space is supported."
 
@@ -211,6 +214,7 @@ def make_deterministic_ec_agent(
         use_bias=use_bias,
         activation_final=nn.tanh,
         norm_layer_type=norm_layer_type,
+        obs_key=policy_obs_key,
     )
 
     if normalize_obs:
