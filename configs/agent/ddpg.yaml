@@ -29,5 +29,7 @@ optimizer:
 agent_network:
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
+  policy_obs_key: null
+  value_obs_key: null
 
 save_replay_buffer: true

@@ -172,6 +172,7 @@ def make_mlp_discrete_dqn_agent(
     target_type: str = "DDQN",
     q_hidden_layer_sizes: tuple[int] = (256, 256),
     normalize_obs: bool = False,
+    value_obs_key: str = "",
 ):
     assert isinstance(action_space, Discrete), (
         "Only Discrete action space is supported."
@@ -181,6 +182,7 @@ def make_mlp_discrete_dqn_agent(
     q_network = make_discrete_q_network(
         action_size=action_size,
         hidden_layer_sizes=q_hidden_layer_sizes,
+        obs_key=value_obs_key,
     )
 
     if normalize_obs:
@@ -221,6 +223,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             target_type=config.target_type,
             q_hidden_layer_sizes=config.agent_network.q_hidden_layer_sizes,
             normalize_obs=config.normalize_obs,
+            value_obs_key=config.agent_network.value_obs_key,
         )
 
         if (

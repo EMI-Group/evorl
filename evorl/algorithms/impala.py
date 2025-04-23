@@ -246,6 +246,8 @@ def make_mlp_impala_agent(
     actor_hidden_layer_sizes: tuple[int] = (256, 256),
     critic_hidden_layer_sizes: tuple[int] = (256, 256),
     normalize_obs: bool = False,
+    policy_obs_key: str = "",
+    value_obs_key: str = "",
 ):
     if isinstance(action_space, Box):
         action_size = action_space.shape[0] * 2
@@ -259,9 +261,13 @@ def make_mlp_impala_agent(
     policy_network = make_policy_network(
         action_size=action_size,
         hidden_layer_sizes=actor_hidden_layer_sizes,
+        obs_key=policy_obs_key,
     )
 
-    value_network = make_v_network(hidden_layer_sizes=critic_hidden_layer_sizes)
+    value_network = make_v_network(
+        hidden_layer_sizes=critic_hidden_layer_sizes,
+        obs_key=value_obs_key,
+    )
 
     if normalize_obs:
         obs_preprocessor = running_statistics.normalize
@@ -335,6 +341,8 @@ class IMPALAWorkflow(OnPolicyWorkflow):
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             normalize_obs=config.normalize_obs,
+            policy_obs_key=config.agent_network.policy_obs_key,
+            value_obs_key=config.agent_network.value_obs_key,
         )
 
         if (

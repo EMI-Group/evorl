@@ -34,5 +34,6 @@ optimizer:
 
 agent_network:
   q_hidden_layer_sizes: [256, 256]
+  value_obs_key: null
 
 save_replay_buffer: true

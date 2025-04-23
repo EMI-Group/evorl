@@ -184,6 +184,8 @@ def make_mlp_ddpg_agent(
     discount: float = 1,
     exploration_epsilon: float = 0.5,
     normalize_obs: bool = False,
+    policy_obs_key: str = "",
+    value_obs_key: str = "",
 ):
     assert isinstance(action_space, Box), "Only continue action space is supported."
 
@@ -191,11 +193,13 @@ def make_mlp_ddpg_agent(
 
     critic_network = make_q_network(
         hidden_layer_sizes=critic_hidden_layer_sizes,
+        obs_key=value_obs_key,
     )
     actor_network = make_policy_network(
         action_size=action_size,
         hidden_layer_sizes=actor_hidden_layer_sizes,
         activation_final=nn.tanh,
+        obs_key=policy_obs_key,
     )
 
     if normalize_obs:
@@ -234,6 +238,8 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
             normalize_obs=config.normalize_obs,
+            policy_obs_key=config.agent_network.policy_obs_key,
+            value_obs_key=config.agent_network.value_obs_key,
         )
 
         # one optimizer, two opt_states (in setup function) for both actor and critic

@@ -239,6 +239,8 @@ def make_mlp_td3_agent(
     clip_policy_noise: float = 0.5,
     critics_in_actor_loss: str = "first",  #  or "min"
     normalize_obs: bool = False,
+    policy_obs_key: str = "",
+    value_obs_key: str = "",
 ):
     assert isinstance(action_space, Box), "Only continue action space is supported."
 
@@ -248,12 +250,14 @@ def make_mlp_td3_agent(
         n_stack=num_critics,
         hidden_layer_sizes=critic_hidden_layer_sizes,
         norm_layer_type=norm_layer_type,
+        obs_key=value_obs_key,
     )
     actor_network = make_policy_network(
         action_size=action_size,
         hidden_layer_sizes=actor_hidden_layer_sizes,
         activation_final=nn.tanh,
         norm_layer_type=norm_layer_type,
+        obs_key=policy_obs_key,
     )
 
     if normalize_obs:
@@ -300,6 +304,8 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             clip_policy_noise=config.clip_policy_noise,
             critics_in_actor_loss=config.critics_in_actor_loss,
             normalize_obs=config.normalize_obs,
+            policy_obs_key=config.agent_network.policy_obs_key,
+            value_obs_key=config.agent_network.value_obs_key,
         )
 
         # one optimizer, two opt_states (in setup function) for both actor and critic

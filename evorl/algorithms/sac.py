@@ -380,12 +380,15 @@ class SACDiscreteAgent(Agent):
 
 def make_mlp_sac_agent(
     action_space: Space,
+    num_critics: int = 2,
     critic_hidden_layer_sizes: tuple[int] = (256, 256),
     actor_hidden_layer_sizes: tuple[int] = (256, 256),
     init_alpha: float = 1.0,
     discount: float = 0.99,
     target_entropy_ratio: float = 0.98,
     normalize_obs: bool = False,
+    policy_obs_key: str = "",
+    value_obs_key: str = "",
 ):
     if isinstance(action_space, Box):
         action_size = action_space.shape[0] * 2
@@ -399,6 +402,7 @@ def make_mlp_sac_agent(
     actor_network = make_policy_network(
         action_size=action_size,  # mean+std
         hidden_layer_sizes=actor_hidden_layer_sizes,
+        obs_key=policy_obs_key,
     )
 
     if normalize_obs:
@@ -408,8 +412,9 @@ def make_mlp_sac_agent(
 
     if continuous_action:
         critic_network = make_q_network(
-            n_stack=2,
+            n_stack=num_critics,
             hidden_layer_sizes=critic_hidden_layer_sizes,
+            obs_key=value_obs_key,
         )
 
         return SACAgent(
@@ -424,6 +429,7 @@ def make_mlp_sac_agent(
             action_size=action_size,
             n_stack=2,
             hidden_layer_sizes=critic_hidden_layer_sizes,
+            obs_key=value_obs_key,
         )
         return SACDiscreteAgent(
             critic_network=critic_network,
@@ -452,12 +458,15 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
 
         agent = make_mlp_sac_agent(
             action_space=env.action_space,
+            num_critics=config.agent_network.num_critics,
             critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
             actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
             init_alpha=config.alpha,
             discount=config.discount,
             normalize_obs=config.normalize_obs,
             target_entropy_ratio=config.target_entropy_ratio,
+            policy_obs_key=config.agent_network.policy_obs_key,
+            value_obs_key=config.agent_network.value_obs_key,
         )
 
         # TODO: use different lr for critic and actor

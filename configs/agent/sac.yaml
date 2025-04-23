@@ -30,7 +30,10 @@ optimizer:
   grad_clip_norm: 0 # set 0 or null to turn-off
 
 agent_network:
+  num_critics: 2
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
+  policy_obs_key: null
+  value_obs_key: null
 
 save_replay_buffer: true
