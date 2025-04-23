@@ -117,3 +117,7 @@ class SpaceContainer(Space):
                 is_leaf=lambda s: isinstance(s, Space),
             )
         )
+
+
+def is_leaf_space(space):
+    return isinstance(space, Space) and not isinstance(space, SpaceContainer)

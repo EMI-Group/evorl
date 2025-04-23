@@ -3,10 +3,11 @@ from collections.abc import Mapping
 from typing import Any, Protocol
 
 import jax
+import jax.tree_util as jtu
 import chex
 import numpy as np
 
-from evorl.envs import Space
+from evorl.envs import Space, is_leaf_space
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
@@ -140,7 +141,11 @@ class RandomAgent(Agent):
         obs_space = agent_state.extra_state.obs_space
         action_space = agent_state.extra_state.action_space
 
-        batch_shapes = sample_batch.obs.shape[: -len(obs_space.shape)]
+        _obs = jtu.tree_leaves(sample_batch.obs)[0]
+        _obs_space = jtu.tree_leaves(obs_space, is_leaf=is_leaf_space)[0]
+        batch_shapes = _obs.shape[: -len(_obs_space.shape)]
+
+        chex.assert_tree_shape_prefix(sample_batch.obs, batch_shapes)
 
         action_sample_fn = action_space.sample
         for _ in range(len(batch_shapes)):

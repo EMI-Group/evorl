@@ -4,6 +4,7 @@ from typing import Any
 
 import chex
 import jax
+import jax.tree_util as jtu
 
 from evorl.agent import AgentState, AgentActionFn, RandomAgent
 from evorl.envs import Env, EnvState, EnvStepFn, create_env, AutoresetMode
@@ -77,7 +78,7 @@ def init_obs_preprocessor_with_random_timesteps(
             rollout_length=rollout_length,
         )
 
-        obs = jax.lax.collapse(obs, 0, 2)
+        obs = jtu.tree_map(lambda x: jax.lax.collapse(x, 0, 2), obs)
 
     obs_preprocessor_state = running_statistics.update(
         obs_preprocessor_state, obs, pmap_axis_name=pmap_axis_name
