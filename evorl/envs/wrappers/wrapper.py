@@ -43,8 +43,8 @@ class Wrapper(Env):
         return getattr(self.env, name)
 
 
-def get_wrapper(env: Env, wrapper_cls: type) -> bool:
-    """Check if the environment has a specific wrapper."""
+def get_wrapper(env: Env, wrapper_cls: type) -> Wrapper | None:
+    """Return a specific wrapper of an env."""
     if isinstance(env, wrapper_cls):
         return env
     elif hasattr(env, "env"):
