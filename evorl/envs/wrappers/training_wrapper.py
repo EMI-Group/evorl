@@ -113,27 +113,8 @@ class OneEpisodeWrapper(EpisodeWrapper):
     """Maintains episode step count and sets done at episode end.
 
     When call step() after the env is done, stop simulation and
-    directly return last state.
+    directly return previous state.
     """
-
-    def __init__(
-        self,
-        env: Env,
-        episode_length: int,
-        record_ori_obs: bool = False,
-    ):
-        """Initialize the env wrapper.
-
-        Args:
-            env: The unwrapped env should be a single un-vectorized environment.
-            episode_length: The maximum episode length
-            record_ori_obs: Whether record the original obs. Usually used with vmap wrappers.
-        """
-        super().__init__(
-            env,
-            episode_length,
-            record_ori_obs=record_ori_obs,
-        )
 
     def _dummy_step(self, state: EnvState, action: jax.Array) -> EnvState:
         return state.replace()
