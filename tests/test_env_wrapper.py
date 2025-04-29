@@ -7,6 +7,7 @@ from evorl.envs.wrappers import (
     OneEpisodeWrapper,
     RewardScaleWrapper,
     ActionRepeatWrapper,
+    SparseRewardWrapper,
     VmapWrapper,
 )
 from evorl.rollout import rollout
@@ -141,3 +142,86 @@ def test_action_repeat_wrapper2():
     assert jnp.allclose(rewards, ori_rewards * reward_scale)
     assert jnp.allclose(rewards.sum(axis=0), episode_return)
     assert jnp.allclose(episode_return, episode_return2)
+
+
+def test_sparse_reward_wrapper():
+    # sparse_length = 7
+    # for rollout_length in range(21,29):
+    sparse_length = 4
+    for rollout_length in range(16, 21):
+        rewards = jnp.arange(1, rollout_length + 1, dtype=jnp.float32)
+        dones = jnp.zeros((rollout_length,), dtype=jnp.float32)
+        dones = dones.at[-1].set(1.0)
+
+        env = FakeEnv(rewards, dones)
+        env = SparseRewardWrapper(env, sparse_length=sparse_length)
+        env = OneEpisodeWrapper(env, episode_length=rollout_length, discount=1.0)
+        env = VmapWrapper(env, num_envs=1)
+        agent = DebugRandomAgent()
+
+        key = jax.random.PRNGKey(42)
+        rollout_key, env_key, agent_key = jax.random.split(key, 3)
+
+        env_state = env.reset(env_key)
+        agent_state = agent.init(env.obs_space, env.action_space, agent_key)
+
+        trajectory, env_nstate = rollout(
+            env.step,
+            agent.compute_actions,
+            env_state,
+            agent_state,
+            rollout_key,
+            rollout_length=rollout_length,
+            env_extra_fields=("ori_reward", "steps", "episode_return"),
+        )
+
+        real_rewards = jnp.zeros_like(rewards)
+        for i in range(0, len(rewards) + 1, sparse_length):
+            real_rewards = real_rewards.at[i + sparse_length - 1].set(
+                rewards[i : i + sparse_length].sum()
+            )
+
+        if i != len(rewards):
+            real_rewards = real_rewards.at[-1].set(rewards[i:].sum())
+
+        assert jnp.allclose(trajectory.rewards.reshape(-1), real_rewards)
+
+
+def test_sparse_reward_wrapper2():
+
+    rollout_length = 33
+    sparse_length = 7
+    term_idx = 30
+
+    rewards = jnp.arange(1, rollout_length + 1, dtype=jnp.float32)
+    dones = jnp.zeros((rollout_length,), dtype=jnp.float32)
+    dones = dones.at[term_idx:].set(1.0)
+
+    env = FakeEnv(rewards, dones)
+    env = SparseRewardWrapper(env, sparse_length=sparse_length)
+    env = OneEpisodeWrapper(env, episode_length=rollout_length, discount=1.0)
+    env = VmapWrapper(env, num_envs=1)
+    agent = DebugRandomAgent()
+
+    key = jax.random.PRNGKey(42)
+    rollout_key, env_key, agent_key = jax.random.split(key, 3)
+
+    env_state = env.reset(env_key)
+    agent_state = agent.init(env.obs_space, env.action_space, agent_key)
+
+    trajectory, env_nstate = rollout(
+        env.step,
+        agent.compute_actions,
+        env_state,
+        agent_state,
+        rollout_key,
+        rollout_length=rollout_length,
+        env_extra_fields=("ori_reward", "steps", "episode_return"),
+    )
+
+    base = (term_idx // sparse_length) * sparse_length
+
+    last_reward = rewards[base:term_idx+1].sum()
+
+    for r in trajectory.rewards[term_idx:].reshape(-1):
+        assert jnp.allclose(last_reward, r)

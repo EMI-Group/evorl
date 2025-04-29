@@ -217,9 +217,8 @@ class VmapAutoResetWrapper(Wrapper):
         state = state.replace(
             env_state=reset_state.env_state,
             obs=reset_state.obs,
+            _internal=state._internal.replace(reset_key=new_key),
         )
-
-        state._internal.reset_key = new_key
 
         return state
 
