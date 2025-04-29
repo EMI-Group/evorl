@@ -35,18 +35,17 @@ class ActionRepeatWrapper(Wrapper):
     """Repeat action for a number of steps.
 
     :::{note}
-    This wrapper only accumulates `state.reward`. It is safe to use `ActionRepeatWrapper(EpisodeWrapper(env))`. However, if you want accumulate other metrics in `state.info`, inherit this class and add your own logic.
+    This wrapper only accumulates `state.reward` and `state.info.ori_reward`. It is safe to use `ActionRepeatWrapper(RewardScaleWrapper(EpisodeWrapper(env)))`. However, if you want accumulate other metrics, inherit this class and add your own logic.
     :::
     :::{caution}
-    When using rollout functions like `rollout`, `eval_rollout_episode` with `rollout_length=env.max_episode_steps`, users should manually handle the `env.max_episode_steps` by using `env.max_episode_steps//action_repeat` to matach the real rollout_length.
+    When using rollout functions like `rollout`, `eval_rollout_episode` with `rollout_length` argument, users should use `math.ceil(env.max_episode_steps/action_repeat)` to match the real rollout_length.
     :::
     """
 
-    def __init__(self, env: Env, action_repeat: int, accumulate_info_fn=None):
+    def __init__(self, env: Env, action_repeat: int):
         super().__init__(env)
 
         self.action_repeat = action_repeat
-        self.accumulate_info_fn = accumulate_info_fn
 
     def step(self, state: EnvState, action: Action) -> EnvState:
         def f(state, _):
@@ -64,9 +63,29 @@ class ActionRepeatWrapper(Wrapper):
             reward = nstate.reward
             reward = jtu.tree_map(where_done, jnp.zeros_like(reward), reward)
 
-            return nstate, reward
+            if "ori_reward" in nstate.info:
+                ori_reward = nstate.info.ori_reward
+                ori_reward = jtu.tree_map(
+                    where_done, jnp.zeros_like(ori_reward), ori_reward
+                )
+            else:
+                ori_reward = None
 
-        state, rewards = jax.lax.scan(f, state, (), length=self.action_repeat)
+            return nstate, (reward, ori_reward)
+
+        state, (rewards, ori_rewards) = jax.lax.scan(
+            f, state, (), length=self.action_repeat
+        )
+
         state = state.replace(
             reward=jtu.tree_map(jnp.sum, rewards),
         )
+
+        if ori_rewards is not None:
+            state = state.replace(
+                info=state.info.replace(
+                    ori_reward=jtu.tree_map(jnp.sum, ori_rewards),
+                ),
+            )
+
+        return state

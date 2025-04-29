@@ -2,7 +2,7 @@
 line-length = 88
 target-version = "py310"
 src = ["evorl", "tests"]
-include = ["evorl/**/*.py"]
+include = ["evorl/**/*.py", "tests/**/*.py"]
 
 [tool.ruff.format]
 docstring-code-format = true
