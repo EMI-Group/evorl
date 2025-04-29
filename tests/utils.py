@@ -1,4 +1,3 @@
-import os
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import chex
@@ -10,31 +9,11 @@ from evorl.types import PolicyExtraInfo, PyTreeDict, Action
 from evorl.utils.jax_utils import tree_get
 
 
-def set_default_device_cpu():
-    os.environ["JAX_PLATFORM_NAME"] = "cpu"
-
-
-def disable_gpu_preallocation():
-    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-
-
-def enable_nan_inf_check():
-    os.environ["JAX_DEBUG_NANS"] = "true"
-
-
-def enable_deterministic_mode():
-    xla_flags = os.getenv("XLA_FLAGS", "")
-    # print(f"current XLA_FLAGS: {xla_flags}")
-    if len(xla_flags) > 0:
-        xla_flags = xla_flags + " "
-    os.environ["XLA_FLAGS"] = xla_flags + "--xla_gpu_deterministic_ops=true"
-
-
 class FakeEnv(Env):
     def __init__(self, rewards, dones):
         chex.assert_equal_shape([rewards, dones])
         self._rewards = rewards
-        self._dones = dones # [T]
+        self._dones = dones  # [T]
         self.max_episode_length = dones.shape[0]
 
     def reset(self, key):
