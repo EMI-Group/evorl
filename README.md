@@ -27,6 +27,7 @@
 - [Introduction](#introduction)
   - [Highlight](#highlight)
     - [Update](#update)
+  - [Documentation](#documentation)
   - [Overview of Key Concepts in EvoRL](#overview-of-key-concepts-in-evorl)
 - [Installation](#installation)
 - [Quickstart](#quickstart)
@@ -50,12 +51,10 @@ EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learnin
 - Evolutionary Computation (EC)
 - Environment Simulation
 
-EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms. EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
+EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
 
 > [!NOTE]
-> * For comprehensive guidance, please visit our [Documentation](https://evorl.readthedocs.io/latest/), where you'll find detailed installation steps, tutorials, practical examples, and complete API references.
-> * EvoRL is also indexed by DeepWiki, providing an AI assistant for the project. Feel free to ask it for any question of this repo at [EMI-Group/evorl](https://deepwiki.com/EMI-Group/evorl).
-
+> EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 
 ## Highlight
 
@@ -70,6 +69,12 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 ### Update
 
 - 2025-04-01: Add support for Mujoco Playground Environments.
+
+## Documentation
+
+- For comprehensive guidance, please visit our [Documentation](https://evorl.readthedocs.io/latest/), where you'll find detailed installation steps, tutorials, practical examples, and complete API references.
+
+- EvoRL is also indexed by DeepWiki, providing an AI assistant for beginners. Feel free to ask any question about this repo at https://deepwiki.com/EMI-Group/evorl.
 
 ## Overview of Key Concepts in EvoRL
 
