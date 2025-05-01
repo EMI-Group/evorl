@@ -50,13 +50,13 @@ EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learnin
 - Evolutionary Computation (EC)
 - Environment Simulation
 
-EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms.
+EvoRL provides a highly efficient and user-friendly platform to develop and evaluate RL, EC and EvoRL algorithms. EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
 
 > [!NOTE]
 > For comprehensive guidance, please visit our [Documentation](https://evorl.readthedocs.io/latest/), where you'll find detailed installation steps, tutorials, practical examples, and complete API references.
 
 > [!NOTE]
-> EvoRL is a sister project of [EvoX](https://github.com/EMI-Group/evox).
+> Now EvoRL is indexed by DeepWiki, providing an AI assistant for the project. Feel free to ask it for any question of this repo at [EMI-Group/evorl](https://deepwiki.com/EMI-Group/evorl).
 
 
 ## Highlight
