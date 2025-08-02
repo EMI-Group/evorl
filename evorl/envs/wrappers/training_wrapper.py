@@ -290,7 +290,8 @@ class VmapEnvPoolAutoResetWrapper(Wrapper):
     """EnvPool style AutoReset.
 
     When the episode ends, an additional reset step is performed.
-    See https://envpool.readthedocs.io/en/latest/content/python_interface.html#auto-reset
+    See EnvPool: https://envpool.readthedocs.io/en/latest/content/python_interface.html#auto-reset, and the Next-Step Mode in gymnasium: https://farama.org/Vector-Autoreset-Mode.
+    This is helpful for algorithms that require n-step TD or GAE with Partial episode bootstrapping (PEB) support on time-limited environments. When using this wrapper, remember to skip the invalid transitions via the mask `autoreset`.
     """
 
     def __init__(self, env: Env, num_envs: int = 1):
