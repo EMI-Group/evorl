@@ -316,8 +316,13 @@ def right_shift_with_padding(
 def sliding_window(arr, length, stride):
     """Slide a window over the fist axis of the array.
 
-    Change shape from [T, ...] to [L, W, ...], where W: (T - L) // S + 1 is the number of windows.
+    Change shape from [T, ...] to [L, W, ...], where W = (T - L) // S + 1 is the number of windows.
     """
     starts = jnp.arange(0, arr.shape[0] - length + 1, stride)
-    idx = starts[:, None] + jnp.arange(length)
-    return arr[idx]
+    windows = jax.vmap(
+        lambda start: jax.lax.dynamic_slice_in_dim(
+            arr, start_index=start, slice_size=length, axis=0
+        ),
+    )(starts)
+
+    return windows
