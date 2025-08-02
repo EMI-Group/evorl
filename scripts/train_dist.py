@@ -49,16 +49,52 @@ def set_gpu_id():
     logger.info(f"Using {gpus_info[gpu_id]}")
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
+def setup_recorders(config: DictConfig, workflow_name: str):
+    output_dir = config.output_dir
+
+    from evorl.recorders import LogRecorder, WandbRecorder
+    recorders = []
+    tags = OmegaConf.to_container(config.tags, resolve=True)
+    exp_name = "_".join(
+        [workflow_name, config.env.env_name, config.env.env_type]
+    )
+    if len(tags) > 0:
+        exp_name = exp_name + "|" + ",".join(tags)
+
+    for rec in config.recorders:
+        match rec:
+            case "wandb":
+                wandb_tags = [
+                    workflow_name,
+                    config.env.env_name,
+                    config.env.env_type,
+                ] + tags
+
+                wandb_recorder = WandbRecorder(
+                    project=config.project,
+                    name=exp_name,
+                    group="dev",
+                    config=OmegaConf.to_container(
+                        config, resolve=True
+                    ),  # save the unrescaled config
+                    tags=wandb_tags,
+                    path=output_dir,
+                )
+                recorders.append(wandb_recorder)
+            case "log":
+                log_recorder = LogRecorder(log_path=output_dir / f"{exp_name}.log", console=True)
+                recorders.append(log_recorder)
+            case _:
+                raise ValueError(f"Unknown recorder: {rec}")
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train_dist(config: DictConfig) -> None:
     set_gpu_id()
 
     import jax
-    from evorl.recorders import LogRecorder, WandbRecorder
     from evorl.workflows import Workflow
 
-    jax.config.update("jax_threefry_partitionable", True)
+    # jax.config.update("jax_threefry_partitionable", True)
 
     output_dir = get_output_dir()
     config.output_dir = str(output_dir)
@@ -78,31 +114,8 @@ def train_dist(config: DictConfig) -> None:
             config, enable_jit=config.enable_jit
         )
 
-    output_dir = get_output_dir()
-    tags = OmegaConf.to_container(config.tags, resolve=True)
-    wandb_tags = [
-        workflow_cls.name(),
-        config.env.env_name,
-        config.env.env_type,
-    ] + tags
-    wandb_name = "_".join(
-        [workflow_cls.name(), config.env.env_name, config.env.env_type]
-    )
-    if len(tags) > 0:
-        wandb_name = wandb_name + "|" + ",".join(tags)
-
-    wandb_recorder = WandbRecorder(
-        project=config.project,
-        name=wandb_name,
-        group=wandb_name,
-        config=OmegaConf.to_container(
-            config, resolve=True
-        ),  # save the unrescaled config
-        tags=wandb_tags,
-        path=output_dir,
-    )
-    log_recorder = LogRecorder(log_path=output_dir / f"{wandb_name}.log", console=True)
-    workflow.add_recorders([wandb_recorder, log_recorder])
+    recorders = setup_recorders(config, workflow_cls.name())
+    workflow.add_recorders(recorders)
 
     try:
         state = workflow.init(jax.random.PRNGKey(config.seed))
