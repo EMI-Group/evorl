@@ -40,30 +40,41 @@ def train(config: DictConfig) -> None:
             config, enable_jit=config.enable_jit
         )
 
+    recorders = []
     tags = OmegaConf.to_container(config.tags, resolve=True)
-    wandb_tags = [
-        workflow_cls.name(),
-        config.env.env_name,
-        config.env.env_type,
-    ] + tags
-    wandb_name = "_".join(
+    exp_name = "_".join(
         [workflow_cls.name(), config.env.env_name, config.env.env_type]
     )
     if len(tags) > 0:
-        wandb_name = wandb_name + "|" + ",".join(tags)
+        exp_name = exp_name + "|" + ",".join(tags)
 
-    wandb_recorder = WandbRecorder(
-        project=config.project,
-        name=wandb_name,
-        group="dev",
-        config=OmegaConf.to_container(
-            config, resolve=True
-        ),  # save the unrescaled config
-        tags=wandb_tags,
-        path=output_dir,
-    )
-    log_recorder = LogRecorder(log_path=output_dir / f"{wandb_name}.log", console=True)
-    workflow.add_recorders([wandb_recorder, log_recorder])
+    for rec in config.recorders:
+        match rec:
+            case "wandb":
+                wandb_tags = [
+                    workflow_cls.name(),
+                    config.env.env_name,
+                    config.env.env_type,
+                ] + tags
+
+                wandb_recorder = WandbRecorder(
+                    project=config.project,
+                    name=exp_name,
+                    group="dev",
+                    config=OmegaConf.to_container(
+                        config, resolve=True
+                    ),  # save the unrescaled config
+                    tags=wandb_tags,
+                    path=output_dir,
+                )
+                recorders.append(wandb_recorder)
+            case "log":
+                log_recorder = LogRecorder(log_path=output_dir / f"{exp_name}.log", console=True)
+                recorders.append(log_recorder)
+            case _:
+                raise ValueError(f"Unknown recorder: {rec}")
+
+    workflow.add_recorders(recorders)
 
     try:
         state = workflow.init(jax.random.PRNGKey(config.seed))

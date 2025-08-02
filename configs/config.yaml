@@ -12,3 +12,4 @@ checkpoint:
   save_interval_steps: 100
   max_to_keep: null
 output_dir: './output-dev' # would be overridden by training scripts
+recorders: [log, wandb]
