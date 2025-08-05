@@ -55,21 +55,15 @@ class OpenES(EvoOptimizer):
     fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
         static=True, default=compute_centered_ranks
     )
-    optimizer: optax.GradientTransformation = pytree_field(static=True, lazy_init=True)
 
     def __post_init__(self):
         assert self.pop_size > 0, "pop_size must be positive"
         if self.mirror_sampling:
             assert self.pop_size % 2 == 0, "pop_size must be even for mirror sampling"
 
-        # optimizer = optax.inject_hyperparams(
-        #     optax.adam, static_args=("b1", "b2", "eps", "eps_root")
-        # )(learning_rate=self.lr_schedule.init)
-        optimizer = optax.inject_hyperparams(optimizer_map[self.optimizer_name])(
+        self.optimizer = optax.inject_hyperparams(optimizer_map[self.optimizer_name])(
             learning_rate=self.lr_schedule.init
         )
-
-        self.set_frozen_attr("optimizer", optimizer)
 
     def init(self, mean: Params, key: chex.PRNGKey) -> ECState:
         return OpenESState(
@@ -176,21 +170,15 @@ class OpenESNoiseTable(EvoOptimizer):
     fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
         static=True, default=compute_centered_ranks
     )
-    optimizer: optax.GradientTransformation = pytree_field(static=True, lazy_init=True)
 
     def __post_init__(self):
         assert self.pop_size > 0, "pop_size must be positive"
         if self.mirror_sampling:
             assert self.pop_size % 2 == 0, "pop_size must be even for mirror sampling"
 
-        # optimizer = optax.inject_hyperparams(
-        #     optax.adam, static_args=("b1", "b2", "eps", "eps_root")
-        # )(learning_rate=self.lr_schedule.init)
-        optimizer = optax.inject_hyperparams(optimizer_map[self.optimizer_name])(
+        self.optimizer = optax.inject_hyperparams(optimizer_map[self.optimizer_name])(
             learning_rate=self.lr_schedule.init
         )
-
-        self.set_frozen_attr("optimizer", optimizer)
 
     def init(self, mean: Params, key: chex.PRNGKey) -> ECState:
         key, noise_table_key = jax.random.split(key)

@@ -1,4 +1,3 @@
-from collections.abc import Callable
 import math
 
 import chex
@@ -6,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.types import PyTreeData, pytree_field, PyTreeDict
+from evorl.types import PyTreeData, PyTreeDict
 from evorl.ec.operators import ERLMutation, MLPCrossover, TournamentSelection
 from evorl.utils.jax_utils import tree_get
 
@@ -38,15 +37,10 @@ class ERLGA(EvoOptimizer):
     enable_crossover: bool = True
     num_crossover_frac: float = 0.1
 
-    # op
-    select_parents: Callable = pytree_field(lazy_init=True)
-    mutate: Callable = pytree_field(lazy_init=True)
-    crossover: Callable = pytree_field(lazy_init=True)
-
     def __post_init__(self):
         assert self.pop_size >= self.num_elites, "num_elites must be <= pop_size"
-        selection_op = TournamentSelection(tournament_size=self.tournament_size)
-        mutation_op = ERLMutation(
+        self.selection_op = TournamentSelection(tournament_size=self.tournament_size)
+        self.mutation_op = ERLMutation(
             weight_max_magnitude=self.weight_max_magnitude,
             mut_strength=self.mut_strength,
             num_mutation_frac=self.num_mutation_frac,
@@ -55,11 +49,7 @@ class ERLGA(EvoOptimizer):
             reset_prob=self.reset_prob,
             vec_relative_prob=self.vec_relative_prob,
         )
-        crossover_op = MLPCrossover(num_crossover_frac=self.num_crossover_frac)
-
-        self.set_frozen_attr("select_parents", selection_op)
-        self.set_frozen_attr("mutate", mutation_op)
-        self.set_frozen_attr("crossover", crossover_op)
+        self.crossover_op = MLPCrossover(num_crossover_frac=self.num_crossover_frac)
 
     def init(self, pop, key) -> ERLGAState:
         return ERLGAState(pop=pop, key=key)

@@ -186,6 +186,17 @@ _T = TypeVar("T")
 def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
     if "frozen" not in kwargs.keys():
         kwargs["frozen"] = True
+
+    # for name in get_type_hints(clz).keys():
+    for name in clz.__annotations__.keys():
+        if hasattr(clz, name):
+            obj = getattr(clz, name)
+            # Although JAX Array is immutable, it is not hashable (__hash__ is None).
+            # To meet the requirements of dataclass, we need to use default_factory.
+            # Note: x=obj is necessary to capture current obj in the closure.
+            if isinstance(obj, jax.Array):
+                setattr(clz, name, pytree_field(default_factory=lambda x=obj: x))
+
     data_clz = dataclasses.dataclass(**kwargs)(clz)  # type: ignore
     meta_fields = []
     data_fields = []
@@ -202,36 +213,8 @@ def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
 
     data_clz.replace = replace
 
-    if pure_data and hasattr(jax.tree_util, "register_dataclass"):
-        # use the optimized C++ dataclass builtin (jax>=0.4.26)
-        jax.tree_util.register_dataclass(data_clz, data_fields, meta_fields)
-    else:
-
-        def iterate_clz(x):
-            meta = tuple(getattr(x, name) for name in meta_fields)
-            data = tuple(getattr(x, name) for name in data_fields)
-            return data, meta
-
-        def iterate_clz_with_keys(x):
-            meta = tuple(getattr(x, name) for name in meta_fields)
-            data = tuple(
-                (jax.tree_util.GetAttrKey(name), getattr(x, name))
-                for name in data_fields
-            )
-            return data, meta
-
-        def clz_from_iterable(meta, data):
-            meta_args = tuple(zip(meta_fields, meta))
-            data_args = tuple(zip(data_fields, data))
-            kwargs = dict(meta_args + data_args)
-            return data_clz(**kwargs)
-
-        jax.tree_util.register_pytree_with_keys(
-            data_clz,
-            iterate_clz_with_keys,
-            clz_from_iterable,
-            iterate_clz,
-        )
+    # use the optimized C++ dataclass builtin (jax>=0.4.26)
+    jax.tree_util.register_dataclass(data_clz, data_fields, meta_fields)
 
     return data_clz  # type: ignore
 

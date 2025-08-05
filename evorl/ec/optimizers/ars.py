@@ -8,7 +8,6 @@ from evorl.types import (
     PyTreeData,
     PyTreeDict,
     Params,
-    pytree_field,
 )
 from evorl.utils.jax_utils import rng_split_like_tree
 
@@ -38,15 +37,12 @@ class ARS(EvoOptimizer):
     fitness_std_eps: float = 1e-8
     optimizer_name: str = "sgd"
 
-    optimizer: optax.GradientTransformation = pytree_field(static=True, lazy_init=True)
-
     def __post_init__(self):
         assert self.pop_size > 0 and self.pop_size % 2 == 0, (
             "pop_size must be positive even number"
         )
 
-        optimizer = optimizer_map[self.optimizer_name](learning_rate=self.lr)
-        self.set_frozen_attr("optimizer", optimizer)
+        self.optimizer = optimizer_map[self.optimizer_name](learning_rate=self.lr)
 
     def init(self, mean: Params, key: chex.PRNGKey) -> ARSState:
         opt_state = self.optimizer.init(mean)

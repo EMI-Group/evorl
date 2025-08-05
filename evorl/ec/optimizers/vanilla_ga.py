@@ -1,11 +1,9 @@
-from collections.abc import Callable
-
 import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.types import PyTreeData, pytree_field, PyTreeDict
+from evorl.types import PyTreeData, PyTreeDict
 from evorl.ec.operators import MLPMutation, MLPCrossover, TournamentSelection
 
 from .ec_optimizer import EvoOptimizer
@@ -41,11 +39,6 @@ class VanillaGA(EvoOptimizer):
     enable_crossover: bool = True
     num_crossover_frac: float = 0.1
 
-    # op
-    select_parents: Callable = pytree_field(lazy_init=True)
-    mutate: Callable = pytree_field(lazy_init=True)
-    crossover: Callable = pytree_field(lazy_init=True)
-
     def __post_init__(self):
         assert (
             self.pop_size - self.num_elites
@@ -53,18 +46,14 @@ class VanillaGA(EvoOptimizer):
             "(pop_size - num_elites) must be even when enable crossover"
         )
 
-        selection_op = TournamentSelection(tournament_size=self.tournament_size)
-        mutation_op = MLPMutation(
+        self.selection_op = TournamentSelection(tournament_size=self.tournament_size)
+        self.mutation_op = MLPMutation(
             weight_max_magnitude=self.weight_max_magnitude,
             mut_strength=self.mut_strength,
             vector_num_mutation_frac=self.vector_num_mutation_frac,
             matrix_num_mutation_frac=self.matrix_num_mutation_frac,
         )
-        crossover_op = MLPCrossover(num_crossover_frac=self.num_crossover_frac)
-
-        self.set_frozen_attr("select_parents", selection_op)
-        self.set_frozen_attr("mutate", mutation_op)
-        self.set_frozen_attr("crossover", crossover_op)
+        self.crossover_op = MLPCrossover(num_crossover_frac=self.num_crossover_frac)
 
     def init(self, pop: chex.ArrayTree, key: chex.PRNGKey) -> VanillaGAState:
         return VanillaGAState(pop=pop, key=key)

@@ -1,12 +1,11 @@
 from functools import partial
-from collections.abc import Callable
 
 import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.types import PyTreeNode, pytree_field
+from evorl.types import PyTreeNode
 from ..utils import is_layer_norm_layer
 
 
@@ -143,14 +142,12 @@ class ERLMutation(PyTreeNode):
     reset_prob: float = 0.05
     vec_relative_prob: float = 0.0
 
-    mutate_fn: Callable = pytree_field(lazy_init=True, static=True)
-
     def __post_init__(self):
         assert self.num_mutation_frac >= 0 and self.num_mutation_frac <= 1, (
             "num_mutation_frac should be in [0, 1]"
         )
 
-        mutate_fn = jax.vmap(
+        self.mutate_fn = jax.vmap(
             partial(
                 erl_mutate,
                 weight_max_magnitude=self.weight_max_magnitude,
@@ -162,8 +159,6 @@ class ERLMutation(PyTreeNode):
                 vec_relative_prob=self.vec_relative_prob,
             ),
         )
-
-        self.set_frozen_attr("mutate_fn", mutate_fn)
 
     def __call__(self, xs: chex.ArrayTree, key: chex.PRNGKey):
         pop_size = jtu.tree_leaves(xs)[0].shape[0]

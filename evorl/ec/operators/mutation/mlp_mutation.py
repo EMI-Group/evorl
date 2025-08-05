@@ -1,12 +1,11 @@
 from functools import partial
-from collections.abc import Callable
 
 import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.types import PyTreeNode, pytree_field
+from evorl.types import PyTreeNode
 from ..utils import is_layer_norm_layer
 
 
@@ -67,8 +66,6 @@ class MLPMutation(PyTreeNode):
     vector_num_mutation_frac: float = 0.0
     matrix_num_mutation_frac: float = 0.01
 
-    mutate_fn: Callable = pytree_field(lazy_init=True, static=True)
-
     def __post_init__(self):
         assert 0 <= self.vector_num_mutation_frac <= 1, (
             "vector_num_mutation_frac should be in [0, 1]"
@@ -77,7 +74,7 @@ class MLPMutation(PyTreeNode):
             "matrix_num_mutation_frac should be in [0, 1]"
         )
 
-        mutate_fn = jax.vmap(
+        self.mutate_fn = jax.vmap(
             partial(
                 mlp_mutate,
                 weight_max_magnitude=self.weight_max_magnitude,
@@ -86,8 +83,6 @@ class MLPMutation(PyTreeNode):
                 matrix_num_mutation_frac=self.matrix_num_mutation_frac,
             ),
         )
-
-        self.set_frozen_attr("mutate_fn", mutate_fn)
 
     def __call__(self, xs: chex.ArrayTree, key: chex.PRNGKey):
         pop_size = jtu.tree_leaves(xs)[0].shape[0]

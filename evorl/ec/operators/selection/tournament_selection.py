@@ -2,6 +2,8 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from evorl.types import PyTreeNode
+
 
 def tournament_selection(
     fitnesses: chex.Array,
@@ -24,9 +26,8 @@ def tournament_selection(
     return ranks[selected_indices]
 
 
-class TournamentSelection:
-    def __init__(self, tournament_size: int = 2):
-        self.tournament_size = tournament_size
+class TournamentSelection(PyTreeNode):
+    tournament_size: int = 2
 
     def __call__(self, fitnesses, num_offsprings, key):
         return tournament_selection(
