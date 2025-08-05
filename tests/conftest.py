@@ -1,8 +1,9 @@
 import os
 
+
 def set_default_device_cpu():
     os.environ["JAX_PLATFORMS"] = "cpu"
-    os.environ['CUDA_VISIBLE_DEVICES'] = ""
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 
 def disable_gpu_preallocation():
@@ -20,11 +21,16 @@ def enable_deterministic_mode():
         xla_flags = xla_flags + " "
     os.environ["XLA_FLAGS"] = xla_flags + "--xla_gpu_deterministic_ops=true"
 
+
 def pytest_addoption(parser):
     parser.addoption(
-        "--device", action="store", default="cpu", choices=["cpu", "gpu"],
-        help="Choose the device to run tests on: cpu or gpu"
+        "--device",
+        action="store",
+        default="cpu",
+        choices=["cpu", "gpu"],
+        help="Choose the device to run tests on: cpu or gpu",
     )
+
 
 def pytest_configure(config):
     device = config.getoption("--device")

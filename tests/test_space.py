@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-import chex
 from evorl.envs import Box, Discrete, SpaceContainer
 
 
@@ -34,6 +33,7 @@ def test_container():
 
     assert not space.contains(new_data)
 
+
 def test_nested_container():
     shape = (7, 3)
     high = jnp.ones(shape)
@@ -44,7 +44,7 @@ def test_nested_container():
             "b": Discrete(n=5),
             "c": SpaceContainer(
                 spaces={
-                    "a1": Box(low=-2*high, high=2*high),
+                    "a1": Box(low=-2 * high, high=2 * high),
                     "b1": Discrete(n=13),
                 }
             ),
@@ -55,9 +55,7 @@ def test_nested_container():
 
     data_shape = space.shape
     assert isinstance(data_shape, dict)
-    assert (
-        data_shape["c"] == space.spaces["c"].shape
-    )
+    assert data_shape["c"] == space.spaces["c"].shape
 
     new_data = dict(data)
     new_data["c"] = dict(new_data["c"])

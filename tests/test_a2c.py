@@ -1,5 +1,5 @@
 import jax
-from evorl.algorithms.a2c import A2CWorkflow, A2CAgent, make_mlp_a2c_agent
+from evorl.algorithms.a2c import A2CWorkflow, make_mlp_a2c_agent
 
 from hydra import compose, initialize
 from evorl.envs import create_wrapped_brax_env

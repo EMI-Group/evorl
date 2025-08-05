@@ -22,7 +22,6 @@ def test_mutation():
 
     mlp_mutate(state1, key5)
 
-
     jax.jit(
         mlp_mutate,
         static_argnames=(

@@ -5,14 +5,13 @@ import chex
 from evorl.evaluators import Evaluator
 from evorl.envs import create_wrapped_brax_env, AutoresetMode
 from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_length
-from evorl.utils.jax_utils import rng_split_by_shape
 from evorl.types import PyTreeDict
 
-from .utils import DebugRandomAgent, FakeVmapEnv
+from .utils import DebugRandomAgent
 
 
 def test_eval_rollout_epsiode():
-    env_name="hopper"
+    env_name = "hopper"
 
     env = create_wrapped_brax_env(
         env_name,

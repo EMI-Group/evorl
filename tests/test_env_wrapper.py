@@ -188,7 +188,6 @@ def test_sparse_reward_wrapper():
 
 
 def test_sparse_reward_wrapper2():
-
     rollout_length = 33
     sparse_length = 7
     term_idx = 30
@@ -221,7 +220,7 @@ def test_sparse_reward_wrapper2():
 
     base = (term_idx // sparse_length) * sparse_length
 
-    last_reward = rewards[base:term_idx+1].sum()
+    last_reward = rewards[base : term_idx + 1].sum()
 
     for r in trajectory.rewards[term_idx:].reshape(-1):
         assert jnp.allclose(last_reward, r)
