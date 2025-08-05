@@ -33,12 +33,12 @@
 - [Quickstart](#quickstart)
   - [Training](#training)
   - [Logging](#logging)
-    - [Env Rendering](#env-rendering)
+  - [Env Rendering](#env-rendering)
 - [Algorithms](#algorithms)
 - [RL Environments](#rl-environments)
-  - [Supported Environments](#supported-environments)
+  - [Current Supported Environments](#current-supported-environments)
 - [Performance](#performance)
-- [Issues and Discussions](#issues-and-discussions)
+- [Bug report \& Discussion](#bug-report--discussion)
 - [Acknowledgement](#acknowledgement)
   - [Citing EvoRL](#citing-evorl)
 
@@ -60,7 +60,6 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 
 - **End-to-end training pipelines**: The training pipelines for RL, EC and EvoRL are entirely executed on GPUs, eliminating dense communication between CPUs and GPUs in traditional implementations and fully utilizing the parallel computing capabilities of modern GPU architectures.
   - Most algorithms has a `Workflow.step()` function that is capable of `jax.jit` and `jax.vmap()`, supporting parallel training and JIT on full computation graph.
-  - The maximum seed-up is up to 60x depend on the algorithms, see [Performance](#performance).
 - **Easy integration between EC and RL**: Due to modular design, EC components can be easily plug-and-play in workflows and cooperate with RL.
 - **Implementation of EvoRL algorithms**: Currently, we provide two popular paradigms in Evolutionary Reinforcement Learning: Evolution-guided Reinforcement Learning (ERL): ERL, CEM-RL; and Population-based AutoRL: PBT.
 - **Unified Environment API**: Support multiple GPU-accelerated RL environment packages (eg: Brax, gymnax, ...). Multiple Env Wrappers are also provided.
@@ -90,7 +89,7 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 
 # Installation
 
-EvoRL is based on `jax`. So `jax` should be installed first, please follow [JAX official installation guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Since EvoRL is currently under development, we recommend installing the package from source.
+EvoRL is developed on the top of `jax`. So `jax` should be installed first, please follow [JAX official installation guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Since EvoRL is currently under development, we recommend installing the package from source.
 
 ```shell
 # Install the evorl package from source
@@ -105,7 +104,7 @@ For developers, see [Contributing to EvoRL](https://evorl.readthedocs.io/latest/
 
 ## Training
 
-EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. Users can use `scripts/train.py` to run algorithms from CLI. Specify the `agent` and `env` field based on the related config file path (`*.yaml`) in `configs` folder.
+EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. Users can use `scripts/train.py` or `script/train_dist.py` to run algorithms from CLI.
 
 ```text
 # hierarchy of folder `configs/`
@@ -124,14 +123,13 @@ configs
 └── logging.yaml
 ```
 
-
-For example: To train the PPO agent with config file in `configs/agent/ppo.yaml` on environment Ant with config file in `configs/env/brax/ant.yaml`, type the following command:
+Specify the `agent` and `env` field based on the related config file path (`*.yaml`) in `configs` folder. For example: To train the *PPO* agent with config file in `configs/agent/ppo.yaml` on the Brax environment *Ant* with config file in `configs/env/brax/ant.yaml`, use:
 
 ```shell
 python scripts/train.py agent=ppo env=brax/ant
 ```
 
-Then the PPO algorithm starts training. If multiple GPUs are detected, most algorithms will automatically be trained in distributed mode.
+If multiple GPUs are detected, most algorithms will be automatically trained in distributed mode.
 
 For more advanced usage, see our documentation: [Training](https://evorl.readthedocs.io/latest/guide/quickstart.html#advanced-usage).
 
@@ -139,13 +137,13 @@ For more advanced usage, see our documentation: [Training](https://evorl.readthe
 
 When not using [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/) (without `-m`), the outputs will be stored in `./outputs`. When using [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/) (`-m`), the outputs will be stored in `./multirun`. Specifically, when launching algorithms from the training scripts, the log file and checkpoint files will be stored in `./outputs|multirun/train|train_dist/<timestamp>/<exp-name>/`.
 
-By default, the script will enable two recorders for logging: `LogRecorder` and `WandbRecorder`. `LogRecorder` will save logs (`*.log`) in the above path, and `WandbRecorder` will upload the data to [WandB](https://wandb.ai/site/), which provides beautiful visualizations.
+By default, the training script will enable two recorders for logging: `LogRecorder` and `WandbRecorder`. `LogRecorder` will save logs (`*.log`) in the above path, and `WandbRecorder` will upload the data to [WandB](https://wandb.ai/site/), which provides beautiful visualizations.
 
 Screenshot in WandB dashboard:
 
 ![](docs/_static/evorl_wandb.png)
 
-### Env Rendering
+## Env Rendering
 
 We provide some example visualization scripts for brax and playground environments: [visualize_mjx.ipynb](./scripts/visualize_mjx.ipynb).
 
@@ -187,7 +185,7 @@ pip install -e ".[gymnasium]"
 > [!WARNING]
 > These additional environments have limited supports and some algorithms are incompatible with them.
 
-## Supported Environments
+## Current Supported Environments
 
 | Environment Library                                                        | Descriptions                            |
 | -------------------------------------------------------------------------- | --------------------------------------- |
@@ -198,6 +196,8 @@ pip install -e ".[gymnasium]"
 | [Jumanji (experimental)](https://github.com/instadeepai/jumanji)           | Game, Combinatorial optimization        |
 | [EnvPool (experimental)](https://github.com/sail-sg/envpool)               | High-performance CPU-based environments |
 | [Gymnasium (experimental)](https://github.com/Farama-Foundation/Gymnasium) | Standard CPU-based environments         |
+
+PRs for other environment libraries are welcomed.
 
 # Performance
 
@@ -212,12 +212,12 @@ Test settings:
 ![](docs/_static/es-perf.png)
 ![](docs/_static/erl-pbt-perf.png)
 
-# Issues and Discussions
+# Bug report & Discussion
 
-To keep our project organized, please use the appropriate section for your topics:
+To keep our project organized, please use the appropriate GitHub section:
 
-- Issues – For reporting **bugs** and **PR** only. When submitting an issue, please provide clear details to help with troubleshooting.
-- Discussions – For general questions, feature requests, and other topics.
+- [Issues](./issues) – For reporting **bugs** and **PR** only. When submitting an issue, please provide clear details to help with troubleshooting.
+- [Discussions](./discussions) – For general questions, feature requests, and other topics.
 
 Before posting, kindly check existing issues and discussions to avoid duplicates. Thank you for your contributions!
 
