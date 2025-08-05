@@ -348,8 +348,8 @@ def build_rl_update_fn(
 
         key, critic_key, actor_key = jax.random.split(key, num=3)
 
-        critic_sample_batches = jax.tree_map(lambda x: x[:-1], sample_batches)
-        last_sample_batch = jax.tree_map(lambda x: x[-1], sample_batches)
+        critic_sample_batches = jtu.tree_map(lambda x: x[:-1], sample_batches)
+        last_sample_batch = jtu.tree_map(lambda x: x[-1], sample_batches)
 
         if config.actor_update_interval - 1 > 0:
 

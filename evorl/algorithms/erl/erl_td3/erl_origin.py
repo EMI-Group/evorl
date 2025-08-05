@@ -53,7 +53,7 @@ class ERLWorkflow(ERLGAWorkflow):
             sample_batches = jax.vmap(_sample_fn)(rb_keys)
 
             # (actor_update_interval, num_learning_offspring, B, ...)
-            sample_batches = jax.tree_map(
+            sample_batches = jtu.tree_map(
                 lambda x: x.reshape(
                     (
                         config.actor_update_interval,

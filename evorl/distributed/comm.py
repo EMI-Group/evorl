@@ -3,6 +3,7 @@ from collections.abc import Sequence
 import chex
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 from jax._src.distributed import global_state
 
 
@@ -44,7 +45,7 @@ def _unpmap(x, axis_name: str | None = None):
 
 
 def unpmap(tree: chex.ArrayTree, axis_name: str | None = None):
-    return jax.tree_map(lambda x: _unpmap(x, axis_name), tree)
+    return jtu.tree_map(lambda x: _unpmap(x, axis_name), tree)
 
 
 def all_gather(x, axis_name: str | None = None, **kwargs):

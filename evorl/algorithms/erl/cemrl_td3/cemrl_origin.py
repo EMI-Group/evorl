@@ -4,6 +4,7 @@ from omegaconf import DictConfig
 import chex
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
@@ -63,7 +64,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
             sample_batches = jax.vmap(_sample_fn)(rb_keys)
 
             # (actor_update_interval, num_learning_offspring, B, ...)
-            sample_batches = jax.tree_map(
+            sample_batches = jtu.tree_map(
                 lambda x: x.reshape(
                     (
                         config.actor_update_interval,

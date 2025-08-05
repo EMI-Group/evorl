@@ -278,7 +278,7 @@ class FastVmapAutoResetWrapper(Wrapper):
                 done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))
             return jnp.where(done, x, y)
 
-        env_state = jax.tree_map(
+        env_state = jtu.tree_map(
             where_done, state._internal.first_env_state, state.env_state
         )
         obs = where_done(state._internal.first_obs, state.obs)
