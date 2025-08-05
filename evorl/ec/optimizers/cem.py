@@ -4,11 +4,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
-from evorl.types import (
-    PyTreeData,
-    PyTreeDict,
-    Params,
-)
+from evorl.types import PyTreeData, PyTreeDict, Params, pytree_field
 from evorl.utils.jax_utils import rng_split_like_tree
 
 from .utils import ExponentialScheduleSpec, weight_sum
@@ -35,7 +31,7 @@ class SepCEM(EvoOptimizer):
     weighted_update: bool = True
     rank_weight_shift: float = 1.0
     mirror_sampling: bool = False
-    # elite_weights: chex.Array = pytree_field(lazy_init=True, static=True)
+    elite_weights: chex.Array = pytree_field(init=False)
 
     def __post_init__(self):
         assert self.pop_size > 0, "pop_size must be positive"
@@ -50,8 +46,6 @@ class SepCEM(EvoOptimizer):
             elite_weights = jnp.ones((self.num_elites,))
 
         self.elite_weights = elite_weights / elite_weights.sum()
-
-        # self.set_frozen_attr("elite_weights", elite_weights)
 
     def init(self, mean: Params, key: chex.PRNGKey) -> SepCEMState:
         variance = jtu.tree_map(

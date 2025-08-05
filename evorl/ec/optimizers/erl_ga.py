@@ -39,8 +39,13 @@ class ERLGA(EvoOptimizer):
 
     def __post_init__(self):
         assert self.pop_size >= self.num_elites, "num_elites must be <= pop_size"
-        self.selection_op = TournamentSelection(tournament_size=self.tournament_size)
-        self.mutation_op = ERLMutation(
+        assert (
+            self.pop_size - self.num_elites
+        ) % 2 == 0 or not self.enable_crossover, (
+            "(pop_size - num_elites) must be even when enable crossover"
+        )
+        self.select_parents = TournamentSelection(tournament_size=self.tournament_size)
+        self.mutate = ERLMutation(
             weight_max_magnitude=self.weight_max_magnitude,
             mut_strength=self.mut_strength,
             num_mutation_frac=self.num_mutation_frac,
@@ -49,7 +54,8 @@ class ERLGA(EvoOptimizer):
             reset_prob=self.reset_prob,
             vec_relative_prob=self.vec_relative_prob,
         )
-        self.crossover_op = MLPCrossover(num_crossover_frac=self.num_crossover_frac)
+        if self.enable_crossover:
+            self.crossover = MLPCrossover(num_crossover_frac=self.num_crossover_frac)
 
     def init(self, pop, key) -> ERLGAState:
         return ERLGAState(pop=pop, key=key)

@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
-from evorl.types import PyTreeData, Params, PyTreeDict
+from evorl.types import PyTreeData, Params, PyTreeDict, pytree_field
 from evorl.utils.jax_utils import rng_split_like_tree
 
 from .utils import weight_sum, ExponentialScheduleSpec
@@ -29,14 +29,13 @@ class VanillaES(EvoOptimizer):
     pop_size: int
     num_elites: int
     noise_std_schedule: ExponentialScheduleSpec
-    # elite_weights: chex.Array = pytree_field(lazy_init=True, static=True)
+    elite_weights: chex.Array = pytree_field(init=False)
 
     def __post_init__(self):
         elite_weights = jnp.log(self.num_elites + 0.5) - jnp.log(
             jnp.arange(1, self.num_elites + 1)
         )
         self.elite_weights = elite_weights / elite_weights.sum()
-        # self.set_frozen_attr("elite_weights", elite_weights)
 
     def init(self, mean: Params, key: chex.PRNGKey) -> VanillaESState:
         return VanillaESState(

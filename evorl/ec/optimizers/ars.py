@@ -4,11 +4,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
-from evorl.types import (
-    PyTreeData,
-    PyTreeDict,
-    Params,
-)
+from evorl.types import PyTreeData, PyTreeDict, Params, pytree_field
 from evorl.utils.jax_utils import rng_split_like_tree
 
 from .utils import weight_sum, optimizer_map
@@ -36,6 +32,8 @@ class ARS(EvoOptimizer):
     noise_std: float
     fitness_std_eps: float = 1e-8
     optimizer_name: str = "sgd"
+
+    optimizer: optax.GradientTransformation = pytree_field(static=True, init=False)
 
     def __post_init__(self):
         assert self.pop_size > 0 and self.pop_size % 2 == 0, (

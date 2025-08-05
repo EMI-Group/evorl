@@ -1,6 +1,7 @@
 """Common type annotations and data structures."""
 
 import dataclasses
+from functools import wraps
 from collections.abc import Mapping, Sequence
 from typing import Any, Union, TypeVar
 from typing_extensions import dataclass_transform  # pytype: disable=not-supported-yet
@@ -34,16 +35,6 @@ ReplayBufferState = chex.ArrayTree
 Axis = int | None | Sequence[Any]
 
 MISSING_REWARD = -1e10
-
-
-# __all__ = [
-#     "pytree_field",
-#     "dataclass",
-#     "PyTreeDict",
-#     "State",
-#     "PyTreeNode",
-#     "PyTreeData",
-# ]
 
 
 class PyTreeArrayMixin:
@@ -160,20 +151,16 @@ class State(PyTreeDict):
     pass
 
 
-def pytree_field(*, lazy_init=False, static=False, **kwargs):
+def pytree_field(*, static=False, **kwargs):
     """Define a pytree field in our dataclass.
 
     Args:
-        lazy_init: When set to True, the field will not be initialized in `__init__()`, and we can use set_frozen_attr to set the value after `__init__`
-        static: Setting to False will mark the field as static for pytree, that changing data in these fields will cause a re-jit of func.
+        static: Setting to False will mark the field as static for pytree, where changing data in these fields will cause a re-jit of func.
 
     Returns:
         A dataclass field.
     """
-    if lazy_init:
-        kwargs.update(init=False, repr=False)
-
-    metadata = {"static": static, "lazy_init": lazy_init}
+    metadata = {"static": static}
     kwargs.setdefault("metadata", {}).update(metadata)
 
     return dataclasses.field(**kwargs)
@@ -184,9 +171,11 @@ _T = TypeVar("T")
 
 @dataclass_transform(field_specifiers=(pytree_field,))  # type: ignore[literal-required]
 def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
+    # set frozen=True unless manually specified
     if "frozen" not in kwargs.keys():
         kwargs["frozen"] = True
 
+    # Special handling for jax.Array fields with init value.
     # for name in get_type_hints(clz).keys():
     for name in clz.__annotations__.keys():
         if hasattr(clz, name):
@@ -213,8 +202,37 @@ def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
 
     data_clz.replace = replace
 
-    # use the optimized C++ dataclass builtin (jax>=0.4.26)
-    jax.tree_util.register_dataclass(data_clz, data_fields, meta_fields)
+    # TODO: can we always use jax.tree_util.register_dataclass?
+    if pure_data and hasattr(jax.tree_util, "register_dataclass"):
+        # Use the optimized C++ dataclass builtin (jax>=0.4.26)
+        jax.tree_util.register_dataclass(data_clz, data_fields, meta_fields)
+    else:
+
+        def iterate_clz(x):
+            meta = tuple(getattr(x, name) for name in meta_fields)
+            data = tuple(getattr(x, name) for name in data_fields)
+            return data, meta
+
+        def iterate_clz_with_keys(x):
+            meta = tuple(getattr(x, name) for name in meta_fields)
+            data = tuple(
+                (jax.tree_util.GetAttrKey(name), getattr(x, name))
+                for name in data_fields
+            )
+            return data, meta
+
+        def clz_from_iterable(meta, data):
+            meta_args = tuple(zip(meta_fields, meta))
+            data_args = tuple(zip(data_fields, data))
+            kwargs = dict(meta_args + data_args)
+            return data_clz(**kwargs)
+
+        jax.tree_util.register_pytree_with_keys(
+            data_clz,
+            iterate_clz_with_keys,
+            clz_from_iterable,
+            iterate_clz,
+        )
 
     return data_clz  # type: ignore
 
@@ -224,21 +242,38 @@ class PyTreeNode:
     """A pytree dataclass for Node."""
 
     def __init_subclass__(cls, kw_only=True, **kwargs):
-        dataclass(cls, pure_data=False, kw_only=kw_only, **kwargs)
+        original_post_init = getattr(cls, "__post_init__", None)
+
+        if original_post_init:
+
+            @wraps(original_post_init)
+            def wrapped_post_init(self, *args, **kwargs) -> None:
+                object.__setattr__(self, "_is_in_post_init", True)
+                try:
+                    original_post_init(self, *args, **kwargs)
+                finally:
+                    object.__setattr__(self, "_is_in_post_init", False)
+
+            cls.__post_init__ = wrapped_post_init
+
+        dataclass(cls, kw_only=kw_only, **kwargs)
+
+        # Allow self.xxx = value in __post_init__
+        if original_post_init:
+            original_setattr = getattr(cls, "__setattr__")
+
+            def custom_setattr(self, name: str, value: Any) -> None:
+                if getattr(self, "_is_in_post_init", False):
+                    # inside __post_init__
+                    object.__setattr__(self, name, value)
+                else:
+                    original_setattr(self, name, value)
+
+            cls.__setattr__ = custom_setattr
 
     def set_frozen_attr(self, name, value):
         """Force set attribute after __init__ of the dataclass."""
-        for field in dataclasses.fields(self):
-            if field.name == name:
-                if field.metadata.get("lazy_init", False):
-                    object.__setattr__(self, name, value)
-                    return
-                else:
-                    raise dataclasses.FrozenInstanceError(
-                        f"cannot assign to non-lazy_init field {name}"
-                    )
-
-        raise ValueError(f"field {name} not found in {self.__class__.__name__}")
+        object.__setattr__(self, name, value)
 
 
 @dataclass_transform(field_specifiers=(pytree_field,), kw_only_default=True)

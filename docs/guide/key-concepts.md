@@ -102,7 +102,7 @@ Conversely, the `jax.Array` objects are viewed as **pure data**. When the data i
     new_bar = bar.replace(a=jnp.zeros((3, 4)))
     ```
 
-- [`PyTreeNode`](#evorl.types.PyTreeNode) is similar to `PyTreeData`. However, it has an additional method [`set_frozen_attr()`](#evorl.types.PyTreeNode.set_frozen_attr) that allows changing some fields with `lazy_init=True` after creation. This feature makes it suitable for general classes. For example, `Agent`, `Evaluator`, `EvoOptimizer`, etc., are all from `PyTreeNode`.
+- [`PyTreeNode`](#evorl.types.PyTreeNode) is similar to `PyTreeData`. However, it allows setting or changing some fields in `__post_init__` after creation. This feature makes it suitable for general classes. For example, `Agent`, `Evaluator`, `EvoOptimizer`, etc., are all from `PyTreeNode`.
 
     ```python
     class OpenES(EvoOptimizer):
@@ -118,14 +118,12 @@ Conversely, the `jax.Array` objects are viewed as **pure data**. When the data i
         fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
             static=True, default=compute_centered_ranks
         )
-        optimizer: optax.GradientTransformation = pytree_field(static=True, lazy_init=True)
+        optimizer: optax.GradientTransformation = pytree_field(static=True, init=False)
 
         def __post_init__(self):
-            optimizer = optax.adam(
+            self.optimizer = optax.adam(
                 learning_rate=self.lr_schedule.init
             )
-
-            self.set_frozen_attr("optimizer", optimizer)
     ```
 
 ## Agent

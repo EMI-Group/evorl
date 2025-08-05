@@ -271,7 +271,7 @@ class ECWorkflowTemplate(ECWorkflow):
         key, rollout_key = jax.random.split(state.key, 2)
 
         pop, ec_opt_state = self.ec_optimizer.ask(state.ec_opt_state)
-        pop_size = jax.tree_leaves(pop)[0].shape[0]
+        pop_size = jtu.tree_leaves(pop)[0].shape[0]
 
         slice_size = pop_size // state.distributed_info.world_size
         eval_pop = jtu.tree_map(
@@ -376,7 +376,7 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
         key, rollout_key = jax.random.split(state.key, 2)
 
         pop, ec_opt_state = self.ec_optimizer.ask(state.ec_opt_state)
-        pop_size = jax.tree_leaves(pop)[0].shape[0]
+        pop_size = jtu.tree_leaves(pop)[0].shape[0]
 
         slice_size = pop_size // state.distributed_info.world_size
         eval_pop = jtu.tree_map(

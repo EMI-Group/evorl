@@ -35,6 +35,7 @@ class OpenES(EvoOptimizer):
     fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
         static=True, default=compute_centered_ranks
     )
+    optimizer: optax.GradientTransformation = pytree_field(static=True, init=False)
 
     def __post_init__(self):
         assert self.pop_size > 0, "pop_size must be positive"

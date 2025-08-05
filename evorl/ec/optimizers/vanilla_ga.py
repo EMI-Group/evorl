@@ -46,14 +46,15 @@ class VanillaGA(EvoOptimizer):
             "(pop_size - num_elites) must be even when enable crossover"
         )
 
-        self.selection_op = TournamentSelection(tournament_size=self.tournament_size)
-        self.mutation_op = MLPMutation(
+        self.select_parents = TournamentSelection(tournament_size=self.tournament_size)
+        self.mutate = MLPMutation(
             weight_max_magnitude=self.weight_max_magnitude,
             mut_strength=self.mut_strength,
             vector_num_mutation_frac=self.vector_num_mutation_frac,
             matrix_num_mutation_frac=self.matrix_num_mutation_frac,
         )
-        self.crossover_op = MLPCrossover(num_crossover_frac=self.num_crossover_frac)
+        if self.enable_crossover:
+            self.crossover = MLPCrossover(num_crossover_frac=self.num_crossover_frac)
 
     def init(self, pop: chex.ArrayTree, key: chex.PRNGKey) -> VanillaGAState:
         return VanillaGAState(pop=pop, key=key)
