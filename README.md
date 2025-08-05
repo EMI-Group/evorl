@@ -216,8 +216,8 @@ Test settings:
 
 To keep our project organized, please use the appropriate GitHub section:
 
-- [Issues](/issues) – For reporting **bugs** and **PR** only. When submitting an issue, please provide clear details to help with troubleshooting.
-- [Discussions](/discussions) – For general questions, feature requests, and other topics.
+- [Issues](https://github.com/EMI-Group/evorl/issues) – For reporting **bugs** and **PR** only. When submitting an issue, please provide clear details to help with troubleshooting.
+- [Discussions](https://github.com/EMI-Group/evorl/discussions) – For general questions, feature requests, and other topics.
 
 Before posting, kindly check existing issues and discussions to avoid duplicates. Thank you for your contributions!
 
