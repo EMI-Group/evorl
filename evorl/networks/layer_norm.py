@@ -2,7 +2,7 @@ from typing import Optional
 
 import jax
 import jax.numpy as jnp
-from flax import linen as nn
+from flax import struct, linen as nn
 
 
 class StaticLayerNorm(nn.LayerNorm):
@@ -10,8 +10,8 @@ class StaticLayerNorm(nn.LayerNorm):
 
     use_bias: bool = False
     use_scale: bool = False
-    fixed_bias: jax.Array = jnp.zeros(())
-    fixed_scale: jax.Array = jnp.ones(())
+    fixed_bias: jax.Array = struct.field(default_factory=lambda: jnp.zeros(()))
+    fixed_scale: jax.Array = struct.field(default_factory=lambda: jnp.ones(()))
 
     @nn.compact
     def __call__(self, x, *, mask: Optional[jax.Array] = None):
