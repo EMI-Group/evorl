@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from hydra_utils import (
@@ -12,15 +13,15 @@ logger = logging.getLogger("train")
 set_absl_log_level("warning")
 set_omegaconf_resolvers()
 
+
 def setup_recorders(config: DictConfig, workflow_name: str):
-    output_dir = config.output_dir
+    output_dir = Path(config.output_dir)
 
     from evorl.recorders import LogRecorder, WandbRecorder
+
     recorders = []
     tags = OmegaConf.to_container(config.tags, resolve=True)
-    exp_name = "_".join(
-        [workflow_name, config.env.env_name, config.env.env_type]
-    )
+    exp_name = "_".join([workflow_name, config.env.env_name, config.env.env_type])
     if len(tags) > 0:
         exp_name = exp_name + "|" + ",".join(tags)
 
@@ -45,10 +46,14 @@ def setup_recorders(config: DictConfig, workflow_name: str):
                 )
                 recorders.append(wandb_recorder)
             case "log":
-                log_recorder = LogRecorder(log_path=output_dir / f"{exp_name}.log", console=True)
+                log_recorder = LogRecorder(
+                    log_path=output_dir / f"{exp_name}.log", console=True
+                )
                 recorders.append(log_recorder)
             case _:
                 raise ValueError(f"Unknown recorder: {rec}")
+
+    return recorders
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train(config: DictConfig) -> None:

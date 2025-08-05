@@ -1,5 +1,6 @@
 import os
 import logging
+from pathlib import Path
 import subprocess
 import hydra
 from omegaconf import DictConfig, OmegaConf
@@ -50,7 +51,7 @@ def set_gpu_id():
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
 def setup_recorders(config: DictConfig, workflow_name: str):
-    output_dir = config.output_dir
+    output_dir = Path(config.output_dir)
 
     from evorl.recorders import LogRecorder, WandbRecorder
     recorders = []
@@ -86,6 +87,8 @@ def setup_recorders(config: DictConfig, workflow_name: str):
                 recorders.append(log_recorder)
             case _:
                 raise ValueError(f"Unknown recorder: {rec}")
+
+    return recorders
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train_dist(config: DictConfig) -> None:
