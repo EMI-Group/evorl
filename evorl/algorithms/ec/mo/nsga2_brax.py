@@ -14,7 +14,7 @@ from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import BraxEvaluator
 from evorl.agent import AgentState
 from evorl.distributed import unpmap
-from evorl.ec.optimizers import EvoXAlgorithmAdapter, ECState
+from evorl.ec.optimizers.evox_wrapper import EvoXAlgorithmAdapter, ECState
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.recorders import get_1d_array_statistics
 from evorl.workflows import MultiObjectiveECWorkflowTemplate

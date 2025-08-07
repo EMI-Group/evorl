@@ -11,7 +11,7 @@ from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
-from evorl.ec.optimizers import EvoXAlgorithmAdapter, ECState
+from evorl.ec.optimizers.evox_wrapper import EvoXAlgorithmAdapter, ECState
 from evorl.ec.evox_algorithm import CMAES, SepCMAES
 from evorl.utils.ec_utils import ParamVectorSpec
 

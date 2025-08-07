@@ -8,7 +8,6 @@ from .openes import OpenES, OpenESNoiseTable
 from .ars import ARS
 from .vanilla_es import VanillaES, VanillaESMod
 
-from .evox_wrapper import EvoXAlgorithmAdapter
 from .utils import ExponentialScheduleSpec
 
 __all__ = [
@@ -23,6 +22,5 @@ __all__ = [
     "ARS",
     "VanillaES",
     "VanillaESMod",
-    "EvoXAlgorithmAdapter",
     "ExponentialScheduleSpec",
 ]
