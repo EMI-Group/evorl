@@ -85,9 +85,9 @@ def compute_gae(
 
     Returns:
         Tuple:
-        - Lambda returns with shape [T, B], Can be used as target to
+        - Lambda returns with shape [T, B], can be used as targets to
           train a baseline (V(x_t) - vs_t)^2.
-        - advantages with shape [T, B].
+        - Advantages with shape [T, B].
     """
     rewards_shape = rewards.shape
     chex.assert_shape(values, (rewards_shape[0] + 1, *rewards_shape[1:]))
@@ -110,9 +110,9 @@ def compute_gae(
         unroll=16,
     )
 
-    lambda_retruns = advantages + values[:-1]
+    lambda_returns = advantages + values[:-1]
 
-    return lambda_retruns, advantages
+    return lambda_returns, advantages
 
 
 def compute_gae_with_horizon(
