@@ -176,6 +176,23 @@ eval_vec_env = create_wrapped_brax_env(
 )
 ```
 
+### Timestep subscript notation
+
+The environment timestep subscript notation follows the convention of other common RL libraries. For the env_state at timestep t:
+
+```mermaid
+graph LR
+  pre:::hidden --> A[$$s_t$$] -- "$$A_t,R_t,D_t,T_t$$" --> B["$$s_{t+1}$$"] --> post:::hidden
+  classDef hidden display: none;
+```
+
+* action: $A_t$
+* done & termination: $D_t, T_t$
+* reward: $R_t$
+* obs: $O_{t+1}$
+
+
+
 ## Trajectory Data & Rollout
 
 [`SampleBatch`](#evorl.sample_batch.SampleBatch) is a data container for trajectory data from the rollout between the agent and the environment. It is a subclass of `PyTreeData` and has 6 fields:
