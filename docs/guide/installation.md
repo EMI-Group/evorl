@@ -17,7 +17,7 @@ pip install -e .
 
 ## RL Environments
 
-By default, `pip install evorl` will automatically install environments on `brax`. If you want to install other supported environments, you need manually install the related environment packages. We provide useful extras for different environments.
+By default, `pip install -e .` will automatically install environments on `brax`. If you want to install other supported environments, you need manually install the related environment packages. We provide useful extras for different environments.
 
 ```shell
 # ===== GPU-accelerated Environments =====
