@@ -74,7 +74,7 @@ def setup_recorders(config: DictConfig, workflow_name: str):
                 wandb_recorder = WandbRecorder(
                     project=config.project,
                     name=exp_name,
-                    group="dev",
+                    group=exp_name,
                     config=OmegaConf.to_container(
                         config, resolve=True
                     ),  # save the unrescaled config
