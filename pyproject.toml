@@ -92,3 +92,7 @@ dev = [
 [build-system]
 requires = ["setuptools >= 62.6"]       # to support `file` directive
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["evorl"]
+namespaces = false
