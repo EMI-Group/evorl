@@ -5,7 +5,7 @@ import jax.tree_util as jtu
 import numpy as np
 import pandas as pd
 import wandb
-
+import swanlab
 from .recorder import Recorder
 
 
@@ -24,10 +24,13 @@ class WandbRecorder(Recorder):
 
     def init(self) -> None:
         wandb.init(**self.wandb_kwargs)
+        swanlab.init(**self.wandb_kwargs)
+        swanlab.sync_wandb()
 
     def write(self, data: Mapping[str, Any], step: int | None = None) -> None:
         data = jtu.tree_map(lambda x: _convert_data(x), data)
         wandb.log(data, step=step)
+        swanlab.log(data, step=step)
 
     def close(self):
         wandb.finish()

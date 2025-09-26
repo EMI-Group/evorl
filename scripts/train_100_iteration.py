@@ -24,6 +24,21 @@ def train(config: DictConfig) -> None:
     output_dir = get_output_dir()
     config.output_dir = str(output_dir)
 
+    ### --- MODIFICATION START --- ###
+    # Calculate total_timesteps from the config values
+    # This replaces the insecure ${eval} in the YAML file.
+    total_timesteps = (
+        100 * config.num_envs * config.rollout_length
+    )
+    
+    # Add the calculated value back into the config object so the rest of
+    # the program can use it. We use OmegaConf.set_struct to temporarily
+    # allow adding a new key.
+    OmegaConf.set_struct(config, False)
+    config.total_timesteps = total_timesteps
+    OmegaConf.set_struct(config, True)
+    ### --- MODIFICATION END --- ###
+
     logger.info("config:\n" + OmegaConf.to_yaml(config, resolve=True))
 
     workflow_cls = hydra.utils.get_class(config.workflow_cls)

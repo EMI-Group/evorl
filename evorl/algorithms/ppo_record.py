@@ -10,8 +10,9 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
-
-from evorl.distributed import agent_gradient_update, psum, unpmap
+import pickle
+import numpy as np
+from evorl.distributed import agent_gradient_update, psum, unpmap,agent_gradient_update_record
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.envs import AutoresetMode, create_env, Space, Box, Discrete
 from evorl.evaluators import Evaluator
@@ -355,6 +356,7 @@ class PPOWorkflow(OnPolicyWorkflow):
             env_extra_fields=("autoreset", "episode_return", "termination"),
         )
 
+
         agent_state = state.agent_state
         if agent_state.obs_preprocessor_state is not None:
             agent_state = agent_state.replace(
@@ -406,7 +408,7 @@ class PPOWorkflow(OnPolicyWorkflow):
 
             return loss, loss_dict
 
-        update_fn = agent_gradient_update(
+        update_fn = agent_gradient_update_record(
             loss_fn, self.optimizer, pmap_axis_name=self.pmap_axis_name, has_aux=True
         )
 
@@ -426,27 +428,27 @@ class PPOWorkflow(OnPolicyWorkflow):
             opt_state, agent_state, key = carry
             key, learn_key = jax.random.split(key)
 
-            (loss, loss_dict), agent_state, opt_state = update_fn(
+            (loss, loss_dict), agent_state, opt_state, grads = update_fn(
                 opt_state, agent_state, trajectory, learn_key
             )
 
-            return (opt_state, agent_state, key), (loss, loss_dict)
+            return (opt_state, agent_state, key), (loss, loss_dict,grads)
 
         def epoch_step(carry, _):
             opt_state, agent_state, key = carry
             perm_key, learn_key = jax.random.split(key, num=2)
 
-            (opt_state, agent_state, key), (loss, loss_dict) = scan_and_mean(
+            (opt_state, agent_state, key), (loss, loss_dict, grads) = scan_and_mean(
                 minibatch_step,
                 (opt_state, agent_state, learn_key),
                 jtu.tree_map(partial(_get_shuffled_minibatch, perm_key), trajectory),
                 length=num_minibatches,
             )
 
-            return (opt_state, agent_state, key), (loss, loss_dict)
+            return (opt_state, agent_state, key), (loss, loss_dict,grads)
 
         # loss_list: [reuse_rollout_epochs, num_minibatches]
-        (opt_state, agent_state, _), (loss, loss_dict) = scan_and_mean(
+        (opt_state, agent_state, _), (loss, loss_dict, grads) = scan_and_mean(
             epoch_step,
             (state.opt_state, agent_state, learn_key),
             None,
@@ -476,13 +478,20 @@ class PPOWorkflow(OnPolicyWorkflow):
             raw_loss_dict=loss_dict,
         ).all_reduce(pmap_axis_name=self.pmap_axis_name)
 
-        return train_metrics, state.replace(
+        
+        return (
+        train_metrics,
+        state.replace(
             key=key,
             metrics=workflow_metrics,
             agent_state=agent_state,
             env_state=env_state,
             opt_state=opt_state,
-        )
+        ),
+        trajectory,  # <-- ADD THIS to the return values
+        grads,
+    )
+
 
     def learn(self, state: State) -> State:
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
@@ -490,31 +499,53 @@ class PPOWorkflow(OnPolicyWorkflow):
 
         start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
 
-        for i in range(start_iteration, num_iters):
-            train_metrics, state = self.step(state)
-            workflow_metrics = state.metrics
 
-            iters = i + 1
-            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
+        env_name_str = f"{self.config.env.env_type}_{self.config.env.env_name}"
+        trajectory_file_path = f'/data/yingjie/trajectory/ppo_env:{env_name_str}_para:{self.config.num_envs}_rollout:{self.config.rollout_length}_seed:{self.config.seed}_traj.pkl'
+        gradients_file_path= f'/data/yingjie/grads/ppo_env:{env_name_str}_para:{self.config.num_envs}_rollout:{self.config.rollout_length}_seed:{self.config.seed}_grads.pkl'
+        
 
-            self.recorder.write(workflow_metrics.to_local_dict(), iters)
-            train_metric_data = train_metrics.to_local_dict()
-            if train_metrics.train_episode_return == MISSING_REWARD:
-                train_metric_data["train_episode_return"] = None
-            self.recorder.write(train_metric_data, iters)
+        with open(trajectory_file_path, 'ab') as trajectory_file, \
+            open(gradients_file_path, 'ab') as gradients_file:
 
-            if iters % self.config.eval_interval == 0 or iters == num_iters:
-                eval_metrics, state = self.evaluate(state)
-                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
-                self.recorder.write(
-                    add_prefix(eval_metrics.to_local_dict(), "eval"), iters
+            logger.info(f"Appending trajectories to {trajectory_file_path}")
+            logger.info(f"Appending gradients to {gradients_file_path}")
+
+            for i in range(start_iteration, num_iters):
+                train_metrics, state, trajectory, grads = self.step(state)
+
+                # Save trajectory
+                trajectory_to_save = jtu.tree_map(lambda x: np.asarray(x), trajectory)
+                pickle.dump(trajectory_to_save, trajectory_file)
+
+                # Save gradients
+                grads_to_save = jtu.tree_map(lambda x: np.asarray(x), grads)
+                pickle.dump(grads_to_save, gradients_file)
+
+                workflow_metrics = state.metrics
+
+                iters = i + 1
+                train_metrics = unpmap(train_metrics, self.pmap_axis_name)
+                workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
+
+                self.recorder.write(workflow_metrics.to_local_dict(), iters)
+                train_metric_data = train_metrics.to_local_dict()
+                if train_metrics.train_episode_return == MISSING_REWARD:
+                    train_metric_data["train_episode_return"] = None
+                self.recorder.write(train_metric_data, iters)
+
+                if iters % self.config.eval_interval == 0 or iters == num_iters:
+                    eval_metrics, state = self.evaluate(state)
+                    eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
+                    self.recorder.write(
+                        add_prefix(eval_metrics.to_local_dict(), "eval"), iters
+                    )
+
+                self.checkpoint_manager.save(
+                    iters,
+                    unpmap(state, self.pmap_axis_name),
+                    force=iters == num_iters,
                 )
-
-            self.checkpoint_manager.save(
-                iters,
-                unpmap(state, self.pmap_axis_name),
-                force=iters == num_iters,
-            )
+        logger.info(f"Finished training. Trajectory file '{trajectory_file_path}' is closed.")
 
         return state

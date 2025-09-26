@@ -44,7 +44,7 @@ def _unpmap(x, axis_name: str | None = None):
 
 
 def unpmap(tree: chex.ArrayTree, axis_name: str | None = None):
-    return jax.tree_map(lambda x: _unpmap(x, axis_name), tree)
+    return jax.tree.map(lambda x: _unpmap(x, axis_name), tree)
 
 
 def all_gather(x, axis_name: str | None = None, **kwargs):

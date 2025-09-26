@@ -10,7 +10,7 @@ from .comm import (
     all_gather,
     split_key_to_devices,
 )
-from .gradients import agent_gradient_update, gradient_update
+from .gradients import agent_gradient_update, gradient_update, agent_gradient_update_record
 from .sharding import shmap_vmap, shmap_map, tree_device_put
 
 PMAP_AXIS_NAME = "P"
