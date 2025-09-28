@@ -67,6 +67,8 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 
 ### Update
 
+- 2025-07-14: Our paper *"EvoRL: A GPU-accelerated Framework for Evolutionary Reinforcement Learning"* is accepted by ACM TELO.
+
 - 2025-04-01: Add support for Mujoco Playground Environments.
 
 ## Documentation
@@ -238,12 +240,12 @@ If you use EvoRL in your research and want to cite it in your work, please use:
 
 ```
 @article{zheng2025evorl,
-  author    = {Bowen Zheng, Ran Cheng, Kay Chen Tan},
-  journal   = {arXiv},
-  pages     = {},
-  publisher = {arXiv},
-  title     = {{EvoRL}: A GPU-accelerated Framework for Evolutionary Reinforcement Learning},
-  volume    = {abs/2501.15129},
-  year      = {2025}
+  author  = {Zheng, Bowen and Cheng, Ran and Tan, Kay Chen},
+  doi     = {10.1145/3750053},
+  journal = {ACM Trans. Evol. Learn. Optim.},
+  month   = aug,
+  title   = {EvoRL: A GPU-accelerated Framework for Evolutionary Reinforcement Learning},
+  url     = {https://doi.org/10.1145/3750053},
+  year    = {2025}
 }
 ```
