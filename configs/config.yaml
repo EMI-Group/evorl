@@ -4,12 +4,11 @@ defaults:
   - env: null
   - agent: null
 
-
 seed: 42
 enable_jit: true
 checkpoint:
   enable: false
   save_interval_steps: 100
   max_to_keep: null
-output_dir: './output-dev' # would be overridden by training scripts
+output_dir: ''
 recorders: [log, wandb]
