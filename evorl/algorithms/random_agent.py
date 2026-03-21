@@ -62,7 +62,11 @@ class RandomAgentWorkflow(RLWorkflow):
         agent_state = self.agent.init(env.obs_space, env.action_space, agent_key)
 
         if self.enable_multi_devices:
-            agent_state = jax.device_put_replicated(agent_state, self.devices)
+            sharding = jax.sharding.NamedSharding(
+                jax.sharding.Mesh(self.devices, (self.pmap_axis_name,)),
+                jax.sharding.PartitionSpec()
+            )
+            agent_state = jax.device_put(agent_state, sharding)
 
             # key and env_state should be different over devices
             key = split_key_to_devices(key, self.devices)

@@ -197,8 +197,12 @@ class ECWorkflowTemplate(ECWorkflow):
         distributed_info = DistributedInfo()
 
         if self.enable_multi_devices:
-            agent_state, ec_opt_state, workflow_metrics = jax.device_put_replicated(
-                (agent_state, ec_opt_state, workflow_metrics), self.devices
+            sharding = jax.sharding.NamedSharding(
+                jax.sharding.Mesh(self.devices, (self.pmap_axis_name,)),
+                jax.sharding.PartitionSpec()
+            )
+            agent_state, ec_opt_state, workflow_metrics = jax.device_put(
+                (agent_state, ec_opt_state, workflow_metrics), sharding
             )
             key = split_key_to_devices(key, self.devices)
 

@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax.sharding import NamedSharding, Mesh, PartitionSpec as P
-from jax.experimental.shard_map import shard_map
+from jax import shard_map
 
 
 from evorl.agent import RandomAgent

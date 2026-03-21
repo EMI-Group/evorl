@@ -3,7 +3,7 @@ from collections.abc import Callable
 import chex
 import jax
 import jax.tree_util as jtu
-from jax.experimental.shard_map import shard_map
+from jax import shard_map
 
 
 def tree_device_put(tree: chex.ArrayTree, device_or_sharding):

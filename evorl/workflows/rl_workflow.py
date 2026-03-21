@@ -195,8 +195,12 @@ class OnPolicyWorkflow(RLWorkflow):
         workflow_metrics = self._setup_workflow_metrics()
 
         if self.enable_multi_devices:
-            workflow_metrics, agent_state, opt_state = jax.device_put_replicated(
-                (workflow_metrics, agent_state, opt_state), self.devices
+            sharding = jax.sharding.NamedSharding(
+                jax.sharding.Mesh(self.devices, (self.pmap_axis_name,)),
+                jax.sharding.PartitionSpec()
+            )
+            workflow_metrics, agent_state, opt_state = jax.device_put(
+                (workflow_metrics, agent_state, opt_state), sharding
             )
 
             # key and env_state should be different over devices
