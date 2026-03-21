@@ -5,7 +5,6 @@ from collections.abc import Sequence
 import jax.tree_util as jtu
 import numpy as np
 
-from evorl.distributed import unpmap
 from evorl.types import MISSING_REWARD, State
 from evorl.utils.rl_toolkits import fold_multi_steps
 from evorl.recorders import add_prefix
@@ -33,10 +32,9 @@ class A2CWorkflow(_A2CWorkflow):
         for i in range(num_fold_iters):
             train_metrics_arr, state = _multi_steps(state)
 
-            train_metrics_arr = unpmap(train_metrics_arr, self.pmap_axis_name)
             train_metrics = jtu.tree_map(lambda x: x[-1], train_metrics_arr)
 
-            workflow_metrics = unpmap(state.metrics, self.pmap_axis_name)
+            workflow_metrics = state.metrics
             iterations = workflow_metrics.iterations.tolist()
 
             self.recorder.write(workflow_metrics.to_local_dict(), iterations)
@@ -47,14 +45,13 @@ class A2CWorkflow(_A2CWorkflow):
             self.recorder.write(train_metric_data, iterations)
 
             eval_metrics, state = self.evaluate(state)
-            eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
             self.recorder.write(
                 add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
             )
 
             self.checkpoint_manager.save(
                 iterations,
-                unpmap(state, self.pmap_axis_name),
+                state,
                 force=i == num_fold_iters - 1,
             )
 

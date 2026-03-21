@@ -12,7 +12,6 @@ import jax.tree_util as jtu
 from evorl.distributed import (
     agent_gradient_update,
     psum,
-    unpmap,
 )
 from evorl.agent import AgentState, RandomAgent
 from evorl.types import PyTreeDict, State
@@ -148,7 +147,7 @@ class PopTD3Workflow(TD3Workflow):
                     obs_preprocessor_state=running_statistics.update(
                         agent_state.obs_preprocessor_state,
                         trajectory.obs,
-                        pmap_axis_name=self.pmap_axis_name,
+                        dp_axis_name=self.dp_axis_name,
                     )
                 )
             return agent_state
@@ -177,7 +176,7 @@ class PopTD3Workflow(TD3Workflow):
 
         rollout_timesteps = rollout_length * config.num_envs
         sampled_timesteps = psum(
-            jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
+            jnp.uint32(rollout_timesteps), axis_name=self.dp_axis_name
         )
 
         # ==== fill tansition state from init agents (diff from TD3) ====
@@ -201,12 +200,12 @@ class PopTD3Workflow(TD3Workflow):
 
         rollout_timesteps = rollout_length * config.num_envs * config.pop_size
         sampled_timesteps = sampled_timesteps + psum(
-            jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
+            jnp.uint32(rollout_timesteps), axis_name=self.dp_axis_name
         )
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         return state.replace(
             key=key,
@@ -243,7 +242,7 @@ class PopTD3Workflow(TD3Workflow):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    pmap_axis_name=self.pmap_axis_name,
+                    dp_axis_name=self.dp_axis_name,
                 )
             )
 
@@ -266,7 +265,7 @@ class PopTD3Workflow(TD3Workflow):
         critic_update_fn = agent_gradient_update(
             critic_loss_fn,
             self.optimizer,
-            pmap_axis_name=self.pmap_axis_name,
+            dp_axis_name=self.dp_axis_name,
             has_aux=True,
             attach_fn=lambda agent_state, critic_params: agent_state.replace(
                 params=agent_state.params.replace(critic_params=critic_params)
@@ -277,7 +276,7 @@ class PopTD3Workflow(TD3Workflow):
         actor_update_fn = agent_gradient_update(
             actor_loss_fn,
             self.optimizer,
-            pmap_axis_name=self.pmap_axis_name,
+            dp_axis_name=self.dp_axis_name,
             has_aux=True,
             attach_fn=lambda agent_state, actor_params: agent_state.replace(
                 params=agent_state.params.replace(actor_params=actor_params)
@@ -387,21 +386,21 @@ class PopTD3Workflow(TD3Workflow):
             actor_loss=actor_loss,
             critic_loss=critic_loss,
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         # calculate the number of timestep
         sampled_timesteps_per_agent = psum(
             jnp.uint32(self.config.rollout_length * self.config.num_envs),
-            axis_name=self.pmap_axis_name,
+            axis_name=self.dp_axis_name,
         )
         sampled_timesteps = psum(
             jnp.uint32(
                 self.config.rollout_length * self.config.num_envs * self.config.pop_size
             ),
-            axis_name=self.pmap_axis_name,
+            axis_name=self.dp_axis_name,
         )
         sampled_epsiodes = psum(
-            trajectory_dones.sum().astype(jnp.uint32), axis_name=self.pmap_axis_name
+            trajectory_dones.sum().astype(jnp.uint32), axis_name=self.dp_axis_name
         )
 
         # iterations is the number of updates of the agent
@@ -411,7 +410,7 @@ class PopTD3Workflow(TD3Workflow):
             + sampled_timesteps_per_agent,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,
@@ -436,7 +435,7 @@ class PopTD3Workflow(TD3Workflow):
         eval_metrics = EvaluateMetric(
             episode_returns=raw_eval_metrics.episode_returns.mean(-1),
             episode_lengths=raw_eval_metrics.episode_lengths.mean(-1),
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         state = state.replace(key=key)
         return eval_metrics, state
@@ -446,12 +445,12 @@ class PopTD3Workflow(TD3Workflow):
         one_step_timesteps = (
             self.config.rollout_length * self.config.num_envs * self.config.pop_size
         )
-        sampled_timesteps = unpmap(state.metrics.sampled_timesteps).tolist()
+        sampled_timesteps = state.metrics.sampled_timesteps.tolist()
         num_iters = math.ceil(
             (self.config.total_timesteps - sampled_timesteps)
             / (one_step_timesteps * self.config.fold_iters * num_devices)
         )
-        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
+        start_iteration = state.metrics.iterations.tolist()
         final_iteration = num_iters + start_iteration
 
         for i in range(num_iters):
@@ -459,9 +458,7 @@ class PopTD3Workflow(TD3Workflow):
             workflow_metrics = state.metrics
 
             # current iteration
-            iterations = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
-            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
+            iterations = state.metrics.iterations.tolist()
             self.recorder.write(workflow_metrics.to_local_dict(), iterations)
 
             train_metrics_dict = jtu.tree_map(
@@ -476,7 +473,6 @@ class PopTD3Workflow(TD3Workflow):
                 or iterations == final_iteration
             ):
                 eval_metrics, state = self.evaluate(state)
-                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
 
                 eval_metrics_dict = jtu.tree_map(
                     get_1d_array,
@@ -485,7 +481,7 @@ class PopTD3Workflow(TD3Workflow):
 
                 self.recorder.write(add_prefix(eval_metrics_dict, "eval"), iterations)
 
-            saved_state = unpmap(state, self.pmap_axis_name)
+            saved_state = state
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
             self.checkpoint_manager.save(

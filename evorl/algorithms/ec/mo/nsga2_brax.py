@@ -11,7 +11,6 @@ from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import BraxEvaluator
 from evorl.agent import AgentState
 from evorl.ec.optimizers.ec_optimizer import ECState
-from evorl.distributed import unpmap
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.recorders import get_1d_array_statistics
 from evorl.workflows import MultiObjectiveECWorkflowTemplate
@@ -122,7 +121,7 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
                 agent_state=state.agent_state,
                 config=self.config,
                 key=obs_key,
-                pmap_axis_name=self.pmap_axis_name,
+                dp_axis_name=self.dp_axis_name,
             )
 
             # Note: we don't count these random timesteps in state.metrics
@@ -141,20 +140,19 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
         )
 
     def learn(self, state: State) -> State:
-        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = state.metrics.iterations
 
         for i in range(start_iteration, self.config.num_iters):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
             self.recorder.write(workflow_metrics.to_local_dict(), iters)
 
             cpu_device = jax.devices("cpu")[0]
             with jax.default_device(cpu_device):
                 from evox.operators import non_dominated_sort
+
                 objectives = jax.device_put(train_metrics.objectives, cpu_device)
                 pf_rank = non_dominated_sort(-objectives, "scan")
                 pf_objectives = train_metrics.objectives[pf_rank == 0]
@@ -182,6 +180,6 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
 
             self.checkpoint_manager.save(
                 iters,
-                unpmap(state, self.pmap_axis_name),
+                state,
                 force=i == self.config.num_iters,
             )

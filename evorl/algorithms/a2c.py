@@ -10,7 +10,7 @@ import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
-from evorl.distributed import agent_gradient_update, psum, unpmap
+from evorl.distributed import agent_gradient_update, psum
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.envs import AutoresetMode, create_env, Space, Box, Discrete
 from evorl.evaluators import Evaluator
@@ -316,14 +316,14 @@ class A2CWorkflow(OnPolicyWorkflow):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    pmap_axis_name=self.pmap_axis_name,
+                    dp_axis_name=self.dp_axis_name,
                 )
             )
 
         train_episode_return = average_episode_discount_return(
             trajectory.extras.env_extras.episode_return,
             trajectory.dones,
-            pmap_axis_name=self.pmap_axis_name,
+            dp_axis_name=self.dp_axis_name,
         )
 
         # ======== compute GAE =======
@@ -360,7 +360,7 @@ class A2CWorkflow(OnPolicyWorkflow):
             return loss, loss_dict
 
         update_fn = agent_gradient_update(
-            loss_fn, self.optimizer, pmap_axis_name=self.pmap_axis_name, has_aux=True
+            loss_fn, self.optimizer, dp_axis_name=self.dp_axis_name, has_aux=True
         )
 
         (loss, loss_dict), agent_state, opt_state = update_fn(
@@ -371,23 +371,23 @@ class A2CWorkflow(OnPolicyWorkflow):
 
         sampled_timesteps = psum(
             jnp.uint32(self.config.rollout_length * self.config.num_envs),
-            axis_name=self.pmap_axis_name,
+            axis_name=self.dp_axis_name,
         )
         sampled_epsiodes = psum(
-            trajectory.dones.sum().astype(jnp.uint32), axis_name=self.pmap_axis_name
+            trajectory.dones.sum().astype(jnp.uint32), axis_name=self.dp_axis_name
         )
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         train_metrics = TrainMetric(
             train_episode_return=train_episode_return,
             loss=loss,
             raw_loss_dict=loss_dict,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,
@@ -401,15 +401,13 @@ class A2CWorkflow(OnPolicyWorkflow):
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
+        start_iteration = state.metrics.iterations.tolist()
 
         for i in range(start_iteration, num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
             iters = i + 1
-            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
 
             self.recorder.write(workflow_metrics.to_local_dict(), iters)
             train_metric_data = train_metrics.to_local_dict()
@@ -419,14 +417,13 @@ class A2CWorkflow(OnPolicyWorkflow):
 
             if iters % self.config.eval_interval == 0 or iters == num_iters:
                 eval_metrics, state = self.evaluate(state)
-                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(
                     add_prefix(eval_metrics.to_local_dict(), "eval"), iters
                 )
 
             self.checkpoint_manager.save(
                 iters,
-                unpmap(state, self.pmap_axis_name),
+                state,
                 force=iters == num_iters,
             )
 

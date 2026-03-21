@@ -6,14 +6,13 @@ from .comm import (
     pmean,
     pmin,
     psum,
-    unpmap,
     all_gather,
     split_key_to_devices,
 )
 from .gradients import agent_gradient_update, gradient_update
 from .sharding import shmap_vmap, shmap_map, tree_device_put
 
-PMAP_AXIS_NAME = "P"
+DP_AXIS_NAME = "DP"
 
 POP_AXIS_NAME = "POP"
 
@@ -26,7 +25,6 @@ __all__ = [
     "pmean",
     "pmin",
     "psum",
-    "unpmap",
     "all_gather",
     "split_key_to_devices",
     "agent_gradient_update",
@@ -34,6 +32,6 @@ __all__ = [
     "shmap_vmap",
     "shmap_map",
     "tree_device_put",
-    "PMAP_AXIS_NAME",
+    "DP_AXIS_NAME",
     "POP_AXIS_NAME",
 ]

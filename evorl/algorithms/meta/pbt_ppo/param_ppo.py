@@ -238,14 +238,14 @@ class ParamPPOWorkflow(PPOWorkflow):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    pmap_axis_name=self.pmap_axis_name,
+                    dp_axis_name=self.dp_axis_name,
                 )
             )
 
         train_episode_return = average_episode_discount_return(
             trajectory.extras.env_extras.episode_return,
             trajectory.dones,
-            pmap_axis_name=self.pmap_axis_name,
+            dp_axis_name=self.dp_axis_name,
         )
 
         # ======== compute GAE =======
@@ -289,7 +289,7 @@ class ParamPPOWorkflow(PPOWorkflow):
             return loss, loss_dict
 
         update_fn = agent_gradient_update(
-            loss_fn, self.optimizer, pmap_axis_name=self.pmap_axis_name, has_aux=True
+            loss_fn, self.optimizer, dp_axis_name=self.dp_axis_name, has_aux=True
         )
 
         num_minibatches = (
@@ -339,23 +339,23 @@ class ParamPPOWorkflow(PPOWorkflow):
 
         sampled_timesteps = psum(
             jnp.uint32(self.config.rollout_length * self.config.num_envs),
-            axis_name=self.pmap_axis_name,
+            axis_name=self.dp_axis_name,
         )
         sampled_epsiodes = psum(
-            trajectory.dones.sum().astype(jnp.uint32), axis_name=self.pmap_axis_name
+            trajectory.dones.sum().astype(jnp.uint32), axis_name=self.dp_axis_name
         )
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         train_metrics = TrainMetric(
             train_episode_return=train_episode_return,
             loss=loss,
             raw_loss_dict=loss_dict,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,

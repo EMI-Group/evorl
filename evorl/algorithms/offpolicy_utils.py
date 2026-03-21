@@ -8,7 +8,7 @@ import chex
 
 from evorl.replay_buffers import ReplayBufferState
 from evorl.envs import Discrete
-from evorl.distributed.comm import psum, unpmap
+from evorl.distributed.comm import psum
 from evorl.workflows import OffPolicyWorkflow
 from evorl.sample_batch import SampleBatch
 from evorl.types import State, PyTreeDict
@@ -130,7 +130,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
                     obs_preprocessor_state=running_statistics.update(
                         agent_state.obs_preprocessor_state,
                         trajectory.obs,
-                        pmap_axis_name=self.pmap_axis_name,
+                        dp_axis_name=self.dp_axis_name,
                     )
                 )
             return agent_state
@@ -156,7 +156,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
 
         rollout_timesteps = rollout_length * config.num_envs
         sampled_timesteps = psum(
-            jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
+            jnp.uint32(rollout_timesteps), axis_name=self.dp_axis_name
         )
 
         # ==== fill tansition state from init agent ====
@@ -176,12 +176,12 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
 
         rollout_timesteps = rollout_length * config.num_envs
         sampled_timesteps = sampled_timesteps + psum(
-            jnp.uint32(rollout_timesteps), axis_name=self.pmap_axis_name
+            jnp.uint32(rollout_timesteps), axis_name=self.dp_axis_name
         )
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         return state.replace(
             key=key,
@@ -207,12 +207,12 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
     def learn(self, state: State) -> State:
         num_devices = jax.device_count()
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
-        sampled_timesteps = unpmap(state.metrics.sampled_timesteps).tolist()
+        sampled_timesteps = state.metrics.sampled_timesteps.tolist()
         num_iters = math.ceil(
             (self.config.total_timesteps - sampled_timesteps)
             / (one_step_timesteps * self.config.fold_iters * num_devices)
         )
-        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
+        start_iteration = state.metrics.iterations.tolist()
         final_iteration = num_iters + start_iteration
 
         for i in range(num_iters):
@@ -220,9 +220,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             workflow_metrics = state.metrics
 
             # current iteration
-            iterations = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
-            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
+            iterations = state.metrics.iterations.tolist()
             self.recorder.write(train_metrics.to_local_dict(), iterations)
             self.recorder.write(workflow_metrics.to_local_dict(), iterations)
 
@@ -231,12 +229,11 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
                 or iterations == final_iteration
             ):
                 eval_metrics, state = self.evaluate(state)
-                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(
                     add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
                 )
 
-            saved_state = unpmap(state, self.pmap_axis_name)
+            saved_state = state
             if not self.config.save_replay_buffer:
                 saved_state = skip_replay_buffer_state(saved_state)
             self.checkpoint_manager.save(

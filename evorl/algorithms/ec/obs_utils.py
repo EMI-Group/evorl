@@ -28,7 +28,7 @@ class ObsPreprocessor(PyTreeNode):
             )
 
 
-def init_obs_preprocessor(agent_state, config, key, pmap_axis_name=None):
+def init_obs_preprocessor(agent_state, config, key, dp_axis_name=None):
     assert config.random_timesteps > 0, "random_timesteps should be greater than 0"
 
     env = create_env(
@@ -43,7 +43,7 @@ def init_obs_preprocessor(agent_state, config, key, pmap_axis_name=None):
         config.random_timesteps,
         env,
         key,
-        pmap_axis_name=pmap_axis_name,
+        dp_axis_name=dp_axis_name,
     )
 
     agent_state = agent_state.replace(obs_preprocessor_state=obs_preprocessor_state)
@@ -56,7 +56,7 @@ def init_obs_preprocessor_with_random_timesteps(
     timesteps: int,
     env: Env,
     key: chex.PRNGKey,
-    pmap_axis_name: str | None = None,
+    dp_axis_name: str | None = None,
 ) -> Any:
     env_key, agent_key, rollout_key = jax.random.split(key, num=3)
     env_state = env.reset(env_key)
@@ -81,7 +81,7 @@ def init_obs_preprocessor_with_random_timesteps(
         obs = jtu.tree_map(lambda x: jax.lax.collapse(x, 0, 2), obs)
 
     obs_preprocessor_state = running_statistics.update(
-        obs_preprocessor_state, obs, pmap_axis_name=pmap_axis_name
+        obs_preprocessor_state, obs, dp_axis_name=dp_axis_name
     )
 
     return obs_preprocessor_state

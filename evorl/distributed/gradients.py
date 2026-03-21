@@ -11,21 +11,21 @@ Modified from https://github.com/google/brax/blob/main/brax/training/gradients.p
 
 
 def loss_and_pgrad(
-    loss_fn: Callable[..., float], pmap_axis_name: str | None, has_aux: bool = False
+    loss_fn: Callable[..., float], dp_axis_name: str | None, has_aux: bool = False
 ):
     g = jax.value_and_grad(loss_fn, has_aux=has_aux)
 
     def h(*args, **kwargs):
         value, grads = g(*args, **kwargs)
-        return value, jax.lax.pmean(grads, axis_name=pmap_axis_name)
+        return value, jax.lax.pmean(grads, axis_name=dp_axis_name)
 
-    return g if pmap_axis_name is None else h
+    return g if dp_axis_name is None else h
 
 
 def gradient_update(
     loss_fn: Callable[..., float],
     optimizer: optax.GradientTransformation,
-    pmap_axis_name: str | None,
+    dp_axis_name: str | None,
     has_aux: bool = False,
 ):
     """Wrapper of the loss function that apply gradient updates.
@@ -33,7 +33,7 @@ def gradient_update(
     Args:
         loss_fn: The loss function. (params, ...) -> loss
         optimizer: The optimizer to apply gradients.
-        pmap_axis_name: If relevant, the name of the pmap axis to synchronize gradients.
+        dp_axis_name: If relevant, the name of the pmap axis to synchronize gradients.
         has_aux: Whether the loss_fn has auxiliary data.
 
     Returns:
@@ -42,7 +42,7 @@ def gradient_update(
         and the new optimizer state.
     """
     loss_and_pgrad_fn = loss_and_pgrad(
-        loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux
+        loss_fn, dp_axis_name=dp_axis_name, has_aux=has_aux
     )
 
     def f(opt_state, params, *args, **kwargs):
@@ -69,7 +69,7 @@ def _detach_params_to_agent_state(agent_state):
 def agent_gradient_update(
     loss_fn: Callable[..., float],
     optimizer: optax.GradientTransformation,
-    pmap_axis_name: str | None = None,
+    dp_axis_name: str | None = None,
     has_aux: bool = False,
     attach_fn: Callable[
         [chex.ArrayTree, chex.ArrayTree], chex.ArrayTree
@@ -83,7 +83,7 @@ def agent_gradient_update(
         return loss_fn(agent_state, sample_batch, key)
 
     _gradient_update_fn = gradient_update(
-        _loss_fn, optimizer, pmap_axis_name=pmap_axis_name, has_aux=has_aux
+        _loss_fn, optimizer, dp_axis_name=dp_axis_name, has_aux=has_aux
     )
 
     def f(opt_state, agent_state, *args, **kwargs):

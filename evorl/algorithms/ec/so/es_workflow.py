@@ -5,7 +5,6 @@ from omegaconf import DictConfig
 import jax
 import jax.tree_util as jtu
 
-from evorl.distributed import unpmap
 from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase
@@ -61,22 +60,20 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         eval_metrics = EvaluateMetric(
             episode_returns=raw_eval_metrics.episode_returns.mean(),
             episode_lengths=raw_eval_metrics.episode_lengths.mean(),
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         return eval_metrics, state.replace(key=key)
 
     def learn(self, state: State) -> State:
-        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name)
+        start_iteration = state.metrics.iterations
 
         for i in range(start_iteration, self.config.num_iters):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
             self.recorder.write(workflow_metrics.to_local_dict(), iters)
 
-            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
             train_metrics_dict = train_metrics.to_local_dict()
             train_metrics_dict = jtu.tree_map(
                 partial(get_1d_array_statistics, histogram=True),
@@ -86,7 +83,6 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
 
             if iters % self.config.eval_interval == 0 or iters == self.config.num_iters:
                 eval_metrics, state = self.evaluate(state)
-                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(
                     {"eval/pop_center": eval_metrics.to_local_dict()}, iters
                 )
@@ -95,7 +91,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
 
             self.checkpoint_manager.save(
                 iters,
-                unpmap(state, self.pmap_axis_name),
+                state,
                 force=i == self.config.num_iters,
             )
 
@@ -105,8 +101,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
 
     @classmethod
-    def enable_pmap(cls, axis_name) -> None:
-        super().enable_pmap(axis_name)
-        cls.evaluate = jax.pmap(
-            cls.evaluate, axis_name, static_broadcasted_argnums=(0,)
-        )
+    def enable_shmap(cls, axis_name) -> None:
+        super().enable_shmap(axis_name)
+        # evaluate is handled via the base class pattern
+        pass

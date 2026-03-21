@@ -75,6 +75,7 @@ def test_vtrace():
         v_t_plus_1=vs[1:],
         rewards=trajectory.rewards,
         dones=trajectory.dones,
+        terminations=trajectory.extras.env_extras.termination,
         discount=discount,
         lambda_=lambda_,
         clip_c_threshold=1.0,

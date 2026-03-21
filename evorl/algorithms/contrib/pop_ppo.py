@@ -8,9 +8,6 @@ import chex
 import jax
 import jax.tree_util as jtu
 
-from evorl.distributed import (
-    unpmap,
-)
 from evorl.types import State, MISSING_REWARD
 from evorl.metrics import MetricBase
 from evorl.utils.jax_utils import scan_and_last
@@ -68,7 +65,7 @@ class PopPPOWorkflow(PPOWorkflow):
         one_step_timesteps = (
             self.config.rollout_length * self.config.num_envs * self.config.fold_iters
         )
-        sampled_timesteps = unpmap(state.metrics.sampled_timesteps).tolist()[0]
+        sampled_timesteps = state.metrics.sampled_timesteps.tolist()[0]
         num_iters = math.ceil(
             (self.config.total_timesteps - sampled_timesteps) / one_step_timesteps
         )
@@ -77,9 +74,7 @@ class PopPPOWorkflow(PPOWorkflow):
             train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
 
-            iters = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()[0]
-            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
+            iters = state.metrics.iterations.tolist()[0]
 
             workflow_metrics_data = jtu.tree_map(
                 lambda x: x[0],
@@ -106,7 +101,6 @@ class PopPPOWorkflow(PPOWorkflow):
 
             if iters % self.config.eval_interval == 0 or iters == num_iters:
                 eval_metrics, state = self.evaluate(state)
-                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
 
                 eval_metrics_dict = jtu.tree_map(
                     get_1d_array,
@@ -117,7 +111,7 @@ class PopPPOWorkflow(PPOWorkflow):
 
             self.checkpoint_manager.save(
                 iters,
-                unpmap(state, self.pmap_axis_name),
+                state,
                 force=iters == num_iters,
             )
 

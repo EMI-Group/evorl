@@ -3,7 +3,7 @@ from collections.abc import Sequence
 import chex
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
+
 from jax._src.distributed import global_state
 
 
@@ -35,19 +35,6 @@ def pmax(x, axis_name: str | None = None):
         return jax.lax.pmax(x, axis_name)
 
 
-def _unpmap(x, axis_name: str | None = None):
-    # Only work for pmap(in_axes=0, out_axes=0)
-    # Return the first device's elements
-    if axis_name is None:
-        return x
-    else:
-        return x[0]
-
-
-def unpmap(tree: chex.ArrayTree, axis_name: str | None = None):
-    return jtu.tree_map(lambda x: _unpmap(x, axis_name), tree)
-
-
 def all_gather(x, axis_name: str | None = None, **kwargs):
     """All-gather the data across all devices."""
     if axis_name is None:
@@ -58,7 +45,11 @@ def all_gather(x, axis_name: str | None = None, **kwargs):
 
 def split_key_to_devices(key: chex.PRNGKey, devices: Sequence[jax.Device]):
     """Split the key to each device."""
-    return jax.device_put_sharded(tuple(jax.random.split(key, len(devices))), devices)
+    keys = jax.random.split(key, len(devices))
+    sharding = jax.sharding.NamedSharding(
+        jax.sharding.Mesh(devices, ("devices",)), jax.sharding.PartitionSpec("devices")
+    )
+    return jax.device_put(keys, sharding)
 
 
 def is_dist_initialized():
@@ -87,6 +78,10 @@ def get_global_ranks():
     ranks = process_id * num_local_devices + jnp.arange(
         num_local_devices, dtype=jnp.int32
     )
-    ranks = jax.device_put_sharded(tuple(ranks), jax.local_devices())
+    sharding = jax.sharding.NamedSharding(
+        jax.sharding.Mesh(jax.local_devices(), ("devices",)),
+        jax.sharding.PartitionSpec("devices"),
+    )
+    ranks = jax.device_put(ranks, sharding)
 
     return ranks

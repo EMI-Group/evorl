@@ -321,7 +321,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    pmap_axis_name=self.pmap_axis_name,
+                    dp_axis_name=self.dp_axis_name,
                 )
             )
 
@@ -344,7 +344,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
         critic_update_fn = agent_gradient_update(
             critic_loss_fn,
             self.optimizer,
-            pmap_axis_name=self.pmap_axis_name,
+            dp_axis_name=self.dp_axis_name,
             has_aux=True,
             attach_fn=lambda agent_state, critic_params: agent_state.replace(
                 params=agent_state.params.replace(critic_params=critic_params)
@@ -355,7 +355,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
         actor_update_fn = agent_gradient_update(
             actor_loss_fn,
             self.optimizer,
-            pmap_axis_name=self.pmap_axis_name,
+            dp_axis_name=self.dp_axis_name,
             has_aux=True,
             attach_fn=lambda agent_state, actor_params: agent_state.replace(
                 params=agent_state.params.replace(actor_params=actor_params)
@@ -426,15 +426,15 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             actor_loss=actor_loss,
             critic_loss=critic_loss,
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         # calculate the number of timestep
         sampled_timesteps = psum(
             jnp.uint32(self.config.rollout_length * self.config.num_envs),
-            axis_name=self.pmap_axis_name,
+            axis_name=self.dp_axis_name,
         )
         sampled_epsiodes = psum(
-            trajectory_dones.sum().astype(jnp.uint32), axis_name=self.pmap_axis_name
+            trajectory_dones.sum().astype(jnp.uint32), axis_name=self.dp_axis_name
         )
 
         # iterations is the number of updates of the agent
@@ -442,7 +442,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,

@@ -197,7 +197,7 @@ class ARSWorkflow(ESWorkflowTemplate):
                 agent_state=state.agent_state,
                 config=self.config,
                 key=obs_key,
-                pmap_axis_name=self.pmap_axis_name,
+                dp_axis_name=self.dp_axis_name,
             )
 
             # Note: we don't count these random timesteps in state.metrics
@@ -228,7 +228,7 @@ class ARSWorkflow(ESWorkflowTemplate):
                 agent_state.obs_preprocessor_state,
                 trajectory.obs,
                 weights=1 - trajectory.dones,
-                pmap_axis_name=self.pmap_axis_name,
+                dp_axis_name=self.dp_axis_name,
             )
 
         elif self.config.normalize_obs_mode == "RS":
@@ -238,7 +238,7 @@ class ARSWorkflow(ESWorkflowTemplate):
                 obs_preprocessor_state,
                 trajectory.obs,
                 weights=1 - trajectory.dones,
-                pmap_axis_name=self.pmap_axis_name,
+                dp_axis_name=self.dp_axis_name,
             )
         else:
             obs_preprocessor_state = agent_state.obs_preprocessor_state

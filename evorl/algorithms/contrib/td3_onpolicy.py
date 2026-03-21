@@ -9,7 +9,7 @@ import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
-from evorl.distributed import psum, unpmap
+from evorl.distributed import psum
 from evorl.distributed.gradients import agent_gradient_update
 from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
@@ -148,7 +148,7 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    pmap_axis_name=self.pmap_axis_name,
+                    dp_axis_name=self.dp_axis_name,
                 )
             )
 
@@ -223,19 +223,19 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
 
         sampled_timesteps = psum(
             jnp.uint32(self.config.rollout_length * self.config.num_envs),
-            axis_name=self.pmap_axis_name,
+            axis_name=self.dp_axis_name,
         )
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         train_metrics = TD3TrainMetric(
             actor_loss=actor_loss,
             critic_loss=critic_loss,
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,
@@ -249,16 +249,14 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
-        start_iteration = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
+        start_iteration = state.metrics.iterations.tolist()
         final_iteration = num_iters + start_iteration
 
         for i in range(num_iters):
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
 
-            iterations = unpmap(state.metrics.iterations, self.pmap_axis_name).tolist()
-            train_metrics = unpmap(train_metrics, self.pmap_axis_name)
-            workflow_metrics = unpmap(workflow_metrics, self.pmap_axis_name)
+            iterations = state.metrics.iterations.tolist()
 
             self.recorder.write(workflow_metrics.to_local_dict(), iterations)
             self.recorder.write(train_metrics.to_local_dict(), iterations)
@@ -268,14 +266,13 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
                 or iterations == final_iteration
             ):
                 eval_metrics, state = self.evaluate(state)
-                eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
                 self.recorder.write(
                     add_prefix(eval_metrics.to_local_dict(), "eval"), iterations
                 )
 
             self.checkpoint_manager.save(
                 iterations,
-                unpmap(state, self.pmap_axis_name),
+                state,
                 force=iterations == final_iteration,
             )
 

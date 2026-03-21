@@ -49,13 +49,13 @@ class ECWorkflow(Workflow):
         """
         super().__init__(config)
 
-        self.pmap_axis_name = None
+        self.dp_axis_name = None
         self.devices = jax.local_devices()[:1]
 
     @property
     def enable_multi_devices(self) -> bool:
         """Whether multi-devices training is enabled."""
-        return self.pmap_axis_name is not None
+        return self.dp_axis_name is not None
 
     @classmethod
     def build_from_config(
@@ -76,7 +76,7 @@ class ECWorkflow(Workflow):
         devices = jax.local_devices()
 
         if enable_multi_devices:
-            cls.enable_pmap(POP_AXIS_NAME)
+            cls.enable_shmap(POP_AXIS_NAME)
             OmegaConf.set_readonly(config, False)
             cls._rescale_config(config)
         elif enable_jit:
@@ -86,7 +86,7 @@ class ECWorkflow(Workflow):
 
         workflow = cls._build_from_config(config)
         if enable_multi_devices:
-            workflow.pmap_axis_name = POP_AXIS_NAME
+            workflow.dp_axis_name = POP_AXIS_NAME
             workflow.devices = devices
 
         return workflow
@@ -123,12 +123,12 @@ class ECWorkflow(Workflow):
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
     @classmethod
-    def enable_pmap(cls, axis_name) -> None:
-        """Define which methods should be pmaped.
+    def enable_shmap(cls, axis_name) -> None:
+        """Define which methods should be shmaped.
 
-        This method defines the multi-device behavior. By default, the workflow's `step()` method is pmaped.
+        This method defines the multi-device behavior. By default, the workflow's `step()` method is shmaped.
         """
-        cls.step = jax.pmap(cls.step, axis_name, static_broadcasted_argnums=(0,))
+        pass
 
 
 class ECWorkflowTemplate(ECWorkflow):
@@ -198,8 +198,8 @@ class ECWorkflowTemplate(ECWorkflow):
 
         if self.enable_multi_devices:
             sharding = jax.sharding.NamedSharding(
-                jax.sharding.Mesh(self.devices, (self.pmap_axis_name,)),
-                jax.sharding.PartitionSpec()
+                jax.sharding.Mesh(self.devices, (self.dp_axis_name,)),
+                jax.sharding.PartitionSpec(),
             )
             agent_state, ec_opt_state, workflow_metrics = jax.device_put(
                 (agent_state, ec_opt_state, workflow_metrics), sharding
@@ -313,16 +313,16 @@ class ECWorkflowTemplate(ECWorkflow):
             )
 
         fitnesses = self._metrics_to_fitnesses(rollout_metrics)
-        fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
+        fitnesses = all_gather(fitnesses, self.dp_axis_name, axis=0, tiled=True)
 
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         sampled_episodes = psum(
             jnp.uint32(pop_size * self.config.episodes_for_fitness),
-            self.pmap_axis_name,
+            self.dp_axis_name,
         )
         sampled_timesteps_m = (
-            psum(rollout_metrics.episode_lengths.sum(), self.pmap_axis_name) / 1e6
+            psum(rollout_metrics.episode_lengths.sum(), self.dp_axis_name) / 1e6
         )
 
         workflow_metrics = state.metrics.replace(
@@ -352,11 +352,10 @@ class ECWorkflowTemplate(ECWorkflow):
         cls._postsetup = jax.jit(cls._postsetup, static_argnums=(0,))
 
     @classmethod
-    def enable_pmap(cls, axis_name) -> None:
-        super().enable_pmap(axis_name)
-        cls._postsetup = jax.pmap(
-            cls._postsetup, axis_name, static_broadcasted_argnums=(0,)
-        )
+    def enable_shmap(cls, axis_name) -> None:
+        super().enable_shmap(axis_name)
+        # Note: In the new paradigm, we use shmap_vmap where needed instead of wrappers here.
+        pass
 
 
 class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
@@ -418,16 +417,16 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
             )
 
         fitnesses = self._metrics_to_fitnesses(rollout_metrics)
-        fitnesses = all_gather(fitnesses, self.pmap_axis_name, axis=0, tiled=True)
+        fitnesses = all_gather(fitnesses, self.dp_axis_name, axis=0, tiled=True)
 
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         sampled_episodes = psum(
             jnp.uint32(pop_size * self.config.episodes_for_fitness),
-            self.pmap_axis_name,
+            self.dp_axis_name,
         )
         sampled_timesteps_m = (
-            psum(rollout_metrics.episode_lengths.sum(), self.pmap_axis_name) / 1e6
+            psum(rollout_metrics.episode_lengths.sum(), self.dp_axis_name) / 1e6
         )
 
         workflow_metrics = state.metrics.replace(

@@ -126,7 +126,7 @@ class OpenESWorkflow(ESWorkflowTemplate):
                 agent_state=state.agent_state,
                 config=self.config,
                 key=obs_key,
-                pmap_axis_name=self.pmap_axis_name,
+                dp_axis_name=self.dp_axis_name,
             )
 
             # Note: we don't count these random timesteps in state.metrics

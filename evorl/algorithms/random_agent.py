@@ -3,7 +3,7 @@ import chex
 from omegaconf import DictConfig
 from typing_extensions import Self  # pytype: disable=not-supported-yet
 
-from evorl.distributed import split_key_to_devices, unpmap
+from evorl.distributed import split_key_to_devices
 from evorl.workflows import RLWorkflow
 from evorl.agent import RandomAgent, Agent
 from evorl.metrics import MetricBase, EvaluateMetric
@@ -63,8 +63,8 @@ class RandomAgentWorkflow(RLWorkflow):
 
         if self.enable_multi_devices:
             sharding = jax.sharding.NamedSharding(
-                jax.sharding.Mesh(self.devices, (self.pmap_axis_name,)),
-                jax.sharding.PartitionSpec()
+                jax.sharding.Mesh(self.devices, (self.dp_axis_name,)),
+                jax.sharding.PartitionSpec(),
             )
             agent_state = jax.device_put(agent_state, sharding)
 
@@ -83,7 +83,6 @@ class RandomAgentWorkflow(RLWorkflow):
     def learn(self, state: State) -> State:
         """Dummy learn function for random agent."""
         eval_metrics, state = self.evaluate(state)
-        eval_metrics = unpmap(eval_metrics, self.pmap_axis_name)
         self.recorder.write(add_prefix(eval_metrics.to_local_dict(), "eval"), 0)
         return state.replace()
 
@@ -98,7 +97,7 @@ class RandomAgentWorkflow(RLWorkflow):
         eval_metrics = EvaluateMetric(
             episode_returns=raw_eval_metrics.episode_returns.mean(),
             episode_lengths=raw_eval_metrics.episode_lengths.mean(),
-        ).all_reduce(pmap_axis_name=self.pmap_axis_name)
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         state = state.replace(key=key)
         return eval_metrics, state

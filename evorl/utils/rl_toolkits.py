@@ -196,7 +196,7 @@ def flatten_pop_rollout_episode(trajectory: SampleBatch):
 def average_episode_discount_return(
     episode_discount_return: jax.Array,  # [T,B]
     dones: jax.Array,  # [T,B]
-    pmap_axis_name: str | None = None,
+    dp_axis_name: str | None = None,
 ) -> jax.Array:
     """Estimate the average episode return from a segmented trajectory.
 
@@ -205,11 +205,11 @@ def average_episode_discount_return(
     cnt = dones.sum()
     episode_discount_return_sum = (episode_discount_return * dones).sum()
 
-    if pmap_axis_name is not None:
+    if dp_axis_name is not None:
         episode_discount_return_sum = jax.lax.psum(
-            episode_discount_return_sum, pmap_axis_name
+            episode_discount_return_sum, dp_axis_name
         )
-        cnt = jax.lax.psum(cnt, pmap_axis_name)
+        cnt = jax.lax.psum(cnt, dp_axis_name)
 
     return jnp.where(
         jnp.isclose(cnt, 0),

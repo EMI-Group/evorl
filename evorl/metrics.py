@@ -34,13 +34,13 @@ def metric_field(
 class MetricBase(PyTreeData, kw_only=True):
     """Base class for all metrics."""
 
-    def all_reduce(self, pmap_axis_name: str | None = None):
+    def all_reduce(self, dp_axis_name: str | None = None):
         field_dict = {}
         for field in dataclasses.fields(self):
             reduce_fn = field.metadata.get("reduce_fn", None)
             value = getattr(self, field.name)
-            if pmap_axis_name is not None and isinstance(reduce_fn, Callable):
-                value = reduce_fn(value, pmap_axis_name)
+            if dp_axis_name is not None and isinstance(reduce_fn, Callable):
+                value = reduce_fn(value, dp_axis_name)
                 field_dict[field.name] = value
 
         if len(field_dict) == 0:
