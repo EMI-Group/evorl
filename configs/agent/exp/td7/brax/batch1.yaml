@@ -8,7 +8,7 @@ num_envs: 16
 normalize_obs: false
 discount: 0.99
 total_episodes: 10000
-fold_iters: 1
+fold_iters: 5
 
 num_eval_envs: 16
 eval_episodes: 16 # should be divided by num_eval_envs
