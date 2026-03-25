@@ -1,9 +1,12 @@
 """LAP (Loss-Adjusted Prioritization) Replay Buffer."""
 
+import jax
 import chex
 import jax.numpy as jnp
 
+from evorl.utils.jax_utils import tree_get
 from .prioritized_replay_buffer import PrioritizedReplayBuffer, PrioritizedReplayBufferState
+
 
 
 class LAPReplayBuffer(PrioritizedReplayBuffer):
@@ -51,13 +54,11 @@ class LAPReplayBuffer(PrioritizedReplayBuffer):
         priority_alpha = jnp.where(mask, priority_alpha, 0.0)
         
         csum = jnp.cumsum(priority_alpha)
-        import jax # Need jax for random
         val = jax.random.uniform(key, (self.sample_batch_size,)) * csum[-1]
         indices = jnp.searchsorted(csum, val)
         # Clamp indices to valid range
         indices = jnp.clip(indices, 0, buffer_state.buffer_size - 1)
 
-        from evorl.utils.jax_utils import tree_get
         batch = tree_get(buffer_state.data, indices)
         
         # LAP explicitly ignores IS weights. Set to 1.0 uniformly.

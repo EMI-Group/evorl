@@ -42,6 +42,8 @@ agent_network:
   zsa_dim: 256
   f_layer_sizes: [256, 256]
   g_layer_sizes: [256, 256]
+  state_emb_dim: 256
+  state_action_emb_dim: 256
   critic_hidden_layer_sizes: [256, 256]
   actor_hidden_layer_sizes: [256, 256]
 
