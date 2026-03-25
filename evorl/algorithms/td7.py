@@ -792,14 +792,10 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             )
 
         # Retrieve global training steps from state metrics iterations
-        # We do 1 gradient update per collected transition in theory
-        num_updates_per_iter = (
-            self.config.rollout_episodes * self.config.env.max_episode_steps
-        )
-        global_steps = state.metrics.iterations * num_updates_per_iter
+        global_steps = state.metrics.iterations * self.config.num_updates_per_iter
 
         # Need to cast loop dummy variable to integer
-        iters = jnp.arange(num_updates_per_iter, dtype=jnp.int32)
+        iters = jnp.arange(self.config.num_updates_per_iter, dtype=jnp.int32)
 
         (
             (_, agent_state, opt_state, replay_buffer_state, _),
@@ -821,15 +817,21 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
                 global_steps,
             ),
             iters,
-            length=num_updates_per_iter,
+            length=self.config.num_updates_per_iter,
         )
 
         # Episodic Checkpointing evaluate & replace
-        perf = (
-            jnp.mean(eval_metrics.episode_returns)
-            if self.config.checkpoint_metric == "mean"
-            else jnp.min(eval_metrics.episode_returns)
-        )
+        if self.config.checkpoint_metric == "mean":
+            perf = jnp.mean(eval_metrics.episode_returns)
+        elif self.config.checkpoint_metric == "min":
+            perf = jnp.min(eval_metrics.episode_returns)
+        elif self.config.checkpoint_metric == "max":
+            perf = jnp.max(eval_metrics.episode_returns)
+        else:
+            raise ValueError(
+                f"Unsupported checkpoint metric: {self.config.checkpoint_metric}. "
+                "Must be one of 'min', 'max', or 'mean'."
+            )
 
         def _update_checkpoint(ag_state):
             return ag_state.replace(
@@ -894,12 +896,11 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
         start_iteration = state.metrics.iterations.tolist()
         final_iteration = num_iters + start_iteration
 
-        for i in range(num_iters):
+        for i in range(start_iteration, final_iteration):
+            iterations = i + 1
             train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
 
-            # current iteration
-            iterations = state.metrics.iterations.tolist()
             self.recorder.write(train_metrics.to_local_dict(), iterations)
             self.recorder.write(workflow_metrics.to_local_dict(), iterations)
 
