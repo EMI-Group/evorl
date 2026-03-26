@@ -103,7 +103,7 @@ html_theme = "furo"
 html_static_path = ["_static"]
 
 html_theme_options = {
-    "light_logo": "evox_logo_dark.svg", # always use dark logo for best readability
+    "light_logo": "evox_logo_light.svg",
     "dark_logo": "evox_logo_dark.svg",
 }
 
