@@ -15,7 +15,7 @@
 </p>
 
 <h2 align="center">
-  <p>🌟 EvoRL: A GPU-acclerated Framework for Evolutionary Reinforcement Learning 🌟</p>
+  <p>🌟 EvoRL: A GPU-accelerated Framework for Evolutionary Reinforcement Learning 🌟</p>
   <a href="https://arxiv.org/abs/2501.15129">
     <img src="https://img.shields.io/badge/paper-arxiv-red?style=for-the-badge" alt="EvoRL Paper on arXiv">
   </a>
@@ -45,7 +45,7 @@
 
 # Introduction
 
-EvoRL is a fully GPU-acclerated framework for Evolutionary Reinforcement Learning, which is implemented by JAX and provides end-to-end GPU-acclerated training pipelines, including following processes:
+EvoRL is a fully GPU-accelerated framework for Evolutionary Reinforcement Learning, which is implemented by JAX and provides end-to-end GPU-accelerated training pipelines, including following processes:
 
 - Reinforcement Learning (RL)
 - Evolutionary Computation (EC)
