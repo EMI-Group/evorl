@@ -55,6 +55,7 @@ def setup_recorders(config: DictConfig, workflow_name: str):
 
     return recorders
 
+
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train(config: DictConfig) -> None:
     import jax

@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from typing import Any
+import sys
 
 import jax.tree_util as jtu
 import numpy as np
@@ -30,7 +31,11 @@ class WandbRecorder(Recorder):
         wandb.log(data, step=step)
 
     def close(self):
-        wandb.finish()
+        ext_type, _, _ = sys.exc_info()
+        if ext_type is not None:
+            wandb.finish(exit_code=1)
+        else:
+            wandb.finish()
 
 
 def _convert_data(val: Any):
