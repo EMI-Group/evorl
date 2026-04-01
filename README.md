@@ -129,6 +129,10 @@ Specify the `agent` and `env` field based on the related config file path (`*.ya
 
 ```shell
 python scripts/train.py agent=ppo env=brax/ant
+
+# Parallel training two seeds on each GPU.
+CUDA_VISIBLE_DEVICES=0,5 python scripts/train_dist.py -m hydra/launcher=joblib \
+    agent=exp/ppo/brax/ant env=brax/ant seed=114,514
 ```
 
 If multiple GPUs are detected, most algorithms will be automatically trained in distributed mode.
