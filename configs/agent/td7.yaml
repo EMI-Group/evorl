@@ -5,7 +5,7 @@ workflow_cls: evorl.algorithms.td7.TD7Workflow
 num_envs: 10
 normalize_obs: false
 discount: 0.99
-total_episodes: 10000
+total_episodes: 5000
 fold_iters: 1
 
 num_eval_envs: 16
