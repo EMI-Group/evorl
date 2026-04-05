@@ -61,12 +61,11 @@ class OneEpisodeWrapper(EpisodeWrapper):
         super().__init__(env, episode_length)
 
     def step(self, state: EnvState, action: jax.Array) -> EnvState:
-        return jax.lax.cond(
-            state.done["__all__"],
-            lambda state, action: state.replace(),
-            self._step,
+        new_state = self._step(state, action)
+        return jtu.tree_map(
+            lambda old, new: jnp.where(state.done["__all__"], old, new),
             state,
-            action,
+            new_state,
         )
 
 
@@ -188,6 +187,6 @@ class FastVmapAutoResetWrapper(Wrapper):
         env_state = jtu.tree_map(
             where_done, state.info.first_env_state, state.env_state
         )
-        obs = where_done(state.info.first_obs, state.obs)
+        obs = jtu.tree_map(where_done, state.info.first_obs, state.obs)
 
         return state.replace(env_state=env_state, obs=obs)

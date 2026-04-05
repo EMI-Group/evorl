@@ -247,5 +247,5 @@ pip-selfcheck.json
 /outputs
 /multirun
 /debug
-/test*.py
+# /test*.py
 .conda

@@ -1,6 +1,13 @@
+import pytest
+import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import chex
+
+requires_gpu = pytest.mark.skipif(
+    jax.default_backend() == "cpu",
+    reason="This test requires GPU/CUDA",
+)
 
 from evorl.agent import Agent, AgentState
 from evorl.envs import Env, Box, Discrete, EnvState, Space

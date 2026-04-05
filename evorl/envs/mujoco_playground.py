@@ -20,29 +20,58 @@ from .wrappers.training_wrapper import (
 )
 
 
+def _normalize_obs(obs):
+    """Normalize obs to PyTreeDict if it's a raw dict.
+
+    Some envs (e.g., mujoco_playground) return dict obs.
+    PyTreeDict.__setattr__ auto-converts nested dicts, so we normalize
+    upfront to avoid pytree node type mismatches in downstream wrappers.
+    """
+    if isinstance(obs, dict) and not isinstance(obs, PyTreeDict):
+        return PyTreeDict(obs)
+    return obs
+
+
 class MjxEnvAdapter(EnvAdapter):
     """Adapter for Mujoco Playground environments."""
 
     def __init__(self, env: MjxEnv):
         super().__init__(env)
+        # Cache _impl from a dummy reset. We strip _impl from the state to
+        # save memory (intermediate computation results) and to avoid
+        # non-vmappable fields (warp backend) breaking jax.lax.map.
+        # The cached _impl is restored before each env.step() call.
+        dummy_state = self.env.reset(jax.random.PRNGKey(0))
+        self._static_impl = getattr(dummy_state.data, "_impl", None)
 
     def reset(self, key: chex.PRNGKey) -> EnvState:
         key, reset_key = jax.random.split(key)
         mjxenv_state = self.env.reset(reset_key)
+
+        # Strip _impl for vmap compatibility with jax.lax.map
+        if self._static_impl is not None:
+            mjxenv_state = mjxenv_state.replace(data=mjxenv_state.data.replace(_impl=None))
 
         info = PyTreeDict(sort_dict(mjxenv_state.info))
         info.metrics = PyTreeDict(sort_dict(mjxenv_state.metrics))
 
         return EnvState(
             env_state=mjxenv_state,
-            obs=mjxenv_state.obs,
+            obs=_normalize_obs(mjxenv_state.obs),
             reward=mjxenv_state.reward,
             done=mjxenv_state.done,
             info=info,
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        mjxenv_state = self.env.step(state.env_state, action)
+        mjxenv_state = state.env_state
+        if self._static_impl is not None:
+            mjxenv_state = mjxenv_state.replace(data=mjxenv_state.data.replace(_impl=self._static_impl))
+
+        mjxenv_state = self.env.step(mjxenv_state, action)
+
+        if self._static_impl is not None:
+            mjxenv_state = mjxenv_state.replace(data=mjxenv_state.data.replace(_impl=None))
 
         metrics = state.info.metrics.replace(**mjxenv_state.metrics)
 
@@ -50,7 +79,7 @@ class MjxEnvAdapter(EnvAdapter):
 
         return state.replace(
             env_state=mjxenv_state,
-            obs=mjxenv_state.obs,
+            obs=_normalize_obs(mjxenv_state.obs),
             reward=mjxenv_state.reward,
             done=mjxenv_state.done,
             info=info,
@@ -94,6 +123,12 @@ def create_mujoco_playground_env(env_name: str, **kwargs) -> MjxEnvAdapter:
     Returns:
         Brax env.
     """
+    # if "config_overrides" not in kwargs:
+    #     kwargs["config_overrides"] = {}
+    
+    # if "impl" not in kwargs["config_overrides"]:
+    #     kwargs["config_overrides"]["impl"] = "jax"
+
     env = registry.load(env_name, **kwargs)
     env = MjxEnvAdapter(env)
 

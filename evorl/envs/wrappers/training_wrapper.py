@@ -54,7 +54,7 @@ class EpisodeWrapper(Wrapper):
         )
 
         if self.record_ori_obs:
-            info.ori_obs = jnp.zeros_like(state.obs)
+            info.ori_obs = jtu.tree_map(jnp.zeros_like, state.obs)
         if self.record_episode_return:
             info.episode_return = jnp.zeros(())
 
@@ -116,11 +116,16 @@ class OneEpisodeWrapper(EpisodeWrapper):
     directly return previous state.
     """
 
-    def _dummy_step(self, state: EnvState, action: jax.Array) -> EnvState:
-        return state.replace()
-
     def step(self, state: EnvState, action: jax.Array) -> EnvState:
-        return jax.lax.cond(state.done, self._dummy_step, self._step, state, action)
+        new_state = self._step(state, action)
+        # Select old state when already done (via jnp.where on leaves).
+        # We avoid lax.cond here because under jax.vmap it traces both
+        # branches, which breaks warp backend's custom_vmap for mjx.step.
+        return jtu.tree_map(
+            lambda old, new: jnp.where(state.done, old, new),
+            state,
+            new_state,
+        )
 
 
 class VmapWrapper(Wrapper):
@@ -281,7 +286,9 @@ class FastVmapAutoResetWrapper(Wrapper):
         env_state = jtu.tree_map(
             where_done, state._internal.first_env_state, state.env_state
         )
-        obs = where_done(state._internal.first_obs, state.obs)
+        obs = jtu.tree_map(
+            where_done, state._internal.first_obs, state.obs
+        )
 
         return state.replace(env_state=env_state, obs=obs)
 
