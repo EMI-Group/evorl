@@ -50,7 +50,9 @@ class MjxEnvAdapter(EnvAdapter):
 
         # Strip _impl for vmap compatibility with jax.lax.map
         if self._static_impl is not None:
-            mjxenv_state = mjxenv_state.replace(data=mjxenv_state.data.replace(_impl=None))
+            mjxenv_state = mjxenv_state.replace(
+                data=mjxenv_state.data.replace(_impl=None)
+            )
 
         info = PyTreeDict(sort_dict(mjxenv_state.info))
         info.metrics = PyTreeDict(sort_dict(mjxenv_state.metrics))
@@ -66,12 +68,16 @@ class MjxEnvAdapter(EnvAdapter):
     def step(self, state: EnvState, action: Action) -> EnvState:
         mjxenv_state = state.env_state
         if self._static_impl is not None:
-            mjxenv_state = mjxenv_state.replace(data=mjxenv_state.data.replace(_impl=self._static_impl))
+            mjxenv_state = mjxenv_state.replace(
+                data=mjxenv_state.data.replace(_impl=self._static_impl)
+            )
 
         mjxenv_state = self.env.step(mjxenv_state, action)
 
         if self._static_impl is not None:
-            mjxenv_state = mjxenv_state.replace(data=mjxenv_state.data.replace(_impl=None))
+            mjxenv_state = mjxenv_state.replace(
+                data=mjxenv_state.data.replace(_impl=None)
+            )
 
         metrics = state.info.metrics.replace(**mjxenv_state.metrics)
 
@@ -107,8 +113,9 @@ class MjxEnvAdapter(EnvAdapter):
                 spaces=jtu.tree_map(
                     get_space,
                     obs_spec,
-                    is_leaf=lambda obj: isinstance(obj, tuple)
-                    and all(isinstance(x, int) for x in obj),
+                    is_leaf=lambda obj: (
+                        isinstance(obj, tuple) and all(isinstance(x, int) for x in obj)
+                    ),
                 )
             )
 
@@ -118,17 +125,11 @@ def create_mujoco_playground_env(env_name: str, **kwargs) -> MjxEnvAdapter:
 
     Args:
         env_name: Environment name.
-        kwargs: Arguments passing into Brax.
+        kwargs: Arguments passing into Brax. If you want to use jax backend, set kwargs["config_overrides"]["impl"] = "jax"
 
     Returns:
         Brax env.
     """
-    # if "config_overrides" not in kwargs:
-    #     kwargs["config_overrides"] = {}
-    
-    # if "impl" not in kwargs["config_overrides"]:
-    #     kwargs["config_overrides"]["impl"] = "jax"
-
     env = registry.load(env_name, **kwargs)
     env = MjxEnvAdapter(env)
 
