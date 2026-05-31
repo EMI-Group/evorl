@@ -33,9 +33,7 @@ def create_env(env_cfg, **kwargs) -> Env:
         case "jaxmarl":
             env = create_mabrax_env(env_name, **kwargs)
         case "envpool":
-            env = create_envpool_env(
-                env_name, env_backend=env_cfg.env_backend, **kwargs
-            )
+            env = create_envpool_env(env_name, **kwargs)
         case "gymnasium":
             env = create_gymnasium_env(env_name, **kwargs)
         case _:

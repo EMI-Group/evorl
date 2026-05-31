@@ -50,14 +50,12 @@ class EnvPoolGymAdapter(EnvAdapter):
     def __init__(
         self,
         env_name: str,
-        env_backend: str,
         max_episode_steps: int,
         num_envs: int,
         discount: float | None = None,
         **env_kwargs,
     ):
         self.env_name = env_name
-        self.env_backend = env_backend
         self.max_episode_steps = max_episode_steps
         self.num_envs = num_envs
         self.record_episode_return = discount is not None
@@ -65,17 +63,12 @@ class EnvPoolGymAdapter(EnvAdapter):
         self.env_kwargs = env_kwargs
 
         def _env_fn(_num_envs):
-            if self.env_backend == "gymnasium":
-                env = envpool.make_gymnasium(
-                    self.env_name,
-                    num_envs=_num_envs,
-                    max_episode_steps=max_episode_steps,
-                    **env_kwargs,
-                )
-            else:
-                raise ValueError(f"Unsupported env_backend: {self.env_backend}")
-
-            return env
+            return envpool.make_gymnasium(
+                self.env_name,
+                num_envs=_num_envs,
+                max_episode_steps=max_episode_steps,
+                **env_kwargs,
+            )
 
         self._env_fn = _env_fn
         self.env = _env_fn(self.num_envs)
@@ -232,14 +225,13 @@ def gym_space_to_evorl_space(space: gymnasium.Space) -> Space:
 
 def create_envpool_env(
     env_name,
-    env_backend: str = "gymnasium",
     episode_length: int = 1000,
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
     discount: float | None = 1.0,
     **kwargs,
 ) -> EnvPoolGymAdapter:
-    """Create a gym env based on EnvPool.
+    """Create an EnvPool environment with Gymnasium API.
 
     Unlike other jax-based env, most wrappers are handled inside the envpool.
     """
@@ -252,17 +244,13 @@ def create_envpool_env(
         case AutoresetMode.DISABLED:
             discount = None
 
-    if env_backend == "gymnasium":
-        env = EnvPoolGymAdapter(
-            env_name=env_name,
-            env_backend=env_backend,
-            max_episode_steps=episode_length,
-            num_envs=parallel,
-            discount=discount,
-            **kwargs,
-        )
-    else:
-        raise ValueError(f"env_backend {env_backend} is not supported")
+    env = EnvPoolGymAdapter(
+        env_name=env_name,
+        max_episode_steps=episode_length,
+        num_envs=parallel,
+        discount=discount,
+        **kwargs,
+    )
 
     if autoreset_mode == AutoresetMode.DISABLED:
         env = OneEpisodeWrapper(env)
