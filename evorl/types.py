@@ -134,7 +134,8 @@ class PyTreeDict(dict):
         return clone
 
     def tree_flatten(self):
-        return tuple(self.values()), tuple(self.keys())
+        keys = sorted(self.keys())
+        return tuple(self[k] for k in keys), tuple(keys)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):

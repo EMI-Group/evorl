@@ -3,8 +3,6 @@ import warnings
 
 import chex
 import envpool
-import gym
-import gym.spaces
 import gymnasium
 import jax
 import jax.numpy as jnp
@@ -69,13 +67,6 @@ class EnvPoolGymAdapter(EnvAdapter):
         def _env_fn(_num_envs):
             if self.env_backend == "gymnasium":
                 env = envpool.make_gymnasium(
-                    self.env_name,
-                    num_envs=_num_envs,
-                    max_episode_steps=max_episode_steps,
-                    **env_kwargs,
-                )
-            elif self.env_backend == "gym":
-                env = envpool.make_gym(
                     self.env_name,
                     num_envs=_num_envs,
                     max_episode_steps=max_episode_steps,
@@ -160,8 +151,6 @@ class EnvPoolGymAdapter(EnvAdapter):
         info.episode_return = jnp.zeros((self.num_envs,))
         info.autoreset = jnp.zeros((self.num_envs,))
 
-        if self.record_episode_return:
-            info.episode_return = jnp.zeros((self.num_envs,))
 
         return EnvState(
             env_state=None,
@@ -230,14 +219,12 @@ def _inf_to_num(x, num=1e10):
     return jnp.nan_to_num(x, posinf=num, neginf=-num)
 
 
-def gym_space_to_evorl_space(space: gymnasium.Space | gym.Space) -> Space:
-    if isinstance(space, gymnasium.spaces.Box) or isinstance(space, gym.spaces.Box):
+def gym_space_to_evorl_space(space: gymnasium.Space) -> Space:
+    if isinstance(space, gymnasium.spaces.Box):
         low = _inf_to_num(jnp.asarray(space.low))
         high = _inf_to_num(jnp.asarray(space.high))
         return Box(low=low, high=high)
-    elif isinstance(space, gymnasium.spaces.Discrete) or isinstance(
-        space, gym.spaces.Discrete
-    ):
+    elif isinstance(space, gymnasium.spaces.Discrete):
         return Discrete(n=space.n)
     else:
         raise NotImplementedError(f"Unsupported space type: {type(space)}")
@@ -265,7 +252,7 @@ def create_envpool_env(
         case AutoresetMode.DISABLED:
             discount = None
 
-    if env_backend in ["gym", "gymnasium"]:
+    if env_backend == "gymnasium":
         env = EnvPoolGymAdapter(
             env_name=env_name,
             env_backend=env_backend,

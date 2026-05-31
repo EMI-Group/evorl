@@ -1,4 +1,0 @@
-env_name: Humanoid-v4
-env_type: envpool
-env_backend: gym
-max_episode_steps: 1000

@@ -33,12 +33,9 @@ def create_env(env_cfg, **kwargs) -> Env:
         case "jaxmarl":
             env = create_mabrax_env(env_name, **kwargs)
         case "envpool":
-            if env_cfg.env_backend in ["gym", "gymnasium"]:
-                env = create_envpool_env(
-                    env_name, env_backend=env_cfg.env_backend, **kwargs
-                )
-            else:
-                raise ValueError(f"env_backend {env_cfg.env_backend} not supported")
+            env = create_envpool_env(
+                env_name, env_backend=env_cfg.env_backend, **kwargs
+            )
         case "gymnasium":
             env = create_gymnasium_env(env_name, **kwargs)
         case _:

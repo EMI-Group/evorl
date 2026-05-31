@@ -31,7 +31,7 @@ pip install -e ".[jumanji]"
 pip install -e ".[jaxmarl]"
 
 # ===== CPU-based Environments =====
-# EnvPool Envs: (also require py<3.12)
+# EnvPool Envs:
 pip install -e ".[envpool]"
 # Gymnasium Envs:
 pip install -e ".[gymnasium]"
