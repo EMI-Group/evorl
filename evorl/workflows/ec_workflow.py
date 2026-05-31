@@ -362,10 +362,9 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
     """Workflow template for multi-objective EC algorithms."""
 
     def _metrics_to_fitnesses(self, metrics: MetricBase) -> chex.ArrayTree:
-        fitnesses = PyTreeDict(
-            {k: jnp.mean(metrics[k], axis=-1) for k in self.config.metric_names}
+        fitnesses = jnp.stack(
+            [jnp.mean(metrics[k], axis=-1) for k in self.config.metric_names], axis=-1
         )
-        fitnesses = jnp.stack(list(fitnesses.values()), axis=-1)
         if fitnesses.shape[-1] == 1:
             fitnesses = fitnesses.squeeze(-1)
 

@@ -183,10 +183,13 @@ def _to_local_dict_inner(obj, dict_factory):
         # above).
         return type(obj)(_to_local_dict_inner(v, dict_factory) for v in obj)
     elif isinstance(obj, PyTreeDict):
-        return {
-            _to_local_dict_inner(k, dict_factory): _to_local_dict_inner(v, dict_factory)
-            for k, v in obj.items()
-        }
+        return dict_factory(
+            (
+                _to_local_dict_inner(k, dict_factory),
+                _to_local_dict_inner(obj[k], dict_factory),
+            )
+            for k in sorted(obj.keys())
+        )
     elif isinstance(obj, dict):
         return type(obj)(
             (
