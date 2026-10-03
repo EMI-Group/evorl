@@ -1,59 +1,18 @@
 import logging
-from pathlib import Path
+
 import hydra
-from omegaconf import DictConfig, OmegaConf
 from hydra_utils import (
     get_output_dir,
-    set_omegaconf_resolvers,
     set_absl_log_level,
+    set_omegaconf_resolvers,
 )
+from omegaconf import DictConfig, OmegaConf
+from recorder_setup import setup_recorders
 
 logger = logging.getLogger("train")
 
 set_absl_log_level("warning")
 set_omegaconf_resolvers()
-
-
-def setup_recorders(config: DictConfig, workflow_name: str):
-    output_dir = Path(config.output_dir)
-
-    from evorl.recorders import LogRecorder, WandbRecorder
-
-    recorders = []
-    tags = OmegaConf.to_container(config.tags, resolve=True)
-    exp_name = "_".join([workflow_name, config.env.env_name, config.env.env_type])
-    if len(tags) > 0:
-        exp_name = exp_name + "|" + ",".join(tags)
-
-    for rec in config.recorders:
-        match rec:
-            case "wandb":
-                wandb_tags = [
-                    workflow_name,
-                    config.env.env_name,
-                    config.env.env_type,
-                ] + tags
-
-                wandb_recorder = WandbRecorder(
-                    project=config.project,
-                    name=exp_name,
-                    group="dev",
-                    config=OmegaConf.to_container(
-                        config, resolve=True
-                    ),  # save the unrescaled config
-                    tags=wandb_tags,
-                    path=output_dir,
-                )
-                recorders.append(wandb_recorder)
-            case "log":
-                log_recorder = LogRecorder(
-                    log_path=output_dir / f"{exp_name}.log", console=True
-                )
-                recorders.append(log_recorder)
-            case _:
-                raise ValueError(f"Unknown recorder: {rec}")
-
-    return recorders
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
@@ -90,7 +49,7 @@ def train(config: DictConfig) -> None:
         state = workflow.learn(state)
     except Exception as e:
         logger.error(f"Exception: {e}")
-        raise e
+        raise
     finally:
         workflow.close()
 

@@ -15,6 +15,46 @@ cd evorl
 pip install -e .
 ```
 
+## Experiment Logging
+
+Aim is the default experiment tracker and is installed by `pip install -e .`.
+The other tracking SDKs are optional. From the repository root, either install
+an EvoRL extra or install the SDK directly into the same Python environment:
+
+| Recorder | EvoRL extra (from source) | Direct SDK installation |
+| --- | --- | --- |
+| Aim | Included in `pip install -e .` | `pip install aim` |
+| WandB | `pip install -e ".[wandb]"` | `pip install wandb` |
+| SwanLab | `pip install -e ".[swanlab]"` | `pip install swanlab` |
+| Comet | `pip install -e ".[comet]"` | `pip install comet_ml` |
+| Neptune | `pip install -e ".[neptune]"` | `pip install neptune-scale` |
+
+Extras can be combined with each other and with environment extras:
+
+```shell
+pip install -e ".[wandb,swanlab,gymnax]"
+```
+
+Installing an SDK does not enable its recorder. Select the installed backends
+with the `recorders` override; quote the list to prevent shell globbing:
+
+```shell
+# Default local logging and Aim; view runs using: aim up --repo aim
+python scripts/train.py agent=ppo env=brax/ant
+
+# Use WandB instead of Aim (authenticate using wandb login for online logging)
+python scripts/train.py agent=ppo env=brax/ant 'recorders=[log,wandb]'
+
+# Record to multiple installed backends
+python scripts/train.py agent=ppo env=brax/ant 'recorders=[log,aim,swanlab]'
+```
+
+Only enabled tracking SDKs are imported, when their recorder initializes.
+Cloud backends also require their own credentials and a valid project. Neptune's
+hosted service was discontinued on March 5, 2026; its extra is retained for
+compatibility with functioning endpoints. See [Logging in the quickstart](quickstart.md#logging)
+for backend mappings, grouping, and customization.
+
 ## RL Environments
 
 By default, `pip install -e .` will automatically install environments on `brax`. If you want to install other supported environments, you need manually install the related environment packages. We provide useful extras for different environments.

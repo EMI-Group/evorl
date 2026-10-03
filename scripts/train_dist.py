@@ -1,96 +1,36 @@
-import os
 import logging
-from pathlib import Path
-import subprocess
+import os
+
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from accelerator_utils import gpu_visibility_settings
 from hydra.core.hydra_config import HydraConfig
 from hydra_utils import (
     get_output_dir,
-    set_omegaconf_resolvers,
     set_absl_log_level,
+    set_omegaconf_resolvers,
 )
+from omegaconf import DictConfig, OmegaConf
+from recorder_setup import setup_recorders
 
 logger = logging.getLogger("train_dist")
 
 set_absl_log_level("warning")
 set_omegaconf_resolvers()
 
-"""
-Note: this script currently only support Nvidia GPUs.
-"""
-
-
-def get_gpus_info():
-    # Run the nvidia-smi command to list GPUs and count the lines
-    output = subprocess.check_output("nvidia-smi --list-gpus", shell=True)
-    # Decode the output from bytes to a string and count lines
-    return output.decode().splitlines()
-
 
 def set_gpu_id():
-    gpus_info = get_gpus_info()
-
-    cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "all")
-    if cuda_visible_devices != "all" and len(cuda_visible_devices) > 0:
-        gpu_ids = [int(i) for i in cuda_visible_devices.split(",")]
-        num_gpus = len(gpu_ids)
-    else:
-        num_gpus = len(gpus_info)
-        gpu_ids = list(range(num_gpus))
-
+    """Probe GPUs in a short subprocess, then select one before importing JAX."""
     job_id = HydraConfig.get().job.num
-    gpu_idx = job_id % num_gpus
-
+    settings, device, num_gpus = gpu_visibility_settings(job_id)
     if job_id >= num_gpus:
         logger.warning("It's not recommended to run multiple jobs on a single device.")
-
-    gpu_id = gpu_ids[gpu_idx]
-
-    logger.info(f"Using {gpus_info[gpu_id]}")
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-
-
-def setup_recorders(config: DictConfig, workflow_name: str):
-    output_dir = Path(config.output_dir)
-
-    from evorl.recorders import LogRecorder, WandbRecorder
-
-    recorders = []
-    tags = OmegaConf.to_container(config.tags, resolve=True)
-    exp_name = "_".join([workflow_name, config.env.env_name, config.env.env_type])
-    if len(tags) > 0:
-        exp_name = exp_name + "|" + ",".join(tags)
-
-    for rec in config.recorders:
-        match rec:
-            case "wandb":
-                wandb_tags = [
-                    workflow_name,
-                    config.env.env_name,
-                    config.env.env_type,
-                ] + tags
-
-                wandb_recorder = WandbRecorder(
-                    project=config.project,
-                    name=exp_name,
-                    group=exp_name,
-                    config=OmegaConf.to_container(
-                        config, resolve=True
-                    ),  # save the unrescaled config
-                    tags=wandb_tags,
-                    path=output_dir,
-                )
-                recorders.append(wandb_recorder)
-            case "log":
-                log_recorder = LogRecorder(
-                    log_path=output_dir / f"{exp_name}.log", console=True
-                )
-                recorders.append(log_recorder)
-            case _:
-                raise ValueError(f"Unknown recorder: {rec}")
-
-    return recorders
+    logger.info(
+        "Using %s device %s (%s)",
+        settings["JAX_PLATFORMS"],
+        device["local_hardware_id"],
+        device["device_kind"],
+    )
+    os.environ.update(settings)
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
@@ -120,7 +60,7 @@ def train_dist(config: DictConfig) -> None:
             config, enable_jit=config.enable_jit
         )
 
-    recorders = setup_recorders(config, workflow_cls.name())
+    recorders = setup_recorders(config, workflow_cls.name(), parallel=True)
     workflow.add_recorders(recorders)
 
     try:
@@ -128,7 +68,7 @@ def train_dist(config: DictConfig) -> None:
         state = workflow.learn(state)
     except Exception as e:
         logger.error(f"Exception: {e}")
-        raise e
+        raise
     finally:
         workflow.close()
 

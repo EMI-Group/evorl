@@ -246,6 +246,7 @@ pip-selfcheck.json
 /jax_cache
 /outputs
 /multirun
+/aim
 /debug
 # /test*.py
 .conda

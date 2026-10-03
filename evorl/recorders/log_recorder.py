@@ -5,16 +5,10 @@ from typing import Any
 import jax.tree_util as jtu
 import numpy as np
 import pandas as pd
-
-# from pprint import pformat
 import yaml
 
 from .recorder import Recorder
-
-# class SubLoggerFilter(logging.Filter):
-#     def filter(self, record):
-#         # Only allow log records that have the sub-logger's name
-#         return record.name == self.name
+from .recorder_utils import normalize_step
 
 
 class LogRecorder(Recorder):
@@ -31,23 +25,27 @@ class LogRecorder(Recorder):
         self.console = console
 
     def init(self) -> None:
-        self.logger = logging.getLogger("LogRecorder")
+        self.logger = logging.getLogger(f"LogRecorder.{id(self)}")
+        self.logger.setLevel(logging.INFO)
+        self.logger.propagate = self.console
 
         self.file_handler = logging.FileHandler(self.log_path, mode="w")
         # use root logger formatter (usually set by hydra)
-        self.file_handler.setFormatter(logging.getLogger().handlers[0].formatter)
+        root_handlers = logging.getLogger().handlers
+        if root_handlers:
+            self.file_handler.setFormatter(root_handlers[0].formatter)
         self.logger.addHandler(self.file_handler)
 
-        if not self.console:
-            self.logger.propagate = False
-
-    def write(self, data: Mapping[str, Any], step: int | None = None) -> None:
+    def write(self, data: Mapping[str, Any], step: int) -> None:
+        step = normalize_step(step)
         data = jtu.tree_map(lambda x: _convert_data(x), data)
         formatted_data = f"iteration {step}:\n" + yaml.dump(data, indent=2)
         self.logger.info(formatted_data)
 
     def close(self) -> None:
-        self.file_handler.close()
+        if hasattr(self, "file_handler"):
+            self.logger.removeHandler(self.file_handler)
+            self.file_handler.close()
 
 
 def _convert_data(val):
@@ -55,8 +53,8 @@ def _convert_data(val):
         return val.tolist()
     elif isinstance(val, np.generic):
         return val.item()
-    elif isinstance(val, pd.Series) or isinstance(val, pd.DataFrame):
-        # escape the special data for wandb
+    elif isinstance(val, (pd.Series, pd.DataFrame)):
+        # Rich data is handled by the tracking backends.
         return None
     else:
         return val

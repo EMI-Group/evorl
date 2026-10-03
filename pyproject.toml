@@ -53,6 +53,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "aim",
     "brax",
     "chex",
     "distrax",
@@ -68,10 +69,13 @@ dependencies = [
     "orbax-checkpoint",
     "pandas",
     "scipy",
-    "wandb",
 ]
 
 [project.optional-dependencies]
+wandb = ["wandb"]
+swanlab = ["swanlab"]
+comet = ["comet_ml"]
+neptune = ["neptune-scale"]
 gymnax = ["gymnax"]
 jumanji = ["jumanji"]
 jaxmarl = ["jaxmarl"]

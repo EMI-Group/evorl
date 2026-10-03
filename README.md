@@ -100,13 +100,17 @@ cd evorl
 pip install -e .
 ```
 
+Aim is included for default experiment logging. WandB, SwanLab, Comet, and Neptune
+are optional; install their SDKs directly or use EvoRL extras. See
+[Experiment Logging installation](docs/guide/installation.md#experiment-logging).
+
 For developers, see [Contributing to EvoRL](https://evorl.readthedocs.io/latest/dev/contributing.html)
 
 # Quickstart
 
 ## Training
 
-EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. Users can use `scripts/train.py` or `script/train_dist.py` to run algorithms from CLI.
+EvoRL uses [hydra](https://hydra.cc/) to manage configs and run algorithms. Users can use `scripts/train.py` or `scripts/train_dist.py` to run algorithms from CLI.
 
 ```text
 # hierarchy of folder `configs/`
@@ -141,11 +145,25 @@ For more advanced usage, see our documentation: [Training](https://evorl.readthe
 
 ## Logging
 
-When not using [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/) (without `-m`), the outputs will be stored in `./outputs`. When using [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/) (`-m`), the outputs will be stored in `./multirun`. Specifically, when launching algorithms from the training scripts, the log file and checkpoint files will be stored in `./outputs|multirun/train|train_dist/<timestamp>/<exp-name>/`.
+With the default Hydra configuration, a single run stores outputs in `outputs/<script>/<timestamp>/`, and [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/) (`-m`) uses `multirun/<script>/<timestamp>/<overrides>/`, where `<script>` is `train` or `train_dist`. `LogRecorder` writes `<experiment-name>.log` there; checkpoints use the `checkpoints/` subdirectory when `checkpoint.enable=true`.
 
-By default, the training script will enable two recorders for logging: `LogRecorder` and `WandbRecorder`. `LogRecorder` will save logs (`*.log`) in the above path, and `WandbRecorder` will upload the data to [WandB](https://wandb.ai/site/), which provides beautiful visualizations.
+By default, the training scripts enable `LogRecorder` and `AimRecorder` (`recorders: [log, aim]`). Aim stores runs locally in the shared `aim/.aim` repository under the directory where training was launched. View and compare runs from that directory:
 
-Screenshot in WandB dashboard:
+```shell
+aim up --repo aim
+```
+
+To use WandB, install its optional extra (or run `pip install wandb`) and select it explicitly:
+
+```shell
+pip install -e ".[wandb]"
+wandb login
+python scripts/train.py agent=ppo env=brax/ant 'recorders=[log,wandb]'
+```
+
+The supported recorder names are `log`, `aim`, `wandb`, `swanlab`, `comet`, and `neptune`. Multiple installed backends can be selected together, for example `'recorders=[log,aim,wandb]'`. See [Logging](docs/guide/quickstart.md#logging) for installation, grouping, and backend behavior.
+
+Example dashboard when using the optional WandB recorder:
 
 ![](docs/_static/evorl_wandb.png)
 

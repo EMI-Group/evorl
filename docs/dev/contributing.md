@@ -21,6 +21,11 @@ pip install -e ".[dev]"
 pre-commit install
 ```
 
+Aim is included in the developer installation. To work on an optional tracking
+backend, combine its extra with `dev`, for example `pip install -e ".[dev,wandb]"`,
+or install the SDK directly. See [Experiment Logging installation](../guide/installation.md#experiment-logging)
+for the available extras and package names.
+
 ### Debugging
 
 We provide some examples in `.vscode/launch.json` for debugging in Visual Studio Code.
