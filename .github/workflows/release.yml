@@ -24,7 +24,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       sha: ${{ steps.version.outputs.sha }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -57,12 +57,12 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+      - uses: actions/download-artifact@v8
         with:
           name: python-distributions
           path: dist
       - name: Publish to PyPI using Trusted Publishing
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+        uses: pypa/gh-action-pypi-publish@v1.14.2
 
   github-release:
     needs: [resolve, ci]
@@ -70,7 +70,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+      - uses: actions/download-artifact@v8
         with:
           name: python-distributions
           path: dist

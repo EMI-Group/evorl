@@ -24,11 +24,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -47,7 +47,7 @@ jobs:
         run: |
           python -m twine check --strict dist/*
           python scripts/check_dist.py --tag "$RELEASE_TAG"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python-distributions
           path: dist/*
@@ -63,15 +63,15 @@ jobs:
     env:
       JAX_PLATFORMS: cpu
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+      - uses: actions/download-artifact@v8
         with:
           name: python-distributions
           path: dist
