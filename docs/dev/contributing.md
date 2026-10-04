@@ -127,10 +127,12 @@ The tag must match the source version exactly: `v0.1.0` corresponds to
 For a release candidate, use a version such as `0.2.0rc1` and the tag `v0.2.0rc1`;
 the workflow marks its GitHub Release as a prerelease.
 
-Pushing the tag starts the Release workflow. It reruns CI, checks the tag against
-the package version, and publishes the wheel and source distribution to PyPI only
-when all checks pass. It then creates a GitHub Release titled with the tag, attaches
-the same distributions, and generates release notes from GitHub's change history.
+Pushing the tag starts the Release workflow. It resolves the tag to an exact
+commit, reruns CI against that commit, and checks the tag against the package
+version. Once all checks pass, two jobs run independently: one publishes the wheel
+and source distribution to PyPI; the other creates a GitHub Release titled with the
+tag, attaches the same distributions, and generates release notes from GitHub's
+change history. A PyPI publishing failure does not prevent the GitHub Release.
 Pushing `main` alone runs CI without publishing a package.
 
 ### Write the release description
@@ -185,11 +187,23 @@ focus on user-visible behavior rather than listing internal CI or packaging step
 The release description is edited on GitHub; it does not require changing or
 republishing the PyPI package.
 
+### Run an existing tag manually
+
+If a tag already exists but its release workflow never started, open **Actions →
+Release → Run workflow**, choose `main` for the workflow, and enter the existing
+version tag (for example `v0.1.0`) in the `tag` field. The workflow on `main`
+resolves and builds the tagged commit rather than building the latest `main`.
+This does not create, delete, or move a tag. Normal releases still start with
+`git push origin vX.Y.Z`.
+
 ### Handle a failed release
 
-If publication fails before uploading any distributions, correct the publishing
-configuration and rerun the failed jobs. If only the GitHub Release job fails
-after PyPI publication succeeds, rerun that failed job alone.
+If a publishing job fails, correct its configuration and rerun only the failed
+jobs. The PyPI and GitHub Release jobs run independently: retrying a failed PyPI
+job does not recreate the GitHub Release, and retrying a failed GitHub job does not
+upload the package to PyPI again. The GitHub job adds any missing distribution
+assets when the release already exists. If any PyPI files have already uploaded,
+check the published files before retrying; an upload can fail after partial success.
 
 PyPI files cannot be replaced for an already uploaded version. If a release needs
 code changes, update the version and publish a new tag. Do not move or reuse a

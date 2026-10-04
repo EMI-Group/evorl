@@ -6,6 +6,11 @@ on:
   pull_request:
   workflow_call:
     inputs:
+      source-ref:
+        description: Exact commit to build and test
+        required: false
+        type: string
+        default: ""
       release-tag:
         description: Version tag to validate before publishing
         required: false
@@ -21,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
@@ -59,6 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:

@@ -3,19 +3,50 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish (for example v0.1.0)
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve the existing release tag
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]; then
+            echo "Invalid version tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          release_sha=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+
   ci:
+    needs: resolve
     uses: ./.github/workflows/ci.yml
     with:
-      release-tag: ${{ github.ref_name }}
+      release-tag: ${{ needs.resolve.outputs.tag }}
+      source-ref: ${{ needs.resolve.outputs.sha }}
 
   publish:
     needs: ci
@@ -34,7 +65,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@106e0b0b7c337fa67ed433972f777c6357f78598 # v1.13.0
 
   github-release:
-    needs: publish
+    needs: [resolve, ci]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -47,14 +78,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           args=(--verify-tag --generate-notes --title "$RELEASE_TAG")
           if [[ "$RELEASE_TAG" =~ (a|b|rc)[0-9]+$ ]]; then
             args+=(--prerelease)
           fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "GitHub Release already exists: $RELEASE_TAG"
+            # Complete missing assets when retrying an existing release.
+            existing_assets=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
+            for artifact in dist/*; do
+              if ! grep -Fxq -- "${artifact##*/}" <<< "$existing_assets"; then
+                gh release upload "$RELEASE_TAG" "$artifact"
+              fi
+            done
           else
             gh release create "$RELEASE_TAG" dist/* "${args[@]}"
           fi
