@@ -201,8 +201,8 @@ This does not create, delete, or move a tag. Normal releases still start with
 If a publishing job fails, correct its configuration and rerun only the failed
 jobs. The PyPI and GitHub Release jobs run independently: retrying a failed PyPI
 job does not recreate the GitHub Release, and retrying a failed GitHub job does not
-upload the package to PyPI again. The GitHub job adds any missing distribution
-assets when the release already exists. If any PyPI files have already uploaded,
+upload the package to PyPI again. The GitHub job updates distribution assets from
+the current run when the release already exists. If any PyPI files have already uploaded,
 check the published files before retrying; an upload can fail after partial success.
 
 PyPI files cannot be replaced for an already uploaded version. If a release needs

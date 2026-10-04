@@ -85,13 +85,8 @@ jobs:
             args+=(--prerelease)
           fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            # Complete missing assets when retrying an existing release.
-            existing_assets=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
-            for artifact in dist/*; do
-              if ! grep -Fxq -- "${artifact##*/}" <<< "$existing_assets"; then
-                gh release upload "$RELEASE_TAG" "$artifact"
-              fi
-            done
+            # Keep release assets aligned with the distributions from this run.
+            gh release upload "$RELEASE_TAG" dist/* --clobber
           else
             gh release create "$RELEASE_TAG" dist/* "${args[@]}"
           fi
