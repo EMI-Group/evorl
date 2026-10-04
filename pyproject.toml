@@ -36,14 +36,16 @@ convention = "google"
 testpaths = ["tests"]
 
 [project]
-name = "evorl"
+name = "evorl-jax"
 authors = [{ name = "Bowen Zheng", email = "bowen.zheng@protonmail.com" }]
 description = "An efficient Evolutionary Reinforcement Learning Framework on Jax"
 readme = "README.md"
 dynamic = ["version"]
 requires-python = ">= 3.10"
+license-files = ["LICENSE"]
+keywords = ["jax", "reinforcement-learning", "evolutionary-computation"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: GPU",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
@@ -57,6 +59,7 @@ dependencies = [
     "brax",
     "chex",
     "distrax",
+    "flax",
     "tfp-nightly[jax]",
     # "evox<1.0.0",
     "gymnasium>=1.1.0",
@@ -65,11 +68,19 @@ dependencies = [
     "jax>=0.4.35",
     "jaxlib>=0.4.35",
     "numpy",
+    "omegaconf",
     "optax",
     "orbax-checkpoint",
     "pandas",
     "scipy",
+    "typing-extensions",
 ]
+
+[project.urls]
+Homepage = "https://github.com/EMI-Group/evorl"
+Documentation = "https://evorl.readthedocs.io/"
+Repository = "https://github.com/EMI-Group/evorl"
+Issues = "https://github.com/EMI-Group/evorl/issues"
 
 [project.optional-dependencies]
 wandb = ["wandb"]
@@ -94,9 +105,12 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools >= 62.6"]       # to support `file` directive
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["evorl", "evorl.*"]
-namespaces = false
+namespaces = true
+
+[tool.setuptools.dynamic]
+version = {attr = "evorl.__version__"}

@@ -6,7 +6,14 @@
 
 EvoRL is based on `jax`. So `jax` should be installed first, please follow [JAX official installation guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation).
 
-Then install EvoRL from source:
+Install the released package from PyPI (available after the first release):
+
+```shell
+pip install evorl-jax
+```
+
+The PyPI distribution is named `evorl-jax`, while Python code uses `import evorl`.
+For development or the CLI training scripts and configs, install from source:
 
 ```shell
 # Install the evorl package from source
@@ -17,22 +24,23 @@ pip install -e .
 
 ## Experiment Logging
 
-Aim is the default experiment tracker and is installed by `pip install -e .`.
-The other tracking SDKs are optional. From the repository root, either install
+Aim is the default experiment tracker and is installed by `pip install evorl-jax`
+(or `pip install -e .` from source). The other tracking SDKs are optional. Install
 an EvoRL extra or install the SDK directly into the same Python environment:
 
-| Recorder | EvoRL extra (from source) | Direct SDK installation |
+| Recorder | EvoRL extra (from PyPI) | Direct SDK installation |
 | --- | --- | --- |
-| Aim | Included in `pip install -e .` | `pip install aim` |
-| WandB | `pip install -e ".[wandb]"` | `pip install wandb` |
-| SwanLab | `pip install -e ".[swanlab]"` | `pip install swanlab` |
-| Comet | `pip install -e ".[comet]"` | `pip install comet_ml` |
-| Neptune | `pip install -e ".[neptune]"` | `pip install neptune-scale` |
+| Aim | Included in `pip install evorl-jax` | `pip install aim` |
+| WandB | `pip install "evorl-jax[wandb]"` | `pip install wandb` |
+| SwanLab | `pip install "evorl-jax[swanlab]"` | `pip install swanlab` |
+| Comet | `pip install "evorl-jax[comet]"` | `pip install comet_ml` |
+| Neptune | `pip install "evorl-jax[neptune]"` | `pip install neptune-scale` |
 
+For a source checkout, use `pip install -e ".[extra]"` instead.
 Extras can be combined with each other and with environment extras:
 
 ```shell
-pip install -e ".[wandb,swanlab,gymnax]"
+pip install "evorl-jax[wandb,swanlab,gymnax]"
 ```
 
 Installing an SDK does not enable its recorder. Select the installed backends
@@ -57,24 +65,24 @@ for backend mappings, grouping, and customization.
 
 ## RL Environments
 
-By default, `pip install -e .` will automatically install environments on `brax`. If you want to install other supported environments, you need manually install the related environment packages. We provide useful extras for different environments.
+By default, `pip install evorl-jax` (or `pip install -e .` from source) will automatically install environments on `brax`. If you want to install other supported environments, you need manually install the related environment packages. We provide useful extras for different environments. For a source checkout, use `pip install -e ".[extra]"` instead.
 
 ```shell
 # ===== GPU-accelerated Environments =====
 # Mujoco playground Envs:
-pip install -e ".[mujoco-playground]"
+pip install "evorl-jax[mujoco-playground]"
 # gymnax Envs:
-pip install -e ".[gymnax]"
+pip install "evorl-jax[gymnax]"
 # Jumanji Envs:
-pip install -e ".[jumanji]"
+pip install "evorl-jax[jumanji]"
 # JaxMARL Envs:
-pip install -e ".[jaxmarl]"
+pip install "evorl-jax[jaxmarl]"
 
 # ===== CPU-based Environments =====
 # EnvPool Envs:
-pip install -e ".[envpool]"
+pip install "evorl-jax[envpool]"
 # Gymnasium Envs:
-pip install -e ".[gymnasium]"
+pip install "evorl-jax[gymnasium]"
 ```
 
 | Environment Library                                                        | Descriptions                            |

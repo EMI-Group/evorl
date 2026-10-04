@@ -1,9 +1,9 @@
 <h1 align="center">
   <a href="https://github.com/EMI-Group/evox">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/_static/evox_logo_dark.svg">
-      <source media="(prefers-color-scheme: light)" srcset="docs/_static/evox_logo_light.svg">
-      <img alt="EvoX Logo" height="50" src="docs/_static/evox_logo_light.svg">
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/EMI-Group/evorl/main/docs/_static/evox_logo_dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/EMI-Group/evorl/main/docs/_static/evox_logo_light.svg">
+      <img alt="EvoX Logo" height="50" src="https://raw.githubusercontent.com/EMI-Group/evorl/main/docs/_static/evox_logo_light.svg">
     </picture>
   </a>
 </h1>
@@ -79,7 +79,7 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 
 ## Overview of Key Concepts in EvoRL
 
-![](docs/_static/evorl_arch.svg)
+![](https://raw.githubusercontent.com/EMI-Group/evorl/main/docs/_static/evorl_arch.svg)
 
 - **Workflow** defines the training logic of algorithms.
 - **Agent** defines the behavior of a learning agent, and its optional loss functions.
@@ -91,7 +91,14 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 
 # Installation
 
-EvoRL is developed on the top of `jax`. So `jax` should be installed first, please follow [JAX official installation guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Since EvoRL is currently under development, we recommend installing the package from source.
+EvoRL is developed on the top of `jax`. So `jax` should be installed first, please follow [JAX official installation guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Install the released package from PyPI (available after the first release):
+
+```shell
+pip install evorl-jax
+```
+
+The distribution name is `evorl-jax`; the Python import remains `import evorl`.
+For the latest development version and the training scripts/configs used below, install from source:
 
 ```shell
 # Install the evorl package from source
@@ -102,7 +109,7 @@ pip install -e .
 
 Aim is included for default experiment logging. WandB, SwanLab, Comet, and Neptune
 are optional; install their SDKs directly or use EvoRL extras. See
-[Experiment Logging installation](docs/guide/installation.md#experiment-logging).
+[Experiment Logging installation](https://evorl.readthedocs.io/latest/guide/installation.html#experiment-logging).
 
 For developers, see [Contributing to EvoRL](https://evorl.readthedocs.io/latest/dev/contributing.html)
 
@@ -161,11 +168,11 @@ wandb login
 python scripts/train.py agent=ppo env=brax/ant 'recorders=[log,wandb]'
 ```
 
-The supported recorder names are `log`, `aim`, `wandb`, `swanlab`, `comet`, and `neptune`. Multiple installed backends can be selected together, for example `'recorders=[log,aim,wandb]'`. See [Logging](docs/guide/quickstart.md#logging) for installation, grouping, and backend behavior.
+The supported recorder names are `log`, `aim`, `wandb`, `swanlab`, `comet`, and `neptune`. Multiple installed backends can be selected together, for example `'recorders=[log,aim,wandb]'`. See [Logging](https://evorl.readthedocs.io/latest/guide/quickstart.html#logging) for installation, grouping, and backend behavior.
 
 Example dashboard when using the optional WandB recorder:
 
-![](docs/_static/evorl_wandb.png)
+![](https://raw.githubusercontent.com/EMI-Group/evorl/main/docs/_static/evorl_wandb.png)
 
 ## Env Rendering
 
@@ -184,7 +191,7 @@ Currently, EvoRL supports 4 types of algorithms
 
 # RL Environments
 
-By default, `pip install evorl` will automatically install environments on `brax`. If you want to use other supported environments, please install the additional environment packages. We provide useful extras for different environments.
+By default, `pip install evorl-jax` will automatically install environments on `brax`. If you want to use other supported environments, please install the additional environment packages. We provide useful extras for different environments.
 
 For example:
 
@@ -233,8 +240,8 @@ Test settings:
   - 1x Nvidia RTX 3090
 - Task: Swimmer
 
-![](docs/_static/es-perf.png)
-![](docs/_static/erl-pbt-perf.png)
+![](https://raw.githubusercontent.com/EMI-Group/evorl/main/docs/_static/es-perf.png)
+![](https://raw.githubusercontent.com/EMI-Group/evorl/main/docs/_static/erl-pbt-perf.png)
 
 # Bug report & Discussion
 

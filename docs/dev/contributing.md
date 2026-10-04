@@ -80,3 +80,118 @@ Developers do not need to worry about whether the submitted code satisfy the abo
 ```shell
 pre-commit run -a
 ```
+
+
+## Publishing a Release
+
+EvoRL is distributed on PyPI as `evorl-jax` and imported in Python as `evorl`.
+The project is in beta: the implemented algorithms are usable, while APIs and
+configuration may still change between releases. The version is maintained in
+`evorl/__init__.py`; setuptools reads `evorl.__version__` when building packages.
+
+### Prepare the release commit
+
+1. Finish the release changes on `main` and update `evorl.__version__`. For the
+   first release, the version is `0.1.0`.
+2. Review changes since the previous release, including new features, bug fixes,
+   dependency requirements, and any API or configuration changes users need to make.
+3. Validate the packages from a clean output directory:
+
+   ```shell
+   python -m pip install build twine
+   python -m build --outdir /tmp/evorl-release-dist
+   python -m twine check --strict /tmp/evorl-release-dist/*
+   python scripts/check_dist.py --dist-dir /tmp/evorl-release-dist --tag v0.1.0
+   ```
+
+   Use an empty output directory for each build; old release artifacts must not
+   be included in the upload. Update the tag in the example for subsequent versions.
+4. Commit the reviewed release changes, push `main`, and wait for branch CI to pass.
+   The PyPI Trusted Publisher and GitHub `pypi` environment must already be configured
+   for `.github/workflows/release.yml` before pushing a release tag.
+
+### Tag and publish
+
+Create an annotated tag on the validated release commit, then push that tag:
+
+```shell
+git switch main
+git status --short
+# Continue once the release changes are committed and the working tree is clean.
+git tag -a v0.1.0 -m "Release EvoRL v0.1.0"
+git push origin v0.1.0
+```
+
+The tag must match the source version exactly: `v0.1.0` corresponds to
+`evorl.__version__ = "0.1.0"`. The same flow applies to `v0.1.1` or `v0.2.0`.
+For a release candidate, use a version such as `0.2.0rc1` and the tag `v0.2.0rc1`;
+the workflow marks its GitHub Release as a prerelease.
+
+Pushing the tag starts the Release workflow. It reruns CI, checks the tag against
+the package version, and publishes the wheel and source distribution to PyPI only
+when all checks pass. It then creates a GitHub Release titled with the tag, attaches
+the same distributions, and generates release notes from GitHub's change history.
+Pushing `main` alone runs CI without publishing a package.
+
+### Write the release description
+
+Generated notes provide the change list. Add a short summary that explains the
+release to users. Once the workflow finishes, open the repository's **Releases**
+page, choose the new version, and use **Edit** to update its description. Keep
+useful generated change links below the summary.
+
+Include the most relevant items from this template; omit sections with no changes:
+
+```markdown
+## Highlights
+- Describe the main new capabilities and improvements for users.
+
+## Fixes
+- Explain corrected behavior and when users would encounter the problem.
+
+## Compatibility and migration
+- State changed APIs, configuration keys, or dependency requirements.
+- Show the old and new usage when users need to update their code.
+
+## Installation
+pip install --upgrade evorl-jax
+
+## Known limitations
+- State any release-specific limitations users need to account for.
+```
+
+For the initial `v0.1.0` release, a suitable summary is:
+
+```markdown
+## Highlights
+- First PyPI release of EvoRL, a JAX-based framework for evolutionary
+  reinforcement learning.
+- Includes reinforcement learning, evolutionary optimization, and population-based
+  training workflows.
+- Aim provides default local experiment tracking; WandB, SwanLab, Comet, and
+  Neptune SDKs are available as optional extras.
+
+## Installation
+Install with `pip install evorl-jax` and import with `import evorl`.
+Install JAX for your accelerator using its official installation instructions.
+For the CLI training scripts and configuration examples, use a source checkout.
+
+## Compatibility
+This is a beta release. APIs and configuration may change in future versions.
+```
+
+Adjust that example to the final contents of the release. Descriptions should
+focus on user-visible behavior rather than listing internal CI or packaging steps.
+The release description is edited on GitHub; it does not require changing or
+republishing the PyPI package.
+
+### Handle a failed release
+
+If publication fails before uploading any distributions, correct the publishing
+configuration and rerun the failed jobs. If only the GitHub Release job fails
+after PyPI publication succeeds, rerun that failed job alone.
+
+PyPI files cannot be replaced for an already uploaded version. If a release needs
+code changes, update the version and publish a new tag. Do not move or reuse a
+published version tag. Editing the GitHub Release description is safe and does
+not change the uploaded package.
