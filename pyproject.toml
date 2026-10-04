@@ -81,6 +81,7 @@ Homepage = "https://github.com/EMI-Group/evorl"
 Documentation = "https://evorl.readthedocs.io/"
 Repository = "https://github.com/EMI-Group/evorl"
 Issues = "https://github.com/EMI-Group/evorl/issues"
+Changelog = "https://github.com/EMI-Group/evorl/releases"
 
 [project.optional-dependencies]
 wandb = ["wandb"]

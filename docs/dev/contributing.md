@@ -112,80 +112,38 @@ configuration may still change between releases. The version is maintained in
 
 ### Tag and publish
 
-Create an annotated tag on the validated release commit, then push that tag:
+An annotated tag (`git tag -a`) marks a release commit and stores its author,
+date, and message. The message describes the whole version, independently of
+commit messages. Write the release summary in `-m`, then push the tag:
 
 ```shell
 git switch main
-git status --short
-# Continue once the release changes are committed and the working tree is clean.
-git tag -a v0.1.0 -m "Release EvoRL v0.1.0"
-git push origin v0.1.0
-```
-
-The tag must match the source version exactly: `v0.1.0` corresponds to
-`evorl.__version__ = "0.1.0"`. The same flow applies to `v0.1.1` or `v0.2.0`.
-For a release candidate, use a version such as `0.2.0rc1` and the tag `v0.2.0rc1`;
-the workflow marks its GitHub Release as a prerelease.
-
-Pushing the tag starts the Release workflow. It resolves the tag to an exact
-commit, reruns CI against that commit, and checks the tag against the package
-version. Once all checks pass, two jobs run independently: one publishes the wheel
-and source distribution to PyPI; the other creates a GitHub Release titled with the
-tag, attaches the same distributions, and generates release notes from GitHub's
-change history. A PyPI publishing failure does not prevent the GitHub Release.
-Pushing `main` alone runs CI without publishing a package.
-
-### Write the release description
-
-Generated notes provide the change list. Add a short summary that explains the
-release to users. Once the workflow finishes, open the repository's **Releases**
-page, choose the new version, and use **Edit** to update its description. Keep
-useful generated change links below the summary.
-
-Include the most relevant items from this template; omit sections with no changes:
-
-```markdown
-## Highlights
-- Describe the main new capabilities and improvements for users.
-
-## Fixes
-- Explain corrected behavior and when users would encounter the problem.
-
-## Compatibility and migration
-- State changed APIs, configuration keys, or dependency requirements.
-- Show the old and new usage when users need to update their code.
-
-## Installation
-pip install --upgrade evorl-jax
-
-## Known limitations
-- State any release-specific limitations users need to account for.
-```
-
-For the initial `v0.1.0` release, a suitable summary is:
-
-```markdown
-## Highlights
-- First PyPI release of EvoRL, a JAX-based framework for evolutionary
-  reinforcement learning.
-- Includes reinforcement learning, evolutionary optimization, and population-based
-  training workflows.
-- Aim provides default local experiment tracking; WandB, SwanLab, Comet, and
-  Neptune SDKs are available as optional extras.
-
-## Installation
-Install with `pip install evorl-jax` and import with `import evorl`.
-Install JAX for your accelerator using its official installation instructions.
-For the CLI training scripts and configuration examples, use a source checkout.
+git status --short  # Release changes must already be committed.
+git tag -a v0.1.2 --cleanup=whitespace -m '## Highlights
+- Summarize new features and fixes.
 
 ## Compatibility
-This is a beta release. APIs and configuration may change in future versions.
+- Describe breaking changes or migration steps; omit if unnecessary.'
+git push origin v0.1.2
 ```
 
-Adjust that example to the final contents of the release. Descriptions should
-focus on user-visible behavior rather than listing internal CI or packaging steps.
-The release description is edited on GitHub; it does not require changing or
-republishing the PyPI package.
+Replace the example version and summary before running. `--cleanup=whitespace`
+preserves Markdown headings beginning with `#`. The tag must match
+`evorl.__version__`: `v0.1.2` requires `0.1.2`. Release candidates use a version
+such as `0.2.0rc1` and tag `v0.2.0rc1`, marked as a GitHub prerelease.
+
+Tag pushes run CI against the tagged commit, then publish the wheel and sdist to
+PyPI and GitHub Release in parallel. Pushing `main` alone only runs CI.
+
+### Release description
+
+The workflow uses the annotated tag message as the GitHub Release summary and
+appends GitHub-generated change links. Without a tag annotation, it uses only
+generated notes. Focus the summary on user-visible changes and compatibility.
+
+After publishing, use **Releases → version → Edit** to refine the description.
+Retries preserve these edits. GitHub Release text does not update PyPI metadata;
+PyPI displays the packaged README and a **Changelog** link to GitHub Releases.
 
 ### Run an existing tag manually
 

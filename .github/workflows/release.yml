@@ -70,6 +70,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           name: python-distributions
@@ -79,6 +84,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+          RELEASE_NOTES_FILE: ${{ runner.temp }}/evorl-release-notes.txt
         run: |
           args=(--verify-tag --generate-notes --title "$RELEASE_TAG")
           if [[ "$RELEASE_TAG" =~ (a|b|rc)[0-9]+$ ]]; then
@@ -88,5 +94,11 @@ jobs:
             # Keep release assets aligned with the distributions from this run.
             gh release upload "$RELEASE_TAG" dist/* --clobber
           else
+            if [[ $(git cat-file -t "refs/tags/$RELEASE_TAG") == tag ]]; then
+              git for-each-ref --format='%(contents)' "refs/tags/$RELEASE_TAG" > "$RELEASE_NOTES_FILE"
+              if [[ -s "$RELEASE_NOTES_FILE" ]]; then
+                args+=(--notes-file "$RELEASE_NOTES_FILE")
+              fi
+            fi
             gh release create "$RELEASE_TAG" dist/* "${args[@]}"
           fi
