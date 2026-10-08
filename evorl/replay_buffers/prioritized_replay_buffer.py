@@ -42,8 +42,9 @@ class PrioritizedReplayBuffer(ReplayBuffer):
     alpha: float = 0.6
 
     def init(self, spec: chex.ArrayTree) -> PrioritizedReplayBufferState:
+        # The full capacity is allocated; unused entries need no defined values.
         data = jtu.tree_map(
-            lambda x: jnp.broadcast_to(jnp.empty_like(x), (self.capacity, *x.shape)),
+            lambda x: jnp.empty((self.capacity, *x.shape), dtype=x.dtype),
             spec,
         )
 

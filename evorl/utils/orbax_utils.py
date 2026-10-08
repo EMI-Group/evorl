@@ -4,6 +4,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import jax
+import jax.numpy as jnp
+import numpy as np
 import jax.tree_util as jtu
 import chex
 import orbax.checkpoint as ocp
@@ -38,7 +40,9 @@ def load(path, state: chex.ArrayTree) -> chex.ArrayTree:
         The loaded state.
     """
     path = os.path.abspath(os.path.expanduser(path))
-    abstract_state = jtu.tree_map(ocp.utils.to_shape_dtype_struct, state)
+    abstract_state = jtu.tree_map(
+        ocp.utils.to_shape_dtype_struct, filter_zero_size_arrays_on_save(state)
+    )
 
     with ocp.StandardCheckpointer() as ckpt:
         new_state = ckpt.restore(path, abstract_state)
@@ -54,7 +58,7 @@ def filter_zero_size_arrays_on_save(
     """Filter out zero-size arrays from the pytree."""
 
     def f(x):
-        if isinstance(x, jax.Array) and x.size == 0:
+        if isinstance(x, (jax.Array, np.ndarray, jax.ShapeDtypeStruct)) and x.size == 0:
             return None
         else:
             return x
@@ -65,10 +69,12 @@ def filter_zero_size_arrays_on_save(
 def filter_zero_size_arrays_on_restore(
     src_tree: chex.ArrayTree, dst_tree: chex.ArrayTree
 ) -> chex.ArrayTree:
-    """Filter out zero-size arrays from the pytree."""
+    """Reconstruct zero-size leaves using the requested restore structure."""
 
     def f(src, dst):
-        if isinstance(src, jax.Array) and src.size == 0:
+        if isinstance(src, jax.ShapeDtypeStruct) and src.size == 0:
+            return jnp.zeros(src.shape, dtype=src.dtype, device=src.sharding)
+        if isinstance(src, (jax.Array, np.ndarray)) and src.size == 0:
             return src
         else:
             return dst
@@ -135,7 +141,9 @@ class CheckpointManager(ocp.CheckpointManager):
 
     def restore(self, step, items, **kwargs):
         new_items = super().restore(
-            step, args=ocp.args.StandardRestore(items), **kwargs
+            step,
+            args=ocp.args.StandardRestore(filter_zero_size_arrays_on_save(items)),
+            **kwargs,
         )
 
         new_items = filter_zero_size_arrays_on_restore(items, new_items)

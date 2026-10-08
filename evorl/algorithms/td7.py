@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 def avg_l1_norm(x: jax.Array, eps: float = 1e-8) -> jax.Array:
     """Average L1 Norm used in TD7."""
-    mean_abs = jnp.clip(jnp.mean(jnp.abs(x), axis=-1, keepdims=True), a_min=eps)
+    mean_abs = jnp.clip(jnp.mean(jnp.abs(x), axis=-1, keepdims=True), min=eps)
     return x / mean_abs
 
 

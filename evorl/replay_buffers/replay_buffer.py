@@ -101,9 +101,9 @@ class ReplayBuffer(AbstractReplayBuffer):
     min_sample_timesteps: int = 0
 
     def init(self, spec: chex.ArrayTree) -> ReplayBufferState:
-        # Note: broadcast_to will not pre-allocate memory
+        # The full capacity is allocated; unused entries need no defined values.
         data = jtu.tree_map(
-            lambda x: jnp.broadcast_to(jnp.empty_like(x), (self.capacity, *x.shape)),
+            lambda x: jnp.empty((self.capacity, *x.shape), dtype=x.dtype),
             spec,
         )
 

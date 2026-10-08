@@ -5,7 +5,7 @@
 ```shell
 # Step 1: Create a virtual env from conda, venv, pyenv, ...:
 # For example, using pyenv-virtualenv:
-pyenv virtualenv 3.10 evorl-dev
+pyenv virtualenv 3.12 evorl-dev
 pyenv activate evorl-dev
 
 # Step 2: Install JAX in advance
@@ -25,6 +25,19 @@ Aim is included in the developer installation. To work on an optional tracking
 backend, combine its extra with `dev`, for example `pip install -e ".[dev,wandb]"`,
 or install the SDK directly. See [Experiment Logging installation](../guide/installation.md#experiment-logging)
 for the available extras and package names.
+
+### Dependency compatibility
+
+The framework requires Python 3.12+ and JAX/jaxlib 0.6.1+. JAX 0.6.1 is the
+first release exposing the top-level `jax.shard_map` API with `check_vma` used
+by our distributed workflows. Python and JAX minimum versions are independent.
+
+CI tests the built wheel with both JAX/jaxlib 0.6.1 and the latest dependencies.
+The minimum JAX job lets the resolver select compatible versions of Flax and
+other dependencies; the latest Flax release can require a newer JAX version.
+The framework continues to use Flax Linen and the Orbax checkpoint V0 API.
+
+Deferred migrations and audits are tracked in [Development TODO](todo.md).
 
 ### Debugging
 

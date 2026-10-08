@@ -75,7 +75,7 @@ class PBTParamOpenESWorkflow(PBTWorkflowTemplate):
             mesh=self.sharding.mesh,
             in_specs=self.sharding.spec,
             out_specs=self.sharding.spec,
-            check_rep=False,
+            check_vma=False,
         )
 
         pop_eval_metrics = eval_fn(

@@ -182,7 +182,7 @@ class PBTWorkflowBase(Workflow):
             mesh=self.sharding.mesh,
             in_specs=self.sharding.spec,
             out_specs=self.sharding.spec,
-            check_rep=False,
+            check_vma=False,
         )(workflow_keys)
 
         # Note: for obs_preprocessor, we assume pop_workflow_state.agent_state.obs_preprocessor_state
@@ -195,7 +195,7 @@ class PBTWorkflowBase(Workflow):
             mesh=self.sharding.mesh,
             in_specs=self.sharding.spec,
             out_specs=self.sharding.spec,
-            check_rep=False,
+            check_vma=False,
         )(pop_workflow_state, pop)
 
         return State(
@@ -228,7 +228,7 @@ class PBTWorkflowBase(Workflow):
             mesh=self.sharding.mesh,
             in_specs=self.sharding.spec,
             out_specs=self.sharding.spec,
-            check_rep=False,
+            check_vma=False,
         )
 
         pop_train_metrics, pop_workflow_state = train_steps_fn(pop_workflow_state)
@@ -239,7 +239,7 @@ class PBTWorkflowBase(Workflow):
             mesh=self.sharding.mesh,
             in_specs=self.sharding.spec,
             out_specs=self.sharding.spec,
-            check_rep=False,
+            check_vma=False,
         )
 
         pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)
@@ -320,7 +320,7 @@ class PBTWorkflowBase(Workflow):
             mesh=self.sharding.mesh,
             in_specs=self.sharding.spec,
             out_specs=self.sharding.spec,
-            check_rep=False,
+            check_vma=False,
         )
 
         pop_eval_metrics = eval_fn(
@@ -495,7 +495,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             mesh=self.sharding.mesh,
             in_specs=P(),
             out_specs=P(),
-            check_rep=False,
+            check_vma=False,
         )(key)
 
         return replay_buffer_state
@@ -551,7 +551,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
                 mesh=self.sharding.mesh,
                 in_specs=(shared_sharding.spec, P()),
                 out_specs=self.sharding.spec,
-                check_rep=False,
+                check_vma=False,
             )(obs_preprocessor_state, trajectory.obs)
 
             pop_workflow_state = pop_workflow_state.replace(
@@ -624,7 +624,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             mesh=self.sharding.mesh,
             in_specs=(P(POP_AXIS_NAME), P()),
             out_specs=(P(POP_AXIS_NAME), P(POP_AXIS_NAME), P()),
-            check_rep=False,
+            check_vma=False,
         )(pop_workflow_state, replay_buffer_state)
 
         # ===== eval ======
@@ -633,7 +633,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             mesh=self.sharding.mesh,
             in_specs=self.sharding.spec,
             out_specs=self.sharding.spec,
-            check_rep=False,
+            check_vma=False,
         )
 
         pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)

@@ -214,7 +214,7 @@ class OnPolicyWorkflow(RLWorkflow):
                 mesh=jax.sharding.Mesh(self.devices, (self.dp_axis_name,)),
                 in_specs=jax.sharding.PartitionSpec(self.dp_axis_name),
                 out_specs=jax.sharding.PartitionSpec(self.dp_axis_name),
-                check_rep=False,
+                check_vma=False,
             )
             env_state = env_reset_fn(env_key)
         else:
@@ -332,7 +332,7 @@ class OffPolicyWorkflow(RLWorkflow):
                 mesh=mesh,
                 in_specs=spec,
                 out_specs=spec,
-                check_rep=False,
+                check_vma=False,
             )
             env_state = env_reset_fn(env_key)
 
@@ -342,7 +342,7 @@ class OffPolicyWorkflow(RLWorkflow):
                 mesh=mesh,
                 in_specs=spec,
                 out_specs=spec,
-                check_rep=False,
+                check_vma=False,
             )
             replay_buffer_state = setup_rb_fn(rb_key)
         else:
@@ -367,7 +367,7 @@ class OffPolicyWorkflow(RLWorkflow):
                 mesh=mesh,
                 in_specs=spec,
                 out_specs=spec,
-                check_rep=False,
+                check_vma=False,
             )
             state = post_setup_fn(state)
         else:

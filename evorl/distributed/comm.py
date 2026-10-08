@@ -4,8 +4,6 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from jax._src.distributed import global_state
-
 
 def pmean(x, axis_name: str | None = None):
     if axis_name is None:
@@ -54,14 +52,13 @@ def split_key_to_devices(key: chex.PRNGKey, devices: Sequence[jax.Device]):
 
 def is_dist_initialized():
     """Whether the JAX's distributed setting is initialized."""
-    # Note: global_state is a JAX internal API, which is not stable.
-    return global_state.coordinator_address is not None
+    return jax.distributed.is_initialized()
 
 
 def get_process_id():
     """Return the node id in multi-node distributed env."""
     if is_dist_initialized():
-        return global_state.process_id
+        return jax.process_index()
     else:
         return 0
 
