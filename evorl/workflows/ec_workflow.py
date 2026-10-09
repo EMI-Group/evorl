@@ -20,7 +20,7 @@ from evorl.envs import Env
 from evorl.sample_batch import SampleBatch
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState, AgentStateAxis
-from evorl.distributed import get_global_ranks, psum
+from evorl.distributed import get_global_ranks, pmax, psum
 from evorl.types import State, PyTreeData, pytree_field, Params, PyTreeDict
 from evorl.utils.rl_toolkits import flatten_pop_rollout_episode
 from evorl.utils.jax_utils import tree_stop_gradient
@@ -266,7 +266,7 @@ class ECWorkflowTemplate(ECWorkflow):
 
             distributed_info = DistributedInfo(
                 rank=get_global_ranks(self.dp_axis_name),
-                world_size=jax.device_count(),
+                world_size=num_workers,
             )
 
         state = State(
@@ -376,7 +376,7 @@ class ECWorkflowTemplate(ECWorkflow):
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         sampled_episodes = psum(
-            jnp.uint32(pop_size * self.config.episodes_for_fitness),
+            jnp.uint32(slice_size * self.config.episodes_for_fitness),
             self.dp_axis_name,
         )
         sampled_timesteps_m = (
@@ -388,7 +388,8 @@ class ECWorkflowTemplate(ECWorkflow):
             sampled_timesteps_m=state.metrics.sampled_timesteps_m + sampled_timesteps_m,
             iterations=state.metrics.iterations + 1,
             best_objective=jnp.maximum(
-                state.metrics.best_objective, jnp.max(rollout_metrics.episode_returns)
+                state.metrics.best_objective,
+                pmax(jnp.max(rollout_metrics.episode_returns), self.dp_axis_name),
             ),
         )
 
@@ -473,7 +474,7 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         sampled_episodes = psum(
-            jnp.uint32(pop_size * self.config.episodes_for_fitness),
+            jnp.uint32(slice_size * self.config.episodes_for_fitness),
             self.dp_axis_name,
         )
         sampled_timesteps_m = (

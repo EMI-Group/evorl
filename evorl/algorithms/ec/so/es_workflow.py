@@ -93,7 +93,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
             self.checkpoint_manager.save(
                 iters,
                 state,
-                force=i == self.config.num_iters,
+                force=iters == self.config.num_iters,
             )
 
     @classmethod

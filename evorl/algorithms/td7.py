@@ -888,20 +888,20 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
         )
 
     def learn(self, state: State) -> State:
-        num_devices = jax.device_count()
+        num_devices = self.num_devices
         one_step_episodes = self.config.rollout_episodes * num_devices
         sampled_episodes = state.metrics.sampled_episodes.tolist()
-        num_iters = math.ceil(
+        num_fold_iters = math.ceil(
             (self.config.total_episodes - sampled_episodes)
             / (one_step_episodes * self.config.fold_iters)
         )
         start_iteration = state.metrics.iterations.tolist()
-        final_iteration = num_iters + start_iteration
+        final_iteration = start_iteration + num_fold_iters * self.config.fold_iters
 
-        for i in range(start_iteration, final_iteration):
-            iterations = i + 1
+        for i in range(num_fold_iters):
             train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
+            iterations = workflow_metrics.iterations.tolist()
 
             self.recorder.write(train_metrics.to_local_dict(), iterations)
             self.recorder.write(workflow_metrics.to_local_dict(), iterations)

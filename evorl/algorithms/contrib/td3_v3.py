@@ -526,17 +526,17 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
         )
 
     def learn(self, state: State) -> State:
-        num_devices = jax.device_count()
+        num_devices = self.num_devices
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         sampled_timesteps = state.metrics.sampled_timesteps.tolist()
-        num_iters = math.ceil(
+        num_fold_iters = math.ceil(
             (self.config.total_timesteps - sampled_timesteps)
             / (one_step_timesteps * self.config.fold_iters * num_devices)
         )
         start_iteration = state.metrics.iterations.tolist()
-        final_iteration = num_iters + start_iteration
+        final_iteration = start_iteration + num_fold_iters * self.config.fold_iters
 
-        for i in range(num_iters):
+        for i in range(num_fold_iters):
             train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
 

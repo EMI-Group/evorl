@@ -58,6 +58,11 @@ class Workflow(AbstractWorkflow):
         self.recorder = ChainRecorder([])
         self.checkpoint_manager = setup_checkpoint_manager(config)
 
+    @property
+    def num_devices(self) -> int:
+        """Number of devices participating in this workflow."""
+        return 1 if self.mesh is None else self.mesh.size
+
     @classmethod
     def build_from_config(cls, config: DictConfig, *args, **kwargs) -> Self:
         """Build the workflow instance from the config.

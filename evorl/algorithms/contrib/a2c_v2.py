@@ -20,7 +20,9 @@ class A2CWorkflow(_A2CWorkflow):
         return "A2C-V2"
 
     def learn(self, state: State) -> State:
-        one_step_timesteps = self.config.rollout_length * self.config.num_envs
+        one_step_timesteps = (
+            self.config.rollout_length * self.config.num_envs * self.num_devices
+        )
         num_iters = math.ceil(self.config.total_timesteps / one_step_timesteps)
 
         steps_interval = self.config.eval_interval

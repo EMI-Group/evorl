@@ -141,21 +141,24 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             rank = jax.lax.axis_index(self.dp_axis_name)
             random_rollout_key = jax.random.fold_in(random_rollout_key, rank)
             rollout_key = jax.random.fold_in(rollout_key, rank)
-        random_agent = RandomAgent()
-        random_agent_state = random_agent.init(
-            obs_space, action_space, jax.random.key(0)
-        )
         rollout_length = config.random_timesteps // config.num_envs
+        if rollout_length > 0:
+            random_agent = RandomAgent()
+            random_agent_state = random_agent.init(
+                obs_space, action_space, jax.random.key(0)
+            )
 
-        trajectory = _rollout(
-            random_agent,
-            random_agent_state,
-            key=random_rollout_key,
-            rollout_length=rollout_length,
-        )
+            trajectory = _rollout(
+                random_agent,
+                random_agent_state,
+                key=random_rollout_key,
+                rollout_length=rollout_length,
+            )
 
-        agent_state = _update_obs_preprocessor(agent_state, trajectory)
-        replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
+            agent_state = _update_obs_preprocessor(agent_state, trajectory)
+            replay_buffer_state = self.replay_buffer.add(
+                replay_buffer_state, trajectory
+            )
 
         rollout_timesteps = rollout_length * config.num_envs
         sampled_timesteps = psum(
@@ -163,19 +166,24 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         )
 
         # ==== fill tansition state from init agent ====
-        rollout_length = math.ceil(
-            (config.learning_start_timesteps - rollout_timesteps) / config.num_envs
+        rollout_length = max(
+            0,
+            math.ceil(
+                (config.learning_start_timesteps - rollout_timesteps) / config.num_envs
+            ),
         )
+        if rollout_length > 0:
+            trajectory = _rollout(
+                self.agent,
+                agent_state,
+                key=rollout_key,
+                rollout_length=rollout_length,
+            )
 
-        trajectory = _rollout(
-            self.agent,
-            agent_state,
-            key=rollout_key,
-            rollout_length=rollout_length,
-        )
-
-        agent_state = _update_obs_preprocessor(agent_state, trajectory)
-        replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
+            agent_state = _update_obs_preprocessor(agent_state, trajectory)
+            replay_buffer_state = self.replay_buffer.add(
+                replay_buffer_state, trajectory
+            )
 
         rollout_timesteps = rollout_length * config.num_envs
         sampled_timesteps = sampled_timesteps + psum(
@@ -208,17 +216,17 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         return train_metrics, state
 
     def learn(self, state: State) -> State:
-        num_devices = jax.device_count()
+        num_devices = self.num_devices
         one_step_timesteps = self.config.rollout_length * self.config.num_envs
         sampled_timesteps = state.metrics.sampled_timesteps.tolist()
-        num_iters = math.ceil(
+        num_fold_iters = math.ceil(
             (self.config.total_timesteps - sampled_timesteps)
             / (one_step_timesteps * self.config.fold_iters * num_devices)
         )
         start_iteration = state.metrics.iterations.tolist()
-        final_iteration = num_iters + start_iteration
+        final_iteration = start_iteration + num_fold_iters * self.config.fold_iters
 
-        for i in range(num_iters):
+        for i in range(num_fold_iters):
             train_metrics, state = self._multi_steps(state)
             workflow_metrics = state.metrics
 
