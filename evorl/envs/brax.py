@@ -1,4 +1,3 @@
-import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -29,7 +28,7 @@ class BraxAdapter(EnvAdapter):
     def __init__(self, env: BraxEnv):
         super().__init__(env)
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         key, reset_key = jax.random.split(key)
         brax_state = self.env.reset(reset_key)
 
@@ -81,8 +80,9 @@ class BraxAdapter(EnvAdapter):
                 spaces=jtu.tree_map(
                     get_space,
                     obs_spec,
-                    is_leaf=lambda obj: isinstance(obj, tuple)
-                    and all(isinstance(x, int) for x in obj),
+                    is_leaf=lambda obj: (
+                        isinstance(obj, tuple) and all(isinstance(x, int) for x in obj)
+                    ),
                 )
             )
 

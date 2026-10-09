@@ -4,7 +4,6 @@ from omegaconf import DictConfig
 
 import jax
 import jax.numpy as jnp
-import chex
 
 from evorl.replay_buffers import ReplayBufferState
 from evorl.envs import Discrete
@@ -62,7 +61,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         config.random_timesteps = config.random_timesteps // num_devices
         config.learning_start_timesteps = config.learning_start_timesteps // num_devices
 
-    def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
+    def _setup_replaybuffer(self, key: jax.Array) -> ReplayBufferState:
         action_space = self.env.action_space
         obs_space = self.env.obs_space
 
@@ -140,7 +139,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         key, random_rollout_key, rollout_key = jax.random.split(state.key, num=3)
         random_agent = RandomAgent()
         random_agent_state = random_agent.init(
-            obs_space, action_space, jax.random.PRNGKey(0)
+            obs_space, action_space, jax.random.key(0)
         )
         rollout_length = config.random_timesteps // config.num_envs
 

@@ -5,7 +5,6 @@ import math
 import gymnasium
 import multiprocessing as mp
 
-import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -167,8 +166,8 @@ class GymnasiumAdapter(EnvAdapter):
             jax.pure_callback, _step, step_spec, vmap_method="expand_dims"
         )
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
-        obs, info = _to_jax(self._reset(key))
+    def reset(self, key: jax.Array) -> EnvState:
+        obs, info = _to_jax(self._reset(jax.random.key_data(key)))
 
         info.steps = jnp.zeros((self.num_envs,), dtype=jnp.int32)
         info.termination = jnp.zeros((self.num_envs,))

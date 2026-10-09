@@ -5,7 +5,7 @@ from typing import Any, Protocol
 import jax
 import jax.tree_util as jtu
 import chex
-import numpy as np
+from evorl.utils.jax_utils import rng_split_by_shape
 
 from evorl.envs import Space, is_leaf_space
 from evorl.sample_batch import SampleBatch
@@ -44,7 +44,7 @@ AgentStateAxis = AgentState | Axis
 class ObsPreprocessorFn(Protocol):
     """The type of the observation preprocessor function."""
 
-    def __call__(self, obs: chex.Array, *args: Any, **kwds: Any) -> chex.Array:
+    def __call__(self, obs: jax.Array, *args: Any, **kwds: Any) -> jax.Array:
         return obs
 
 
@@ -55,7 +55,7 @@ class LossFn(Protocol):
     """
 
     def __call__(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         pass
 
@@ -64,7 +64,7 @@ class AgentActionFn(Protocol):
     """The type of the agent's action function."""
 
     def __call__(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         pass
 
@@ -80,14 +80,12 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         pass
 
     @abstractmethod
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         """Get actions from the policy model + add exploraton noise.
 
@@ -105,7 +103,7 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
 
     @abstractmethod
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         """Get the best action from the action distribution.
 
@@ -126,9 +124,7 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
 class RandomAgent(Agent):
     """An agent that takes uniform random actions."""
 
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         extra_state = PyTreeDict(
             action_space=action_space,
             obs_space=obs_space,
@@ -136,14 +132,14 @@ class RandomAgent(Agent):
         return AgentState(params={}, extra_state=extra_state)
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs_space = agent_state.extra_state.obs_space
         action_space = agent_state.extra_state.action_space
 
         _obs = jtu.tree_leaves(sample_batch.obs)[0]
         _obs_space = jtu.tree_leaves(obs_space, is_leaf=is_leaf_space)[0]
-        batch_shapes = _obs.shape[: -len(_obs_space.shape)]
+        batch_shapes = _obs.shape[: _obs.ndim - len(_obs_space.shape)]
 
         chex.assert_tree_shape_prefix(sample_batch.obs, batch_shapes)
 
@@ -151,14 +147,12 @@ class RandomAgent(Agent):
         for _ in range(len(batch_shapes)):
             action_sample_fn = jax.vmap(action_sample_fn)
 
-        action_keys = jax.random.split(key, np.prod(batch_shapes)).reshape(
-            *batch_shapes, 2
-        )
+        action_keys = rng_split_by_shape(key, batch_shapes)
 
         actions = action_sample_fn(action_keys)
         return actions, PyTreeDict()
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         return self.compute_actions(agent_state, sample_batch, key)

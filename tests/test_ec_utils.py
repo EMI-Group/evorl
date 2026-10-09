@@ -10,7 +10,7 @@ def test_ParamVectorSpec():
 
     x = jnp.ones((2, 3))
 
-    keys = jax.random.split(jax.random.PRNGKey(0), 5)
+    keys = jax.random.split(jax.random.key(0), 5)
 
     batch_params = [model.init(key, x) for key in keys]
     params = batch_params[0]

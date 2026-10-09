@@ -1,4 +1,4 @@
-import chex
+import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from evorl.types import Action
@@ -19,7 +19,7 @@ class RewardScaleWrapper(Wrapper):
         super().__init__(env)
         self.reward_scale = reward_scale
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         state = self.env.reset(key)
         info = state.info.replace(ori_reward=state.reward)
 
@@ -46,7 +46,7 @@ class SparseRewardWrapper(Wrapper):
         super().__init__(env)
         self.sparse_length = sparse_length
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         state = self.env.reset(key)
 
         state._internal.cum_count = jnp.zeros((), dtype=jnp.int32)

@@ -1,4 +1,3 @@
-import chex
 import jax
 import jax.numpy as jnp
 
@@ -26,7 +25,7 @@ class ObsFlattenWrapper(Wrapper):
 
         return state
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         state = self.env.reset(key)
         return self._flatten_obs(state)
 

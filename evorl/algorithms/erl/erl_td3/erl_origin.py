@@ -2,7 +2,6 @@ import logging
 import time
 from omegaconf import DictConfig
 
-import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class ERLTrainMetric(ERLTrainMetricBase):
-    num_updates_per_iter: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    num_updates_per_iter: jax.Array = jnp.zeros((), dtype=jnp.uint32)
     time_cost_per_iter: float = 0.0
 
 

@@ -2,7 +2,6 @@ import logging
 import math
 from typing import Any
 
-import chex
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
@@ -62,9 +61,7 @@ class A2CAgent(Agent):
     def normalize_obs(self):
         return self.obs_preprocessor is not None
 
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         policy_key, value_key = jax.random.split(key, 2)
 
         dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
@@ -90,7 +87,7 @@ class A2CAgent(Agent):
         )
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -113,7 +110,7 @@ class A2CAgent(Agent):
         return actions, policy_extras
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -131,7 +128,7 @@ class A2CAgent(Agent):
         return actions, PyTreeDict()
 
     def loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -178,7 +175,7 @@ class A2CAgent(Agent):
 
     def compute_values(
         self, agent_state: AgentState, sample_batch: SampleBatch
-    ) -> chex.Array:
+    ) -> jax.Array:
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)

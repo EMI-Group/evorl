@@ -19,9 +19,9 @@ class PrioritizedReplayBufferState(ReplayBufferState):
         sample_indices: Indices of the last sampled batch (for priority updates).
     """
 
-    priority: chex.Array = jnp.zeros((), jnp.float32)
-    max_priority: chex.Array = jnp.ones((), jnp.float32)
-    sample_indices: chex.Array = jnp.zeros((), jnp.int32)
+    priority: jax.Array = jnp.zeros((), jnp.float32)
+    max_priority: jax.Array = jnp.ones((), jnp.float32)
+    sample_indices: jax.Array = jnp.zeros((), jnp.int32)
 
 
 class PrioritizedReplayBuffer(ReplayBuffer):
@@ -61,7 +61,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         self,
         buffer_state: PrioritizedReplayBufferState,
         xs: chex.ArrayTree,
-        mask: chex.Array | None = None,
+        mask: jax.Array | None = None,
     ) -> PrioritizedReplayBufferState:
         # Get indices before calling parent add
         if mask is not None:
@@ -96,9 +96,9 @@ class PrioritizedReplayBuffer(ReplayBuffer):
     def sample(
         self,
         buffer_state: PrioritizedReplayBufferState,
-        key: chex.PRNGKey,
-        beta: float | chex.Array = 0.4,
-    ) -> tuple[chex.ArrayTree, chex.Array, PrioritizedReplayBufferState]:
+        key: jax.Array,
+        beta: float | jax.Array = 0.4,
+    ) -> tuple[chex.ArrayTree, jax.Array, PrioritizedReplayBufferState]:
         """Sample a batch proportional to priorities with IS weights.
 
         Args:
@@ -107,21 +107,21 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             beta: Importance sampling exponent.
 
         Returns:
-            A tuple of (batch, weights, updated_buffer_state). 
+            A tuple of (batch, weights, updated_buffer_state).
             The weights are the computed Importance Sampling (IS) weights.
         """
         # Mask out invalid priorities beyond buffer_size
         mask = jnp.arange(self.capacity) < buffer_state.buffer_size
         raw_priority = jnp.where(mask, buffer_state.priority, 0.0)
-        
+
         # Apply alpha exponent
-        priority_alpha = raw_priority ** self.alpha
+        priority_alpha = raw_priority**self.alpha
         priority_alpha = jnp.where(mask, priority_alpha, 0.0)
-        
+
         sum_priority = jnp.sum(priority_alpha)
         # Compute probabilities P(i) = p_i^alpha / sum(p_i^alpha)
         # We avoid division here and directly use priority_alpha for csum
-        
+
         csum = jnp.cumsum(priority_alpha)
         val = jax.random.uniform(key, (self.sample_batch_size,)) * csum[-1]
         indices = jnp.searchsorted(csum, val)
@@ -129,7 +129,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         indices = jnp.clip(indices, 0, buffer_state.buffer_size - 1)
 
         batch = tree_get(buffer_state.data, indices)
-        
+
         # Compute IS weights: w_i = (N * P(i)) ** -beta / max(w_i)
         # P(i) = priority_alpha[indices] / sum_priority
         N = jnp.maximum(1, buffer_state.buffer_size)
@@ -153,7 +153,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
     def update_priority(
         self,
         buffer_state: PrioritizedReplayBufferState,
-        priority: chex.Array,
+        priority: jax.Array,
     ) -> PrioritizedReplayBufferState:
         """Update priorities at the last sampled indices.
 

@@ -25,7 +25,7 @@ def test_reward_scale_wrapper():
     env = VmapWrapper(env, num_envs=3)
     agent = DebugRandomAgent()
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
     rollout_key, env_key, agent_key = jax.random.split(key, 3)
 
     env_state = env.reset(env_key)
@@ -69,7 +69,7 @@ def test_action_repeat_wrapper():
     env = VmapWrapper(env, num_envs=1)
     agent = DebugRandomAgent()
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
     rollout_key, env_key, agent_key = jax.random.split(key, 3)
 
     env_state = env.reset(env_key)
@@ -118,7 +118,7 @@ def test_action_repeat_wrapper2():
     env = VmapWrapper(env, num_envs=3)
     agent = DebugRandomAgent()
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
     rollout_key, env_key, agent_key = jax.random.split(key, 3)
 
     env_state = env.reset(env_key)
@@ -159,7 +159,7 @@ def test_sparse_reward_wrapper():
         env = VmapWrapper(env, num_envs=1)
         agent = DebugRandomAgent()
 
-        key = jax.random.PRNGKey(42)
+        key = jax.random.key(42)
         rollout_key, env_key, agent_key = jax.random.split(key, 3)
 
         env_state = env.reset(env_key)
@@ -202,7 +202,7 @@ def test_sparse_reward_wrapper2():
     env = VmapWrapper(env, num_envs=1)
     agent = DebugRandomAgent()
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
     rollout_key, env_key, agent_key = jax.random.split(key, 3)
 
     env_state = env.reset(env_key)

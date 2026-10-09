@@ -13,7 +13,7 @@ from evorl.agent import Agent, AgentState
 from evorl.envs import Env, Box, Discrete, EnvState, Space
 from evorl.sample_batch import SampleBatch
 from evorl.types import PolicyExtraInfo, PyTreeDict, Action
-from evorl.utils.jax_utils import tree_get
+from evorl.utils.jax_utils import rng_key_batch_shape, tree_get
 
 
 class FakeEnv(Env):
@@ -65,7 +65,7 @@ class FakeVmapEnv(Env):
         self.num_envs = dones.shape[1]
 
     def reset(self, key):
-        if key.ndim > 1:
+        if rng_key_batch_shape(key):
             key = key[0]
 
         return EnvState(
@@ -104,9 +104,7 @@ class FakeVmapEnv(Env):
 
 
 class DebugRandomAgent(Agent):
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         extra_state = PyTreeDict(
             action_space=action_space,
             obs_space=obs_space,
@@ -114,7 +112,7 @@ class DebugRandomAgent(Agent):
         return AgentState(params={}, extra_state=extra_state)
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs_space = agent_state.extra_state.obs_space
         action_space = agent_state.extra_state.action_space
@@ -125,6 +123,6 @@ class DebugRandomAgent(Agent):
         return actions, PyTreeDict()
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         return self.compute_actions(agent_state, sample_batch, key)

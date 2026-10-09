@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 class DDPGTrainMetric(MetricBase):
-    actor_loss: chex.Array
-    critic_loss: chex.Array
+    actor_loss: jax.Array
+    critic_loss: jax.Array
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
@@ -68,9 +68,7 @@ class DDPGAgent(Agent):
     def normalize_obs(self):
         return self.obs_preprocessor is not None
 
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         key, q_key, actor_key = jax.random.split(key, num=3)
 
         dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
@@ -102,7 +100,7 @@ class DDPGAgent(Agent):
         )
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -117,7 +115,7 @@ class DDPGAgent(Agent):
         return actions, PyTreeDict()
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -128,7 +126,7 @@ class DDPGAgent(Agent):
         return actions, PyTreeDict()
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         next_obs = sample_batch.extras.env_extras.ori_obs
         obs = sample_batch.obs
@@ -161,7 +159,7 @@ class DDPGAgent(Agent):
         return PyTreeDict(critic_loss=q_loss, q_value=qs.mean())
 
     def actor_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         obs = sample_batch.obs
 
@@ -285,7 +283,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
         )
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = PyTreeDict(

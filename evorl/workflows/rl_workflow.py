@@ -9,7 +9,7 @@ from typing_extensions import Self  # pytype: disable=not-supported-yet
 
 from evorl.replay_buffers import AbstractReplayBuffer, ReplayBufferState
 from evorl.agent import Agent, AgentState
-from evorl.distributed import DP_AXIS_NAME, split_key_to_devices, shmap_vmap
+from evorl.distributed import DP_AXIS_NAME, shmap_vmap
 from evorl.envs import Env
 from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase, WorkflowMetric
@@ -32,7 +32,6 @@ class RLWorkflow(Workflow):
         super().__init__(config)
 
         self.dp_axis_name = None
-        self.devices = jax.local_devices()[:1]
 
     @property
     def enable_multi_devices(self) -> bool:
@@ -69,7 +68,12 @@ class RLWorkflow(Workflow):
         workflow = cls._build_from_config(config)
         if enable_multi_devices:
             workflow.dp_axis_name = DP_AXIS_NAME
-            workflow.devices = devices
+            workflow.mesh = jax.make_mesh(
+                (len(devices),),
+                (DP_AXIS_NAME,),
+                axis_types=(jax.sharding.AxisType.Explicit,),
+                devices=devices,
+            )
 
         return workflow
 
@@ -133,10 +137,8 @@ class RLWorkflow(Workflow):
         Args:
             axis_name: The axis_name for shmap.
         """
-        # We wrap the methods dynamically to inject sharding context.
-        # This will be constructed and called with shmap_vmap later in execution.
-        # So we leave the unbound methods as is but mark them to be executed via shard_map.
-        # Note: In the refactored approach, passing a mesh handles parallel execution.
+        # TODO: implement the mixed-state shard_map wrapper; see docs/dev/todo.md.
+        # This placeholder does not currently wrap step or evaluate.
         pass
 
 
@@ -171,7 +173,7 @@ class OnPolicyWorkflow(RLWorkflow):
         self.evaluator = evaluator
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         """Setup Agent and Optimizer states.
 
@@ -189,31 +191,31 @@ class OnPolicyWorkflow(RLWorkflow):
         """Define Workflow metrics."""
         return WorkflowMetric()
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         key, agent_key, env_key = jax.random.split(key, 3)
 
         agent_state, opt_state = self._setup_agent_and_optimizer(agent_key)
         workflow_metrics = self._setup_workflow_metrics()
 
         if self.enable_multi_devices:
-            sharding = jax.sharding.NamedSharding(
-                jax.sharding.Mesh(self.devices, (self.dp_axis_name,)),
-                jax.sharding.PartitionSpec(),
-            )
             workflow_metrics, agent_state, opt_state = jax.device_put(
-                (workflow_metrics, agent_state, opt_state), sharding
+                (workflow_metrics, agent_state, opt_state), jax.P()
             )
 
-            # key and env_state should be different over devices
-            key = split_key_to_devices(key, self.devices)
-
-            env_key = split_key_to_devices(env_key, self.devices)
+            # One logical worker per device; random streams follow worker IDs.
+            num_workers = self.mesh.shape[self.dp_axis_name]
+            key, env_key = jax.device_put(
+                (
+                    jax.random.split(key, num_workers),
+                    jax.random.split(env_key, num_workers),
+                ),
+                jax.P(self.dp_axis_name),
+            )
 
             env_reset_fn = shmap_vmap(
                 self.env.reset,
-                mesh=jax.sharding.Mesh(self.devices, (self.dp_axis_name,)),
-                in_specs=jax.sharding.PartitionSpec(self.dp_axis_name),
-                out_specs=jax.sharding.PartitionSpec(self.dp_axis_name),
+                in_specs=jax.P(self.dp_axis_name),
+                out_specs=jax.P(self.dp_axis_name),
                 check_vma=False,
             )
             env_state = env_reset_fn(env_key)
@@ -279,7 +281,7 @@ class OffPolicyWorkflow(RLWorkflow):
         self.replay_buffer = replay_buffer
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         """Setup Agent and Optimizer states.
 
@@ -297,7 +299,7 @@ class OffPolicyWorkflow(RLWorkflow):
         """Define Workflow metrics."""
         return WorkflowMetric()
 
-    def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
+    def _setup_replaybuffer(self, key: jax.Array) -> ReplayBufferState:
         """Setup ReplayBuffer state."""
         raise NotImplementedError
 
@@ -305,43 +307,40 @@ class OffPolicyWorkflow(RLWorkflow):
         """Post-setup ReplayBuffer state before training."""
         return state
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         key, agent_key, env_key, rb_key = jax.random.split(key, 4)
 
         agent_state, opt_state = self._setup_agent_and_optimizer(agent_key)
         workflow_metrics = self._setup_workflow_metrics()
 
         if self.enable_multi_devices:
-            sharding = jax.sharding.NamedSharding(
-                jax.sharding.Mesh(self.devices, (self.dp_axis_name,)),
-                jax.sharding.PartitionSpec(),
-            )
             workflow_metrics, agent_state, opt_state = jax.device_put(
-                (workflow_metrics, agent_state, opt_state), sharding
+                (workflow_metrics, agent_state, opt_state), jax.P()
             )
 
-            # key and env_state should be different over devices
-            key = split_key_to_devices(key, self.devices)
-
-            env_key = split_key_to_devices(env_key, self.devices)
-            mesh = jax.sharding.Mesh(self.devices, (self.dp_axis_name,))
-            spec = jax.sharding.PartitionSpec(self.dp_axis_name)
+            # One logical worker per device; random streams follow worker IDs.
+            num_workers = self.mesh.shape[self.dp_axis_name]
+            key, env_key, rb_key = jax.device_put(
+                (
+                    jax.random.split(key, num_workers),
+                    jax.random.split(env_key, num_workers),
+                    jax.random.split(rb_key, num_workers),
+                ),
+                jax.P(self.dp_axis_name),
+            )
 
             env_reset_fn = shmap_vmap(
                 self.env.reset,
-                mesh=mesh,
-                in_specs=spec,
-                out_specs=spec,
+                in_specs=jax.P(self.dp_axis_name),
+                out_specs=jax.P(self.dp_axis_name),
                 check_vma=False,
             )
             env_state = env_reset_fn(env_key)
 
-            rb_key = split_key_to_devices(rb_key, self.devices)
             setup_rb_fn = shmap_vmap(
                 self._setup_replaybuffer,
-                mesh=mesh,
-                in_specs=spec,
-                out_specs=spec,
+                in_specs=jax.P(self.dp_axis_name),
+                out_specs=jax.P(self.dp_axis_name),
                 check_vma=False,
             )
             replay_buffer_state = setup_rb_fn(rb_key)
@@ -360,16 +359,41 @@ class OffPolicyWorkflow(RLWorkflow):
 
         logger.info("Start replay buffer post-setup")
         if self.enable_multi_devices:
-            mesh = jax.sharding.Mesh(self.devices, (self.dp_axis_name,))
-            spec = jax.sharding.PartitionSpec(self.dp_axis_name)
-            post_setup_fn = shmap_vmap(
-                self._postsetup_replaybuffer,
-                mesh=mesh,
-                in_specs=spec,
-                out_specs=spec,
-                check_vma=False,
+            # Reuse the worker spec for the state boundary.
+            state_specs = State(
+                key=jax.P(self.dp_axis_name),
+                metrics=jax.P(),
+                agent_state=jax.P(),
+                env_state=jax.P(self.dp_axis_name),
+                opt_state=jax.P(),
+                replay_buffer_state=jax.P(self.dp_axis_name),
             )
-            state = post_setup_fn(state)
+
+            def post_setup(local_state):
+                # Each device owns one key/environment/buffer; model and metrics
+                # are replicated and have no leading device dimension.
+                local_state = local_state.replace(
+                    key=local_state.key[0],
+                    env_state=jax.tree.map(lambda x: x[0], local_state.env_state),
+                    replay_buffer_state=jax.tree.map(
+                        lambda x: x[0], local_state.replay_buffer_state
+                    ),
+                )
+                local_state = self._postsetup_replaybuffer(local_state)
+                return local_state.replace(
+                    key=local_state.key[None],
+                    env_state=jax.tree.map(lambda x: x[None], local_state.env_state),
+                    replay_buffer_state=jax.tree.map(
+                        lambda x: x[None], local_state.replay_buffer_state
+                    ),
+                )
+
+            state = jax.shard_map(
+                post_setup,
+                in_specs=(state_specs,),
+                out_specs=state_specs,
+                check_vma=False,
+            )(state)
         else:
             state = self._postsetup_replaybuffer(state)
 

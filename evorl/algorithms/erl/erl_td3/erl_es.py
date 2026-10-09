@@ -27,10 +27,10 @@ logger = logging.getLogger(__name__)
 
 
 class EvaluateMetric(MetricBase):
-    rl_episode_returns: chex.Array
-    rl_episode_lengths: chex.Array
-    pop_center_episode_returns: chex.Array
-    pop_center_episode_lengths: chex.Array
+    rl_episode_returns: jax.Array
+    rl_episode_lengths: jax.Array
+    pop_center_episode_returns: jax.Array
+    pop_center_episode_lengths: jax.Array
 
 
 class ERLESWorkflow(ERLTD3WorkflowTemplate):
@@ -156,7 +156,7 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
         return workflow
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
         agent_key, pop_agent_key, ec_key = jax.random.split(key, 3)
 
@@ -191,9 +191,9 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
         self,
         ec_opt_state: ECState,
         agent_state: AgentState,
-        ec_fitnesses: chex.Array,
-        rl_fitnesses: chex.Array,
-    ) -> tuple[chex.Array, ECState]:
+        ec_fitnesses: jax.Array,
+        rl_fitnesses: jax.Array,
+    ) -> tuple[jax.Array, ECState]:
         rl_noise = jtu.tree_map(
             lambda x, m: x - m,
             agent_state.params.actor_params,

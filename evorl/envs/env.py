@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
-import chex
+import jax
 
 from evorl.types import (
     Action,
@@ -46,7 +46,7 @@ class Env(ABC):
     """Unified EvoRL Env API."""
 
     @abstractmethod
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         """Reset the environment to initial state."""
         raise NotImplementedError
 
@@ -83,4 +83,4 @@ class EnvAdapter(Env):
 
 
 EnvStepFn = Callable[[EnvState, Action], EnvState]
-EnvResetFn = Callable[[chex.PRNGKey], EnvState]
+EnvResetFn = Callable[[jax.Array], EnvState]

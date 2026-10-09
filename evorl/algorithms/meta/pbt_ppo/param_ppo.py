@@ -2,7 +2,6 @@ import logging
 from functools import partial
 from omegaconf import DictConfig
 
-import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -33,9 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class ParamPPOAgent(PPOAgent):
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         agent_state = super().init(obs_space, action_space, key)
 
         return agent_state.replace(
@@ -43,7 +40,7 @@ class ParamPPOAgent(PPOAgent):
         )
 
     def loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -203,7 +200,7 @@ class ParamPPOWorkflow(PPOWorkflow):
 
         return cls(env, agent, optimizer, evaluator, config)
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         state = super().setup(key)
 
         return state.replace(

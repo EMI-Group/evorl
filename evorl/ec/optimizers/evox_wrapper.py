@@ -1,3 +1,4 @@
+import jax
 import chex
 from typing import Any, TYPE_CHECKING
 
@@ -27,7 +28,7 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
     algorithm: Algorithm
     param_vec_spec: ParamVectorSpec
 
-    def init(self, key: chex.PRNGKey) -> EvoXAlgoState:
+    def init(self, key: jax.Array) -> EvoXAlgoState:
         algo_state = self.algorithm.init(key)
 
         from evox import has_init_tell, has_init_ask
@@ -55,7 +56,7 @@ class EvoXAlgorithmAdapter(EvoOptimizer):
         return pop, state.replace(algo_state=algo_state)
 
     def tell(
-        self, state: EvoXAlgoState, fitnesses: chex.Array
+        self, state: EvoXAlgoState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, EvoXAlgoState]:
         from evox import has_init_tell
 

@@ -2,7 +2,6 @@ import logging
 import math
 from collections.abc import Sequence
 
-import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -46,7 +45,7 @@ class EpisodeCollector(PyTreeNode):
     def rollout(
         self,
         agent_state,
-        key: chex.PRNGKey,
+        key: jax.Array,
         num_episodes: int,
     ) -> tuple[EvaluateMetric, SampleBatch]:
         num_envs = self.env.num_envs

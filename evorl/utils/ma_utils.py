@@ -1,4 +1,3 @@
-import chex
 import jax
 import jax.numpy as jnp
 
@@ -57,6 +56,6 @@ def unbatchify(x: jax.Array, agent_list) -> dict[AgentID, jax.Array]:
     return {a: x[i] for i, a in enumerate(agent_list)}
 
 
-def multi_agent_episode_done(done: Done) -> chex.Array:
+def multi_agent_episode_done(done: Done) -> jax.Array:
     """Check whether the multi-agent episode is done."""
     return done["__all__"]

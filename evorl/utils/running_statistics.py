@@ -23,7 +23,7 @@ class NestedMeanStd(PyTreeData):
 class RunningStatisticsState(NestedMeanStd):
     """Full state of running statistics computation."""
 
-    count: chex.Array
+    count: jax.Array
     summed_variance: chex.ArrayTree
 
 
@@ -45,7 +45,7 @@ def init_state(
 
 
 def _validate_batch_shapes(
-    batch: chex.Array, reference_sample: chex.Array, batch_dims: tuple[int, ...]
+    batch: jax.Array, reference_sample: jax.Array, batch_dims: tuple[int, ...]
 ) -> None:
     """Verifies shapes of the batch leaves against the reference sample.
 
@@ -62,12 +62,9 @@ def _validate_batch_shapes(
       None.
     """
 
-    def validate_node_shape(reference_sample: chex.Array, batch: chex.Array) -> None:
+    def validate_node_shape(reference_sample: jax.Array, batch: jax.Array) -> None:
         expected_shape = batch_dims + reference_sample.shape
-        # assert batch.shape == expected_shape, f'{batch.shape} != {expected_shape}'
-        chex.assert_shape(
-            batch, expected_shape, custom_message=f"{batch.shape} != {expected_shape}"
-        )
+        chex.assert_shape(batch, expected_shape)
 
     jtu.tree_map(validate_node_shape, reference_sample, batch)
 
@@ -76,7 +73,7 @@ def update(
     state: RunningStatisticsState,
     batch: chex.ArrayTree,
     *,
-    weights: chex.Array | None = None,
+    weights: jax.Array | None = None,
     std_min_value: float = 1e-6,
     std_max_value: float = 1e6,
     dp_axis_name: str | None = None,
@@ -133,10 +130,8 @@ def update(
         _validate_batch_shapes(batch, state.mean, batch_dims)
 
     def _compute_node_statistics(
-        mean: chex.Array, summed_variance: chex.Array, batch: chex.Array
-    ) -> tuple[chex.Array, chex.Array]:
-        assert isinstance(mean, chex.Array), type(mean)
-        assert isinstance(summed_variance, chex.Array), type(summed_variance)
+        mean: jax.Array, summed_variance: jax.Array, batch: jax.Array
+    ) -> tuple[jax.Array, jax.Array]:
         # The mean and the sum of past variances are updated with Welford's
         # algorithm using batches (see https://stackoverflow.com/q/56402955).
         diff_to_old_mean = batch - mean
@@ -165,8 +160,7 @@ def update(
     mean = jtu.tree_map(lambda _, x: x[0], state.mean, updated_stats)
     summed_variance = jtu.tree_map(lambda _, x: x[1], state.mean, updated_stats)
 
-    def compute_std(summed_variance: chex.Array, std: chex.Array) -> chex.Array:
-        assert isinstance(summed_variance, chex.Array)
+    def compute_std(summed_variance: jax.Array, std: jax.Array) -> jax.Array:
         # Summed variance can get negative due to rounding errors.
         summed_variance = jnp.maximum(summed_variance, 0)
         std = jnp.sqrt(summed_variance / count)
@@ -181,16 +175,14 @@ def update(
 
 
 def normalize(
-    batch: chex.Array,
+    batch: jax.Array,
     mean_std: NestedMeanStd,
     eps: float = 1e-8,
     max_abs_value: float | None = None,
-) -> chex.Array:
+) -> jax.Array:
     """Normalizes data using running statistics."""
 
-    def normalize_leaf(
-        data: chex.Array, mean: chex.Array, std: chex.Array
-    ) -> chex.Array:
+    def normalize_leaf(data: jax.Array, mean: jax.Array, std: jax.Array) -> jax.Array:
         # Only normalize inexact
         if not jnp.issubdtype(data.dtype, jnp.inexact):
             return data
@@ -203,7 +195,7 @@ def normalize(
     return jtu.tree_map(normalize_leaf, batch, mean_std.mean, mean_std.std)
 
 
-def denormalize(batch: chex.Array, mean_std: NestedMeanStd) -> chex.Array:
+def denormalize(batch: jax.Array, mean_std: NestedMeanStd) -> jax.Array:
     """Denormalizes values in a nested structure using the given mean/std.
 
     Only values of inexact types are denormalized.
@@ -218,9 +210,7 @@ def denormalize(batch: chex.Array, mean_std: NestedMeanStd) -> chex.Array:
       Nested structure with denormalized values.
     """
 
-    def denormalize_leaf(
-        data: chex.Array, mean: chex.Array, std: chex.Array
-    ) -> chex.Array:
+    def denormalize_leaf(data: jax.Array, mean: jax.Array, std: jax.Array) -> jax.Array:
         # Only denormalize inexact
         if not jnp.issubdtype(data.dtype, jnp.inexact):
             return data

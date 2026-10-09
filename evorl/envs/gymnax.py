@@ -31,7 +31,7 @@ class GymnaxAdapter(EnvAdapter):
         super().__init__(env)
         self.env_params = env_params or env.default_params
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         key, reset_key = jax.random.split(key)
         obs, env_state = self.env.reset(reset_key, self.env_params)
 

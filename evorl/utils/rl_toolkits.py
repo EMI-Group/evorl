@@ -11,8 +11,8 @@ from .jax_utils import is_jitted, sliding_window
 
 
 def compute_episode_length(
-    dones: chex.Array,  # [T, B]
-) -> chex.Array:
+    dones: jax.Array,  # [T, B]
+) -> jax.Array:
     """Compute the length of the episode.
 
     Args:
@@ -27,10 +27,10 @@ def compute_episode_length(
 
 
 def compute_discount_return(
-    rewards: chex.Array,  # [T, B]
-    dones: chex.Array,  # [T, B]
+    rewards: jax.Array,  # [T, B]
+    dones: jax.Array,  # [T, B]
     discount: float = 1.0,
-) -> chex.Array:
+) -> jax.Array:
     """Compute discount return from the episodic trajectory.
 
     Args:
@@ -160,7 +160,7 @@ def compute_gae_with_horizon(
     return v_targets, advantages
 
 
-def shuffle_sample_batch(sample_batch: SampleBatch, key: chex.PRNGKey):
+def shuffle_sample_batch(sample_batch: SampleBatch, key: jax.Array):
     """Shuffle the sample batch."""
     return jtu.tree_map(lambda x: jax.random.permutation(key, x), sample_batch)
 

@@ -1,4 +1,5 @@
 import logging
+from contextlib import nullcontext
 import os
 
 import hydra
@@ -64,8 +65,12 @@ def train_dist(config: DictConfig) -> None:
     workflow.add_recorders(recorders)
 
     try:
-        state = workflow.init(jax.random.PRNGKey(config.seed))
-        state = workflow.learn(state)
+        context = (
+            jax.set_mesh(workflow.mesh) if workflow.mesh is not None else nullcontext()
+        )
+        with context:
+            state = workflow.init(jax.random.key(config.seed))
+            state = workflow.learn(state)
     except Exception as e:
         logger.error(f"Exception: {e}")
         raise

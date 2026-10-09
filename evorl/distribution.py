@@ -36,7 +36,7 @@ def get_tanh_norm_dist(loc: jax.Array, scale: jax.Array, min_scale: float = 1e-3
 #         """
 #             No analytical form. use sample to estimate.
 #             input_hint: an example sample from the base distribution
-#                 eg: self.distribution.sample(seed=jax.random.PRNGKey(42))
+#                 eg: self.distribution.sample(seed=jax.random.key(42))
 #         """
 
 #         return self.distribution.entropy() + self.bijector.forward_log_det_jacobian(

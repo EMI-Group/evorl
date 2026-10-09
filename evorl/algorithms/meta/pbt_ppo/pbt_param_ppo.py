@@ -14,7 +14,7 @@ class PBTParamPPOWorkflow(PBTWorkflowTemplate):
         return "PBT-ParamPPO"
 
     def _setup_pop_and_pbt_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[chex.ArrayTree, PBTOptState]:
         search_space = self.config.search_space
         pop_size = self.config.pop_size
@@ -46,7 +46,7 @@ class PBTParamPPOWorkflow(PBTWorkflowTemplate):
         return pop, PBTOptState()
 
     def apply_hyperparams_to_workflow_state(
-        self, workflow_state: State, hyperparams: PyTreeDict[str, chex.Numeric]
+        self, workflow_state: State, hyperparams: PyTreeDict[str, jax.typing.ArrayLike]
     ):
         agent_state = workflow_state.agent_state
         agent_state = agent_state.replace(

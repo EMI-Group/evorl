@@ -17,7 +17,7 @@ class SepCEMState(PyTreeData):
     mean: chex.ArrayTree
     variance: chex.ArrayTree
     cov_eps: chex.ArrayTree
-    key: chex.PRNGKey
+    key: jax.Array
     pop: None | chex.ArrayTree = None
 
 
@@ -31,7 +31,7 @@ class SepCEM(EvoOptimizer):
     weighted_update: bool = True
     rank_weight_shift: float = 1.0
     mirror_sampling: bool = False
-    elite_weights: chex.Array = pytree_field(init=False)
+    elite_weights: jax.Array = pytree_field(init=False)
 
     def __post_init__(self):
         assert self.pop_size > 0, "pop_size must be positive"
@@ -47,7 +47,7 @@ class SepCEM(EvoOptimizer):
 
         self.elite_weights = elite_weights / elite_weights.sum()
 
-    def init(self, mean: Params, key: chex.PRNGKey) -> SepCEMState:
+    def init(self, mean: Params, key: jax.Array) -> SepCEMState:
         variance = jtu.tree_map(
             lambda x: jnp.full_like(x, self.cov_eps_schedule.init), mean
         )
@@ -65,8 +65,9 @@ class SepCEM(EvoOptimizer):
 
         if self.mirror_sampling:
             half_noise = jtu.tree_map(
-                lambda x, var, k: jax.random.normal(k, (self.pop_size // 2, *x.shape))
-                * jnp.sqrt(var),
+                lambda x, var, k: (
+                    jax.random.normal(k, (self.pop_size // 2, *x.shape)) * jnp.sqrt(var)
+                ),
                 state.mean,
                 state.variance,
                 sample_keys,
@@ -79,8 +80,9 @@ class SepCEM(EvoOptimizer):
 
         else:
             noise = jtu.tree_map(
-                lambda x, var, k: jax.random.normal(k, (self.pop_size, *x.shape))
-                * jnp.sqrt(var),
+                lambda x, var, k: (
+                    jax.random.normal(k, (self.pop_size, *x.shape)) * jnp.sqrt(var)
+                ),
                 state.mean,
                 state.variance,
                 sample_keys,
@@ -95,7 +97,7 @@ class SepCEM(EvoOptimizer):
         return pop, state
 
     def tell(
-        self, state: SepCEMState, fitnesses: chex.Array
+        self, state: SepCEMState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, SepCEMState]:
         # fitness: episode_return, higher is better
         elite_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]

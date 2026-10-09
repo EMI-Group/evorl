@@ -30,8 +30,8 @@ from .cemrl_td3_workflow import (
 
 
 class EvaluateMetric(MetricBase):
-    pop_center_episode_returns: chex.Array
-    pop_center_episode_lengths: chex.Array
+    pop_center_episode_returns: jax.Array
+    pop_center_episode_lengths: jax.Array
 
 
 class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
@@ -150,7 +150,7 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
         return workflow
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
         agent_key, ec_key = jax.random.split(key)
 

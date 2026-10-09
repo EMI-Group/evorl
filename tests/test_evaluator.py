@@ -29,7 +29,7 @@ def test_eval_rollout_epsiode():
             discount=discount,
         )
 
-        key = jax.random.PRNGKey(42)
+        key = jax.random.key(42)
 
         key, rollout_key, agent_key = jax.random.split(key, 3)
 
@@ -142,7 +142,7 @@ def _setup_trajectory3(max_length=1000):
     dones = dones.at[3, -200:].set(1)
     dones = dones.T
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
     rewards = jax.random.normal(key, (max_length, num_envs))
 
     return rewards, dones

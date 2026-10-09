@@ -16,7 +16,7 @@ def setup_a2c():
 
 def test_a2c():
     workflow = setup_a2c()
-    state = workflow.init(jax.random.PRNGKey(42))
+    state = workflow.init(jax.random.key(42))
     train_metric, state = workflow.step(state)
     eval_metric, state = workflow.evaluate(state)
 
@@ -35,7 +35,7 @@ def test_agent():
     agent, env = _create_example_agent_env(5)
 
     # test init
-    agent.init(env.obs_space, env.action_space, jax.random.PRNGKey(42))
+    agent.init(env.obs_space, env.action_space, jax.random.key(42))
 
     # test hashable
     hash(agent)

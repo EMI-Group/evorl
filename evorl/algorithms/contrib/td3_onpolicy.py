@@ -119,7 +119,7 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
         return cls(env, agent, optimizer, evaluator, config)
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = PyTreeDict(

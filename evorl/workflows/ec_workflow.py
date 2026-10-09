@@ -20,7 +20,7 @@ from evorl.envs import Env
 from evorl.sample_batch import SampleBatch
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState, AgentStateAxis
-from evorl.distributed import get_global_ranks, psum, split_key_to_devices
+from evorl.distributed import get_global_ranks, psum
 from evorl.types import State, PyTreeData, pytree_field, Params, PyTreeDict
 from evorl.utils.rl_toolkits import flatten_pop_rollout_episode
 from evorl.utils.jax_utils import tree_stop_gradient
@@ -50,7 +50,6 @@ class ECWorkflow(Workflow):
         super().__init__(config)
 
         self.dp_axis_name = None
-        self.devices = jax.local_devices()[:1]
 
     @property
     def enable_multi_devices(self) -> bool:
@@ -87,7 +86,12 @@ class ECWorkflow(Workflow):
         workflow = cls._build_from_config(config)
         if enable_multi_devices:
             workflow.dp_axis_name = POP_AXIS_NAME
-            workflow.devices = devices
+            workflow.mesh = jax.make_mesh(
+                (len(devices),),
+                (POP_AXIS_NAME,),
+                axis_types=(jax.sharding.AxisType.Explicit,),
+                devices=devices,
+            )
 
         return workflow
 
@@ -171,9 +175,7 @@ class ECWorkflowTemplate(ECWorkflow):
         self.ec_evaluator = ec_evaluator
         self.agent_state_vmap_axes = agent_state_vmap_axes
 
-    def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
-    ) -> tuple[AgentState, ECState]:
+    def _setup_agent_and_optimizer(self, key: jax.Array) -> tuple[AgentState, ECState]:
         """Setup Agent and ECOptimizer states.
 
         Args:
@@ -188,7 +190,7 @@ class ECWorkflowTemplate(ECWorkflow):
         """Define Workflow metrics."""
         return ECWorkflowMetric(best_objective=jnp.finfo(jnp.float32).min)
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         key, agent_key = jax.random.split(key, 2)
 
         # agent_state: store params not optimized by EC (eg: obs_preprocessor_state)
@@ -197,17 +199,16 @@ class ECWorkflowTemplate(ECWorkflow):
         distributed_info = DistributedInfo()
 
         if self.enable_multi_devices:
-            sharding = jax.sharding.NamedSharding(
-                jax.sharding.Mesh(self.devices, (self.dp_axis_name,)),
-                jax.sharding.PartitionSpec(),
-            )
             agent_state, ec_opt_state, workflow_metrics = jax.device_put(
-                (agent_state, ec_opt_state, workflow_metrics), sharding
+                (agent_state, ec_opt_state, workflow_metrics), jax.P()
             )
-            key = split_key_to_devices(key, self.devices)
+            num_workers = self.mesh.shape[self.dp_axis_name]
+            key = jax.device_put(
+                jax.random.split(key, num_workers), jax.P(self.dp_axis_name)
+            )
 
             distributed_info = DistributedInfo(
-                rank=get_global_ranks(),
+                rank=get_global_ranks(self.dp_axis_name),
                 world_size=jax.device_count(),
             )
 

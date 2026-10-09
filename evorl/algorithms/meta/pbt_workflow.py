@@ -9,15 +9,13 @@ import hydra
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from jax.sharding import NamedSharding, Mesh, PartitionSpec as P
-from jax import shard_map
 
 
 from evorl.agent import RandomAgent
 from evorl.distributed import (
     POP_AXIS_NAME,
     shmap_vmap,
-    tree_device_put,
+    tree_scatter_set,
 )
 from evorl.rollout import rollout
 from evorl.metrics import MetricBase, EvaluateMetric
@@ -29,7 +27,6 @@ from evorl.recorders import get_1d_array_statistics, get_1d_array, add_prefix
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.utils.jax_utils import (
     tree_get,
-    tree_set,
     tree_stop_gradient,
     scan_and_last,
     is_jitted,
@@ -45,25 +42,25 @@ logger = logging.getLogger(__name__)
 
 
 class PBTTrainMetric(MetricBase):
-    pop_episode_returns: chex.Array
-    pop_episode_lengths: chex.Array
+    pop_episode_returns: jax.Array
+    pop_episode_lengths: jax.Array
     pop_train_metrics: MetricBase
     pop: chex.ArrayTree
 
 
 class PBTOffpolicyTrainMetric(PBTTrainMetric):
-    rb_size: chex.Array
+    rb_size: jax.Array
 
 
 class PBTEvalMetric(MetricBase):
-    pop_episode_returns: chex.Array
-    pop_episode_lengths: chex.Array
+    pop_episode_returns: jax.Array
+    pop_episode_lengths: jax.Array
 
 
 class PBTWorkflowMetric(MetricBase):
     # the average of sampled timesteps of all workflows
-    sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_m: jax.Array = jnp.zeros((), dtype=jnp.float32)
+    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class PBTOptState(PyTreeData):
@@ -76,8 +73,12 @@ class PBTWorkflowBase(Workflow):
 
         self.workflow = workflow
         self.evaluator = evaluator
-        self.devices = jax.local_devices()[:1]
-        self.sharding = None  # training sharding
+        self.mesh = jax.make_mesh(
+            (1,),
+            (POP_AXIS_NAME,),
+            axis_types=(jax.sharding.AxisType.Explicit,),
+            devices=jax.local_devices()[:1],
+        )
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
@@ -109,9 +110,13 @@ class PBTWorkflowBase(Workflow):
 
         workflow = cls._build_from_config(config)
 
-        mesh = Mesh(devices, axis_names=(POP_AXIS_NAME,))
-        workflow.devices = devices
-        workflow.sharding = NamedSharding(mesh, P(POP_AXIS_NAME))
+        mesh = jax.make_mesh(
+            (len(devices),),
+            (POP_AXIS_NAME,),
+            axis_types=(jax.sharding.AxisType.Explicit,),
+            devices=devices,
+        )
+        workflow.mesh = mesh
 
         return workflow
 
@@ -120,8 +125,6 @@ class PBTWorkflowBase(Workflow):
         target_workflow_config = config.target_workflow
         target_workflow_config = copy.deepcopy(target_workflow_config)
         target_workflow_cls = hydra.utils.get_class(target_workflow_config.workflow_cls)
-
-        devices = jax.local_devices()
 
         with read_write(target_workflow_config):
             with open_dict(target_workflow_config):
@@ -135,8 +138,6 @@ class PBTWorkflowBase(Workflow):
         target_workflow = target_workflow_cls.build_from_config(
             target_workflow_config, enable_jit=enable_jit
         )
-
-        target_workflow.devices = devices
 
         eval_env = create_env(
             config.env,
@@ -153,35 +154,33 @@ class PBTWorkflowBase(Workflow):
         return cls(target_workflow, evaluator, config)
 
     def _setup_pop_and_pbt_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[chex.ArrayTree, PBTOptState]:
         raise NotImplementedError
 
     def _customize_optimizer(self) -> None:
         pass
 
-    def setup(self, key: chex.PRNGKey):
+    def setup(self, key: jax.Array):
         pop_size = self.config.pop_size
         self._customize_optimizer()
 
         key, workflow_key, pop_key = jax.random.split(key, num=3)
 
         pop, pbt_opt_state = self._setup_pop_and_pbt_optimizer(pop_key)
-        pop = tree_device_put(pop, self.sharding)
+        pop = jax.device_put(pop, jax.P(POP_AXIS_NAME))
 
         workflow_metrics = PBTWorkflowMetric()
-        shared_sharding = NamedSharding(self.sharding.mesh, P())
         key, workflow_metrics, pbt_opt_state = jax.device_put(
-            (key, workflow_metrics, pbt_opt_state), shared_sharding
+            (key, workflow_metrics, pbt_opt_state), jax.P()
         )
 
         workflow_keys = jax.random.split(workflow_key, pop_size)
-        workflow_keys = jax.device_put(workflow_keys, self.sharding)
+        workflow_keys = jax.device_put(workflow_keys, jax.P(POP_AXIS_NAME))
         pop_workflow_state = shmap_vmap(
             self.workflow.setup,
-            mesh=self.sharding.mesh,
-            in_specs=self.sharding.spec,
-            out_specs=self.sharding.spec,
+            in_specs=jax.P(POP_AXIS_NAME),
+            out_specs=jax.P(POP_AXIS_NAME),
             check_vma=False,
         )(workflow_keys)
 
@@ -192,9 +191,8 @@ class PBTWorkflowBase(Workflow):
 
         pop_workflow_state = shmap_vmap(
             self.apply_hyperparams_to_workflow_state,
-            mesh=self.sharding.mesh,
-            in_specs=self.sharding.spec,
-            out_specs=self.sharding.spec,
+            in_specs=jax.P(POP_AXIS_NAME),
+            out_specs=jax.P(POP_AXIS_NAME),
             check_vma=False,
         )(pop_workflow_state, pop)
 
@@ -223,11 +221,10 @@ class PBTWorkflowBase(Workflow):
 
             return train_metrics, pop_wf_state
 
-        train_steps_fn = shard_map(
+        train_steps_fn = jax.shard_map(
             _train_steps,
-            mesh=self.sharding.mesh,
-            in_specs=self.sharding.spec,
-            out_specs=self.sharding.spec,
+            in_specs=jax.P(POP_AXIS_NAME),
+            out_specs=jax.P(POP_AXIS_NAME),
             check_vma=False,
         )
 
@@ -236,9 +233,8 @@ class PBTWorkflowBase(Workflow):
         # ===== eval ======
         eval_fn = shmap_vmap(
             self.workflow.evaluate,
-            mesh=self.sharding.mesh,
-            in_specs=self.sharding.spec,
-            out_specs=self.sharding.spec,
+            in_specs=jax.P(POP_AXIS_NAME),
+            out_specs=jax.P(POP_AXIS_NAME),
             check_vma=False,
         )
 
@@ -317,14 +313,16 @@ class PBTWorkflowBase(Workflow):
 
         eval_fn = shmap_vmap(
             _evaluate,
-            mesh=self.sharding.mesh,
-            in_specs=self.sharding.spec,
-            out_specs=self.sharding.spec,
+            in_specs=jax.P(POP_AXIS_NAME),
+            out_specs=jax.P(POP_AXIS_NAME),
             check_vma=False,
         )
 
         pop_eval_metrics = eval_fn(
-            state.pop_workflow_state, jax.random.split(eval_key, self.config.pop_size)
+            state.pop_workflow_state,
+            jax.device_put(
+                jax.random.split(eval_key, self.config.pop_size), jax.P(POP_AXIS_NAME)
+            ),
         )
 
         eval_metrics = PBTEvalMetric(
@@ -340,12 +338,12 @@ class PBTWorkflowBase(Workflow):
         pop: chex.ArrayTree,
         pop_workflow_state: State,
         pop_metrics: chex.ArrayTree,
-        key: chex.PRNGKey,
+        key: jax.Array,
     ) -> tuple[chex.ArrayTree, State, PBTOptState]:
         raise NotImplementedError
 
     def apply_hyperparams_to_workflow_state(
-        self, workflow_state: State, hyperparams: PyTreeDict[str, chex.Numeric]
+        self, workflow_state: State, hyperparams: PyTreeDict[str, jax.typing.ArrayLike]
     ) -> State:
         raise NotImplementedError
 
@@ -365,11 +363,13 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
         pop: chex.ArrayTree,
         pop_workflow_state: State,
         pop_metrics: chex.ArrayTree,
-        key: chex.PRNGKey,
+        key: jax.Array,
     ) -> tuple[chex.ArrayTree, State, PBTOptState]:
         exploit_key, explore_key = jax.random.split(key)
 
         config = self.config
+        # Sort global fitnesses; only this small vector is replicated.
+        pop_metrics = jax.device_put(pop_metrics, jax.P())
 
         top_indices, bottom_indices = select(
             pop_metrics,  # using episode_return
@@ -378,8 +378,10 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
             tops_num=round(config.pop_size * config.top_ratio),
         )
 
-        parents = tree_get(pop, top_indices)
-        parents_wf_state = tree_get(pop_workflow_state, top_indices)
+        parents = tree_get(pop, top_indices, out_sharding=jax.P())
+        parents_wf_state = tree_get(
+            pop_workflow_state, top_indices, out_sharding=jax.P()
+        )
 
         offsprings = jax.vmap(
             partial(
@@ -396,13 +398,13 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
         )
 
         # ==== survival | merge population ====
-        pop = tree_set(pop, offsprings, bottom_indices, unique_indices=True)
+        pop = tree_scatter_set(pop, offsprings, bottom_indices, jax.P(POP_AXIS_NAME))
         # we copy wf_state back to offspring wf_state
-        pop_workflow_state = tree_set(
+        pop_workflow_state = tree_scatter_set(
             pop_workflow_state,
             offsprings_workflow_state,
             bottom_indices,
-            unique_indices=True,
+            jax.P(POP_AXIS_NAME),
         )
 
         return pop, pop_workflow_state, pbt_opt_state
@@ -473,7 +475,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         super().__init__(workflow, evaluator, config)
         self.replay_buffer = workflow.replay_buffer
 
-    def setup(self, key: chex.PRNGKey):
+    def setup(self, key: jax.Array):
         key, rb_key = jax.random.split(key)
         state = super().setup(key)
 
@@ -488,13 +490,12 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
         return state
 
-    def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
+    def _setup_replaybuffer(self, key: jax.Array) -> ReplayBufferState:
         # replicas across devices: every device needs one replay_buffer_state
-        replay_buffer_state = shard_map(
+        replay_buffer_state = jax.shard_map(
             self.workflow._setup_replaybuffer,
-            mesh=self.sharding.mesh,
-            in_specs=P(),
-            out_specs=P(),
+            in_specs=jax.P(),
+            out_specs=jax.P(),
             check_vma=False,
         )(key)
 
@@ -515,11 +516,10 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         # ==== fill random transitions ====
 
         key, env_key, rollout_key = jax.random.split(state.key, num=3)
-        shared_sharding = NamedSharding(self.sharding.mesh, P())
 
         random_agent = RandomAgent()
         random_agent_state = random_agent.init(
-            obs_space, action_space, jax.random.PRNGKey(0)
+            obs_space, action_space, jax.random.key(0)
         )
         env_state = env.reset(env_key)
 
@@ -537,7 +537,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         trajectory = clean_trajectory(trajectory)
         trajectory = flatten_rollout_trajectory(trajectory)
         trajectory = tree_stop_gradient(trajectory)
-        trajectory = jax.device_put(trajectory, shared_sharding)
+        trajectory = jax.device_put(trajectory, jax.P())
 
         if pop_workflow_state.agent_state.obs_preprocessor_state is not None:
             # update all obs_preprocessor_state by the random trajectory
@@ -548,9 +548,9 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
             obs_preprocessor_state = shmap_vmap(
                 running_statistics.update,
-                mesh=self.sharding.mesh,
-                in_specs=(shared_sharding.spec, P()),
-                out_specs=self.sharding.spec,
+                in_specs=(jax.P(POP_AXIS_NAME), jax.P()),
+                out_specs=jax.P(POP_AXIS_NAME),
+                vmap_in_axes=(0, None),
                 check_vma=False,
             )(obs_preprocessor_state, trajectory.obs)
 
@@ -619,20 +619,18 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
             return train_metrics, pop_wf_state, replay_buffer_state
 
-        pop_train_metrics, pop_workflow_state, replay_buffer_state = shard_map(
+        pop_train_metrics, pop_workflow_state, replay_buffer_state = jax.shard_map(
             _train_steps,
-            mesh=self.sharding.mesh,
-            in_specs=(P(POP_AXIS_NAME), P()),
-            out_specs=(P(POP_AXIS_NAME), P(POP_AXIS_NAME), P()),
+            in_specs=(jax.P(POP_AXIS_NAME), jax.P()),
+            out_specs=(jax.P(POP_AXIS_NAME), jax.P(POP_AXIS_NAME), jax.P()),
             check_vma=False,
         )(pop_workflow_state, replay_buffer_state)
 
         # ===== eval ======
         eval_fn = shmap_vmap(
             self.workflow.evaluate,
-            mesh=self.sharding.mesh,
-            in_specs=self.sharding.spec,
-            out_specs=self.sharding.spec,
+            in_specs=jax.P(POP_AXIS_NAME),
+            out_specs=jax.P(POP_AXIS_NAME),
             check_vma=False,
         )
 

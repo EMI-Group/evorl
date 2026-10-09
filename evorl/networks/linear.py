@@ -118,8 +118,8 @@ def make_vmap_mlp(
         mlp = nn.vmap(
             SNMLP,
             out_axes=out_axes,
-            variable_axes={"params": 0},
-            split_rngs={"params": True},
+            variable_axes={"params": 0, "sing_vec": 0},
+            split_rngs={"params": True, "sing_vec": True},
         )(
             layer_sizes=layer_sizes,
             activation=activation,

@@ -1,6 +1,5 @@
 from collections.abc import Sequence
 
-import chex
 import jax
 
 from evorl.agent import AgentState, AgentActionFn
@@ -17,7 +16,7 @@ def env_step(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
-    key: chex.PRNGKey,
+    key: jax.Array,
 ) -> tuple[SampleBatch, EnvState]:
     # sample_batch: [#envs, ...]
     sample_batch = SampleBatch(obs=env_state.obs)
@@ -39,7 +38,7 @@ def rollout(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,
-    key: chex.PRNGKey,
+    key: jax.Array,
     rollout_length: int,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:

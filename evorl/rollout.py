@@ -2,7 +2,6 @@ from collections.abc import Sequence
 from functools import partial
 from typing import Protocol
 
-import chex
 import jax
 import jax.numpy as jnp
 
@@ -28,7 +27,7 @@ class RolloutFn(Protocol):
         action_fn: AgentActionFn,
         env_state: EnvState,
         agent_state: AgentState,
-        key: chex.PRNGKey,
+        key: jax.Array,
         rollout_length: int,
         *args,
         **kwargs,
@@ -41,7 +40,7 @@ def env_step(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
-    key: chex.PRNGKey,
+    key: jax.Array,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
     """Collect one-step data."""
@@ -71,7 +70,7 @@ def eval_env_step(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
-    key: chex.PRNGKey,
+    key: jax.Array,
 ) -> tuple[SampleBatch, EnvState]:
     """Collect one-step data in evaluation mode."""
     # sample_batch: [#envs, ...]
@@ -93,7 +92,7 @@ def rollout(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,
-    key: chex.PRNGKey,
+    key: jax.Array,
     rollout_length: int,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
@@ -146,7 +145,7 @@ def eval_rollout_episode(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,
-    key: chex.PRNGKey,
+    key: jax.Array,
     rollout_length: int,
 ) -> tuple[SampleBatch, EnvState]:
     """Evaulate a batch of episodic trajectories.
@@ -203,7 +202,7 @@ def fast_eval_rollout_episode(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,
-    key: chex.PRNGKey,
+    key: jax.Array,
     rollout_length: int,
 ) -> tuple[PyTreeDict, EnvState]:
     """Fast evaulate a batch of episodic trajectories.

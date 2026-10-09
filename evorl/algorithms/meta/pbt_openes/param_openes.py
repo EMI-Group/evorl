@@ -32,7 +32,7 @@ class OpenES(EvoOptimizer):
     mirror_sampling: bool = True
     weight_decay: float | None = None
 
-    fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
+    fitness_shaping_fn: Callable[[jax.Array], jax.Array] = pytree_field(
         static=True, default=compute_centered_ranks
     )
     optimizer: optax.GradientTransformation = pytree_field(static=True, init=False)
@@ -46,7 +46,7 @@ class OpenES(EvoOptimizer):
             optax.adam, static_args=("b1", "b2", "eps", "eps_root")
         )(learning_rate=self.lr)
 
-    def init(self, mean: Params, key: chex.PRNGKey) -> ECState:
+    def init(self, mean: Params, key: jax.Array) -> ECState:
         return OpenESState(
             mean=mean,
             opt_state=self.optimizer.init(mean),
@@ -83,7 +83,7 @@ class OpenES(EvoOptimizer):
         return pop, state
 
     def tell(
-        self, state: ECState, fitnesses: chex.Array
+        self, state: ECState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, OpenESState]:
         transformed_fitnesses = self.fitness_shaping_fn(fitnesses)
 

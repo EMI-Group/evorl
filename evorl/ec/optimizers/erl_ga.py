@@ -14,7 +14,7 @@ from .ec_optimizer import EvoOptimizer
 
 class ERLGAState(PyTreeData):
     pop: chex.ArrayTree
-    key: chex.PRNGKey
+    key: jax.Array
 
 
 class ERLGA(EvoOptimizer):
@@ -64,7 +64,7 @@ class ERLGA(EvoOptimizer):
         return state.pop, state
 
     def tell(
-        self, state: ERLGAState, fitnesses: chex.Array
+        self, state: ERLGAState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, ERLGAState]:
         # Note: We simplify the update in ERL
         key, select_key, mutate_key, crossover_key = jax.random.split(state.key, 4)
@@ -112,7 +112,7 @@ class ERLGAMod(ERLGA):
         return ERLGAModState(pop=pop, key=key)
 
     def tell_external(
-        self, state: ERLGAModState, fitnesses: chex.Array
+        self, state: ERLGAModState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, ERLGAModState]:
         # Note: We simplify the update in ERL
         key, select_key, mutate_key, crossover_key = jax.random.split(state.key, 4)

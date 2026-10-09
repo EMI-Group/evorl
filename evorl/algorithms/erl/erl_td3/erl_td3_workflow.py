@@ -2,7 +2,6 @@ import logging
 from omegaconf import DictConfig
 import math
 
-import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -45,7 +44,7 @@ class ERLTD3WorkflowTemplate(ERLWorkflowBase):
             self.agent_state_vmap_axes,
         )
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         state = super().setup(key)
 
         # Note: we assume

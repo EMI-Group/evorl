@@ -2,7 +2,7 @@ from abc import abstractmethod
 from collections.abc import Mapping
 from typing import Any
 
-import chex
+import jax
 
 from evorl.types import Action, AgentID
 
@@ -14,7 +14,7 @@ class MultiAgentEnv(Env):
     """Unified EvoRL Multi-Agent Env API."""
 
     @abstractmethod
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         raise NotImplementedError
 
     @abstractmethod

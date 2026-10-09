@@ -15,8 +15,8 @@ class VanillaESState(PyTreeData):
     """State of the VanillaES."""
 
     mean: chex.ArrayTree
-    noise_std: chex.Array
-    key: chex.PRNGKey
+    noise_std: jax.Array
+    key: jax.Array
     noise: None | chex.ArrayTree = None
 
 
@@ -29,7 +29,7 @@ class VanillaES(EvoOptimizer):
     pop_size: int
     num_elites: int
     noise_std_schedule: ExponentialScheduleSpec
-    elite_weights: chex.Array = pytree_field(init=False)
+    elite_weights: jax.Array = pytree_field(init=False)
 
     def __post_init__(self):
         elite_weights = jnp.log(self.num_elites + 0.5) - jnp.log(
@@ -37,7 +37,7 @@ class VanillaES(EvoOptimizer):
         )
         self.elite_weights = elite_weights / elite_weights.sum()
 
-    def init(self, mean: Params, key: chex.PRNGKey) -> VanillaESState:
+    def init(self, mean: Params, key: jax.Array) -> VanillaESState:
         return VanillaESState(
             mean=mean,
             noise_std=jnp.float32(self.noise_std_schedule.init),
@@ -49,8 +49,9 @@ class VanillaES(EvoOptimizer):
         sample_keys = rng_split_like_tree(sample_key, state.mean)
 
         noise = jtu.tree_map(
-            lambda x, k: jax.random.normal(k, shape=(self.pop_size, *x.shape))
-            * state.noise_std,
+            lambda x, k: (
+                jax.random.normal(k, shape=(self.pop_size, *x.shape)) * state.noise_std
+            ),
             state.mean,
             sample_keys,
         )
@@ -63,7 +64,7 @@ class VanillaES(EvoOptimizer):
         return pop, state.replace(key=key, noise=noise)
 
     def tell(
-        self, state: VanillaESState, fitnesses: chex.Array
+        self, state: VanillaESState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, VanillaESState]:
         elite_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
@@ -103,7 +104,7 @@ class VanillaESMod(VanillaES):
         assert self.mix_strategy in ["always", "normal"]
 
     def tell_external(
-        self, state: VanillaESState, fitnesses: chex.Array
+        self, state: VanillaESState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, VanillaESState]:
         chex.assert_shape(fitnesses, (self.pop_size + self.external_size,))
         chex.assert_tree_shape_prefix(

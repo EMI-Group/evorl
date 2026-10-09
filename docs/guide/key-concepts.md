@@ -115,7 +115,7 @@ Conversely, the `jax.Array` objects are viewed as **pure data**. When the data i
         optimizer_name: str = "adam"
         weight_decay: float | None = None
 
-        fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
+        fitness_shaping_fn: Callable[[jax.Array], jax.Array] = pytree_field(
             static=True, default=compute_centered_ranks
         )
         optimizer: optax.GradientTransformation = pytree_field(static=True, init=False)
@@ -153,7 +153,7 @@ brax_env = get_environment("hopper")
 env = BraxAdapter(brax_env)
 
 # reset the environment
-env_key = jax.random.PRNGKey(42)
+env_key = jax.random.key(42)
 env_state = env.reset(env_key)
 
 # apply one step
@@ -200,8 +200,8 @@ graph LR
 - `obs: chex.ArrayTree | None = None`
 - `actions: chex.ArrayTree | None = None`
 - `rewards: Reward | RewardDict | None = None`
-- `next_obs: chex.Array | None = None`
-- `dones: chex.Array | None = None`
+- `next_obs: jax.Array | None = None`
+- `dones: jax.Array | None = None`
 - `extras: ExtraInfo | None = None`: Other trajectory information.
 
 Some fields can be empty for various use cases. For example, `SampleBatch` can be used as a obs-only batch for computing actions, or used for storing trajectory data from the rollout.
@@ -218,7 +218,7 @@ env = create_wrapped_brax_env(
 )
 agent = RandomAgent()
 
-key = jax.random.PRNGKey(42)
+key = jax.random.key(42)
 rollout_key, env_key, agent_key = jax.random.split(key, 3)
 env_state = env.reset(env_key)
 agent_state = agent.init(env.obs_space, env.action_space, agent_key)
@@ -247,7 +247,7 @@ env = create_wrapped_brax_env(
 )
 agent = RandomAgent()
 
-key = jax.random.PRNGKey(42)
+key = jax.random.key(42)
 eval_key, env_key, agent_key = jax.random.split(key, 3)
 env_state = env.reset(env_key)
 agent_state = agent.init(env.obs_space, env.action_space, agent_key)

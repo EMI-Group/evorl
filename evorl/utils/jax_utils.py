@@ -1,7 +1,6 @@
 import os
 from collections.abc import Iterable, Sequence, Callable
 from functools import partial
-import math
 import copy
 
 import chex
@@ -84,12 +83,16 @@ def enable_deterministic_mode():
 #         ["--xla_force_host_platform_device_count={}".format(n)] + xla_flags)
 
 
-def tree_zeros_like(nest: chex.ArrayTree, dtype=None) -> chex.ArrayTree:
+def tree_zeros_like(
+    nest: chex.ArrayTree, dtype: jax.typing.DTypeLike | None = None
+) -> chex.ArrayTree:
     """Pytree version of `jnp.zeros_like`."""
     return jtu.tree_map(lambda x: jnp.zeros(x.shape, dtype or x.dtype), nest)
 
 
-def tree_ones_like(nest: chex.ArrayTree, dtype=None) -> chex.ArrayTree:
+def tree_ones_like(
+    nest: chex.ArrayTree, dtype: jax.typing.DTypeLike | None = None
+) -> chex.ArrayTree:
     """Pytree version of `jnp.ones_like`."""
     return jtu.tree_map(lambda x: jnp.ones(x.shape, dtype or x.dtype), nest)
 
@@ -114,9 +117,13 @@ def tree_last(tree: chex.ArrayTree):
     return jtu.tree_map(lambda x: x[-1], tree)
 
 
-def tree_get(tree: chex.ArrayTree, idx_or_slice):
-    """Get the elements of each array in the pytree."""
-    return jtu.tree_map(lambda x: x[idx_or_slice], tree)
+def tree_get(tree: chex.ArrayTree, idx_or_slice, *, out_sharding=None):
+    """Get array elements, optionally specifying the selected result's sharding."""
+    if out_sharding is None:
+        return jtu.tree_map(lambda x: x[idx_or_slice], tree)
+    return jtu.tree_map(
+        lambda x: x.at[idx_or_slice].get(out_sharding=out_sharding), tree
+    )
 
 
 def tree_set(
@@ -209,51 +216,47 @@ def pmap_method(
     """A decorator for `jax.pmap` with arguments."""
     return partial(
         jax.pmap,
-        axis_name,
+        axis_name=axis_name,
         static_broadcasted_argnums=static_broadcasted_argnums,
         donate_argnums=donate_argnums,
         **kwargs,
     )
 
 
-def _vmap_rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
-    """Enhanced version of `jax.random.split` that allows batched keys.
-
-    Args:
-        key: Key or batched keys with shape (B, 2)
-        num: Number of keys to split.
-
-    Returns:
-        Batched keys with shape (num, B, 2)
-    """
-    chex.assert_shape(key, (..., 2))
-
-    rng_split_fn = jax.random.split
-
-    for _ in range(key.ndim - 1):
-        rng_split_fn = jax.vmap(rng_split_fn, in_axes=(0, None), out_axes=1)
-
-    return rng_split_fn(key, num)
+def rng_key_batch_shape(key: jax.Array) -> tuple[int, ...]:
+    """Return the batch dimensions of a typed PRNG key."""
+    if not jax.dtypes.issubdtype(key.dtype, jax.dtypes.prng_key):
+        raise TypeError("Expected a typed PRNG key; construct it with jax.random.key")
+    return key.shape
 
 
-def rng_split(key: chex.PRNGKey, num: int = 2) -> chex.PRNGKey:
-    """Unified Version of `jax.random.split` for both single key and batched keys."""
-    if key.ndim == 1:
-        chex.assert_shape(key, (2,))
-        return jax.random.split(key, num)
-    else:
-        return _vmap_rng_split(key, num)
+def ensure_batched_key(key: jax.Array, batch_size: int) -> jax.Array:
+    """Split a single key or validate an existing one-dimensional key batch."""
+    batch_shape = rng_key_batch_shape(key)
+    if not batch_shape:
+        return jax.random.split(key, batch_size)
+    if batch_shape != (batch_size,):
+        raise ValueError(
+            f"Key batch shape {batch_shape} must match batch size {batch_size}"
+        )
+    return key
 
 
-def rng_split_by_shape(key: chex.PRNGKey, shape: tuple[int]) -> chex.PRNGKey:
-    """Split the key into multiple keys according to the shape."""
-    chex.assert_shape(key, (2,))
-    keys = jax.random.split(key, math.prod(shape))
-    return jnp.reshape(keys, shape + (2,))
+def rng_split(key: jax.Array, num: int = 2) -> jax.Array:
+    """Split scalar or batched keys, putting the split axis first."""
+    split_fn = jax.random.split
+    for _ in rng_key_batch_shape(key):
+        split_fn = jax.vmap(split_fn, in_axes=(0, None), out_axes=1)
+    return split_fn(key, num)
+
+
+def rng_split_by_shape(key: jax.Array, shape: tuple[int, ...]) -> jax.Array:
+    """Split a scalar key into a key batch with the requested shape."""
+    return jax.random.split(key, shape)
 
 
 def rng_split_like_tree(
-    key: chex.PRNGKey, target: chex.ArrayTree, is_leaf=None
+    key: jax.Array, target: chex.ArrayTree, is_leaf=None
 ) -> chex.ArrayTree:
     """Split the key according to the structure of the target pytree."""
     treedef = jtu.tree_structure(target, is_leaf=is_leaf)
@@ -268,6 +271,8 @@ def is_jitted(func: Callable):
 
 def has_nan(x: jax.Array) -> bool:
     """Check if the array has NaN values."""
+    if jax.dtypes.issubdtype(x.dtype, jax.dtypes.prng_key):
+        return jnp.array(False)
     return jnp.isnan(x).any()
 
 
@@ -298,7 +303,7 @@ def tree_deepcopy(tree: chex.ArrayTree) -> chex.ArrayTree:
 
 
 def right_shift_with_padding(
-    x: chex.Array, shift: int, fill_value: None | chex.Scalar = None
+    x: jax.Array, shift: int, fill_value: None | jax.typing.ArrayLike = None
 ):
     """Shift the array to the right with padding."""
     shifted_matrix = jnp.roll(x, shift=shift, axis=0)

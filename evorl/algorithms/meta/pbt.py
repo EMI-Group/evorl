@@ -1,5 +1,6 @@
 import logging
 
+import jax
 import chex
 import optax
 from optax.schedules import InjectStatefulHyperparamsState
@@ -27,7 +28,7 @@ class PBTWorkflow(PBTWorkflowTemplate):
         )(learning_rate=self.config.search_space.lr.low)
 
     def _setup_pop_and_pbt_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[chex.ArrayTree, PBTOptState]:
         pop = PyTreeDict(
             lr=log_uniform_init(self.config.search_space.lr, key, self.config.pop_size)
@@ -36,7 +37,7 @@ class PBTWorkflow(PBTWorkflowTemplate):
         return pop, PBTOptState()
 
     def apply_hyperparams_to_workflow_state(
-        self, workflow_state: State, hyperparams: PyTreeDict[str, chex.Numeric]
+        self, workflow_state: State, hyperparams: PyTreeDict[str, jax.typing.ArrayLike]
     ) -> State:
         opt_state = workflow_state.opt_state
         assert isinstance(opt_state, InjectStatefulHyperparamsState)

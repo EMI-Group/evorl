@@ -7,10 +7,9 @@ from .comm import (
     pmin,
     psum,
     all_gather,
-    split_key_to_devices,
 )
 from .gradients import agent_gradient_update, gradient_update
-from .sharding import shmap_vmap, shmap_map, tree_device_put
+from .sharding import shmap_vmap, shmap_map, tree_scatter_set
 
 DP_AXIS_NAME = "DP"
 
@@ -26,12 +25,11 @@ __all__ = [
     "pmin",
     "psum",
     "all_gather",
-    "split_key_to_devices",
     "agent_gradient_update",
     "gradient_update",
     "shmap_vmap",
     "shmap_map",
-    "tree_device_put",
+    "tree_scatter_set",
     "DP_AXIS_NAME",
     "POP_AXIS_NAME",
 ]

@@ -16,7 +16,7 @@ def setup_trajectory():
     )
     agent = make_mlp_impala_agent(action_space=env.action_space)
 
-    key, rollout_key = jax.random.split(jax.random.PRNGKey(42))
+    key, rollout_key = jax.random.split(jax.random.key(42))
 
     env_state = env.reset(key)
     agent_state = agent.init(env.obs_space, env.action_space, key)

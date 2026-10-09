@@ -3,7 +3,6 @@ import math
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
 from omegaconf import DictConfig
 
-import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -144,7 +143,7 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
 
         return workflow
 
-    def _setup_agent_and_optimizer(self, key: chex.PRNGKey):
+    def _setup_agent_and_optimizer(self, key: jax.Array):
         agent_state = jax.vmap(self.agent.init, in_axes=(None, None, 0))(
             self.env.obs_space,
             self.env.action_space,

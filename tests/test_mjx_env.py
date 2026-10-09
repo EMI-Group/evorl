@@ -75,7 +75,7 @@ class TestImplStripping:
             pytest.skip("Warp backend requires GPU/CUDA")
 
         env = create_mujoco_playground_env(env_name, config_overrides={"impl": impl})
-        state = env.reset(jax.random.PRNGKey(0))
+        state = env.reset(jax.random.key(0))
         assert state.env_state.data._impl is None
 
         action = jnp.zeros(env.action_space.shape)
@@ -92,7 +92,7 @@ class TestImplStripping:
             pytest.skip("Warp backend requires GPU/CUDA")
 
         env = create_mujoco_playground_env(env_name, config_overrides={"impl": impl})
-        state = env.reset(jax.random.PRNGKey(1))
+        state = env.reset(jax.random.key(1))
         action = jnp.zeros(env.action_space.shape)
 
         # Two consecutive steps from same state
@@ -136,7 +136,7 @@ class TestWrappedEnvStep:
             env_name, config_overrides={"impl": impl}
         )
 
-        rng = jax.random.PRNGKey(42)
+        rng = jax.random.key(42)
         state = env.reset(rng)
 
         _assert_obs_batched(state.obs, self.NUM_ENVS, base_env.obs_space)
@@ -180,7 +180,7 @@ class TestLongRollout:
             state = env.step(state, action)
             return state, state.done
 
-        rng = jax.random.PRNGKey(0)
+        rng = jax.random.key(0)
         state = env.reset(rng)
         final_state, dones = jax.lax.scan(
             rollout_step, state, None, length=self.ROLLOUT_LEN

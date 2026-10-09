@@ -1,7 +1,6 @@
 import time
 from omegaconf import DictConfig
 
-import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -22,15 +21,15 @@ from .cemrl import CEMRLWorkflow as _CEMRLWorkflow
 
 
 class CEMRLTrainMetric(CEMRLTrainMetricBase):
-    num_updates_per_iter: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    num_updates_per_iter: jax.Array = jnp.zeros((), dtype=jnp.uint32)
     time_cost_per_iter: float = 0.0
 
 
 class WorkflowMetric(MetricBase):
-    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps_per_iter: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_per_iter: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class CEMRLWorkflow(_CEMRLWorkflow):

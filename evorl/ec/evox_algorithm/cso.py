@@ -18,7 +18,7 @@ class CSOState:
     fitness: jax.Array
     velocity: jax.Array
     students: jax.Array
-    key: jax.random.PRNGKey
+    key: jax.Array
 
 
 @dataclass

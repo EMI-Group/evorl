@@ -29,20 +29,20 @@ logger = logging.getLogger(__name__)
 
 
 class ERLTrainMetric(MetricBase):
-    pop_episode_returns: chex.Array | None = None
-    pop_episode_lengths: chex.Array | None = None
-    rb_size: chex.Array | None = None
-    rl_episode_returns: chex.Array | None = None
-    rl_episode_lengths: chex.Array | None = None
+    pop_episode_returns: jax.Array | None = None
+    pop_episode_lengths: jax.Array | None = None
+    rb_size: jax.Array | None = None
+    rl_episode_returns: jax.Array | None = None
+    rl_episode_lengths: jax.Array | None = None
     rl_metrics: MetricBase | None = None
     ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class WorkflowMetric(MetricBase):
-    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    rl_sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    rl_sampled_timesteps: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class ERLWorkflowBase(Workflow):
@@ -71,8 +71,6 @@ class ERLWorkflowBase(Workflow):
         self.evaluator = evaluator
         self.replay_buffer = replay_buffer
 
-        self.devices = jax.local_devices()[:1]
-
     @classmethod
     def build_from_config(
         cls,
@@ -98,7 +96,7 @@ class ERLWorkflowBase(Workflow):
     def _build_from_config(cls, config: DictConfig) -> Self:
         raise NotImplementedError
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         key, agent_key, rb_key = jax.random.split(key, 3)
 
         agent_state, opt_state, ec_opt_state = self._setup_agent_and_optimizer(
@@ -129,11 +127,11 @@ class ERLWorkflowBase(Workflow):
         return WorkflowMetric()
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
         raise NotImplementedError
 
-    def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
+    def _setup_replaybuffer(self, key: jax.Array) -> ReplayBufferState:
         action_space = self.env.action_space
         obs_space = self.env.obs_space
 
@@ -183,7 +181,7 @@ class ERLWorkflowBase(Workflow):
         key, env_key, rollout_key = jax.random.split(state.key, num=3)
         random_agent = RandomAgent()
         random_agent_state = random_agent.init(
-            obs_space, action_space, jax.random.PRNGKey(0)
+            obs_space, action_space, jax.random.key(0)
         )
         rollout_length = config.random_timesteps // config.num_envs
 

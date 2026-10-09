@@ -11,11 +11,11 @@ class Space(PyTreeData):
     """Base class for Space like `gym.Space`."""
 
     @property
-    def shape(self) -> chex.Shape:
+    def shape(self) -> tuple[int, ...]:
         """Get the shape of the space."""
         raise NotImplementedError
 
-    def sample(self, key: chex.PRNGKey) -> chex.Array:
+    def sample(self, key: jax.Array) -> jax.Array:
         """Randomly sample a data in this space.
 
         Returns:
@@ -23,7 +23,7 @@ class Space(PyTreeData):
         """
         raise NotImplementedError
 
-    def contains(self, x: chex.Array) -> bool:
+    def contains(self, x: jax.typing.ArrayLike) -> bool:
         """Determine whether the input is in the space.
 
         Returns:
@@ -40,10 +40,10 @@ class Box(Space):
         high: The upper bounds of the box.
     """
 
-    low: chex.Array
-    high: chex.Array
+    low: jax.Array
+    high: jax.Array
 
-    def sample(self, key: chex.PRNGKey) -> chex.Array:
+    def sample(self, key: jax.Array) -> jax.Array:
         return jax.random.uniform(
             key,
             shape=self.low.shape,
@@ -53,10 +53,10 @@ class Box(Space):
         )
 
     @property
-    def shape(self) -> chex.Shape:
+    def shape(self) -> tuple[int, ...]:
         return self.low.shape
 
-    def contains(self, x: chex.Array) -> chex.Array:
+    def contains(self, x: jax.typing.ArrayLike) -> jax.Array:
         return jnp.logical_and(jnp.all(x >= self.low), jnp.all(x <= self.high))
 
 
@@ -69,14 +69,14 @@ class Discrete(Space):
 
     n: int
 
-    def sample(self, key: chex.PRNGKey) -> chex.Array:
+    def sample(self, key: jax.Array) -> jax.Array:
         return jax.random.randint(key, shape=(), minval=0, maxval=self.n)
 
     @property
-    def shape(self) -> chex.Shape:
+    def shape(self) -> tuple[int, ...]:
         return ()
 
-    def contains(self, x: chex.Array) -> chex.Array:
+    def contains(self, x: jax.typing.ArrayLike) -> jax.Array:
         return jnp.logical_and(x >= 0, x < self.n)
 
 
@@ -89,7 +89,7 @@ class SpaceContainer(Space):
 
     spaces: chex.ArrayTree
 
-    def sample(self, key: chex.PRNGKey) -> chex.ArrayTree:
+    def sample(self, key: jax.Array) -> chex.ArrayTree:
         keys = rng_split_like_tree(
             key, self.spaces, is_leaf=lambda s: isinstance(s, Space)
         )

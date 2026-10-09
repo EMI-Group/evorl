@@ -19,8 +19,8 @@ class ReplayBufferState(PyTreeData):
     """
 
     data: chex.ArrayTree
-    current_index: chex.Array = jnp.zeros((), jnp.int32)
-    buffer_size: chex.Array = jnp.zeros((), jnp.int32)
+    current_index: jax.Array = jnp.zeros((), jnp.int32)
+    buffer_size: jax.Array = jnp.zeros((), jnp.int32)
 
 
 class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):
@@ -54,9 +54,7 @@ class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def sample(
-        self, buffer_state: ReplayBufferState, key: chex.PRNGKey
-    ) -> chex.ArrayTree:
+    def sample(self, buffer_state: ReplayBufferState, key: jax.Array) -> chex.ArrayTree:
         """Sample a batch of data from the replay buffer.
 
         Args:
@@ -123,7 +121,7 @@ class ReplayBuffer(AbstractReplayBuffer):
         self,
         buffer_state: ReplayBufferState,
         xs: chex.ArrayTree,
-        mask: chex.Array | None = None,
+        mask: jax.Array | None = None,
     ) -> ReplayBufferState:
         # Tips: when jit this function, set mask to static
 

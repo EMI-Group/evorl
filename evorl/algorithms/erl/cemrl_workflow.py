@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 
 
 class CEMRLTrainMetric(MetricBase):
-    rb_size: chex.Array
-    pop_episode_returns: chex.Array
-    pop_episode_lengths: chex.Array
+    rb_size: jax.Array
+    pop_episode_returns: jax.Array
+    pop_episode_lengths: jax.Array
     rl_metrics: MetricBase | None = None
     ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
@@ -62,8 +62,6 @@ class CEMRLWorkflowBase(Workflow):
         self.evaluator = evaluator
         self.replay_buffer = replay_buffer
 
-        self.devices = jax.local_devices()[:1]
-
     @classmethod
     def build_from_config(
         cls,
@@ -89,7 +87,7 @@ class CEMRLWorkflowBase(Workflow):
     def _build_from_config(cls, config: DictConfig) -> Self:
         raise NotImplementedError
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         key, agent_key, rb_key = jax.random.split(key, 3)
 
         # [#pop, ...]
@@ -123,11 +121,11 @@ class CEMRLWorkflowBase(Workflow):
         return WorkflowMetric()
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
         raise NotImplementedError
 
-    def _setup_replaybuffer(self, key: chex.PRNGKey) -> ReplayBufferState:
+    def _setup_replaybuffer(self, key: jax.Array) -> ReplayBufferState:
         action_space = self.env.action_space
         obs_space = self.env.obs_space
 
@@ -177,7 +175,7 @@ class CEMRLWorkflowBase(Workflow):
         key, env_key, rollout_key = jax.random.split(state.key, num=3)
         random_agent = RandomAgent()
         random_agent_state = random_agent.init(
-            obs_space, action_space, jax.random.PRNGKey(0)
+            obs_space, action_space, jax.random.key(0)
         )
         rollout_length = config.random_timesteps // config.num_envs
 

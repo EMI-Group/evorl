@@ -8,7 +8,7 @@ from evorl.utils.rl_toolkits import compute_gae, compute_discount_return
 def test_gae():
     T = 11
     B = 7
-    keys = jax.random.split(jax.random.PRNGKey(42), 3)
+    keys = jax.random.split(jax.random.key(42), 3)
     rewards = jax.random.uniform(keys[0], (T, B), dtype=jnp.float32)
     values = jax.random.uniform(keys[1], (T + 1, B), dtype=jnp.float32)
 

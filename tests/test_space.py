@@ -15,7 +15,7 @@ def test_container():
         }
     )
 
-    data = space.sample(jax.random.PRNGKey(0))
+    data = space.sample(jax.random.key(0))
 
     data_shape = space.shape
     assert isinstance(data_shape, dict)
@@ -51,7 +51,7 @@ def test_nested_container():
         }
     )
 
-    data = space.sample(jax.random.PRNGKey(0))
+    data = space.sample(jax.random.key(0))
 
     data_shape = space.shape
     assert isinstance(data_shape, dict)

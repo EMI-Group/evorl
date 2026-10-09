@@ -4,7 +4,6 @@ import math
 from typing_extensions import Self  # pytype: disable=not-supported-yet]
 from omegaconf import DictConfig
 
-import chex
 import jax
 import jax.tree_util as jtu
 
@@ -37,7 +36,7 @@ class PopPPOWorkflow(PPOWorkflow):
 
         return super().build_from_config(config, enable_multi_devices, enable_jit)
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         state = jax.vmap(super().setup)(
             jax.random.split(key, self.config.pop_size),
         )

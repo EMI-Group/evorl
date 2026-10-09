@@ -13,7 +13,7 @@ from evorl.envs import EnvState, EnvStepFn
 from evorl.envs.brax import BraxAdapter
 from evorl.rollout import SampleBatch
 from evorl.types import Action, PolicyExtraInfo, PyTreeDict, pytree_field
-from evorl.utils.jax_utils import rng_split
+from evorl.utils.jax_utils import rng_key_batch_shape, rng_split
 from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_length
 
 from .evaluator import Evaluator
@@ -40,7 +40,7 @@ class BraxEvaluator(Evaluator):
         )
 
     def evaluate(
-        self, agent_state: chex.ArrayTree, key: chex.PRNGKey, num_episodes: int
+        self, agent_state: chex.ArrayTree, key: jax.Array, num_episodes: int
     ) -> chex.ArrayTree:
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
@@ -53,11 +53,10 @@ class BraxEvaluator(Evaluator):
         action_fn = self.action_fn
         env_reset_fn = self.env.reset
         env_step_fn = self.env.step
-        if key.ndim > 1:
-            for _ in range(key.ndim - 1):
-                action_fn = jax.vmap(action_fn)
-                env_reset_fn = jax.vmap(env_reset_fn)
-                env_step_fn = jax.vmap(env_step_fn)
+        for _ in rng_key_batch_shape(key):
+            action_fn = jax.vmap(action_fn)
+            env_reset_fn = jax.vmap(env_reset_fn)
+            env_step_fn = jax.vmap(env_step_fn)
 
         metric_names = copy.deepcopy(tuple(self.metric_names))
         # we also need episode_length to calculate the sampled_timesteps
@@ -119,7 +118,7 @@ def eval_env_step(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
-    key: chex.PRNGKey,
+    key: jax.Array,
     metric_names: tuple[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
     # sample_batch: [#envs, ...]
@@ -151,11 +150,11 @@ def eval_env_step(
 def eval_rollout_episode(
     env_fn: Callable[[EnvState, Action], EnvState],
     action_fn: Callable[
-        [AgentState, SampleBatch, chex.PRNGKey], tuple[Action, PolicyExtraInfo]
+        [AgentState, SampleBatch, jax.Array], tuple[Action, PolicyExtraInfo]
     ],
     env_state: EnvState,
     agent_state: AgentState,
-    key: chex.PRNGKey,
+    key: jax.Array,
     rollout_length: int,
     metric_names: tuple[str] = (),
 ) -> tuple[SampleBatch, EnvState]:
@@ -201,11 +200,11 @@ def eval_rollout_episode(
 def eval_metrics(
     env_fn: Callable[[EnvState, Action], EnvState],
     action_fn: Callable[
-        [AgentState, SampleBatch, chex.PRNGKey], tuple[Action, PolicyExtraInfo]
+        [AgentState, SampleBatch, jax.Array], tuple[Action, PolicyExtraInfo]
     ],
     env_state: EnvState,
     agent_state: AgentState,
-    key: chex.PRNGKey,
+    key: jax.Array,
     rollout_length: int,
     discount: float,
     metric_names: tuple[str] = (),
@@ -243,11 +242,11 @@ def eval_metrics(
 def fast_eval_metrics(
     env_fn: Callable[[EnvState, Action], EnvState],
     action_fn: Callable[
-        [AgentState, SampleBatch, chex.PRNGKey], tuple[Action, PolicyExtraInfo]
+        [AgentState, SampleBatch, jax.Array], tuple[Action, PolicyExtraInfo]
     ],
     env_state: EnvState,
     agent_state: AgentState,
-    key: chex.PRNGKey,
+    key: jax.Array,
     rollout_length: int,
     metric_names: tuple[str] = (),
 ) -> tuple[PyTreeDict, EnvState]:

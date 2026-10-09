@@ -1,7 +1,6 @@
 import logging
 import math
 
-import chex
 import jax
 
 from evorl.agent import AgentState
@@ -40,7 +39,7 @@ class Evaluator(PyTreeNode):
     def evaluate(
         self,
         agent_state: AgentState,
-        key: chex.PRNGKey,
+        key: jax.Array,
         num_episodes: int,
     ) -> EvaluateMetric:
         """Evaluate the agent based on its state.

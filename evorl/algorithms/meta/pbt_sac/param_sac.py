@@ -35,9 +35,7 @@ class ParamSACTrainMetric(SACTrainMetric):
 class ParamSACAgent(SACAgent):
     """SAC agent with parameterized hyperparameters."""
 
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         agent_state = super().init(obs_space, action_space, key)
 
         return agent_state.replace(
@@ -49,7 +47,7 @@ class ParamSACAgent(SACAgent):
         )
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         obs = sample_batch.obs
         next_obs = sample_batch.extras.env_extras.ori_obs
@@ -196,7 +194,7 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
         )
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = PyTreeDict(
@@ -208,7 +206,7 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
 
         return agent_state, opt_state
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         key, agent_key, env_key = jax.random.split(key, 3)
 
         agent_state, opt_state = self._setup_agent_and_optimizer(agent_key)

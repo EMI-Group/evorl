@@ -22,7 +22,7 @@ def test_rollout():
 
     agent = DebugRandomAgent()
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
 
     rollout_key, env_key, agent_key = jax.random.split(key, 3)
 
@@ -64,7 +64,7 @@ def test_autoreset():
 
     agent = DebugRandomAgent()
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
 
     rollout_key, env_key, agent_key = jax.random.split(key, 3)
 
@@ -113,7 +113,7 @@ def test_envpool_autoreset():
 
     agent = DebugRandomAgent()
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
 
     rollout_key, env_key, agent_key = jax.random.split(key, 3)
 

@@ -6,9 +6,9 @@ from evorl.types import PyTreeNode
 
 
 def tournament_selection(
-    fitnesses: chex.Array,
+    fitnesses: jax.Array,
     num_offsprings: int,
-    key: chex.PRNGKey,
+    key: jax.Array,
     *,
     tournament_size: int,
 ):

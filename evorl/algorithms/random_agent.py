@@ -1,9 +1,7 @@
 import jax
-import chex
 from omegaconf import DictConfig
 from typing_extensions import Self  # pytype: disable=not-supported-yet
 
-from evorl.distributed import split_key_to_devices
 from evorl.workflows import RLWorkflow
 from evorl.agent import RandomAgent, Agent
 from evorl.metrics import MetricBase, EvaluateMetric
@@ -54,7 +52,7 @@ class RandomAgentWorkflow(RLWorkflow):
 
         return cls(agent, evaluator, config)
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         key, agent_key = jax.random.split(key)
 
         env = self.evaluator.env
@@ -62,14 +60,12 @@ class RandomAgentWorkflow(RLWorkflow):
         agent_state = self.agent.init(env.obs_space, env.action_space, agent_key)
 
         if self.enable_multi_devices:
-            sharding = jax.sharding.NamedSharding(
-                jax.sharding.Mesh(self.devices, (self.dp_axis_name,)),
-                jax.sharding.PartitionSpec(),
-            )
-            agent_state = jax.device_put(agent_state, sharding)
+            agent_state = jax.device_put(agent_state, jax.P())
 
-            # key and env_state should be different over devices
-            key = split_key_to_devices(key, self.devices)
+            num_workers = self.mesh.shape[self.dp_axis_name]
+            key = jax.device_put(
+                jax.random.split(key, num_workers), jax.P(self.dp_axis_name)
+            )
 
         return State(
             key=key,

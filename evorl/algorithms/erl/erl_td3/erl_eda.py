@@ -34,10 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 class EvaluateMetric(MetricBase):
-    rl_episode_returns: chex.Array
-    rl_episode_lengths: chex.Array
-    pop_center_episode_returns: chex.Array
-    pop_center_episode_lengths: chex.Array
+    rl_episode_returns: jax.Array
+    rl_episode_lengths: jax.Array
+    pop_center_episode_returns: jax.Array
+    pop_center_episode_lengths: jax.Array
 
 
 class ERLEDAWorkflow(ERLTD3WorkflowTemplate):
@@ -171,7 +171,7 @@ class ERLEDAWorkflow(ERLTD3WorkflowTemplate):
         return workflow
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree, ECState]:
         agent_key, ec_key = jax.random.split(key)
 

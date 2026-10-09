@@ -1,4 +1,3 @@
-import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -41,10 +40,10 @@ class MjxEnvAdapter(EnvAdapter):
         # save memory (intermediate computation results) and to avoid
         # non-vmappable fields (warp backend) breaking jax.lax.map.
         # The cached _impl is restored before each env.step() call.
-        dummy_state = self.env.reset(jax.random.PRNGKey(0))
+        dummy_state = self.env.reset(jax.random.key(0))
         self._static_impl = getattr(dummy_state.data, "_impl", None)
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         key, reset_key = jax.random.split(key)
         mjxenv_state = self.env.reset(reset_key)
 

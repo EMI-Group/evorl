@@ -12,7 +12,7 @@ from .types import LossDict, PyTreeData, PyTreeDict
 
 def metric_field(
     *,
-    reduce_fn: Callable[[chex.Array, str | None], chex.Array] = None,
+    reduce_fn: Callable[[jax.Array, str | None], jax.Array] = None,
     static=False,
     **kwargs,
 ):
@@ -67,9 +67,9 @@ class WorkflowMetric(MetricBase):
         iterations: The total number of workflow iterations.
     """
 
-    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class TrainMetric(MetricBase):
@@ -82,10 +82,10 @@ class TrainMetric(MetricBase):
     """
 
     # manually reduce in the step()
-    train_episode_return: chex.Array | None = None
+    train_episode_return: jax.Array | None = None
 
     # no need reduce_fn since it's already reduced in the step()
-    loss: chex.Array = jnp.zeros(())
+    loss: jax.Array = jnp.zeros(())
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
@@ -97,8 +97,8 @@ class EvaluateMetric(MetricBase):
         episode_lengths: The length array of evaluation episodes.
     """
 
-    episode_returns: chex.Array = metric_field(reduce_fn=pmean)
-    episode_lengths: chex.Array = metric_field(reduce_fn=pmean)
+    episode_returns: jax.Array = metric_field(reduce_fn=pmean)
+    episode_lengths: jax.Array = metric_field(reduce_fn=pmean)
 
 
 class ECWorkflowMetric(MetricBase):
@@ -111,10 +111,10 @@ class ECWorkflowMetric(MetricBase):
         iterations: The total number of workflow iterations.
     """
 
-    best_objective: chex.Array
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    best_objective: jax.Array
+    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_m: jax.Array = jnp.zeros((), dtype=jnp.float32)
+    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class MultiObjectiveECWorkflowMetric(MetricBase):
@@ -126,9 +126,9 @@ class MultiObjectiveECWorkflowMetric(MetricBase):
         iterations: The total number of workflow iterations.
     """
 
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps_m: chex.Array = jnp.zeros((), dtype=jnp.float32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_m: jax.Array = jnp.zeros((), dtype=jnp.float32)
+    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class ECTrainMetric(MetricBase):
@@ -139,7 +139,7 @@ class ECTrainMetric(MetricBase):
         ec_metrics: The extra metrics of the training step.
     """
 
-    objectives: chex.Array
+    objectives: jax.Array
     ec_metrics: chex.ArrayTree
 
 

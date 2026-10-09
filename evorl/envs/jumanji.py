@@ -1,4 +1,4 @@
-import chex
+import jax
 import jax.numpy as jnp
 import jumanji
 from jumanji.env import Environment as JumanjiEnv
@@ -18,7 +18,7 @@ class JumanjiAdapter(EnvAdapter):
     def __init__(self, env: JumanjiEnv):
         super().__init__(env)
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         env_state, transition = self.env.reset(key)
         return EnvState(
             env_state=env_state,

@@ -11,7 +11,7 @@ with initialize(version_base=None, config_path="configs"):
     config = compose(config_name="config", overrides=["env=brax/hopper", "agent=ppo"])
 
 workflow = PPOWorkflow.build_from_config(config, enable_jit=config.enable_jit)
-state = workflow.init(jax.random.PRNGKey(config.seed))
+state = workflow.init(jax.random.key(config.seed))
 
 # Train in one line:
 # state = workflow.learn(state)

@@ -12,15 +12,15 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 
 Metrics = Mapping[str, chex.ArrayTree]
-Observation = Union[chex.Array, Mapping[str, chex.Array]]
-Action = Union[chex.Array, Mapping[str, chex.Array]]
-Reward = Union[chex.Array, Mapping[str, chex.Array]]
-Done = Union[chex.Array, Mapping[str, chex.Array]]
+Observation = Union[jax.Array, Mapping[str, jax.Array]]
+Action = Union[jax.Array, Mapping[str, jax.Array]]
+Reward = Union[jax.Array, Mapping[str, jax.Array]]
+Done = Union[jax.Array, Mapping[str, jax.Array]]
 PolicyExtraInfo = Mapping[str, Any]
 ExtraInfo = Mapping[str, Any]
 RewardDict = Mapping[str, Reward]
 
-LossDict = Mapping[str, chex.Array]
+LossDict = Mapping[str, jax.Array]
 
 EnvInternalState = chex.ArrayTree
 

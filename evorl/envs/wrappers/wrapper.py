@@ -1,4 +1,4 @@
-import chex
+import jax
 
 from evorl.types import Action
 
@@ -16,7 +16,7 @@ class Wrapper(Env):
         """
         self.env = env
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         return self.env.reset(key)
 
     def step(self, state: EnvState, action: Action) -> EnvState:

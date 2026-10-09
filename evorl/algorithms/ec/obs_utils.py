@@ -55,7 +55,7 @@ def init_obs_preprocessor_with_random_timesteps(
     obs_preprocessor_state: Any,
     timesteps: int,
     env: Env,
-    key: chex.PRNGKey,
+    key: jax.Array,
     dp_axis_name: str | None = None,
 ) -> Any:
     env_key, agent_key, rollout_key = jax.random.split(key, num=3)
@@ -92,7 +92,7 @@ def rollout_obs(
     action_fn: AgentActionFn,
     env_state: EnvState,
     agent_state: AgentState,
-    key: chex.PRNGKey,
+    key: jax.Array,
     rollout_length: int,
 ) -> tuple[chex.ArrayTree, EnvState]:
     def _one_step_rollout(carry, unused_t):

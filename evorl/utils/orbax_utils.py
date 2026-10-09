@@ -1,6 +1,7 @@
 import os
 import logging
-from collections.abc import Mapping, Sequence
+from pathlib import Path
+from collections.abc import Sequence
 from typing import Any
 
 import jax
@@ -12,6 +13,15 @@ import orbax.checkpoint as ocp
 from omegaconf import DictConfig, OmegaConf
 
 logger = logging.getLogger(__name__)
+
+
+def to_shape_dtype_struct(value):
+    """Create a restore template without expanding typed PRNG keys to uint32."""
+    if isinstance(value, (jax.Array, jax.ShapeDtypeStruct)) and jax.dtypes.issubdtype(
+        value.dtype, jax.dtypes.prng_key
+    ):
+        return jax.ShapeDtypeStruct(value.shape, value.dtype, sharding=value.sharding)
+    return ocp.utils.to_shape_dtype_struct(value)
 
 
 def save(path, state: chex.ArrayTree):
@@ -34,14 +44,14 @@ def load(path, state: chex.ArrayTree) -> chex.ArrayTree:
 
     Args:
         path: Checkpoint path
-        state: The same structure as the saved state for restore. Can be a dummy state or its abstract_state by `jtu.tree_map(ocp.utils.to_shape_dtype_struct, state)`
+        state: The same structure as the saved state for restore. Can be a dummy state or its abstract_state by `jtu.tree_map(to_shape_dtype_struct, state)`
 
     Returns:
         The loaded state.
     """
     path = os.path.abspath(os.path.expanduser(path))
     abstract_state = jtu.tree_map(
-        ocp.utils.to_shape_dtype_struct, filter_zero_size_arrays_on_save(state)
+        to_shape_dtype_struct, filter_zero_size_arrays_on_save(state)
     )
 
     with ocp.StandardCheckpointer() as ckpt:
@@ -76,8 +86,7 @@ def filter_zero_size_arrays_on_restore(
             return jnp.zeros(src.shape, dtype=src.dtype, device=src.sharding)
         if isinstance(src, (jax.Array, np.ndarray)) and src.size == 0:
             return src
-        else:
-            return dst
+        return dst
 
     return jtu.tree_map(f, src_tree, dst_tree)
 
@@ -85,8 +94,12 @@ def filter_zero_size_arrays_on_restore(
 class DummyCheckpointManager(ocp.AbstractCheckpointManager):
     """A dummy checkpoint manager that does nothing."""
 
+    def __init__(self, directory="."):
+        self._directory = Path(directory).expanduser().absolute()
+
+    @property
     def directory(self):
-        return "UwU"
+        return self._directory
 
     def all_steps(self, read: bool = False) -> Sequence[int]:
         return []
@@ -101,7 +114,7 @@ class DummyCheckpointManager(ocp.AbstractCheckpointManager):
         pass
 
     def reached_preemption(self, step: int) -> bool:
-        return True
+        return False
 
     def should_save(self, step: int) -> bool:
         return False
@@ -112,8 +125,12 @@ class DummyCheckpointManager(ocp.AbstractCheckpointManager):
     def item_metadata(self, step: int):
         return None
 
-    def metadata(self) -> Mapping[str, Any]:
-        return {}
+    def metadata(
+        self, step: int | None = None
+    ) -> ocp.metadata.RootMetadata | ocp.metadata.StepMetadata:
+        if step is None:
+            return ocp.metadata.RootMetadata()
+        return ocp.metadata.StepMetadata()
 
     def metrics(self, step: int) -> Any | None:
         return None
@@ -124,11 +141,11 @@ class DummyCheckpointManager(ocp.AbstractCheckpointManager):
     def check_for_errors(self):
         pass
 
-    def save(self, step, items, **kwargs):
-        return True
+    def save(self, step, items=None, **kwargs):
+        return False
 
-    def restore(self, step, items, **kwargs):
-        raise NotImplementedError("UwU")
+    def restore(self, step, items=None, **kwargs):
+        raise NotImplementedError("Checkpointing is disabled")
 
     def close(self):
         pass
@@ -150,16 +167,16 @@ class CheckpointManager(ocp.CheckpointManager):
         return new_items
 
 
-def setup_checkpoint_manager(config: DictConfig) -> ocp.CheckpointManager:
+def setup_checkpoint_manager(config: DictConfig) -> ocp.AbstractCheckpointManager:
     """Setup checkpoint manager."""
     if config.checkpoint.enable:
+        # Orbax only supports absolute checkpoint paths.
+        output_dir = os.path.abspath(os.path.expanduser(config.output_dir))
+        ckpt_path = os.path.join(output_dir, "checkpoints")
         ckpt_options = ocp.CheckpointManagerOptions(
             save_interval_steps=config.checkpoint.save_interval_steps,
             max_to_keep=config.checkpoint.max_to_keep,
         )
-        # Note: orbax only supports absolute path
-        output_dir = os.path.abspath(os.path.expanduser(config.output_dir))
-        ckpt_path = os.path.join(output_dir, "checkpoints")
         logger.info(f"set checkpoint path: {ckpt_path}")
         checkpoint_manager = CheckpointManager(
             ckpt_path,

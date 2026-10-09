@@ -56,7 +56,7 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
         )
 
         # dummy agent_state
-        agent_key = jax.random.PRNGKey(config.seed)
+        agent_key = jax.random.key(config.seed)
         agent_state = agent.init(env.obs_space, env.action_space, agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 

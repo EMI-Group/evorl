@@ -1,7 +1,6 @@
 from functools import partial
 from typing import Literal
 
-import chex
 import jax
 import jax.numpy as jnp
 from brax import envs
@@ -99,11 +98,11 @@ class MABraxEnvV2(MABraxEnv):
     @partial(jax.jit, static_argnums=(0,))
     def global_step_env(
         self,
-        key: chex.PRNGKey,
+        key: jax.Array,
         state: envs.State,
-        global_action: chex.Array,
+        global_action: jax.Array,
     ) -> tuple[
-        dict[str, chex.Array], envs.State, dict[str, float], dict[str, bool], dict
+        dict[str, jax.Array], envs.State, dict[str, float], dict[str, bool], dict
     ]:
         next_state = self.env.step(state, global_action)
         observations = self.get_obs(next_state)

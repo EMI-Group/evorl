@@ -12,7 +12,7 @@ def test_mutation():
     def init_fn(key):
         return model.init(key, jnp.ones((1, obs_size)))
 
-    key1, key2, key3, key4, key5 = jax.random.split(jax.random.PRNGKey(0), num=5)
+    key1, key2, key3, key4, key5 = jax.random.split(jax.random.key(0), num=5)
 
     state1 = init_fn(key1)
     state2 = init_fn(key2)
@@ -42,7 +42,7 @@ def test_crossover():
     def init_fn(key):
         return model.init(key, jnp.ones((1, obs_size)))
 
-    key1, key2, key3, key4, key5 = jax.random.split(jax.random.PRNGKey(0), num=5)
+    key1, key2, key3, key4, key5 = jax.random.split(jax.random.key(0), num=5)
 
     state1 = init_fn(key1)
     state2 = init_fn(key2)

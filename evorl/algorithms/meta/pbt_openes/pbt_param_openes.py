@@ -4,7 +4,7 @@ import jax
 from evorl.types import PyTreeDict, State
 from evorl.metrics import EvaluateMetric
 from evorl.utils.jax_utils import tree_deepcopy
-from evorl.distributed import shmap_vmap
+from evorl.distributed import POP_AXIS_NAME, shmap_vmap
 
 from ..pbt_workflow import PBTWorkflowTemplate, PBTOptState, PBTEvalMetric
 from ..pbt_utils import log_uniform_init
@@ -16,7 +16,7 @@ class PBTParamOpenESWorkflow(PBTWorkflowTemplate):
         return "PBT-ParamOpenES"
 
     def _setup_pop_and_pbt_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[chex.ArrayTree, PBTOptState]:
         search_space = self.config.search_space
         pop_size = self.config.pop_size
@@ -37,7 +37,7 @@ class PBTParamOpenESWorkflow(PBTWorkflowTemplate):
         return pop, PBTOptState()
 
     def apply_hyperparams_to_workflow_state(
-        self, workflow_state: State, hyperparams: PyTreeDict[str, chex.Numeric]
+        self, workflow_state: State, hyperparams: PyTreeDict[str, jax.typing.ArrayLike]
     ):
         ec_opt_state = workflow_state.ec_opt_state
 
@@ -72,14 +72,16 @@ class PBTParamOpenESWorkflow(PBTWorkflowTemplate):
 
         eval_fn = shmap_vmap(
             _evaluate,
-            mesh=self.sharding.mesh,
-            in_specs=self.sharding.spec,
-            out_specs=self.sharding.spec,
+            in_specs=jax.P(POP_AXIS_NAME),
+            out_specs=jax.P(POP_AXIS_NAME),
             check_vma=False,
         )
 
         pop_eval_metrics = eval_fn(
-            state.pop_workflow_state, jax.random.split(eval_key, self.config.pop_size)
+            state.pop_workflow_state,
+            jax.device_put(
+                jax.random.split(eval_key, self.config.pop_size), jax.P(POP_AXIS_NAME)
+            ),
         )
 
         eval_metrics = PBTEvalMetric(

@@ -22,7 +22,7 @@ def setup_workflow():
 def test_ec_workflow():
     workflow = setup_workflow()
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
     state = workflow.init(key)
 
     for i in range(100):
@@ -32,6 +32,6 @@ def test_ec_workflow():
 def test_ec_workflow_learn():
     workflow = setup_workflow()
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
     state = workflow.init(key)
     state = workflow.learn(state)

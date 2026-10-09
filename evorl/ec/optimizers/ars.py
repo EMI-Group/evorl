@@ -16,7 +16,7 @@ class ARSState(PyTreeData):
 
     mean: chex.ArrayTree
     opt_state: optax.OptState
-    key: chex.PRNGKey
+    key: jax.Array
     noise: None | chex.ArrayTree = None
 
 
@@ -42,7 +42,7 @@ class ARS(EvoOptimizer):
 
         self.optimizer = optimizer_map[self.optimizer_name](learning_rate=self.lr)
 
-    def init(self, mean: Params, key: chex.PRNGKey) -> ARSState:
+    def init(self, mean: Params, key: jax.Array) -> ARSState:
         opt_state = self.optimizer.init(mean)
         return ARSState(mean=mean, opt_state=opt_state, key=key)
 
@@ -65,7 +65,7 @@ class ARS(EvoOptimizer):
         return pop, state.replace(key=key, noise=half_noise)
 
     def tell(
-        self, state: ARSState, fitnesses: chex.Array
+        self, state: ARSState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, ARSState]:
         half_pop_size = self.pop_size // 2
 
@@ -81,7 +81,7 @@ class ARS(EvoOptimizer):
 
         grad = jtu.tree_map(
             # Note: we need additional "-1.0" since we are maximizing the fitness
-            lambda z: (-weight_sum(z[elite_indices], fit_diff) / (self.num_elites)),
+            lambda z: -weight_sum(z[elite_indices], fit_diff) / (self.num_elites),
             state.noise,
         )
 

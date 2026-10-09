@@ -6,7 +6,7 @@ from evorl.types import PyTreeDict
 
 def explore(
     parent: chex.ArrayTree,
-    key: chex.PRNGKey,
+    key: jax.Array,
     perturb_factor: dict[str, float],
     search_space: dict[str, dict[str, float]],
 ):
@@ -34,7 +34,7 @@ def explore(
 
 
 def select(
-    pop_episode_returns: chex.Array, key: chex.PRNGKey, bottoms_num: int, tops_num: int
+    pop_episode_returns: jax.Array, key: jax.Array, bottoms_num: int, tops_num: int
 ):
     """Select parents to replace worse individuals."""
     indices = jnp.argsort(pop_episode_returns)

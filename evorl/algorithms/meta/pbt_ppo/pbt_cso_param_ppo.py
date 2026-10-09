@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from evorl.types import PyTreeDict, State
+from evorl.distributed import POP_AXIS_NAME, tree_scatter_set
 from evorl.utils.jax_utils import tree_zeros_like, tree_set, tree_get
 
 from ..pbt_workflow import PBTOptState
@@ -22,7 +23,7 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
         return "PBT-CSO-ParamPPO"
 
     def _setup_pop_and_pbt_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[chex.ArrayTree, PBTOptState]:
         search_space = self.config.search_space
         pop_size = self.config.pop_size
@@ -63,16 +64,19 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
         pop: chex.ArrayTree,  # sharding
         pop_workflow_state: State,  # sharding
         pop_metrics: chex.ArrayTree,  # sharding
-        key: chex.PRNGKey,  # shared
+        key: jax.Array,  # shared
     ) -> tuple[chex.ArrayTree, State, PBTOptState]:
         pairing_key, rand_key = jax.random.split(key)
         velocity = pbt_opt_state.velocity  # PyTreeDict
+        pop_metrics = jax.device_put(pop_metrics, jax.P())
         pop_size = self.config.pop_size
         search_space = self.config.search_space
 
         randperm = jax.random.permutation(pairing_key, pop_size).reshape(2, -1)
 
-        mask = pop_metrics[randperm[0]] > pop_metrics[randperm[1]]
+        mask = pop_metrics.at[randperm[0]].get(out_sharding=jax.P()) > pop_metrics.at[
+            randperm[1]
+        ].get(out_sharding=jax.P())
         teacher_indices = jnp.where(mask, randperm[0], randperm[1])  # fast learner
         student_indices = jnp.where(mask, randperm[1], randperm[0])  # slow learner
 
@@ -97,11 +101,12 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
             chex.assert_equal_shape((v, x))
             r1 = jax.random.uniform(r1_key, shape=(pop_size // 2, *v.shape[1:]))
             r2 = jax.random.uniform(r2_key, shape=(pop_size // 2, *v.shape[1:]))
-            v_stu = r1 * v[student_indices] + r2 * (
-                x[teacher_indices] - x[student_indices]
+            v_stu = r1 * v.at[student_indices].get(out_sharding=jax.P()) + r2 * (
+                x.at[teacher_indices].get(out_sharding=jax.P())
+                - x.at[student_indices].get(out_sharding=jax.P())
             )
 
-            x_stu = x[student_indices] + v_stu
+            x_stu = x.at[student_indices].get(out_sharding=jax.P()) + v_stu
 
             # turn back to original space
             match hp:
@@ -121,7 +126,9 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
 
         # Note: no need to deepcopy teachers_wf_state here, since it should be
         # ensured immutable in apply_hyperparams_to_workflow_state()
-        teachers_wf_state = tree_get(pop_workflow_state, teacher_indices)
+        teachers_wf_state = tree_get(
+            pop_workflow_state, teacher_indices, out_sharding=jax.P()
+        )
         offsprings_workflow_state = jax.vmap(self.apply_hyperparams_to_workflow_state)(
             teachers_wf_state, offsprings
         )
@@ -132,12 +139,12 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
         pbt_opt_state = pbt_opt_state.replace(velocity=velocity)
 
         # ==== survival | merge population ====
-        pop = tree_set(pop, offsprings, student_indices, unique_indices=True)
-        pop_workflow_state = tree_set(
+        pop = tree_scatter_set(pop, offsprings, student_indices, jax.P(POP_AXIS_NAME))
+        pop_workflow_state = tree_scatter_set(
             pop_workflow_state,
             offsprings_workflow_state,
             student_indices,
-            unique_indices=True,
+            jax.P(POP_AXIS_NAME),
         )
 
         return pop, pop_workflow_state, pbt_opt_state

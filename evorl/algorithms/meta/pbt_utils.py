@@ -1,6 +1,5 @@
 import pandas as pd
 
-import chex
 import jax
 import jax.numpy as jnp
 
@@ -11,7 +10,7 @@ def convert_pop_to_df(pop):
     return df
 
 
-def uniform_init(search_space, key: chex.PRNGKey, num: int) -> chex.Array:
+def uniform_init(search_space, key: jax.Array, num: int) -> jax.Array:
     """Random sample."""
     assert search_space.low <= search_space.high
     return jax.random.uniform(
@@ -22,9 +21,7 @@ def uniform_init(search_space, key: chex.PRNGKey, num: int) -> chex.Array:
     )
 
 
-def truncated_normal_init(
-    search_space, key: chex.PRNGKey, num: int, m=0.95
-) -> chex.Array:
+def truncated_normal_init(search_space, key: jax.Array, num: int, m=0.95) -> jax.Array:
     """Random sample from a truncated normal distribution."""
     assert search_space.low <= search_space.high
 
@@ -48,7 +45,7 @@ def truncated_normal_init(
     return
 
 
-def log_uniform_init(search_space, key: chex.PRNGKey, num: int) -> chex.Array:
+def log_uniform_init(search_space, key: jax.Array, num: int) -> jax.Array:
     """Random sample from log space.
 
     Suitable for hyperparameters that need explore different magnitudes in positive range. eg: [1e-3, 100].
@@ -69,7 +66,7 @@ def log_uniform_init(search_space, key: chex.PRNGKey, num: int) -> chex.Array:
     )
 
 
-def exp_uniform_init(search_space, key: chex.PRNGKey, num: int) -> chex.Array:
+def exp_uniform_init(search_space, key: jax.Array, num: int) -> jax.Array:
     """Sample from exp(-x)."""
     assert (
         search_space.low > 0

@@ -6,12 +6,13 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 
 from evorl.types import PyTreeNode
+from evorl.utils.jax_utils import ensure_batched_key
 from ..utils import is_layer_norm_layer
 
 
 def erl_mutate(
     x: chex.ArrayTree,
-    key: chex.PRNGKey,
+    key: jax.Array,
     *,
     weight_max_magnitude: float = 1e6,
     mut_strength: float = 0.1,
@@ -160,14 +161,7 @@ class ERLMutation(PyTreeNode):
             ),
         )
 
-    def __call__(self, xs: chex.ArrayTree, key: chex.PRNGKey):
+    def __call__(self, xs: chex.ArrayTree, key: jax.Array):
         pop_size = jtu.tree_leaves(xs)[0].shape[0]
-        if key.ndim <= 1:
-            key = jax.random.split(key, pop_size)
-        else:
-            chex.assert_shape(
-                key,
-                (pop_size, 2),
-                custom_message=f"Batched key shape {key.shape} must match pop_size: {pop_size}",
-            )
+        key = ensure_batched_key(key, pop_size)
         return self.mutate_fn(xs, key)

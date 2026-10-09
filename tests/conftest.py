@@ -34,6 +34,7 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     device = config.getoption("--device")
+    disable_gpu_preallocation()
     enable_nan_inf_check()
     if device == "cpu":
         print("Use CPU!")

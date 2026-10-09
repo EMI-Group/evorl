@@ -37,8 +37,8 @@ class OpenESState(PyTreeData):
 
     mean: chex.ArrayTree
     opt_state: optax.OptState
-    noise_std: chex.Array
-    key: chex.PRNGKey
+    noise_std: jax.Array
+    key: jax.Array
     noise: None | chex.ArrayTree = None
 
 
@@ -52,7 +52,7 @@ class OpenES(EvoOptimizer):
     optimizer_name: str = "adam"
     weight_decay: float | None = None
 
-    fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
+    fitness_shaping_fn: Callable[[jax.Array], jax.Array] = pytree_field(
         static=True, default=compute_centered_ranks
     )
     optimizer: optax.GradientTransformation = pytree_field(static=True, init=False)
@@ -66,7 +66,7 @@ class OpenES(EvoOptimizer):
             learning_rate=self.lr_schedule.init
         )
 
-    def init(self, mean: Params, key: chex.PRNGKey) -> ECState:
+    def init(self, mean: Params, key: jax.Array) -> ECState:
         return OpenESState(
             mean=mean,
             opt_state=self.optimizer.init(mean),
@@ -103,7 +103,7 @@ class OpenES(EvoOptimizer):
         return pop, state
 
     def tell(
-        self, state: ECState, fitnesses: chex.Array
+        self, state: ECState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, OpenESState]:
         """Update the optimizer state based on the fitnesses of the candidate solutions."""
         transformed_fitnesses = self.fitness_shaping_fn(fitnesses)
@@ -151,9 +151,9 @@ class OpenESNoiseTableState(PyTreeData):
 
     mean: chex.ArrayTree
     opt_state: optax.OptState
-    noise_std: chex.Array
+    noise_std: jax.Array
     noise_table: chex.ArrayTree
-    key: chex.PRNGKey
+    key: jax.Array
     noise: None | chex.ArrayTree = None
 
 
@@ -168,7 +168,7 @@ class OpenESNoiseTable(EvoOptimizer):
     optimizer_name: str = "adam"
     weight_decay: float | None = None
 
-    fitness_shaping_fn: Callable[[chex.Array], chex.Array] = pytree_field(
+    fitness_shaping_fn: Callable[[jax.Array], jax.Array] = pytree_field(
         static=True, default=compute_centered_ranks
     )
     optimizer: optax.GradientTransformation = pytree_field(static=True, init=False)
@@ -182,7 +182,7 @@ class OpenESNoiseTable(EvoOptimizer):
             learning_rate=self.lr_schedule.init
         )
 
-    def init(self, mean: Params, key: chex.PRNGKey) -> ECState:
+    def init(self, mean: Params, key: jax.Array) -> ECState:
         key, noise_table_key = jax.random.split(key)
         noise_table = jax.random.normal(noise_table_key, shape=(self.noise_table_size,))
 
@@ -235,7 +235,7 @@ class OpenESNoiseTable(EvoOptimizer):
         return pop, state
 
     def tell(
-        self, state: ECState, fitnesses: chex.Array
+        self, state: ECState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, OpenESState]:
         """Update the optimizer state based on the fitnesses of the candidate solutions."""
         transformed_fitnesses = self.fitness_shaping_fn(fitnesses)

@@ -1,7 +1,6 @@
 from functools import partial
 import warnings
 
-import chex
 import envpool
 import gymnasium
 import jax
@@ -135,15 +134,14 @@ class EnvPoolGymAdapter(EnvAdapter):
             jax.pure_callback, _step, step_spec, vmap_method="expand_dims"
         )
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
-        obs, info = _to_jax(self._reset(key))
+    def reset(self, key: jax.Array) -> EnvState:
+        obs, info = _to_jax(self._reset(jax.random.key_data(key)))
 
         info.steps = jnp.zeros((self.num_envs,), dtype=jnp.int32)
         info.termination = jnp.zeros((self.num_envs,))
         info.truncation = jnp.zeros((self.num_envs,))
         info.episode_return = jnp.zeros((self.num_envs,))
         info.autoreset = jnp.zeros((self.num_envs,))
-
 
         return EnvState(
             env_state=None,

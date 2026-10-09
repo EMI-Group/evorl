@@ -39,9 +39,9 @@ logger = logging.getLogger(__name__)
 
 
 class SACTrainMetric(MetricBase):
-    critic_loss: chex.Array
-    actor_loss: chex.Array
-    alpha_loss: chex.Array | None = None
+    critic_loss: jax.Array
+    actor_loss: jax.Array
+    alpha_loss: jax.Array | None = None
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
@@ -64,9 +64,7 @@ class SACAgent(Agent):
     def normalize_obs(self):
         return self.obs_preprocessor is not None
 
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         key, critic_key, actor_key = jax.random.split(key, num=3)
 
         dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
@@ -103,7 +101,7 @@ class SACAgent(Agent):
         )
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -115,7 +113,7 @@ class SACAgent(Agent):
         return actions, PyTreeDict()
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -127,7 +125,7 @@ class SACAgent(Agent):
         return actions, PyTreeDict()
 
     def alpha_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -154,7 +152,7 @@ class SACAgent(Agent):
         )
 
     def actor_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         actor_key, entropy_key = jax.random.split(key, 2)
         obs = sample_batch.obs
@@ -177,7 +175,7 @@ class SACAgent(Agent):
         return PyTreeDict(actor_loss=actor_loss, entropy=entropy)
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         obs = sample_batch.obs
         next_obs = sample_batch.extras.env_extras.ori_obs
@@ -228,9 +226,7 @@ class SACDiscreteAgent(Agent):
     def normalize_obs(self):
         return self.obs_preprocessor is not None
 
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         key, critic_key, actor_key = jax.random.split(key, num=3)
 
         dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
@@ -268,7 +264,7 @@ class SACDiscreteAgent(Agent):
         )
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -280,7 +276,7 @@ class SACDiscreteAgent(Agent):
         return actions, PyTreeDict()
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -292,7 +288,7 @@ class SACDiscreteAgent(Agent):
         return actions, PyTreeDict()
 
     def alpha_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -312,7 +308,7 @@ class SACDiscreteAgent(Agent):
         )
 
     def actor_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         actor_key, entropy_key = jax.random.split(key, 2)
         obs = sample_batch.obs
@@ -335,7 +331,7 @@ class SACDiscreteAgent(Agent):
         return PyTreeDict(actor_loss=actor_loss, entropy=entropy.mean())
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         obs = sample_batch.obs
         next_obs = sample_batch.extras.env_extras.ori_obs
@@ -512,7 +508,7 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
         )
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = PyTreeDict(

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-import chex
+import jax
 from omegaconf import DictConfig
 from typing_extensions import Self  # pytype: disable=not-supported-yet
 
@@ -16,7 +16,7 @@ class AbstractWorkflow(ABC):
     """A Workflow Interface for EvoRL training pipelines."""
 
     @abstractmethod
-    def init(self, key: chex.PRNGKey) -> State:
+    def init(self, key: jax.Array) -> State:
         """Initialize the workflow's state.
 
         Args:
@@ -53,6 +53,7 @@ class Workflow(AbstractWorkflow):
         Args:
             config: the config object.
         """
+        self.mesh: jax.sharding.Mesh | None = None
         self.config = config
         self.recorder = ChainRecorder([])
         self.checkpoint_manager = setup_checkpoint_manager(config)
@@ -72,7 +73,7 @@ class Workflow(AbstractWorkflow):
         """
         raise NotImplementedError
 
-    def init(self, key: chex.PRNGKey) -> State:
+    def init(self, key: jax.Array) -> State:
         """Initialize the state of the .
 
         This is the public API to call for instance state initialization.
@@ -81,7 +82,7 @@ class Workflow(AbstractWorkflow):
         state = self.setup(key)
         return state
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         raise NotImplementedError
 
     def add_recorders(self, recorders: Recorder) -> None:
@@ -90,8 +91,10 @@ class Workflow(AbstractWorkflow):
 
     def close(self) -> None:
         """Close the workflow's components."""
-        self.recorder.close()
-        self.checkpoint_manager.close()
+        try:
+            self.recorder.close()
+        finally:
+            self.checkpoint_manager.close()
 
     def learn(self, state: State) -> State:
         """Run the complete learning process.

@@ -1,9 +1,8 @@
-import chex
 import jax
 import jax.tree_util as jtu
 from jax import numpy as jnp
 
-from evorl.utils.jax_utils import rng_split
+from evorl.utils.jax_utils import ensure_batched_key, rng_split
 
 from ..env import Env, EnvState
 from .wrapper import Wrapper
@@ -16,7 +15,7 @@ class EpisodeWrapper(Wrapper):
         super().__init__(env)
         self.episode_length = episode_length
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         state = self.env.reset(key)
 
         state.info.steps = jnp.zeros((), dtype=jnp.int32)
@@ -77,15 +76,8 @@ class VmapWrapper(Wrapper):
         self.num_envs = num_envs
         self.vmap_step = vmap_step
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
-        if key.ndim <= 1:
-            key = jax.random.split(key, self.num_envs)
-        else:
-            chex.assert_shape(
-                key,
-                (self.num_envs, 2),
-                custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}",
-            )
+    def reset(self, key: jax.Array) -> EnvState:
+        key = ensure_batched_key(key, self.num_envs)
 
         return jax.vmap(self.env.reset)(key)
 
@@ -103,15 +95,8 @@ class VmapAutoResetWrapper(Wrapper):
         super().__init__(env)
         self.num_envs = num_envs
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
-        if key.ndim <= 1:
-            key = jax.random.split(key, self.num_envs)
-        else:
-            chex.assert_shape(
-                key,
-                (self.num_envs, 2),
-                custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}",
-            )
+    def reset(self, key: jax.Array) -> EnvState:
+        key = ensure_batched_key(key, self.num_envs)
 
         reset_key, key = rng_split(key)
         state = jax.vmap(self.env.reset)(key)
@@ -159,15 +144,8 @@ class FastVmapAutoResetWrapper(Wrapper):
         super().__init__(env)
         self.num_envs = num_envs
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
-        if key.ndim <= 1:
-            key = jax.random.split(key, self.num_envs)
-        else:
-            chex.assert_shape(
-                key,
-                (self.num_envs, 2),
-                custom_message=f"Batched key shape {key.shape} must match num_envs: {self.num_envs}",
-            )
+    def reset(self, key: jax.Array) -> EnvState:
+        key = ensure_batched_key(key, self.num_envs)
 
         state = jax.vmap(self.env.reset)(key)
         state.info.first_env_state = state.env_state

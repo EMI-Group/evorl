@@ -1,6 +1,5 @@
 from collections.abc import Mapping
 
-import chex
 import jax
 import jax.numpy as jnp
 from jaxmarl.environments import MultiAgentEnv
@@ -26,7 +25,7 @@ from .wrappers.training_wrapper import (
 
 
 def get_random_actions(env: MultiAgentEnv):
-    dummy_key = jax.random.PRNGKey(42)
+    dummy_key = jax.random.key(42)
 
     return {
         agent_id: env.action_space(agent_id).sample(dummy_key)
@@ -38,7 +37,7 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
     def __init__(self, env: MultiAgentEnv):
         super().__init__(env)
 
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         key, reset_key, dummy_step_key = jax.random.split(key, 3)
         obs, env_state = self.env.reset(reset_key)
 
@@ -144,7 +143,7 @@ ma_brax_env_list = (
 
 
 class MABraxAdapter(JaxMARLAdapter):
-    def reset(self, key: chex.PRNGKey) -> EnvState:
+    def reset(self, key: jax.Array) -> EnvState:
         state = super().reset(key)
         # setup global info
         state.info.global_obs = state.env_state.obs

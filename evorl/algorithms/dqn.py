@@ -49,12 +49,12 @@ class DQNNetworkParams(PyTreeData):
 
 class DQNTrainMetric(MetricBase):
     # no need reduce_fn since it's already reduced in the step()
-    loss: chex.Array = jnp.zeros(())
+    loss: jax.Array = jnp.zeros(())
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
 class DQNWorkflowMetric(WorkflowMetric):
-    training_updates: chex.Array = jnp.zeros((), dtype=jnp.uint32)  # not need sync
+    training_updates: jax.Array = jnp.zeros((), dtype=jnp.uint32)  # not need sync
 
 
 class DQNAgent(Agent):
@@ -67,9 +67,7 @@ class DQNAgent(Agent):
     def normalize_obs(self):
         return self.obs_preprocessor is not None
 
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
 
         q_params = self.q_network.init(key, dummy_obs)
@@ -94,14 +92,13 @@ class DQNAgent(Agent):
         )
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         qs = self.q_network.apply(agent_state.params.q_params, obs)
-        # TODO: use tfp.Distribution
         actions_dist = distrax.EpsilonGreedy(
             qs, epsilon=agent_state.params.exploration_epsilon
         )
@@ -111,7 +108,7 @@ class DQNAgent(Agent):
         return actions, PyTreeDict()
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -127,7 +124,7 @@ class DQNAgent(Agent):
         return actions, PyTreeDict()
 
     def loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         obs = sample_batch.obs
         actions = sample_batch.actions
@@ -283,7 +280,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
         return DQNWorkflowMetric()
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = self.optimizer.init(agent_state.params.q_params)

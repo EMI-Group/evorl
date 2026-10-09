@@ -6,13 +6,14 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 
 from evorl.types import PyTreeNode
+from evorl.utils.jax_utils import ensure_batched_key
 from ..utils import is_layer_norm_layer
 
 
 def mlp_crossover(
     x1: chex.ArrayTree,
     x2: chex.ArrayTree,
-    key: chex.PRNGKey,
+    key: jax.Array,
     *,
     num_crossover_frac: float = 0.1,
 ):
@@ -80,21 +81,14 @@ class MLPCrossover(PyTreeNode):
             partial(mlp_crossover, num_crossover_frac=self.num_crossover_frac),
         )
 
-    def __call__(self, xs: chex.ArrayTree, key: chex.PRNGKey):
+    def __call__(self, xs: chex.ArrayTree, key: jax.Array):
         pop_size = jtu.tree_leaves(xs)[0].shape[0]
         assert pop_size % 2 == 0, "pop_size must be even"
         # xs = jtu.tree_map(lambda p: p[:n], xs)
         parents1 = jtu.tree_map(lambda x: x[0::2], xs)
         parents2 = jtu.tree_map(lambda x: x[1::2], xs)
 
-        if key.ndim <= 1:
-            key = jax.random.split(key, pop_size // 2)
-        else:
-            chex.assert_shape(
-                key,
-                (pop_size, 2),
-                custom_message=f"Batched key shape {key.shape} must match pop_size: {pop_size}",
-            )
+        key = ensure_batched_key(key, pop_size // 2)
 
         offsprings1, offsprings2 = self.crossover_fn(parents1, parents2, key)
         return jtu.tree_map(

@@ -49,7 +49,7 @@ class IMPALANetworkParams(PyTreeData):
 
 
 # class IMPALATrainMetric(TrainMetric):
-#     rho: chex.Array = jnp.zeros((), dtype=jnp.float32)
+#     rho: jax.Array = jnp.zeros((), dtype=jnp.float32)
 
 
 class IMPALAAgent(Agent):
@@ -69,9 +69,7 @@ class IMPALAAgent(Agent):
     def normalize_obs(self):
         return self.obs_preprocessor is not None
 
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         policy_key, value_key = jax.random.split(key, 2)
 
         dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
@@ -97,7 +95,7 @@ class IMPALAAgent(Agent):
         )
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -120,7 +118,7 @@ class IMPALAAgent(Agent):
         return actions, policy_extras
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -138,7 +136,7 @@ class IMPALAAgent(Agent):
         return actions, PyTreeDict()
 
     def loss(
-        self, agent_state: AgentState, trajectory: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, trajectory: SampleBatch, key: jax.Array
     ) -> LossDict:
         """IMPALA loss.
 

@@ -28,16 +28,113 @@ for the available extras and package names.
 
 ### Dependency compatibility
 
-The framework requires Python 3.12+ and JAX/jaxlib 0.6.1+. JAX 0.6.1 is the
-first release exposing the top-level `jax.shard_map` API with `check_vma` used
-by our distributed workflows. Python and JAX minimum versions are independent.
+The framework requires Python 3.12+, JAX/jaxlib 0.7.1+, and Distrax 0.1.9+.
+JAX 0.7.1 satisfies Distrax's requirements and adds `jax.set_mesh`, which
+allows the sharding APIs used here to accept raw `jax.P` specs.
+Python and JAX minimum versions are independent.
 
-CI tests the built wheel with both JAX/jaxlib 0.6.1 and the latest dependencies.
-The minimum JAX job lets the resolver select compatible versions of Flax and
-other dependencies; the latest Flax release can require a newer JAX version.
-The framework continues to use Flax Linen and the Orbax checkpoint V0 API.
+CI tests the built wheel with both JAX/jaxlib 0.7.1 + Orbax 0.11.30 and the
+latest dependencies. The minimum job lets the resolver select compatible
+versions of Flax and other dependencies; the latest Flax release can require
+a newer JAX version. The framework continues to use Flax Linen and the Orbax
+checkpoint V0 API.
 
-Deferred migrations and audits are tracked in [Development TODO](todo.md).
+Orbax requires version 0.11.30 or newer for the typed-key checkpoint restore
+path exercised by our compatibility suite.
+See the [Orbax changelog](https://github.com/google/orbax/blob/main/checkpoint/CHANGELOG.md).
+
+The compatibility audit on 2026-10-09 covers these combinations:
+
+| Component | Minimum JAX combination | Latest combination |
+| --- | --- | --- |
+| Python | 3.12 | 3.12 |
+| JAX / jaxlib | 0.7.1 | 0.11.2 |
+| Flax (Linen) | 0.11.2 | 0.12.10 |
+| Orbax (V0) | 0.11.30 | 0.12.7 |
+| Optax | 0.2.8 | 0.2.8 |
+| Chex | 0.1.90 | 0.1.92 |
+| Distrax | 0.1.9 | 0.1.9 |
+| NumPy / SciPy / pandas | 2.5.3 / 1.18.1 / 3.0.6 | 2.5.3 / 1.18.1 / 3.0.6 |
+| TFP nightly | 0.26.0.dev20261008 | 0.26.0.dev20261008 |
+
+These are tested combinations, not independent lower bounds for every package.
+Coverage includes typed-key batching and host callbacks, Linen initialization,
+mutable normalization state and gradients, seven RL agents, Optax hyperparameter
+updates, running statistics, two-device CPU sharding and gradients, V0
+checkpoints, and logging with NumPy/pandas.
+
+DQN uses Distrax's `EpsilonGreedy` distribution; other distributions use
+TFP's JAX substrate. Distrax 0.1.9+ depends on `tfp-nightly`, matching the
+existing direct dependency. Do not install stable `tensorflow-probability`
+alongside `tfp-nightly`: they install overlapping files.
+
+Construct device meshes with `jax.make_mesh` and inline simple `jax.P` specs.
+Keep named specs for structured state trees or generic function parameters.
+Training meshes use `axis_types=(jax.sharding.AxisType.Explicit,)` explicitly
+so JAX 0.7.1 and newer versions use the same mode. Generate keys with
+`jax.random.split(key, num_workers)` (or `pop_size` for PBT), then place that
+logical batch with `jax.device_put(keys, spec)` inside the active mesh context.
+Random stream count belongs to the workflow; sharding describes placement.
+Ordinary RL currently uses one worker per device; PBT may assign multiple
+individuals to each device. `shard_map` retains the batch axis of each local
+block, and an inner `vmap` passes scalar keys to individual workers.
+`shard_map` inputs must already match their declared specs.
+Model parameters and metrics are replicated; keys, environments and per-device
+replay buffers are sharded. PBT replicates fitnesses for global selection and
+selected parents for mutation, then writes updates to their owning shards.
+Full model populations stay sharded. Each distributed workflow stores one
+`mesh`, without a separate device list or `NamedSharding` object. Training
+entry points enter `with jax.set_mesh(workflow.mesh):` before initialization
+and learning. Direct callers must enter the same context before setup, step,
+or evaluation (including before calling jitted versions). `jax.shard_map`
+inherits that mesh; placement and gather operations use raw `jax.P` specs.
+Never call `jax.set_mesh` inside a jitted function.
+
+The outer mesh uses Explicit axes; `jax.shard_map` enters Manual mode for
+its body and returns to the outer mode afterward. Manual mode is appropriate
+for device-local rollout/update code and explicit collectives; it does not
+mean there is no communication. DP synchronizes gradients with `pmean` and
+reduces metrics/running statistics. EC and shared-buffer PBT gather data.
+Do not create the outer mesh with Manual axes: `jax.set_mesh` rejects them.
+The ordinary RL/EC `enable_shmap` methods are currently placeholders, so
+complete distributed step/evaluate execution is not covered by this audit.
+The workflow tests cover distributed initialization and PBT shard-map paths.
+
+
+TFP nightly still uses deprecated JAX internals, and Brax imports unmaintained
+JAXopt. The tested versions work; future upstream changes need CI verification.
+Optional RL environment upgrades and multi-host GPU training are outside this
+audit's test coverage. Tests must set `XLA_PYTHON_CLIENT_PREALLOCATE=false`; the
+compatibility suite runs on CPU.
+
+### Type annotations
+
+Use `jax.Array` for JAX array fields, outputs, and typed PRNG keys.
+Use `jax.typing.ArrayLike` for inputs that also accept NumPy arrays or numeric
+scalars; this annotation does not promise an input already has array attributes.
+Use `jax.typing.DTypeLike` for dtype arguments and `tuple[int, ...]` for shapes.
+Keep `chex.ArrayTree` for array pytrees and Chex assertions where needed.
+See [JAX typing](https://docs.jax.dev/en/latest/jax.typing.html).
+
+A `jax.Array` key annotation does not encode its PRNG dtype or batch shape:
+key helpers validate the dtype, and callers construct keys with `jax.random.key`.
+
+### Random keys and checkpoints
+
+Construct new keys with `jax.random.key(seed)`. A single typed key has `shape ()`,
+and a batch has `shape (B,)`, with the RNG implementation carried by its dtype.
+Use `rng_split` for possibly batched keys, `rng_split_by_shape` for a new key batch,
+and `jax.random.key_data` only at host callback boundaries that require NumPy data.
+See [JAX typed keys](https://docs.jax.dev/en/latest/jep/9263-typed-keys.html).
+
+Checkpoint restores assume the current state structure and typed-key
+representation. We do not maintain checkpoint format compatibility or add
+migration code for old checkpoints. For an abstract restore template, use
+`jax.tree.map(evorl.utils.orbax_utils.to_shape_dtype_struct, state)` to preserve
+typed-key shapes and dtypes; Orbax's general conversion helper expands keys to
+their raw uint32 representation.
+
+Deferred audits are tracked in [Development TODO](todo.md).
 
 ### Debugging
 
@@ -84,8 +181,8 @@ class ReplayBufferState(PyTreeData):
     """
 
     data: chex.ArrayTree
-    current_index: chex.Array = jnp.zeros((), jnp.int32)
-    buffer_size: chex.Array = jnp.zeros((), jnp.int32)
+    current_index: jax.Array = jnp.zeros((), jnp.int32)
+    buffer_size: jax.Array = jnp.zeros((), jnp.int32)
 ```
 
 Developers do not need to worry about whether the submitted code satisfy the above code style. Before submitting any commit, the `pre-commit` will raise warning or errors to remind you what is wrong. Besides, developers can manually execute this process by running

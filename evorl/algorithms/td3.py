@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 class TD3TrainMetric(MetricBase):
-    critic_loss: chex.Array
-    actor_loss: chex.Array
+    critic_loss: jax.Array
+    actor_loss: jax.Array
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
@@ -70,9 +70,7 @@ class TD3Agent(Agent):
     def normalize_obs(self):
         return self.obs_preprocessor is not None
 
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         key, q_key, actor_key = jax.random.split(key, num=3)
 
         dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
@@ -105,7 +103,7 @@ class TD3Agent(Agent):
         )
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         # sample_barch: [#env, ...]
 
@@ -122,7 +120,7 @@ class TD3Agent(Agent):
         return actions, PyTreeDict()
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         # sample_barch: [#env, ...]
 
@@ -135,7 +133,7 @@ class TD3Agent(Agent):
         return actions, PyTreeDict()
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         """Critic loss in TD3.
 
@@ -189,7 +187,7 @@ class TD3Agent(Agent):
         return PyTreeDict(critic_loss=q_loss, q_value=qs.mean())
 
     def actor_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
         """Actor loss in TD3.
 
@@ -351,7 +349,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
         )
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = PyTreeDict(

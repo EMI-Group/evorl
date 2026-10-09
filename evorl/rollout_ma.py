@@ -1,7 +1,6 @@
 from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 
-import chex
 import jax
 
 from evorl.agent import Agent, AgentState
@@ -29,7 +28,7 @@ def decentralized_env_step(
     env_state: EnvState,
     agent_states: Mapping[AgentID, AgentState],  # readonly
     sample_batch: SampleBatch,
-    key: chex.PRNGKey,
+    key: jax.Array,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
     """Collect one-step data."""
@@ -71,7 +70,7 @@ def decentralized_rollout(
     agents: Mapping[AgentID, Agent],
     env_state: EnvState,
     agent_states: Mapping[AgentID, AgentState],  # readonly
-    key: chex.PRNGKey,
+    key: jax.Array,
     rollout_length: int,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
@@ -116,7 +115,7 @@ def decentralized_env_step_with_shared_model(
     agent: Agent,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
-    key: chex.PRNGKey,
+    key: jax.Array,
     obs_batchify_fn: Callable[[jax.Array], Mapping[AgentID, jax.Array]],
     action_unbatchify_fn: Callable[[jax.Array], Mapping[AgentID, jax.Array]],
     env_extra_fields: Sequence[str] = (),
@@ -156,7 +155,7 @@ def decentralized_rollout_with_shared_model(
     agent: Agent,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
-    key: chex.PRNGKey,
+    key: jax.Array,
     rollout_length: int,
     obs_batchify_fn: None | (Callable[[jax.Array], Mapping[AgentID, jax.Array]]) = None,
     action_unbatchify_fn: None

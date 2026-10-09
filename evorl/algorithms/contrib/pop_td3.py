@@ -31,10 +31,10 @@ logger = logging.getLogger(__name__)
 
 
 class WorkflowMetric(MetricBase):
-    sampled_timesteps: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps_per_agent: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: chex.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: chex.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_per_agent: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
 
 
 class PopTD3Workflow(TD3Workflow):
@@ -61,7 +61,7 @@ class PopTD3Workflow(TD3Workflow):
     def _setup_workflow_metrics(self) -> MetricBase:
         return WorkflowMetric()
 
-    def setup(self, key: chex.PRNGKey) -> State:
+    def setup(self, key: jax.Array) -> State:
         key, agent_key, env_key, rb_key = jax.random.split(key, 4)
 
         agent_state, opt_state = self._setup_agent_and_optimizer(agent_key)
@@ -91,7 +91,7 @@ class PopTD3Workflow(TD3Workflow):
         return state
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = jax.vmap(self.agent.init, in_axes=(None, None, 0))(
             self.env.obs_space,
@@ -157,7 +157,7 @@ class PopTD3Workflow(TD3Workflow):
         key, random_rollout_key, rollout_key = jax.random.split(state.key, num=3)
         random_agent = RandomAgent()
         random_agent_state = random_agent.init(
-            obs_space, action_space, jax.random.PRNGKey(0)
+            obs_space, action_space, jax.random.key(0)
         )
         rollout_length = config.random_timesteps // config.num_envs
 

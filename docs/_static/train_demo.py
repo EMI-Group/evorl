@@ -27,7 +27,7 @@ workflow = PPOWorkflow.build_from_config(config, enable_jit=config.enable_jit)
 log_recorder = LogRecorder(log_path=output_dir / f"{exp_name}.log", console=True)
 workflow.add_recorders([log_recorder])
 
-state = workflow.init(jax.random.PRNGKey(config.seed))
+state = workflow.init(jax.random.key(config.seed))
 
 # Train in one line:
 # state = workflow.learn(state)

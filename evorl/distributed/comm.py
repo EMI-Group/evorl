@@ -1,6 +1,3 @@
-from collections.abc import Sequence
-
-import chex
 import jax
 import jax.numpy as jnp
 
@@ -41,15 +38,6 @@ def all_gather(x, axis_name: str | None = None, **kwargs):
         return jax.lax.all_gather(x, axis_name, **kwargs)
 
 
-def split_key_to_devices(key: chex.PRNGKey, devices: Sequence[jax.Device]):
-    """Split the key to each device."""
-    keys = jax.random.split(key, len(devices))
-    sharding = jax.sharding.NamedSharding(
-        jax.sharding.Mesh(devices, ("devices",)), jax.sharding.PartitionSpec("devices")
-    )
-    return jax.device_put(keys, sharding)
-
-
 def is_dist_initialized():
     """Whether the JAX's distributed setting is initialized."""
     return jax.distributed.is_initialized()
@@ -63,22 +51,18 @@ def get_process_id():
         return 0
 
 
-def get_global_ranks():
+def get_global_ranks(axis_name: str) -> jax.Array:
     """Return the global rank for each device.
 
     Returns:
         The sharded ranks across devices. Each device has a unique rank.
     """
-    num_local_devices = jax.local_device_count()
+    num_local_devices = jax.sharding.get_abstract_mesh().shape[axis_name]
 
     process_id = get_process_id()
     ranks = process_id * num_local_devices + jnp.arange(
         num_local_devices, dtype=jnp.int32
     )
-    sharding = jax.sharding.NamedSharding(
-        jax.sharding.Mesh(jax.local_devices(), ("devices",)),
-        jax.sharding.PartitionSpec("devices"),
-    )
-    ranks = jax.device_put(ranks, sharding)
+    ranks = jax.device_put(ranks, jax.P(axis_name))
 
     return ranks

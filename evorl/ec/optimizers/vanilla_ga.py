@@ -13,7 +13,7 @@ class VanillaGAState(PyTreeData):
     """State of the VanillaGA."""
 
     pop: chex.ArrayTree
-    key: chex.PRNGKey
+    key: jax.Array
 
 
 class VanillaGA(EvoOptimizer):
@@ -56,14 +56,14 @@ class VanillaGA(EvoOptimizer):
         if self.enable_crossover:
             self.crossover = MLPCrossover(num_crossover_frac=self.num_crossover_frac)
 
-    def init(self, pop: chex.ArrayTree, key: chex.PRNGKey) -> VanillaGAState:
+    def init(self, pop: chex.ArrayTree, key: jax.Array) -> VanillaGAState:
         return VanillaGAState(pop=pop, key=key)
 
     def ask(self, state: VanillaGAState) -> tuple[chex.ArrayTree, VanillaGAState]:
         return state.pop, state
 
     def tell(
-        self, state: VanillaGAState, fitnesses: chex.Array
+        self, state: VanillaGAState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, VanillaGAState]:
         # Note: We simplify the update in ERL
         key, select_key, mutate_key, crossover_key = jax.random.split(state.key, 4)

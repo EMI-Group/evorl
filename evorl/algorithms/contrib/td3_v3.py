@@ -63,9 +63,7 @@ class TD3Agent(Agent):
     def normalize_obs(self):
         return self.obs_preprocessor is not None
 
-    def init(
-        self, obs_space: Space, action_space: Space, key: chex.PRNGKey
-    ) -> AgentState:
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
         key, q_key1, q_key2, actor_key = jax.random.split(key, num=4)
 
         dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
@@ -102,7 +100,7 @@ class TD3Agent(Agent):
         )
 
     def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -117,7 +115,7 @@ class TD3Agent(Agent):
         return actions, PyTreeDict()
 
     def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: chex.PRNGKey
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -174,11 +172,11 @@ def make_mlp_td3_agent(
 
 
 class TD3TrainMetric(MetricBase):
-    actor_loss: chex.Array
-    critic1_loss: chex.Array
-    critic2_loss: chex.Array
-    q1: chex.Array
-    q2: chex.Array
+    actor_loss: jax.Array
+    critic1_loss: jax.Array
+    critic2_loss: jax.Array
+    q1: jax.Array
+    q2: jax.Array
 
 
 class TD3NetworkParams(PyTreeData):
@@ -269,7 +267,7 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
         )
 
     def _setup_agent_and_optimizer(
-        self, key: chex.PRNGKey
+        self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
         opt_state = PyTreeDict(
