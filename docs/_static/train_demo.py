@@ -22,7 +22,7 @@ with initialize(version_base=None, config_path="configs"):
     # algorithm: configs/agent/ppo.yaml
     config = compose(config_name="config", overrides=["env=brax/hopper", "agent=ppo"])
 
-workflow = PPOWorkflow.build_from_config(config, enable_jit=config.enable_jit)
+workflow = PPOWorkflow.build_from_config(config, jit=config.jit)
 
 log_recorder = LogRecorder(log_path=output_dir / f"{exp_name}.log", console=True)
 workflow.add_recorders([log_recorder])

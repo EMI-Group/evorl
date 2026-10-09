@@ -5,6 +5,7 @@ from omegaconf import DictConfig
 import jax
 import jax.tree_util as jtu
 
+from evorl.distributed import POP_AXIS_NAME
 from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase
@@ -101,7 +102,35 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
 
     @classmethod
-    def enable_shmap(cls, axis_name) -> None:
-        super().enable_shmap(axis_name)
-        # evaluate is handled via the base class pattern
-        pass
+    def enable_shmap(cls) -> None:
+        """Map local computations over workers, keeping self static."""
+        super().enable_shmap()
+        state_specs = State(
+            key=jax.P(POP_AXIS_NAME),
+            agent_state=jax.P(),
+            ec_opt_state=jax.P(),
+            metrics=jax.P(),
+            distributed_info=jax.P(POP_AXIS_NAME),
+        )
+
+        evaluate = cls.evaluate
+
+        def sharded_evaluate(self, state):
+            state = state.replace(
+                key=state.key[0],
+                distributed_info=jax.tree.map(lambda x: x[0], state.distributed_info),
+            )
+            metrics, state = evaluate(self, state)
+            return metrics, state.replace(
+                key=state.key[None],
+                distributed_info=jax.tree.map(
+                    lambda x: x[None], state.distributed_info
+                ),
+            )
+
+        cls.evaluate = jax.shard_map(
+            sharded_evaluate,
+            in_specs=(None, state_specs),
+            out_specs=(jax.P(), state_specs),
+            check_vma=False,
+        )

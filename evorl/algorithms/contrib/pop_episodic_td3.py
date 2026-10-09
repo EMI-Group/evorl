@@ -1,6 +1,6 @@
 from functools import partial
 import math
-from typing_extensions import Self  # pytype: disable=not-supported-yet]
+from typing import Self
 from omegaconf import DictConfig
 
 import jax

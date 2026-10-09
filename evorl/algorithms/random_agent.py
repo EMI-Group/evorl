@@ -1,6 +1,6 @@
 import jax
 from omegaconf import DictConfig
-from typing_extensions import Self  # pytype: disable=not-supported-yet
+from typing import Self
 
 from evorl.workflows import RLWorkflow
 from evorl.agent import RandomAgent, Agent
@@ -59,13 +59,10 @@ class RandomAgentWorkflow(RLWorkflow):
 
         agent_state = self.agent.init(env.obs_space, env.action_space, agent_key)
 
-        if self.enable_multi_devices:
+        if self.is_multi_device:
             agent_state = jax.device_put(agent_state, jax.P())
 
-            num_workers = self.mesh.shape[self.dp_axis_name]
-            key = jax.device_put(
-                jax.random.split(key, num_workers), jax.P(self.dp_axis_name)
-            )
+            key = jax.device_put(key, jax.P())
 
         return State(
             key=key,
@@ -84,6 +81,10 @@ class RandomAgentWorkflow(RLWorkflow):
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         key, eval_key = jax.random.split(state.key, num=2)
+        if self.is_multi_device:
+            eval_key = jax.random.fold_in(
+                eval_key, jax.lax.axis_index(self.dp_axis_name)
+            )
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(
@@ -97,3 +98,20 @@ class RandomAgentWorkflow(RLWorkflow):
 
         state = state.replace(key=key)
         return eval_metrics, state
+
+    @classmethod
+    def enable_shmap(cls) -> None:
+        """Map local computations over workers, keeping self static."""
+        state_specs = State(key=jax.P(), agent_state=jax.P())
+        cls.step = jax.shard_map(
+            cls.step,
+            in_specs=(None, state_specs),
+            out_specs=(jax.P(), state_specs),
+            check_vma=False,
+        )
+        cls.evaluate = jax.shard_map(
+            cls.evaluate,
+            in_specs=(None, state_specs),
+            out_specs=(jax.P(), state_specs),
+            check_vma=False,
+        )

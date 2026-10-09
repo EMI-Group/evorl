@@ -105,4 +105,5 @@ jobs:
             "$GITHUB_WORKSPACE/tests/test_jax_compatibility.py" \
             "$GITHUB_WORKSPACE/tests/test_orbax_utils.py" \
             "$GITHUB_WORKSPACE/tests/test_prng.py" \
-            "$GITHUB_WORKSPACE/tests/test_explicit_sharding.py"
+            "$GITHUB_WORKSPACE/tests/test_explicit_sharding.py" \
+            "$GITHUB_WORKSPACE/tests/test_workflow_multidevice.py"

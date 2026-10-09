@@ -1,7 +1,7 @@
 import logging
 from functools import partial
 import math
-from typing_extensions import Self  # pytype: disable=not-supported-yet]
+from typing import Self
 from omegaconf import DictConfig
 
 import chex
@@ -48,15 +48,15 @@ class PopTD3Workflow(TD3Workflow):
     def build_from_config(
         cls,
         config: DictConfig,
-        enable_multi_devices: bool = False,
-        enable_jit: bool = True,
+        multi_device: bool = False,
+        jit: bool = True,
     ) -> Self:
         devices = jax.local_devices()
 
-        if enable_multi_devices or len(devices) > 1:
+        if multi_device or len(devices) > 1:
             raise NotImplementedError("Multi-devices is not supported yet.")
 
-        return super().build_from_config(config, enable_multi_devices, enable_jit)
+        return super().build_from_config(config, multi_device, jit)
 
     def _setup_workflow_metrics(self) -> MetricBase:
         return WorkflowMetric()

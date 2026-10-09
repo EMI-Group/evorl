@@ -4,5 +4,5 @@
   已迁移构造函数、批量 key 处理及 host callback，并验证 typed key checkpoint；不支持旧 checkpoint 格式迁移。
 - [ ] 检查 `check_vma=False` 相关使用地方的合理性。
   逐项核对 `shard_map` 的输入/输出分片声明、跨设备归约及梯度行为，确认哪些调用可以启用检查。
-- [ ] 补齐普通 RL/EC 的 DP `step/evaluate` 执行封装。
-  `enable_shmap` 当前仍为空方法；应在 `shard_map` 的 Manual 函数体内执行本地计算及显式归约，并验证复制模型与分片 key/环境/replay buffer 的混合状态。
+- [x] 补齐普通 RL/EC 的多卡 `step/evaluate` 执行。
+  子类的 `enable_shmap` 类方法直接定义混合 State 布局，以 `in_specs=None` 声明静态 `self`；构建时先应用 `shard_map`，再按需应用 JIT。两设备测试覆盖 PPO、SAC、OpenES 的初始化、训练和评估。

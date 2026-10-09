@@ -1,6 +1,6 @@
 import logging
 from omegaconf import DictConfig
-from typing_extensions import Self  # pytype: disable=not-supported-yet]
+from typing import Self
 from collections.abc import Callable
 
 import chex

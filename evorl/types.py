@@ -3,8 +3,7 @@
 import dataclasses
 from functools import wraps
 from collections.abc import Mapping, Sequence
-from typing import Any, Union, TypeVar
-from typing_extensions import dataclass_transform  # pytype: disable=not-supported-yet
+from typing import Any, Union, TypeVar, dataclass_transform
 
 import chex
 import jax

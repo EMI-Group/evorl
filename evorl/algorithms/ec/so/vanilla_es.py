@@ -1,6 +1,6 @@
 import logging
 from omegaconf import DictConfig
-from typing_extensions import Self  # pytype: disable=not-supported-yet]
+from typing import Self
 
 import jax
 
@@ -31,7 +31,7 @@ class VanillaESWorkflow(ESWorkflowTemplate):
         num_devices = jax.device_count()
         if config.random_timesteps % num_devices != 0:
             logger.warning(
-                f"When enable_multi_devices=True, pop_size ({config.random_timesteps}) should be divisible by num_devices ({num_devices}),"
+                f"When multi_device=True, pop_size ({config.random_timesteps}) should be divisible by num_devices ({num_devices}),"
             )
 
         config.random_timesteps = (config.random_timesteps // num_devices) * num_devices

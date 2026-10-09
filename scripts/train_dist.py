@@ -58,7 +58,7 @@ def train_dist(config: DictConfig) -> None:
         )
     else:
         workflow: Workflow = workflow_cls.build_from_config(
-            config, enable_jit=config.enable_jit
+            config, jit=config.jit
         )
 
     recorders = setup_recorders(config, workflow_cls.name(), parallel=True)

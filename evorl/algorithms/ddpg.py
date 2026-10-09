@@ -296,6 +296,10 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
+        if self.is_multi_device:
+            rank = jax.lax.axis_index(self.dp_axis_name)
+            rollout_key = jax.random.fold_in(rollout_key, rank)
+            learn_key = jax.random.fold_in(learn_key, rank)
 
         # the trajectory [T, B, ...]
         trajectory, env_state = rollout(

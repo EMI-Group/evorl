@@ -273,7 +273,7 @@
                 "agent=contrib/rvea-evox",
                 "env=brax/hopper",
                 "debug=true",
-                // "enable_jit=false"
+                // "jit=false"
             ],
             "env": {
                 "XLA_PYTHON_CLIENT_PREALLOCATE": "false",

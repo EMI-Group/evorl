@@ -9,7 +9,7 @@ def setup_a2c():
     with initialize(config_path="../configs"):
         cfg = compose(config_name="config", overrides=["agent=a2c", "env=brax/ant"])
 
-    workflow = A2CWorkflow.build_from_config(cfg, enable_jit=True)
+    workflow = A2CWorkflow.build_from_config(cfg, jit=True)
 
     return workflow
 

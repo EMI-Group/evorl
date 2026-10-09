@@ -35,12 +35,10 @@ def train(config: DictConfig) -> None:
     if len(devices) > 1:
         logger.info(f"Enable Multiple Devices: {devices}")
         workflow: Workflow = workflow_cls.build_from_config(
-            config, enable_multi_devices=True
+            config, multi_device=True, jit=config.jit
         )
     else:
-        workflow: Workflow = workflow_cls.build_from_config(
-            config, enable_jit=config.enable_jit
-        )
+        workflow: Workflow = workflow_cls.build_from_config(config, jit=config.jit)
 
     recorders = setup_recorders(config, workflow_cls.name())
     workflow.add_recorders(recorders)

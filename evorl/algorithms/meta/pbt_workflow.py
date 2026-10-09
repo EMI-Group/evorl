@@ -94,7 +94,7 @@ class PBTWorkflowBase(Workflow):
 
     @classmethod
     def build_from_config(
-        cls, config: DictConfig, enable_multi_devices=True, enable_jit: bool = True
+        cls, config: DictConfig, multi_device=True, jit: bool = True
     ):
         config = copy.deepcopy(config)  # avoid in-place modification
 
@@ -103,7 +103,7 @@ class PBTWorkflowBase(Workflow):
         OmegaConf.set_readonly(config, False)
         cls._rescale_config(config)
 
-        if enable_jit:
+        if jit:
             cls.enable_jit()
 
         OmegaConf.set_readonly(config, True)
@@ -134,9 +134,9 @@ class PBTWorkflowBase(Workflow):
 
         OmegaConf.set_readonly(target_workflow_config, True)
 
-        enable_jit = is_jitted(cls.step)
+        jit = is_jitted(cls.step)
         target_workflow = target_workflow_cls.build_from_config(
-            target_workflow_config, enable_jit=enable_jit
+            target_workflow_config, jit=jit
         )
 
         eval_env = create_env(

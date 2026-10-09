@@ -5,7 +5,7 @@ defaults:
   - agent: null
 
 seed: 42
-enable_jit: true
+jit: true
 checkpoint:
   enable: false
   save_interval_steps: 100

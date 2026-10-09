@@ -10,7 +10,7 @@ with initialize(version_base=None, config_path="configs"):
     # algorithm: configs/agent/ppo.yaml
     config = compose(config_name="config", overrides=["env=brax/hopper", "agent=ppo"])
 
-workflow = PPOWorkflow.build_from_config(config, enable_jit=config.enable_jit)
+workflow = PPOWorkflow.build_from_config(config, jit=config.jit)
 state = workflow.init(jax.random.key(config.seed))
 
 # Train in one line:

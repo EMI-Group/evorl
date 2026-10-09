@@ -8,6 +8,7 @@ def main():
     from types import SimpleNamespace
     from omegaconf import OmegaConf
     from evorl.types import State, PyTreeDict
+    from evorl.replay_buffers import ReplayBufferState
     from evorl.sample_batch import SampleBatch
     from evorl.distributed import tree_scatter_set
     from evorl.utils.jax_utils import tree_get
@@ -30,13 +31,16 @@ def main():
         action_space = None
 
         def reset(self, key):
-            return PyTreeDict(key=key, obs=jax.random.normal(key, (3,)))
+            keys = jax.random.split(key, 2)
+            return PyTreeDict(
+                key=keys, obs=jax.vmap(lambda k: jax.random.normal(k, (3,)))(keys)
+            )
 
     env = ToyEnv()
     dp_mesh = jax.make_mesh((2,), ("DP",), axis_types=(jax.sharding.AxisType.Explicit,))
     jax.set_mesh(dp_mesh)
     common = dict(
-        enable_multi_devices=True,
+        is_multi_device=True,
         mesh=dp_mesh,
         dp_axis_name="DP",
         env=env,
@@ -47,28 +51,41 @@ def main():
         _setup_workflow_metrics=WorkflowMetric,
     )
     self = SimpleNamespace(**common)
-    state = OnPolicyWorkflow.setup(self, jax.random.key(0))
-    assert state.key.sharding.spec == jax.P("DP")
-    assert state.env_state.obs.shape == (2, 3)
+    state = jax.jit(lambda key: OnPolicyWorkflow.setup(self, key))(jax.random.key(0))
+    assert state.key.shape == ()
+    assert state.key.sharding.spec == jax.P()
+    assert state.env_state.obs.shape == (4, 3)
+    assert state.env_state.key.shape == (4,)
+    assert all(
+        shard.data.shape == (2, 3) for shard in state.env_state.obs.addressable_shards
+    )
     assert state.agent_state.params.w.shape == (3,)
     print("on-policy setup PASS", flush=True)
-    self = SimpleNamespace(
-        **common,
-        _setup_replaybuffer=lambda key: PyTreeDict(
-            data=jnp.zeros((4, 3)), count=jnp.array(0)
-        ),
-        _postsetup_replaybuffer=lambda state: state.replace(
-            replay_buffer_state=state.replay_buffer_state.replace(
-                count=state.replay_buffer_state.count + 1
-            ),
-            metrics=state.metrics.replace(
-                sampled_timesteps=jax.lax.psum(jnp.uint32(1), "DP")
-            ),
-        ),
-    )
-    state = OffPolicyWorkflow.setup(self, jax.random.key(1))
-    np.testing.assert_array_equal(state.replay_buffer_state.count, np.ones(2))
-    assert state.replay_buffer_state.data.shape == (2, 4, 3)
+
+    class OffPolicyHarness(OffPolicyWorkflow):
+        def __init__(self):
+            self.__dict__.update(common)
+
+        def _setup_replaybuffer(self, key):
+            return ReplayBufferState(data=jnp.zeros((4, 3)))
+
+        def _postsetup_replaybuffer(self, state):
+            return state.replace(
+                replay_buffer_state=state.replay_buffer_state.replace(
+                    buffer_size=state.replay_buffer_state.buffer_size + 1
+                ),
+                metrics=state.metrics.replace(
+                    sampled_timesteps=jax.lax.psum(jnp.uint32(1), "DP")
+                ),
+            )
+
+    OffPolicyHarness.enable_shmap()
+    OffPolicyHarness.enable_jit()
+    self = OffPolicyHarness()
+    state = self.setup(jax.random.key(1))
+    assert state.env_state.obs.shape == (4, 3)
+    np.testing.assert_array_equal(state.replay_buffer_state.buffer_size, np.ones(2))
+    assert state.replay_buffer_state.data.shape == (8, 3)
     assert state.agent_state.params.w.shape == (3,)
     assert state.metrics.sampled_timesteps.shape == ()
     assert int(state.metrics.sampled_timesteps) == 2
@@ -79,7 +96,7 @@ def main():
     np.testing.assert_array_equal(state.distributed_info.rank, [0, 1])
     print("EC setup PASS", flush=True)
     self = SimpleNamespace(
-        enable_multi_devices=True,
+        is_multi_device=True,
         mesh=dp_mesh,
         dp_axis_name="DP",
         evaluator=SimpleNamespace(env=env),
@@ -88,7 +105,8 @@ def main():
         ),
     )
     state = RandomAgentWorkflow.setup(self, jax.random.key(3))
-    assert state.key.sharding.spec == jax.P("DP")
+    assert state.key.shape == ()
+    assert state.key.sharding.spec == jax.P()
     print("random-agent setup PASS", flush=True)
 
     class Target:

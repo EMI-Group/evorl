@@ -71,16 +71,23 @@ alongside `tfp-nightly`: they install overlapping files.
 Construct device meshes with `jax.make_mesh` and inline simple `jax.P` specs.
 Keep named specs for structured state trees or generic function parameters.
 Training meshes use `axis_types=(jax.sharding.AxisType.Explicit,)` explicitly
-so JAX 0.7.1 and newer versions use the same mode. Generate keys with
-`jax.random.split(key, num_workers)` (or `pop_size` for PBT), then place that
-logical batch with `jax.device_put(keys, spec)` inside the active mesh context.
-Random stream count belongs to the workflow; sharding describes placement.
-Ordinary RL currently uses one worker per device; PBT may assign multiple
-individuals to each device. `shard_map` retains the batch axis of each local
-block, and an inner `vmap` passes scalar keys to individual workers.
+so JAX 0.7.1 and newer versions use the same mode. RL stores a replicated scalar
+root key. Each iteration splits the next root from the keys it consumes, then
+folds `lax.axis_index(dp_axis_name)` into the consumed keys for independent local
+random streams. Never fold the saved next root: it must remain replicated.
+Environment setup, evaluation and buffer warmup follow the same rule; model
+initialization keeps a shared key so parameters start identical. Single-device paths
+keep their original split sequences; distributed random sequences change.
+EC retains its worker-key batch; PBT generates `pop_size` keys and shards the
+population batch. Ordinary RL uses one worker per device; PBT may assign multiple
+individuals to each device. RL environment arrays have global shape
+`(total_num_envs, ...)` and are partitioned along that existing environment axis.
+Each device resets and steps `(local_num_envs, ...)` using the environment's
+existing batching; do not add an outer worker `vmap` to the batched environment.
+PBT uses its existing inner `vmap` to process local population members.
 `shard_map` inputs must already match their declared specs.
-Model parameters and metrics are replicated; keys, environments and per-device
-replay buffers are sharded. PBT replicates fitnesses for global selection and
+RL model parameters, metrics and root keys are replicated; environments and
+per-device replay buffers are sharded. PBT replicates fitnesses for global selection and
 selected parents for mutation, then writes updates to their owning shards.
 Full model populations stay sharded. Each distributed workflow stores one
 `mesh`, without a separate device list or `NamedSharding` object. Training
@@ -96,9 +103,49 @@ for device-local rollout/update code and explicit collectives; it does not
 mean there is no communication. DP synchronizes gradients with `pmean` and
 reduces metrics/running statistics. EC and shared-buffer PBT gather data.
 Do not create the outer mesh with Manual axes: `jax.set_mesh` rejects them.
-The ordinary RL/EC `enable_shmap` methods are currently placeholders, so
-complete distributed step/evaluate execution is not covered by this audit.
-The workflow tests cover distributed initialization and PBT shard-map paths.
+Build each execution configuration on a fresh workflow subclass, as in
+`scripts/train.py`. `build_from_config(..., multi_device=True, jit=True)` creates
+the mesh, applies `enable_shmap`, then applies `enable_jit`. Both hooks are class
+methods. The construction flag is `multi_device`; the instance predicate is
+`is_multi_device`, derived from whether `dp_axis_name` is set. Workflow branches
+use this predicate rather than checking the axis name directly.
+Computation reads fixed workflow attributes; changing training data
+is passed explicitly through `State`. `shard_map` declares static `self` with
+`in_specs=(None, state_specs)`, and `jit` uses `static_argnums=(0,)`.
+Concrete workflow templates write their state layouts directly. Parameters and
+metrics retain their replicated shapes. Environment arrays pass directly between
+setup, step and evaluate, with no device dimension or squeeze/expand operations.
+Replay buffers remain independent local rings. Data and priorities have global
+shape `(total_capacity, ...)`, sliced into `(local_capacity, ...)` on each device.
+Sample indices remain local indices; their batches are concatenated on output.
+Only per-ring scalar fields (`current_index`, `buffer_size`, and prioritized
+buffers' `max_priority`) use one value per device and explicit scalar conversion
+at the method boundary. `_shard_map_replay_buffer_context` in `rl_workflow.py`
+yields a shallow working copy of `State` with these fields squeezed on entry.
+Callers use `local_state.update(next_state)` to retain the method's returned state;
+normal exit expands its scalar fields before the caller returns `local_state`.
+Only the working copy is mutated, never the input state. The context is shared
+by training and replay-buffer warmup.
+These fields must not be marked replicated: masked insertion can
+write different numbers of transitions on different devices. Evaluation passes
+the buffer through unchanged. Computation runs in Manual mode across the data-parallel
+axis, with communication expressed by explicit collectives. Keep the State's
+input and output shardings identical to avoid resharding between calls; `P()`
+on an output is a replication promise, not an implicit reduction.
+Loss metrics must be explicitly reduced as well as gradients before declaring
+them replicated. Tests compare actual replica values and inspect compiled
+collectives: PPO/SAC use all-reduce, and a local-only computation has none.
+The workflow tests cover distributed initialization and PBT shard-map paths,
+plus PPO, SAC, OpenES and RandomAgent setup/step/evaluate on two CPU devices.
+Uniform, prioritized and LAP replay tests cover unequal masked insertion, empty
+writes, wraparound, local sampling and priority updates against independent local
+references. Their compiled buffer steps must contain no collective communication.
+Current JAX supports these checks with and without outer JIT. On JAX 0.7.1,
+use `jit=True`: eager `shard_map` can fail with a gather `ShardingTypeError`
+on `fold_in(key, axis_index)` or replicated arrays captured by `scan`, independently
+of Workflow or static `self`. RL's `enable_jit` compiles setup as well as step
+and evaluation, so initialization uses the same compiled execution mode.
+The eager regression tests record this failure as xfail only on 0.7.1.
 
 
 TFP nightly still uses deprecated JAX internals, and Brax imports unmaintained

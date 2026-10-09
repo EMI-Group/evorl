@@ -14,7 +14,7 @@ def setup_workflow():
 
     cfg.num_iters = 10
 
-    workflow = CMAESWorkflow.build_from_config(cfg, enable_jit=True)
+    workflow = CMAESWorkflow.build_from_config(cfg, jit=True)
 
     return workflow
 

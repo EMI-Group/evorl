@@ -1,7 +1,7 @@
 import copy
 import logging
 from omegaconf import DictConfig, OmegaConf
-from typing_extensions import Self
+from typing import Self
 
 import chex
 import jax
@@ -52,7 +52,7 @@ class ECWorkflow(Workflow):
         self.dp_axis_name = None
 
     @property
-    def enable_multi_devices(self) -> bool:
+    def is_multi_device(self) -> bool:
         """Whether multi-devices training is enabled."""
         return self.dp_axis_name is not None
 
@@ -60,31 +60,31 @@ class ECWorkflow(Workflow):
     def build_from_config(
         cls,
         config: DictConfig,
-        enable_multi_devices: bool = False,
-        enable_jit: bool = True,
+        multi_device: bool = False,
+        jit: bool = True,
     ):
         """Build the ec workflow instance from the config.
 
+        Call on a fresh subclass for each execution configuration, as in
+        ``scripts/train.py``. The enable_* class methods transform that subclass.
+
         Args:
             config: Config of the workflow
-            enable_multi_devices: Whether multi-devices training is enabled
-            enable_jit: Whether jit is enabled
+            multi_device: Whether multi-devices training is enabled
+            jit: Whether jit is enabled
         """
         config = copy.deepcopy(config)  # avoid in-place modification
 
         devices = jax.local_devices()
 
-        if enable_multi_devices:
-            cls.enable_shmap(POP_AXIS_NAME)
+        if multi_device:
             OmegaConf.set_readonly(config, False)
             cls._rescale_config(config)
-        elif enable_jit:
-            cls.enable_jit()
 
         OmegaConf.set_readonly(config, True)
 
         workflow = cls._build_from_config(config)
-        if enable_multi_devices:
+        if multi_device:
             workflow.dp_axis_name = POP_AXIS_NAME
             workflow.mesh = jax.make_mesh(
                 (len(devices),),
@@ -92,6 +92,11 @@ class ECWorkflow(Workflow):
                 axis_types=(jax.sharding.AxisType.Explicit,),
                 devices=devices,
             )
+            with jax.set_mesh(workflow.mesh):
+                cls.enable_shmap()
+
+        if jit:
+            cls.enable_jit()
 
         return workflow
 
@@ -111,7 +116,7 @@ class ECWorkflow(Workflow):
     def _rescale_config(cls, config: DictConfig) -> None:
         """Customize the logic of rescaling the config settings when multi-devices training is enabled.
 
-        When enable_multi_devices=True, rescale config settings in-place to match multi-devices
+        When multi_device=True, rescale config settings in-place to match multi-devices
 
         Args:
             config: Config of the workflow
@@ -127,12 +132,9 @@ class ECWorkflow(Workflow):
         cls.step = jax.jit(cls.step, static_argnums=(0,))
 
     @classmethod
-    def enable_shmap(cls, axis_name) -> None:
-        """Define which methods should be shmaped.
-
-        This method defines the multi-device behavior. By default, the workflow's `step()` method is shmaped.
-        """
-        pass
+    def enable_shmap(cls) -> None:
+        """Define distributed method boundaries in the concrete workflow template."""
+        raise NotImplementedError
 
 
 class ECWorkflowTemplate(ECWorkflow):
@@ -175,6 +177,61 @@ class ECWorkflowTemplate(ECWorkflow):
         self.ec_evaluator = ec_evaluator
         self.agent_state_vmap_axes = agent_state_vmap_axes
 
+    @classmethod
+    def enable_shmap(cls) -> None:
+        """Map local computations over workers, keeping self static."""
+        state_specs = State(
+            key=jax.P(POP_AXIS_NAME),
+            agent_state=jax.P(),
+            ec_opt_state=jax.P(),
+            metrics=jax.P(),
+            distributed_info=jax.P(POP_AXIS_NAME),
+        )
+
+        step = cls.step
+
+        def sharded_step(self, state):
+            state = state.replace(
+                key=state.key[0],
+                distributed_info=jax.tree.map(lambda x: x[0], state.distributed_info),
+            )
+            metrics, state = step(self, state)
+            return metrics, state.replace(
+                key=state.key[None],
+                distributed_info=jax.tree.map(
+                    lambda x: x[None], state.distributed_info
+                ),
+            )
+
+        cls.step = jax.shard_map(
+            sharded_step,
+            in_specs=(None, state_specs),
+            out_specs=(jax.P(), state_specs),
+            check_vma=False,
+        )
+
+        _postsetup = cls._postsetup
+
+        def sharded_postsetup(self, state):
+            state = state.replace(
+                key=state.key[0],
+                distributed_info=jax.tree.map(lambda x: x[0], state.distributed_info),
+            )
+            state = _postsetup(self, state)
+            return state.replace(
+                key=state.key[None],
+                distributed_info=jax.tree.map(
+                    lambda x: x[None], state.distributed_info
+                ),
+            )
+
+        cls._postsetup = jax.shard_map(
+            sharded_postsetup,
+            in_specs=(None, state_specs),
+            out_specs=state_specs,
+            check_vma=False,
+        )
+
     def _setup_agent_and_optimizer(self, key: jax.Array) -> tuple[AgentState, ECState]:
         """Setup Agent and ECOptimizer states.
 
@@ -198,7 +255,7 @@ class ECWorkflowTemplate(ECWorkflow):
         workflow_metrics = self._setup_workflow_metrics()
         distributed_info = DistributedInfo()
 
-        if self.enable_multi_devices:
+        if self.is_multi_device:
             agent_state, ec_opt_state, workflow_metrics = jax.device_put(
                 (agent_state, ec_opt_state, workflow_metrics), jax.P()
             )
@@ -351,12 +408,6 @@ class ECWorkflowTemplate(ECWorkflow):
     def enable_jit(cls) -> None:
         super().enable_jit()
         cls._postsetup = jax.jit(cls._postsetup, static_argnums=(0,))
-
-    @classmethod
-    def enable_shmap(cls, axis_name) -> None:
-        super().enable_shmap(axis_name)
-        # Note: In the new paradigm, we use shmap_vmap where needed instead of wrappers here.
-        pass
 
 
 class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):

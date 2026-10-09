@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from typing_extensions import Self  # pytype: disable=not-supported-yet]
+from typing import Self
 from omegaconf import DictConfig
 
 import chex

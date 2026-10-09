@@ -1,6 +1,6 @@
 import copy
 import logging
-from typing_extensions import Self  # pytype: disable=not-supported-yet]
+from typing import Self
 from omegaconf import DictConfig
 
 import chex
@@ -66,17 +66,17 @@ class CEMRLWorkflowBase(Workflow):
     def build_from_config(
         cls,
         config: DictConfig,
-        enable_multi_devices: bool = False,
-        enable_jit: bool = True,
+        multi_device: bool = False,
+        jit: bool = True,
     ) -> Self:
         config = copy.deepcopy(config)  # avoid in-place modification
 
         devices = jax.local_devices()
 
-        if enable_multi_devices or len(devices) > 1:
+        if multi_device or len(devices) > 1:
             raise NotImplementedError("Multi-devices is not supported yet.")
 
-        if enable_jit:
+        if jit:
             cls.enable_jit()
 
         workflow = cls._build_from_config(config)

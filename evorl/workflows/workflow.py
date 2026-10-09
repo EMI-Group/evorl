@@ -3,7 +3,7 @@ from typing import Any
 
 import jax
 from omegaconf import DictConfig
-from typing_extensions import Self  # pytype: disable=not-supported-yet
+from typing import Self
 
 from evorl.recorders import ChainRecorder, Recorder
 from evorl.types import State

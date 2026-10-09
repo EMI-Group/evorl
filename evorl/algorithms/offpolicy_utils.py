@@ -137,6 +137,10 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         # ==== fill random transitions ====
 
         key, random_rollout_key, rollout_key = jax.random.split(state.key, num=3)
+        if self.is_multi_device:
+            rank = jax.lax.axis_index(self.dp_axis_name)
+            random_rollout_key = jax.random.fold_in(random_rollout_key, rank)
+            rollout_key = jax.random.fold_in(rollout_key, rank)
         random_agent = RandomAgent()
         random_agent_state = random_agent.init(
             obs_space, action_space, jax.random.key(0)

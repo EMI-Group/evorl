@@ -38,6 +38,12 @@ class TD3V2Workflow(TD3Workflow):
         key, rollout_key, rb_key, critic_key, actor_key = jax.random.split(
             state.key, num=5
         )
+        if self.is_multi_device:
+            rank = jax.lax.axis_index(self.dp_axis_name)
+            rollout_key = jax.random.fold_in(rollout_key, rank)
+            rb_key = jax.random.fold_in(rb_key, rank)
+            critic_key = jax.random.fold_in(critic_key, rank)
+            actor_key = jax.random.fold_in(actor_key, rank)
 
         # the trajectory [T, B, ...]
         trajectory, env_state = rollout(

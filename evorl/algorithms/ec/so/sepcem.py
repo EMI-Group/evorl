@@ -1,5 +1,5 @@
 from omegaconf import DictConfig
-from typing_extensions import Self  # pytype: disable=not-supported-yet]
+from typing import Self
 
 import jax
 

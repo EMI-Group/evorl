@@ -46,7 +46,7 @@ We list some common fields in the final config, which is useful as options passi
 - `env`: Specify the environment's config file. The `.yaml` suffix is not needed.
 - `seed`: Random seed.
 - `checkpoint.enable`: Whether to save the checkpoint files during training. Default is `false`.
-- `enable_jit`: Whether to enable JIT compilation for the workflow.
+- `jit`: Whether to enable JIT compilation for the workflow.
 - `recorders`: Logging backends. Defaults to `[log, aim]`; install optional SDKs before selecting other backends.
 
 Moreover, to use the own config folders instead of the EvoRL's `configs/`, you can specify the config path by the `-cp` and `-cn` option. This is helpful when you want to use EvoRL as a package and build your own project. More details can be found in the [hydra's CLI syntax](https://hydra.cc/docs/advanced/hydra-command-line-flags/).
