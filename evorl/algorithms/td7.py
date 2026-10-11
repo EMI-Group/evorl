@@ -10,7 +10,7 @@ import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
-from evorl.distributed import psum, pmean
+from evorl.distributed import pmax, pmean, pmin, psum
 from evorl.distributed.gradients import gradient_update
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluators import Evaluator
@@ -142,9 +142,9 @@ class TD7Critic(nn.Module):
 
 
 class TD7TrainMetric(MetricBase):
-    critic_loss: jax.Array
-    actor_loss: jax.Array
-    encoder_loss: jax.Array
+    critic_loss: jax.Array = metric_field(reduce_fn=pmean)
+    actor_loss: jax.Array = metric_field(reduce_fn=pmean)
+    encoder_loss: jax.Array = metric_field(reduce_fn=pmean)
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
@@ -482,6 +482,22 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
         return "TD7"
 
     @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
+        """Split the configured total rollout episodes across devices."""
+        super()._rescale_config(config)
+        num_devices = jax.local_device_count()
+        if config.rollout_episodes < num_devices:
+            raise ValueError(
+                f"rollout_episodes({config.rollout_episodes}) must be at least num_devices({num_devices})"
+            )
+        if config.rollout_episodes % num_devices != 0:
+            logger.warning(
+                f"rollout_episodes({config.rollout_episodes}) cannot be divided by num_devices({num_devices}), "
+                f"rescale rollout_episodes to {config.rollout_episodes // num_devices}"
+            )
+        config.rollout_episodes = config.rollout_episodes // num_devices
+
+    @classmethod
     def _build_from_config(cls, config: DictConfig):
         assert config.rollout_episodes % config.num_envs == 0, (
             "rollout_episodes must be divisible by num_envs"
@@ -702,11 +718,17 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             replay_state = self.replay_buffer.update_priority(replay_state, priority)
 
             # Value clipping min/max tracking updates
-            new_max = jnp.maximum(
-                agent_state.extra_state.max_q, critic_loss_dict.batch_q_max
+            new_max = pmax(
+                jnp.maximum(
+                    agent_state.extra_state.max_q, critic_loss_dict.batch_q_max
+                ),
+                axis_name=self.dp_axis_name,
             )
-            new_min = jnp.minimum(
-                agent_state.extra_state.min_q, critic_loss_dict.batch_q_min
+            new_min = pmin(
+                jnp.minimum(
+                    agent_state.extra_state.min_q, critic_loss_dict.batch_q_min
+                ),
+                axis_name=self.dp_axis_name,
             )
             agent_state = agent_state.replace(
                 extra_state=agent_state.extra_state.replace(
@@ -824,11 +846,17 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
 
         # Episodic Checkpointing evaluate & replace
         if self.config.checkpoint_metric == "mean":
-            perf = jnp.mean(eval_metrics.episode_returns)
+            perf = pmean(
+                jnp.mean(eval_metrics.episode_returns), axis_name=self.dp_axis_name
+            )
         elif self.config.checkpoint_metric == "min":
-            perf = jnp.min(eval_metrics.episode_returns)
+            perf = pmin(
+                jnp.min(eval_metrics.episode_returns), axis_name=self.dp_axis_name
+            )
         elif self.config.checkpoint_metric == "max":
-            perf = jnp.max(eval_metrics.episode_returns)
+            perf = pmax(
+                jnp.max(eval_metrics.episode_returns), axis_name=self.dp_axis_name
+            )
         else:
             raise ValueError(
                 f"Unsupported checkpoint metric: {self.config.checkpoint_metric}. "

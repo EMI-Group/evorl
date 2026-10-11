@@ -40,17 +40,20 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
-        num_devices = jax.device_count()
+        super()._rescale_config(config)
+        num_devices = jax.local_device_count()
+
+        for name in ("num_envs", "minibatch_size"):
+            value = config[name]
+            if value < num_devices:
+                raise ValueError(
+                    f"{name}({value}) must be at least num_devices({num_devices})"
+                )
 
         if config.num_envs % num_devices != 0:
             logger.warning(
                 f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
                 f"rescale num_envs to {config.num_envs // num_devices}"
-            )
-        if config.num_eval_envs % num_devices != 0:
-            logger.warning(
-                f"num_eval_envs({config.num_eval_envs}) cannot be divided by num_devices({num_devices}), "
-                f"rescale num_eval_envs to {config.num_eval_envs // num_devices}"
             )
         if config.minibatch_size % num_devices != 0:
             logger.warning(
@@ -59,7 +62,6 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
             )
 
         config.num_envs = config.num_envs // num_devices
-        config.num_eval_envs = config.num_eval_envs // num_devices
         config.minibatch_size = config.minibatch_size // num_devices
 
     @classmethod

@@ -27,22 +27,39 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
-        num_devices = jax.device_count()
+        """Convert single-device totals to per-device rollout and buffer sizes."""
+        super()._rescale_config(config)
+        num_devices = jax.local_device_count()
+
+        for name in ("num_envs", "replay_buffer_capacity", "batch_size"):
+            value = config[name]
+            if value < num_devices:
+                raise ValueError(
+                    f"{name}({value}) must be at least num_devices({num_devices})"
+                )
+        for name in ("random_timesteps", "learning_start_timesteps"):
+            value = config[name]
+            if 0 < value < num_devices:
+                raise ValueError(
+                    f"{name}({value}) must be at least num_devices({num_devices}) when positive"
+                )
+            if value < 0:
+                raise ValueError(f"{name} must be nonnegative")
 
         if config.num_envs % num_devices != 0:
             logger.warning(
                 f"num_envs({config.num_envs}) cannot be divided by num_devices({num_devices}), "
                 f"rescale num_envs to {config.num_envs // num_devices}"
             )
-        if config.num_eval_envs % num_devices != 0:
-            logger.warning(
-                f"num_eval_envs({config.num_eval_envs}) cannot be divided by num_devices({num_devices}), "
-                f"rescale num_eval_envs to {config.num_eval_envs // num_devices}"
-            )
         if config.replay_buffer_capacity % num_devices != 0:
             logger.warning(
                 f"replay_buffer_capacity({config.replay_buffer_capacity}) cannot be divided by num_devices({num_devices}), "
                 f"rescale replay_buffer_capacity to {config.replay_buffer_capacity // num_devices}"
+            )
+        if config.batch_size % num_devices != 0:
+            logger.warning(
+                f"batch_size({config.batch_size}) cannot be divided by num_devices({num_devices}), "
+                f"rescale batch_size to {config.batch_size // num_devices}"
             )
         if config.random_timesteps % num_devices != 0:
             logger.warning(
@@ -56,8 +73,8 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             )
 
         config.num_envs = config.num_envs // num_devices
-        config.num_eval_envs = config.num_eval_envs // num_devices
         config.replay_buffer_capacity = config.replay_buffer_capacity // num_devices
+        config.batch_size = config.batch_size // num_devices
         config.random_timesteps = config.random_timesteps // num_devices
         config.learning_start_timesteps = config.learning_start_timesteps // num_devices
 

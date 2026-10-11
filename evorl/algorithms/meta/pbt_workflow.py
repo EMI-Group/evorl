@@ -82,20 +82,15 @@ class PBTWorkflowBase(Workflow):
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
-        num_devices = jax.device_count()
+        num_devices = jax.local_device_count()
 
-        if config.pop_size % num_devices != 0:
-            logger.warning(
-                f"pop_size({config.pop_size}) cannot be divided by num_devices({num_devices}), "
-                f"rescale pop_size to {config.pop_size // num_devices * num_devices}"
+        if config.pop_size < num_devices or config.pop_size % num_devices:
+            raise ValueError(
+                f"pop_size({config.pop_size}) must be divisible by num_devices({num_devices})"
             )
 
-        config.pop_size = (config.pop_size // num_devices) * num_devices
-
     @classmethod
-    def build_from_config(
-        cls, config: DictConfig, multi_device=True, jit: bool = True
-    ):
+    def build_from_config(cls, config: DictConfig, multi_device=True, jit: bool = True):
         config = copy.deepcopy(config)  # avoid in-place modification
 
         devices = jax.local_devices()

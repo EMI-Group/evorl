@@ -1,4 +1,3 @@
-import logging
 from omegaconf import DictConfig
 from collections.abc import Sequence
 from typing import Self
@@ -20,9 +19,6 @@ from evorl.networks import make_mlp, ActivationFn
 from evorl.algorithms.ec.so.es_workflow import ESWorkflowTemplate
 from evorl.algorithms.ec.obs_utils import init_obs_preprocessor
 from evorl.algorithms.ec.ec_agent import DeterministicECAgent
-
-
-logger = logging.getLogger(__name__)
 
 
 def make_policy_network(
@@ -87,18 +83,6 @@ class ARSWorkflow(ESWorkflowTemplate):
     @classmethod
     def name(cls):
         return "ARS"
-
-    @classmethod
-    def _rescale_config(cls, config: DictConfig) -> None:
-        super()._rescale_config(config)
-
-        num_devices = jax.device_count()
-        if config.random_timesteps % num_devices != 0:
-            logger.warning(
-                f"When multi_device=True, pop_size ({config.random_timesteps}) should be divisible by num_devices ({num_devices}),"
-            )
-
-        config.random_timesteps = (config.random_timesteps // num_devices) * num_devices
 
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:

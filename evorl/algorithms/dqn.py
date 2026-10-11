@@ -48,8 +48,9 @@ class DQNNetworkParams(PyTreeData):
 
 
 class DQNTrainMetric(MetricBase):
-    # no need reduce_fn since it's already reduced in the step()
-    loss: jax.Array = jnp.zeros(())
+    loss: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros(()), reduce_fn=pmean
+    )
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
@@ -255,26 +256,32 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             max_episode_steps=config.env.max_episode_steps,
         )
 
-        workflow = cls(env, agent, optimizer, evaluator, replay_buffer, config)
+        return cls(env, agent, optimizer, evaluator, replay_buffer, config)
 
+    def epsilon_scheduler(self, step: jax.Array | int) -> jax.Array:
+        """Schedule exploration by global training updates, not per-device steps."""
+        config = self.config
         num_iterations = (
             math.ceil(
                 config.total_timesteps
-                / (config.num_envs * config.rollout_length * config.fold_iters)
+                / (
+                    config.num_envs
+                    * self.num_devices
+                    * config.rollout_length
+                    * config.fold_iters
+                )
             )
             * config.fold_iters
         )
         total_training_updates = num_iterations * config.num_updates_per_iter
-        workflow.epsilon_scheduler = optax.linear_schedule(
+        return optax.linear_schedule(
             init_value=config.exploration_epsilon.start,
             end_value=config.exploration_epsilon.end,
             transition_steps=(
                 config.exploration_epsilon.exploration_fraction * total_training_updates
             )
             - 1,
-        )
-
-        return workflow
+        )(step)
 
     def _setup_workflow_metrics(self) -> MetricBase:
         return DQNWorkflowMetric()
@@ -403,7 +410,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
         train_metrics = DQNTrainMetric(
             loss=q_loss,
             raw_loss_dict=loss_dict,
-        )
+        ).all_reduce(dp_axis_name=self.dp_axis_name)
 
         # calculate the number of timestep
         sampled_timesteps = psum(

@@ -1,5 +1,6 @@
 import copy
 import logging
+import math
 from omegaconf import DictConfig, OmegaConf
 from typing import Self
 
@@ -21,7 +22,7 @@ from evorl.sample_batch import SampleBatch
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.distributed import get_global_ranks, pmax, psum
-from evorl.types import State, PyTreeData, pytree_field, Params, PyTreeDict
+from evorl.types import State, PyTreeData, pytree_field, Params
 from evorl.utils.rl_toolkits import flatten_pop_rollout_episode
 from evorl.utils.jax_utils import tree_stop_gradient
 
@@ -114,14 +115,35 @@ class ECWorkflow(Workflow):
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
-        """Customize the logic of rescaling the config settings when multi-devices training is enabled.
+        """Validate the population and split observation warmup across devices."""
+        num_devices = jax.local_device_count()
+        if config.pop_size < num_devices or config.pop_size % num_devices:
+            raise ValueError(
+                f"pop_size({config.pop_size}) must be divisible by num_devices({num_devices})"
+            )
+        if config.num_envs <= 0:
+            raise ValueError("num_envs must be positive")
+        if config.random_timesteps < 0:
+            raise ValueError("random_timesteps must be nonnegative")
+        if not config.normalize_obs or config.get("normalize_obs_mode") == "RS":
+            return
+        if config.random_timesteps == 0:
+            raise ValueError(
+                "random_timesteps must be positive when normalize_obs=True"
+            )
 
-        When multi_device=True, rescale config settings in-place to match multi-devices
-
-        Args:
-            config: Config of the workflow
-        """
-        pass
+        # Each device collects complete batches of num_envs observations.
+        global_batches = math.ceil(config.random_timesteps / config.num_envs)
+        local_batches = math.ceil(global_batches / num_devices)
+        global_samples = local_batches * config.num_envs * num_devices
+        single_device_samples = global_batches * config.num_envs
+        if global_samples != single_device_samples:
+            logger.warning(
+                f"random_timesteps({config.random_timesteps}) requires complete "
+                f"environment batches; multi-device warmup collects {global_samples} "
+                f"instead of {single_device_samples} observations"
+            )
+        config.random_timesteps = local_batches * config.num_envs
 
     @classmethod
     def enable_jit(cls) -> None:
@@ -188,14 +210,14 @@ class ECWorkflowTemplate(ECWorkflow):
             distributed_info=jax.P(POP_AXIS_NAME),
         )
 
-        step = cls.step
+        original_step = cls.step
 
         def sharded_step(self, state):
             state = state.replace(
                 key=state.key[0],
                 distributed_info=jax.tree.map(lambda x: x[0], state.distributed_info),
             )
-            metrics, state = step(self, state)
+            metrics, state = original_step(self, state)
             return metrics, state.replace(
                 key=state.key[None],
                 distributed_info=jax.tree.map(
@@ -210,14 +232,14 @@ class ECWorkflowTemplate(ECWorkflow):
             check_vma=False,
         )
 
-        _postsetup = cls._postsetup
+        original_postsetup = cls._postsetup
 
         def sharded_postsetup(self, state):
             state = state.replace(
                 key=state.key[0],
                 distributed_info=jax.tree.map(lambda x: x[0], state.distributed_info),
             )
-            state = _postsetup(self, state)
+            state = original_postsetup(self, state)
             return state.replace(
                 key=state.key[None],
                 distributed_info=jax.tree.map(

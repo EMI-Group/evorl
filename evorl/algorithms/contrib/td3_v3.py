@@ -11,11 +11,11 @@ import optax
 from omegaconf import DictConfig
 
 from evorl.replay_buffers import ReplayBuffer
-from evorl.distributed import psum
+from evorl.distributed import pmean, psum
 from evorl.distributed.gradients import gradient_update
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluators import Evaluator
-from evorl.metrics import MetricBase
+from evorl.metrics import MetricBase, metric_field
 from evorl.rollout import rollout
 from evorl.networks import make_policy_network, make_q_network
 from evorl.sample_batch import SampleBatch
@@ -172,11 +172,11 @@ def make_mlp_td3_agent(
 
 
 class TD3TrainMetric(MetricBase):
-    actor_loss: jax.Array
-    critic1_loss: jax.Array
-    critic2_loss: jax.Array
-    q1: jax.Array
-    q2: jax.Array
+    actor_loss: jax.Array = metric_field(reduce_fn=pmean)
+    critic1_loss: jax.Array = metric_field(reduce_fn=pmean)
+    critic2_loss: jax.Array = metric_field(reduce_fn=pmean)
+    q1: jax.Array = metric_field(reduce_fn=pmean)
+    q2: jax.Array = metric_field(reduce_fn=pmean)
 
 
 class TD3NetworkParams(PyTreeData):

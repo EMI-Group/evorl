@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 class TD3TrainMetric(MetricBase):
-    critic_loss: jax.Array
-    actor_loss: jax.Array
+    critic_loss: jax.Array = metric_field(reduce_fn=pmean)
+    actor_loss: jax.Array = metric_field(reduce_fn=pmean)
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 

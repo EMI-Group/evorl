@@ -1,4 +1,3 @@
-import logging
 import numpy as np
 from omegaconf import DictConfig
 from typing import Self
@@ -18,25 +17,11 @@ from evorl.workflows import MultiObjectiveECWorkflowTemplate
 from ..obs_utils import init_obs_preprocessor
 from ..ec_agent import make_deterministic_ec_agent
 
-logger = logging.getLogger(__name__)
-
 
 class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
     @classmethod
     def name(cls):
         return "NSGA2"
-
-    @classmethod
-    def _rescale_config(cls, config: DictConfig) -> None:
-        super()._rescale_config(config)
-
-        num_devices = jax.device_count()
-        if config.random_timesteps % num_devices != 0:
-            logging.warning(
-                f"When multi_device=True, pop_size ({config.random_timesteps}) should be divisible by num_devices ({num_devices}),"
-            )
-
-        config.random_timesteps = (config.random_timesteps // num_devices) * num_devices
 
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:

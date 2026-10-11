@@ -2,6 +2,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 import copy
 import logging
+import math
 
 import chex
 import jax
@@ -137,14 +138,23 @@ class RLWorkflow(Workflow):
 
     @classmethod
     def _rescale_config(cls, config: DictConfig) -> None:
-        """Customize the logic of rescaling the config settings when multi-devices training is enabled.
+        """Split evaluation environments and episodes across devices."""
+        num_devices = jax.local_device_count()
+        if config.num_eval_envs < num_devices or config.num_eval_envs % num_devices:
+            raise ValueError(
+                f"num_eval_envs({config.num_eval_envs}) must be divisible by num_devices({num_devices})"
+            )
+        if config.eval_episodes <= 0:
+            raise ValueError("eval_episodes must be positive")
 
-        When multi_device=True, rescale config settings in-place to match multi-devices.
-
-        Args:
-            config: Config of the workflow.
-        """
-        pass
+        eval_iters = math.ceil(config.eval_episodes / config.num_eval_envs)
+        if config.eval_episodes % config.num_eval_envs:
+            logger.warning(
+                f"eval_episodes({config.eval_episodes}) is rounded up to "
+                f"{eval_iters * config.num_eval_envs} by the evaluator"
+            )
+        config.num_eval_envs //= num_devices
+        config.eval_episodes = eval_iters * config.num_eval_envs
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         """Customize the training logic of one iteration.

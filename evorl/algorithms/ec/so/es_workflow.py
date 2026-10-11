@@ -1,4 +1,5 @@
 import logging
+import math
 from functools import partial
 from omegaconf import DictConfig
 
@@ -19,6 +20,27 @@ logger = logging.getLogger(__name__)
 
 
 class ESWorkflowTemplate(ECWorkflowTemplate):
+    @classmethod
+    def _rescale_config(cls, config: DictConfig) -> None:
+        """Also split center-policy evaluation across devices."""
+        super()._rescale_config(config)
+        num_devices = jax.local_device_count()
+        if config.num_eval_envs < num_devices or config.num_eval_envs % num_devices:
+            raise ValueError(
+                f"num_eval_envs({config.num_eval_envs}) must be divisible by num_devices({num_devices})"
+            )
+        if config.eval_episodes <= 0:
+            raise ValueError("eval_episodes must be positive")
+
+        eval_iters = math.ceil(config.eval_episodes / config.num_eval_envs)
+        if config.eval_episodes % config.num_eval_envs:
+            logger.warning(
+                f"eval_episodes({config.eval_episodes}) is rounded up to "
+                f"{eval_iters * config.num_eval_envs} by the evaluator"
+            )
+        config.num_eval_envs //= num_devices
+        config.eval_episodes = eval_iters * config.num_eval_envs
+
     def __init__(
         self,
         *,
@@ -113,14 +135,14 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
             distributed_info=jax.P(POP_AXIS_NAME),
         )
 
-        evaluate = cls.evaluate
+        original_evaluate = cls.evaluate
 
         def sharded_evaluate(self, state):
             state = state.replace(
                 key=state.key[0],
                 distributed_info=jax.tree.map(lambda x: x[0], state.distributed_info),
             )
-            metrics, state = evaluate(self, state)
+            metrics, state = original_evaluate(self, state)
             return metrics, state.replace(
                 key=state.key[None],
                 distributed_info=jax.tree.map(
