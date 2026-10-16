@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: CrazyClimber-v5
+env_name: ale_py:ALE/CrazyClimber-v5
+obs_type: rgb
 max_episode_steps: 27000

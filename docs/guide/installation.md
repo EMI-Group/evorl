@@ -40,7 +40,7 @@ For a source checkout, use `pip install -e ".[extra]"` instead.
 Extras can be combined with each other and with environment extras:
 
 ```shell
-pip install "evorl-jax[wandb,swanlab,gymnax]"
+pip install "evorl-jax[wandb,swanlab,mujoco-playground]"
 ```
 
 Installing an SDK does not enable its recorder. Select the installed backends
@@ -71,8 +71,6 @@ By default, `pip install evorl-jax` (or `pip install -e .` from source) will aut
 # ===== GPU-accelerated Environments =====
 # Mujoco playground Envs:
 pip install "evorl-jax[mujoco-playground]"
-# gymnax Envs:
-pip install "evorl-jax[gymnax]"
 # Jumanji Envs:
 pip install "evorl-jax[jumanji]"
 # JaxMARL Envs:
@@ -84,6 +82,20 @@ pip install "evorl-jax[envpool]"
 # Gymnasium Envs:
 pip install "evorl-jax[gymnasium]"
 ```
+
+### Gymnax (best effort)
+
+Gymnax 1.0.0 declares older JAX and Gymnasium version bounds. After installing
+EvoRL, use uv to override these bounds without creating a separate file:
+
+```shell
+uv pip install "gymnax==1.0.0" --overrides - <<'EOF'
+jax>=0.10.0
+gymnasium>=1.4.0
+EOF
+```
+
+### Environment support
 
 | Environment Library                                                        | Descriptions                            |
 | -------------------------------------------------------------------------- | --------------------------------------- |

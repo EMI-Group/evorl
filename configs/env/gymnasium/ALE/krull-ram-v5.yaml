@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: Krull-ram-v5
+env_name: ale_py:ALE/Krull-v5
+obs_type: ram
 max_episode_steps: 27000

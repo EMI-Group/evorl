@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: Crossbow-ram-v5
+env_name: ale_py:ALE/Crossbow-v5
+obs_type: ram
 max_episode_steps: 27000

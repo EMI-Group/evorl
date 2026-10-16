@@ -105,6 +105,12 @@ jobs:
             "$GITHUB_WORKSPACE/tests/test_jax_compatibility.py" \
             "$GITHUB_WORKSPACE/tests/test_orbax_utils.py" \
             "$GITHUB_WORKSPACE/tests/test_prng.py"
+      - name: Check environment adapters
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -m pytest --import-mode=importlib \
+            "$GITHUB_WORKSPACE/tests/test_host_envs.py" \
+            "$GITHUB_WORKSPACE/tests/test_brax_env.py::test_brax_fast"
       - name: Run distributed and workflow tests on two CPU devices
         working-directory: ${{ runner.temp }}
         run: |

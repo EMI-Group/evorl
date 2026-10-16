@@ -112,12 +112,30 @@ def gymnax_space_to_evorl_space(space: GymnaxSpace):
 
 
 def create_gymnax_env(
-    env_name: str, flatten_obs: bool = True, **kwargs
-) -> GymnaxAdapter:
-    env, env_params = gymnax.make(env_name)
+    env_name: str,
+    flatten_obs: bool = True,
+    *,
+    env_kwargs: dict | None = None,
+    **kwargs,
+) -> Env:
+    """Create a Gymnax environment.
 
-    update_env_params = {k: v for k, v in kwargs.items() if hasattr(env_params, k)}
-    env_params = env_params.replace(**update_env_params)
+    Args:
+        env_name: Registered Gymnax environment name.
+        flatten_obs: Whether to flatten multidimensional observations.
+        env_kwargs: Constructor arguments passed to `gymnax.make`, such as
+            `size` for DeepSea. These are separate from `EnvParams` overrides.
+        **kwargs: Overrides for fields in the environment's `EnvParams`.
+
+    Returns:
+        Adapted environment with normalized continuous actions and optionally
+        flattened observations.
+
+    Raises:
+        TypeError: A constructor argument or `EnvParams` field is unknown.
+    """
+    env, env_params = gymnax.make(env_name, **(env_kwargs or {}))
+    env_params = env_params.replace(**kwargs)
 
     env = GymnaxAdapter(env, env_params)
 
@@ -140,9 +158,30 @@ def create_wrapped_gymnax_env(
     autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
     discount: float | None = 1.0,
     record_ori_obs: bool = False,
+    *,
+    env_kwargs: dict | None = None,
     **kwargs,
 ) -> Env:
-    env = create_gymnax_env(env_name, flatten_obs, **kwargs)
+    """Create a vectorized Gymnax environment with episode wrappers.
+
+    Args:
+        env_name: Registered Gymnax environment name.
+        flatten_obs: Whether to flatten multidimensional observations.
+        episode_length: Maximum episode length enforced by EvoRL.
+        parallel: Number of parallel environments.
+        autoreset_mode: Episode autoreset behavior.
+        discount: Discount used to record episode returns, or `None` to disable.
+        record_ori_obs: Whether to record observations before autoreset.
+        env_kwargs: Constructor arguments passed to `gymnax.make`.
+        **kwargs: Overrides for fields in the environment's `EnvParams`.
+
+    Returns:
+        Vectorized environment with the requested episode and autoreset behavior.
+
+    Raises:
+        TypeError: A constructor argument or `EnvParams` field is unknown.
+    """
+    env = create_gymnax_env(env_name, flatten_obs, env_kwargs=env_kwargs, **kwargs)
 
     if autoreset_mode == AutoresetMode.ENVPOOL:
         # envpool mode will always record last obs

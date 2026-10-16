@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: TicTacToe3D-v5
+env_name: ale_py:ALE/TicTacToe3D-v5
+obs_type: rgb
 max_episode_steps: 27000

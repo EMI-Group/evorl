@@ -109,7 +109,8 @@ class EnvPoolGymAdapter(EnvAdapter):
             # Note: we are not sure if self.env is always updated by _reset in JIT mode.
 
             # [B1, ..., Bn, #envs]
-            batch_shape = actions.shape[: -len(self.action_space.shape)]
+            batch_ndim = actions.ndim - len(self.action_space.shape)
+            batch_shape = actions.shape[:batch_ndim]
 
             # [B1, ..., Bn, #envs, *] -> [B1*...*Bn*#envs, *]
             actions = jax.lax.collapse(actions, 0, len(batch_shape))
@@ -140,7 +141,8 @@ class EnvPoolGymAdapter(EnvAdapter):
         info.steps = jnp.zeros((self.num_envs,), dtype=jnp.int32)
         info.termination = jnp.zeros((self.num_envs,))
         info.truncation = jnp.zeros((self.num_envs,))
-        info.episode_return = jnp.zeros((self.num_envs,))
+        if self.record_episode_return:
+            info.episode_return = jnp.zeros((self.num_envs,))
         info.autoreset = jnp.zeros((self.num_envs,))
 
         return EnvState(

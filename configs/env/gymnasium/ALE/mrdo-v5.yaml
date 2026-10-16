@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: MrDo-v5
+env_name: ale_py:ALE/MrDo-v5
+obs_type: rgb
 max_episode_steps: 27000

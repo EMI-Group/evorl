@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: Casino-v5
+env_name: ale_py:ALE/Casino-v5
+obs_type: rgb
 max_episode_steps: 27000

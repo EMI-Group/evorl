@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: Asterix-v5
+env_name: ale_py:ALE/Asterix-v5
+obs_type: rgb
 max_episode_steps: 27000

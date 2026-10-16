@@ -12,8 +12,12 @@ def create_env(env_cfg, **kwargs) -> Env:
     """Unified env creator.
 
     Args:
-        env_cfg: The environment configuration.
+        env_cfg: The environment configuration. Gymnasium configurations can set
+            `obs_type` to select the Atari observation format. Gymnax
+            configurations can set `env_kwargs` for environment construction.
         **kwargs: Additional keyword arguments for the environment creator.
+            Explicit `obs_type` and `env_kwargs` arguments override the
+            corresponding configuration values.
 
     Returns:
         The created environment.
@@ -27,6 +31,8 @@ def create_env(env_cfg, **kwargs) -> Env:
         case "playground":
             env = create_wrapped_mujoco_playground_env(env_name, **kwargs)
         case "gymnax":
+            if "env_kwargs" in env_cfg:
+                kwargs.setdefault("env_kwargs", env_cfg.env_kwargs)
             env = create_wrapped_gymnax_env(env_name, **kwargs)
         case "jumanji":
             env = create_jumanji_env(env_name, **kwargs)
@@ -35,6 +41,8 @@ def create_env(env_cfg, **kwargs) -> Env:
         case "envpool":
             env = create_envpool_env(env_name, **kwargs)
         case "gymnasium":
+            if "obs_type" in env_cfg:
+                kwargs.setdefault("obs_type", env_cfg.obs_type)
             env = create_gymnasium_env(env_name, **kwargs)
         case _:
             raise ValueError(f"env_type {env_type} not supported")

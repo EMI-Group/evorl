@@ -5,6 +5,7 @@ from brax.envs import (
     Env as BraxEnv,
     get_environment,
 )
+from brax.envs.fast import Fast
 
 from evorl.types import Action, PyTreeDict
 
@@ -37,7 +38,11 @@ class BraxAdapter(EnvAdapter):
 
         return EnvState(
             env_state=brax_state,
-            obs=brax_state.obs,
+            obs=(
+                PyTreeDict(brax_state.obs)
+                if isinstance(brax_state.obs, dict)
+                else brax_state.obs
+            ),
             reward=brax_state.reward,
             done=brax_state.done,
             info=info,
@@ -52,7 +57,11 @@ class BraxAdapter(EnvAdapter):
 
         return state.replace(
             env_state=brax_state,
-            obs=brax_state.obs,
+            obs=(
+                PyTreeDict(brax_state.obs)
+                if isinstance(brax_state.obs, dict)
+                else brax_state.obs
+            ),
             reward=brax_state.reward,
             done=brax_state.done,
             info=info,
@@ -60,6 +69,10 @@ class BraxAdapter(EnvAdapter):
 
     @property
     def action_space(self) -> Space:
+        if isinstance(self.env, Fast):
+            # Fast has no physics system; use normalized continuous actions.
+            bounds = jnp.ones(self.env.action_size, dtype=jnp.float32)
+            return Box(low=-bounds, high=bounds)
         action_spec = jnp.asarray(self.env.sys.actuator.ctrl_range, dtype=jnp.float32)
         return Box(low=action_spec[:, 0], high=action_spec[:, 1])
 

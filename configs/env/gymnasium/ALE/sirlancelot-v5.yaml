@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: SirLancelot-v5
+env_name: ale_py:ALE/SirLancelot-v5
+obs_type: rgb
 max_episode_steps: 27000

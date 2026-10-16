@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: AirRaid-v5
+env_name: ale_py:ALE/AirRaid-v5
+obs_type: rgb
 max_episode_steps: 27000

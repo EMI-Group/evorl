@@ -12,6 +12,9 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `workflows/test_execution.py` | Template state layouts, population selection/transfer and per-member statistics |
 | Other `workflows/` tests | Training budgets, final evaluation/checkpoints, warmup and EC accounting |
 | `helpers/` | Reusable toy environment and compiled-communication inspection |
+| `test_host_envs.py` | Gymnasium/EnvPool action batches, outer `vmap`, one-episode state structure and Atari RGB/RAM configuration |
+| `test_brax_env.py::test_brax_fast` | Brax Fast action bounds, array/dict observations and all autoreset modes |
+| `test_gymnax_env.py` | Constructor arguments, `EnvParams` overrides, unknown argument errors and EvoRL episode limits |
 | Root `test_*.py` files | Existing unit, dependency, checkpoint, environment and algorithm tests |
 
 Install the development dependencies with `pip install -e ".[dev]"`.
@@ -51,5 +54,7 @@ the process boundary itself is under test, such as importing accelerator probes.
 
 CI runs the same collected tests against the built wheel with the minimum and
 latest supported dependencies, including the separate four-device invocation.
-Environment-specific tests in the root directory may require their corresponding
-optional simulator dependencies and assets; they are not part of this CPU suite.
+The host environment tests run in CI with Gymnasium; EnvPool and Atari cases run
+when their optional dependencies are installed. Other environment-specific tests
+in the root directory may require simulator dependencies and assets and remain
+outside this CPU suite.

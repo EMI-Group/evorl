@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: LaserGates-v5
+env_name: ale_py:ALE/LaserGates-v5
+obs_type: rgb
 max_episode_steps: 27000

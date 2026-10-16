@@ -1,3 +1,4 @@
 env_type: gymnasium
-env_name: FlagCapture-v5
+env_name: ale_py:ALE/FlagCapture-v5
+obs_type: rgb
 max_episode_steps: 27000

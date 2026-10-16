@@ -1,3 +1,0 @@
-env_type: gymnasium
-env_name: Joust-ram-v5
-max_episode_steps: 27000
