@@ -82,7 +82,7 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
 
         students_velocity = PyTreeDict()
         offsprings = PyTreeDict()
-        for hp, key in zip(
+        for hp, hp_key in zip(
             search_space.keys(), jax.random.split(rand_key, len(search_space))
         ):
             v = velocity[hp]
@@ -97,7 +97,7 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
                 case "discount_g" | "gae_lambda_g":
                     pass
 
-            r1_key, r2_key = jax.random.split(key)
+            r1_key, r2_key = jax.random.split(hp_key)
             chex.assert_equal_shape((v, x))
             r1 = jax.random.uniform(r1_key, shape=(pop_size // 2, *v.shape[1:]))
             r2 = jax.random.uniform(r2_key, shape=(pop_size // 2, *v.shape[1:]))

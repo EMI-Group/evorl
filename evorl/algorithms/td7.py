@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Sequence
+from typing import Any
+from collections.abc import Sequence
 import math
 
 import chex

@@ -1,5 +1,3 @@
-from typing import Optional
-
 import jax
 import jax.numpy as jnp
 from flax import struct, linen as nn
@@ -14,7 +12,7 @@ class StaticLayerNorm(nn.LayerNorm):
     fixed_scale: jax.Array = struct.field(default_factory=lambda: jnp.ones(()))
 
     @nn.compact
-    def __call__(self, x, *, mask: Optional[jax.Array] = None):
+    def __call__(self, x, *, mask: jax.Array | None = None):
         y = super().__call__(x, mask=mask)
         return y * self.fixed_scale + self.fixed_bias
 

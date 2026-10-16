@@ -36,7 +36,6 @@ class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):
         Returns:
             The initial state of the replay buffer.
         """
-        pass
 
     @abstractmethod
     def add(
@@ -51,7 +50,6 @@ class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):
         Returns:
             Updated state of the replay buffer.
         """
-        pass
 
     @abstractmethod
     def sample(self, buffer_state: ReplayBufferState, key: jax.Array) -> chex.ArrayTree:
@@ -64,7 +62,6 @@ class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):
         Returns:
             A batch of data sampled from the replay buffer.
         """
-        pass
 
     @abstractmethod
     def can_sample(self, buffer_state: ReplayBufferState) -> bool:
@@ -76,7 +73,6 @@ class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):
         Returns:
             Whether the replay buffer is ready to call `sample()`.
         """
-        pass
 
     @abstractmethod
     def is_full(self, buffer_state: ReplayBufferState) -> bool:

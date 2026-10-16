@@ -121,11 +121,10 @@ def create_gymnax_env(
 
     env = GymnaxAdapter(env, env_params)
 
-    if isinstance(env.action_space, Box):
-        if not jnp.logical_and(
-            (env.action_space.low == -1).all(), (env.action_space.high == 1).all()
-        ):
-            env = ActionSquashWrapper(env)
+    if isinstance(env.action_space, Box) and not jnp.logical_and(
+        (env.action_space.low == -1).all(), (env.action_space.high == 1).all()
+    ):
+        env = ActionSquashWrapper(env)
 
     if flatten_obs and len(env.obs_space.shape) > 1:
         env = ObsFlattenWrapper(env)

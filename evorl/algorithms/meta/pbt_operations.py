@@ -17,7 +17,7 @@ def explore(
     Here we use the orginal exploration operator in PBT.
     """
     offspring = PyTreeDict()
-    for hp_name in parent.keys():
+    for hp_name in parent:
         val = parent[hp_name] * (
             1
             + jax.random.uniform(

@@ -3,7 +3,7 @@
 import dataclasses
 from functools import wraps
 from collections.abc import Mapping, Sequence
-from typing import Any, Union, TypeVar, dataclass_transform
+from typing import Any, dataclass_transform
 
 import chex
 import jax
@@ -11,10 +11,10 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 
 Metrics = Mapping[str, chex.ArrayTree]
-Observation = Union[jax.Array, Mapping[str, jax.Array]]
-Action = Union[jax.Array, Mapping[str, jax.Array]]
-Reward = Union[jax.Array, Mapping[str, jax.Array]]
-Done = Union[jax.Array, Mapping[str, jax.Array]]
+Observation = jax.Array | Mapping[str, jax.Array]
+Action = jax.Array | Mapping[str, jax.Array]
+Reward = jax.Array | Mapping[str, jax.Array]
+Done = jax.Array | Mapping[str, jax.Array]
 PolicyExtraInfo = Mapping[str, Any]
 ExtraInfo = Mapping[str, Any]
 RewardDict = Mapping[str, Reward]
@@ -100,7 +100,7 @@ class PyTreeDict(dict):
         if type(obj) is dict:
             return cls(obj)
         elif type(obj) is list:
-            return list(cls._nested_convert(item) for item in obj)
+            return [cls._nested_convert(item) for item in obj]
         elif type(obj) is tuple:
             return tuple(cls._nested_convert(item) for item in obj)
         else:
@@ -114,7 +114,7 @@ class PyTreeDict(dict):
     __setitem__ = __setattr__
 
     def update(self, e=None, **f):
-        d = e or dict()
+        d = e or {}
         d.update(f)
         for k in d:
             setattr(self, k, d[k])
@@ -148,8 +148,6 @@ class State(PyTreeDict):
     An alias of PyTreeDict. This class is specfically used for `Workflow` state.
     """
 
-    pass
-
 
 def pytree_field(*, static=False, **kwargs):
     """Define a pytree field in our dataclass.
@@ -166,18 +164,15 @@ def pytree_field(*, static=False, **kwargs):
     return dataclasses.field(**kwargs)
 
 
-_T = TypeVar("T")
-
-
 @dataclass_transform(field_specifiers=(pytree_field,))  # type: ignore[literal-required]
-def dataclass(clz: _T, *, pure_data=False, **kwargs) -> _T:
+def dataclass[T](clz: T, *, pure_data=False, **kwargs) -> T:
     # set frozen=True unless manually specified
-    if "frozen" not in kwargs.keys():
+    if "frozen" not in kwargs:
         kwargs["frozen"] = True
 
     # Special handling for jax.Array fields with init value.
     # for name in get_type_hints(clz).keys():
-    for name in clz.__annotations__.keys():
+    for name in clz.__annotations__:
         if hasattr(clz, name):
             obj = getattr(clz, name)
             # Although JAX Array is immutable, it is not hashable (__hash__ is None).
@@ -260,7 +255,7 @@ class PyTreeNode:
 
         # Allow self.xxx = value in __post_init__
         if original_post_init:
-            original_setattr = getattr(cls, "__setattr__")
+            original_setattr = cls.__setattr__
 
             def custom_setattr(self, name: str, value: Any) -> None:
                 if getattr(self, "_is_in_post_init", False):

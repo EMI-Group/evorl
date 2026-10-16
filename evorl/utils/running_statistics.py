@@ -124,9 +124,8 @@ def update(
     # compatible, arrays will be silently broadcasted resulting in incorrect
     # statistics.
     if validate_shapes:
-        if weights is not None:
-            if weights.shape != batch_dims:
-                raise ValueError(f"{weights.shape} != {batch_dims}")
+        if weights is not None and weights.shape != batch_dims:
+            raise ValueError(f"{weights.shape} != {batch_dims}")
         _validate_batch_shapes(batch, state.mean, batch_dims)
 
     def _compute_node_statistics(

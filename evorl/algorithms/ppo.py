@@ -404,7 +404,7 @@ class PPOWorkflow(OnPolicyWorkflow):
             loss_dict = self.agent.loss(agent_state, sample_batch, key)
             loss_weights = self.config.loss_weights
             loss = jnp.zeros(())
-            for loss_key in loss_weights.keys():
+            for loss_key in loss_weights:
                 loss += loss_weights[loss_key] * loss_dict[loss_key]
 
             return loss, loss_dict

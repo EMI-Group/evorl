@@ -284,8 +284,8 @@ class ParamPPOWorkflow(PPOWorkflow):
                 actor_entropy=state.hp_state.entropy_loss_weight,
             )
             loss = jnp.zeros(())
-            for loss_key in loss_weights.keys():
-                loss += loss_weights[loss_key] * loss_dict[loss_key]
+            for loss_key, weight in loss_weights.items():
+                loss += weight * loss_dict[loss_key]
 
             return loss, loss_dict
 

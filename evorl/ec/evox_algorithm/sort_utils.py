@@ -6,5 +6,4 @@ def sort_by_key(keys, *vals):
         f"Expect keys to be a 1d-vector, got shape {keys.shape}."
     )
     order = jnp.argsort(keys)
-    vals = map(lambda v: v[order], vals)
-    return keys[order], *vals
+    return keys[order], *(v[order] for v in vals)

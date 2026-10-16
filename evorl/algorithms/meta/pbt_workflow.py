@@ -122,11 +122,10 @@ class PBTWorkflowBase(Workflow):
         target_workflow_config = copy.deepcopy(target_workflow_config)
         target_workflow_cls = hydra.utils.get_class(target_workflow_config.workflow_cls)
 
-        with read_write(target_workflow_config):
-            with open_dict(target_workflow_config):
-                target_workflow_config.env = copy.deepcopy(config.env)
-                # disable target workflow ckpt
-                target_workflow_config.checkpoint = OmegaConf.create(dict(enable=False))
+        with read_write(target_workflow_config), open_dict(target_workflow_config):
+            target_workflow_config.env = copy.deepcopy(config.env)
+            # disable target workflow ckpt
+            target_workflow_config.checkpoint = OmegaConf.create(dict(enable=False))
 
         OmegaConf.set_readonly(target_workflow_config, True)
 

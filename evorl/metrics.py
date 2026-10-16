@@ -12,7 +12,7 @@ from .types import LossDict, PyTreeData, PyTreeDict
 
 def metric_field(
     *,
-    reduce_fn: Callable[[jax.Array, str | None], jax.Array] = None,
+    reduce_fn: Callable[[jax.Array, str | None], jax.Array] | None = None,
     static=False,
     **kwargs,
 ):

@@ -23,7 +23,6 @@ def test_a2c():
 
 def _create_example_agent_env(num_envs):
     env = "ant"
-    num_envs = num_envs
 
     env = create_wrapped_brax_env(env, parallel=num_envs)
     agent = make_mlp_a2c_agent(env.action_space)
