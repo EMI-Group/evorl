@@ -34,6 +34,10 @@ convention = "google"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: real workflow execution; release compiled executables after each case",
+    "four_devices: requires four devices (run with --cpu-devices=4)",
+]
 
 [project]
 name = "evorl-jax"

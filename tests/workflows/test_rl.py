@@ -1,94 +1,62 @@
-"""Exercise actual RL/EC methods through the class-level shard_map boundary."""
+"""Exercise real workflow setup, training and evaluation on two devices."""
 
 from pathlib import Path
-import re
-import sys
 from unittest.mock import patch
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
+from evorl.workflows import OnPolicyWorkflow
 from hydra.utils import get_class
 from omegaconf import OmegaConf
 
-from evorl.envs import Box, Discrete, Env, EnvState
-from evorl.types import PyTreeDict
-from evorl.workflows import OnPolicyWorkflow
+from tests.helpers.envs import ToyEnv
+from tests.helpers.sharding import compiled_collectives
+
+pytestmark = pytest.mark.integration
 
 
-class ToyEnv(Env):
-    def __init__(self, num_envs, discrete=False):
-        self.num_envs = num_envs
-        self.discrete = discrete
-
-    @property
-    def obs_space(self):
-        return Box(low=-jnp.ones(3), high=jnp.ones(3))
-
-    @property
-    def action_space(self):
-        if self.discrete:
-            return Discrete(n=2)
-        return Box(low=-jnp.ones(1), high=jnp.ones(1))
-
-    def reset(self, key):
-        obs = jax.random.uniform(key, (self.num_envs, 3))
-        zeros = jnp.zeros(self.num_envs)
-        return EnvState(
-            env_state=jnp.zeros(self.num_envs, dtype=jnp.int32),
-            obs=obs,
-            reward=zeros,
-            done=zeros,
-            info=PyTreeDict(
-                autoreset=zeros, episode_return=zeros, termination=zeros, ori_obs=obs
-            ),
-        )
-
-    def step(self, state, action):
-        count = state.env_state + 1
-        done = (count % 2 == 0).astype(jnp.float32)
-        reward = 1 - (
-            action.astype(jnp.float32) if self.discrete else jnp.square(action).sum(-1)
-        )
-        obs = state.obs + 0.1
-        return state.replace(
-            env_state=count,
-            obs=obs,
-            reward=reward,
-            done=done,
-            info=state.info.replace(
-                autoreset=jnp.zeros_like(done),
-                episode_return=2 * reward,
-                termination=done,
-                ori_obs=obs,
-            ),
-        )
-
-
-def run_case(agent, jit):
-    root = Path(__file__).resolve().parents[1]
+@pytest.mark.parametrize(
+    "agent",
+    [
+        "ppo",
+        "sac",
+        "dqn",
+        "td3",
+        "ddpg",
+        "contrib/td3-v3",
+        "td7",
+        "ec/openes",
+        "random",
+        "a2c",
+        "impala",
+        "contrib/td3-v2",
+        "contrib/td3-onpolicy",
+    ],
+)
+def test_rl_workflow_setup_step_and_evaluate(agent, jit):
+    root = Path(__file__).resolve().parents[2]
     config = OmegaConf.merge(
         OmegaConf.load(root / "configs/config.yaml"),
         OmegaConf.load(root / f"configs/agent/{agent}.yaml"),
-        dict(
-            env=dict(max_episode_steps=2),
-            num_envs=4,
-            num_eval_envs=4,
-            eval_episodes=4,
-            normalize_obs=True,
-            rollout_length=2,
-            agent_network=dict(
-                actor_hidden_layer_sizes=[4], critic_hidden_layer_sizes=[4]
-            ),
-        ),
+        {
+            "env": {"max_episode_steps": 2},
+            "num_envs": 4,
+            "num_eval_envs": 4,
+            "eval_episodes": 4,
+            "normalize_obs": True,
+            "rollout_length": 2,
+            "agent_network": {
+                "actor_hidden_layer_sizes": [4],
+                "critic_hidden_layer_sizes": [4],
+            },
+        },
     )
     if agent == "ppo":
         config.minibatch_size = 8
         config.reuse_rollout_epochs = 1
-    elif agent == "impala":
-        config.minibatch_size = 4
-        config.reuse_rollout_epochs = 1
-    elif agent == "contrib/td3-onpolicy":
+    elif agent == "impala" or agent == "contrib/td3-onpolicy":
         config.minibatch_size = 4
         config.reuse_rollout_epochs = 1
     elif agent == "sac":
@@ -126,16 +94,16 @@ def run_case(agent, jit):
         config.num_updates_per_iter = 2
         config.target_update_rate = 1
         config.policy_freq = 1
-        config.agent_network = dict(
-            zs_dim=4,
-            zsa_dim=4,
-            f_layer_sizes=[4],
-            g_layer_sizes=[4],
-            state_emb_dim=4,
-            state_action_emb_dim=4,
-            critic_hidden_layer_sizes=[4],
-            actor_hidden_layer_sizes=[4],
-        )
+        config.agent_network = {
+            "zs_dim": 4,
+            "zsa_dim": 4,
+            "f_layer_sizes": [4],
+            "g_layer_sizes": [4],
+            "state_emb_dim": 4,
+            "state_action_emb_dim": 4,
+            "critic_hidden_layer_sizes": [4],
+            "actor_hidden_layer_sizes": [4],
+        }
     elif agent == "ec/openes":
         config.pop_size = 4
         config.num_envs = 1
@@ -176,7 +144,7 @@ def run_case(agent, jit):
     if agent == "random":
         for requested_episodes in (1, 5):
             rounded_config = OmegaConf.create(
-                dict(num_eval_envs=4, eval_episodes=requested_episodes)
+                {"num_eval_envs": 4, "eval_episodes": requested_episodes}
             )
             base._rescale_config(rounded_config)
             assert rounded_config.num_eval_envs == 2
@@ -270,8 +238,7 @@ def run_case(agent, jit):
                 if agent == "random":
                     allowed = set()
                 hlo = cls.step.lower(workflow, state).compile().as_text()
-                collective_pattern = r"\b(all-reduce|all-gather|all-to-all|collective-permute|reduce-scatter|collective-broadcast)(?:-start|-done)?\("
-                collectives = set(re.findall(collective_pattern, hlo))
+                collectives = compiled_collectives(hlo)
                 assert collectives <= allowed, (agent, collectives)
                 if agent in (
                     "ppo",
@@ -287,10 +254,6 @@ def run_case(agent, jit):
                     "td7",
                 ):
                     assert "all-reduce" in collectives
-                print(
-                    f"{agent} compiled step collectives: {sorted(collectives)}",
-                    flush=True,
-                )
                 if agent == "ppo":
                     # A computation with no collectives must stay local even when
                     # the real Workflow state crosses the shard_map boundary.
@@ -306,14 +269,10 @@ def run_case(agent, jit):
                     LocalOnlyWorkflow.enable_jit()
                     probe = object.__new__(LocalOnlyWorkflow)
                     executable = LocalOnlyWorkflow.step.lower(probe, state).compile()
-                    assert not re.search(collective_pattern, executable.as_text())
+                    assert not compiled_collectives(executable.as_text())
                     _, probe_state = probe.step(state)
                     np.testing.assert_allclose(
                         probe_state.env_state.obs, np.asarray(state.env_state.obs) * 2
-                    )
-                    print(
-                        "local-only workflow boundary: no collective communication",
-                        flush=True,
                     )
             metrics, updated = workflow.step(state)
             eval_metrics, evaluated = workflow.evaluate(updated)
@@ -436,12 +395,11 @@ def run_case(agent, jit):
                 assert rounded_state.agent_state.obs_preprocessor_state.count == 8
         finally:
             rounded_workflow.close()
-    print(f"{agent}, jit={jit}: setup/step/evaluate PASS", flush=True)
 
 
-def check_invalid_multidevice_configs():
-    root = Path(__file__).resolve().parents[1]
-    for agent, field, value in (
+@pytest.mark.parametrize(
+    "agent,field,value",
+    [
         ("ppo", "num_envs", 1),
         ("ppo", "minibatch_size", 1),
         ("sac", "replay_buffer_capacity", 1),
@@ -449,35 +407,16 @@ def check_invalid_multidevice_configs():
         ("ec/openes", "pop_size", 3),
         ("ec/openes", "num_eval_envs", 1),
         ("ec/openes", "random_timesteps", 0),
-    ):
-        config = OmegaConf.merge(
-            OmegaConf.load(root / "configs/config.yaml"),
-            OmegaConf.load(root / f"configs/agent/{agent}.yaml"),
-            {"num_envs": 4, "num_eval_envs": 4, "eval_episodes": 4},
-            {field: value},
-        )
-        workflow_cls = get_class(config.workflow_cls)
-        try:
-            workflow_cls._rescale_config(config)
-        except ValueError as exc:
-            assert field in str(exc), (agent, field, exc)
-        else:
-            raise AssertionError(f"{agent}: {field}={value} should fail before build")
-
-
-if __name__ == "__main__":
-    assert jax.device_count() == 2
-    check_invalid_multidevice_configs()
-    jit = bool(int(sys.argv[1]))
-    for agent in sys.argv[2:] or (
-        "ppo",
-        "sac",
-        "dqn",
-        "td3",
-        "ddpg",
-        "contrib/td3-v3",
-        "td7",
-        "ec/openes",
-        "random",
-    ):
-        run_case(agent, jit)
+    ],
+)
+def test_invalid_multidevice_configuration(agent, field, value):
+    root = Path(__file__).resolve().parents[2]
+    config = OmegaConf.merge(
+        OmegaConf.load(root / "configs/config.yaml"),
+        OmegaConf.load(root / f"configs/agent/{agent}.yaml"),
+        {"num_envs": 4, "num_eval_envs": 4, "eval_episodes": 4},
+        {field: value},
+    )
+    workflow_cls = get_class(config.workflow_cls)
+    with pytest.raises(ValueError, match=field):
+        workflow_cls._rescale_config(config)

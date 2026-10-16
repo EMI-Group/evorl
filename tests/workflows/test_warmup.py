@@ -5,38 +5,44 @@ from unittest.mock import Mock
 import jax
 import jax.numpy as jnp
 import numpy as np
-from omegaconf import OmegaConf
 import pytest
-
-from tests._workflow_multidevice_cases import ToyEnv
 from evorl.agent import RandomAgent
-from evorl.algorithms.offpolicy_utils import OffPolicyWorkflowTemplate
 from evorl.algorithms.meta.pbt_workflow import (
     PBTOffpolicyWorkflowTemplate,
     PBTWorkflowMetric,
 )
+from evorl.algorithms.offpolicy_utils import OffPolicyWorkflowTemplate
 from evorl.distributed import META_POP_AXIS_NAME
 from evorl.metrics import WorkflowMetric
 from evorl.replay_buffers import ReplayBuffer
 from evorl.types import State
 from evorl.utils import running_statistics
+from omegaconf import OmegaConf
+
+from tests.helpers.envs import ToyEnv
 
 
-@pytest.mark.parametrize("jit", [False, True])
 @pytest.mark.parametrize(
     "random_timesteps,learning_start_timesteps,expected_samples,expected_resets",
     [(0, 0, 0, 0), (0, 4, 4, 1), (4, 4, 4, 1), (8, 4, 8, 1), (2, 5, 6, 2)],
+    ids=[
+        "empty",
+        "policy_only",
+        "random_only",
+        "already_filled",
+        "rounded_policy_phase",
+    ],
 )
 def test_replay_warmup_skips_empty_phases(
     jit, random_timesteps, learning_start_timesteps, expected_samples, expected_resets
 ):
     workflow = object.__new__(OffPolicyWorkflowTemplate)
     workflow.config = OmegaConf.create(
-        dict(
-            num_envs=2,
-            random_timesteps=random_timesteps,
-            learning_start_timesteps=learning_start_timesteps,
-        )
+        {
+            "num_envs": 2,
+            "random_timesteps": random_timesteps,
+            "learning_start_timesteps": learning_start_timesteps,
+        }
     )
     workflow.dp_axis_name = None
     workflow.env = ToyEnv(num_envs=2)
@@ -70,8 +76,9 @@ def test_replay_warmup_skips_empty_phases(
     )
 
 
-@pytest.mark.parametrize("jit", [False, True])
-@pytest.mark.parametrize("normalize_obs", [False, True])
+@pytest.mark.parametrize(
+    "normalize_obs", [False, True], ids=["raw_obs", "normalize_obs"]
+)
 def test_pbt_warmup_preserves_population_observation_statistics(jit, normalize_obs):
     target = object.__new__(OffPolicyWorkflowTemplate)
     target.env = ToyEnv(num_envs=2)
@@ -80,7 +87,7 @@ def test_pbt_warmup_preserves_population_observation_statistics(jit, normalize_o
     workflow.workflow = target
     workflow.replay_buffer = target.replay_buffer
     workflow.config = OmegaConf.create(
-        dict(target_workflow=dict(num_envs=2), random_timesteps=4)
+        {"target_workflow": {"num_envs": 2}, "random_timesteps": 4}
     )
     agent_state = RandomAgent().init(
         target.env.obs_space, target.env.action_space, jax.random.key(14)

@@ -3,9 +3,7 @@
 from unittest.mock import Mock
 
 import jax.numpy as jnp
-from omegaconf import OmegaConf
 import pytest
-
 from evorl.algorithms.contrib.pop_td3 import PopTD3Workflow
 from evorl.algorithms.contrib.td3_v2 import TD3V2Workflow
 from evorl.algorithms.contrib.td3_v3 import TD3V3Workflow
@@ -13,6 +11,7 @@ from evorl.algorithms.offpolicy_utils import OffPolicyWorkflowTemplate
 from evorl.algorithms.td7 import TD7Workflow
 from evorl.metrics import EvaluateMetric, TrainMetric, WorkflowMetric
 from evorl.types import State
+from omegaconf import OmegaConf
 
 
 class _CountingWorkflow(OffPolicyWorkflowTemplate):
@@ -45,17 +44,17 @@ def test_folded_steps_evaluate_and_force_save_at_the_end(
     workflow = object.__new__(_CountingWorkflow)
     workflow.mesh = None
     workflow.config = OmegaConf.create(
-        dict(
-            rollout_length=1,
-            num_envs=1,
-            pop_size=1,
-            fold_iters=fold_iters,
-            total_timesteps=10 + 3 * fold_iters,
-            rollout_episodes=1,
-            total_episodes=10 + 3 * fold_iters,
-            eval_interval=100,
-            save_replay_buffer=True,
-        )
+        {
+            "rollout_length": 1,
+            "num_envs": 1,
+            "pop_size": 1,
+            "fold_iters": fold_iters,
+            "total_timesteps": 10 + 3 * fold_iters,
+            "rollout_episodes": 1,
+            "total_episodes": 10 + 3 * fold_iters,
+            "eval_interval": 100,
+            "save_replay_buffer": True,
+        }
     )
     workflow.recorder = Mock()
     workflow.checkpoint_manager = Mock()

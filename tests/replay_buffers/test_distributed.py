@@ -1,15 +1,12 @@
 """Check independent rings through the real off-policy shard_map boundary."""
 
-import re
-import sys
 from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-
+import pytest
 from evorl.agent import AgentState
-from evorl.metrics import WorkflowMetric
 from evorl.replay_buffers import (
     LAPReplayBuffer,
     PrioritizedReplayBuffer,
@@ -18,9 +15,18 @@ from evorl.replay_buffers import (
 from evorl.types import PyTreeDict
 from evorl.workflows import OffPolicyWorkflow
 
+from tests.helpers.sharding import compiled_collectives
 
-def run_case(buffer_type, jit):
-    mesh = jax.make_mesh((2,), ("DP",), axis_types=(jax.sharding.AxisType.Explicit,))
+pytestmark = pytest.mark.integration
+
+
+@pytest.mark.parametrize(
+    "buffer_type",
+    [ReplayBuffer, PrioritizedReplayBuffer, LAPReplayBuffer],
+    ids=["uniform", "prioritized", "lap"],
+)
+def test_independent_masked_rings(buffer_type, jit, dp_mesh):
+    mesh = dp_mesh
     buffer = buffer_type(capacity=4, sample_batch_size=3)
     prioritized = isinstance(buffer, PrioritizedReplayBuffer)
 
@@ -114,11 +120,7 @@ def run_case(buffer_type, jit):
 
         if jit:
             hlo = Harness.step.lower(workflow, state).compile().as_text()
-            assert not re.search(
-                r"\b(all-reduce|all-gather|all-to-all|collective-permute|"
-                r"reduce-scatter|collective-broadcast)(?:-start|-done)?\(",
-                hlo,
-            )
+            assert not compiled_collectives(hlo)
 
         root_key = state.key
         for iteration in range(6):
@@ -156,8 +158,8 @@ def run_case(buffer_type, jit):
                     np.testing.assert_allclose(actual_value, expected_value, rtol=1e-6)
                 actual_samples = state.env_state.mask.addressable_shards[rank].data
                 np.testing.assert_array_equal(actual_samples, samples)
-                assert np.all((np.asarray(actual_samples) >= rank * 100))
-                assert np.all((np.asarray(actual_samples) < (rank + 1) * 100))
+                assert np.all(np.asarray(actual_samples) >= rank * 100)
+                assert np.all(np.asarray(actual_samples) < (rank + 1) * 100)
                 np.testing.assert_array_equal(
                     jax.random.key_data(state.key.addressable_shards[rank].data),
                     jax.random.key_data(next_key),
@@ -170,12 +172,3 @@ def run_case(buffer_type, jit):
             assert rb.sample_indices.shape == (6,)
             assert rb.max_priority.shape == (2,)
             assert np.asarray(rb.max_priority)[0] != np.asarray(rb.max_priority)[1]
-    print(
-        f"{buffer_type.__name__}, jit={jit}: independent masked rings PASS", flush=True
-    )
-
-
-if __name__ == "__main__":
-    assert jax.device_count() == 2
-    for buffer_type in (ReplayBuffer, PrioritizedReplayBuffer, LAPReplayBuffer):
-        run_case(buffer_type, bool(int(sys.argv[1])))

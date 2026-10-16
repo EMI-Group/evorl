@@ -4,14 +4,13 @@ from unittest.mock import Mock
 
 import jax
 import jax.numpy as jnp
-from omegaconf import OmegaConf
 import orbax.checkpoint as ocp
 import pytest
-
 from evorl.algorithms.ec.so.es_workflow import ESWorkflowTemplate
 from evorl.metrics import ECTrainMetric, ECWorkflowMetric, EvaluateMetric
 from evorl.types import PyTreeDict, State
 from evorl.utils.orbax_utils import CheckpointManager
+from omegaconf import OmegaConf
 
 
 class _CountingESWorkflow(ESWorkflowTemplate):
@@ -31,7 +30,7 @@ class _CountingESWorkflow(ESWorkflowTemplate):
 @pytest.mark.parametrize("start_iteration", [0, 1])
 def test_es_saves_final_checkpoint_between_save_intervals(tmp_path, start_iteration):
     workflow = object.__new__(_CountingESWorkflow)
-    workflow.config = OmegaConf.create(dict(num_iters=3, eval_interval=10))
+    workflow.config = OmegaConf.create({"num_iters": 3, "eval_interval": 10})
     workflow.recorder = Mock()
     mesh = jax.make_mesh(
         (1,),

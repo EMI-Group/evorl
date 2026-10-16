@@ -4,9 +4,7 @@ from unittest.mock import Mock
 
 import jax
 import jax.numpy as jnp
-from omegaconf import OmegaConf
 import pytest
-
 from evorl.algorithms.a2c import A2CWorkflow
 from evorl.algorithms.contrib.a2c_v2 import A2CWorkflow as A2CV2Workflow
 from evorl.algorithms.contrib.pop_td3 import PopTD3Workflow
@@ -19,6 +17,7 @@ from evorl.algorithms.ppo import PPOWorkflow
 from evorl.algorithms.td7 import TD7Workflow
 from evorl.metrics import EvaluateMetric, TrainMetric, WorkflowMetric
 from evorl.types import State
+from omegaconf import OmegaConf
 
 
 class _CountingWorkflow(OffPolicyWorkflowTemplate):
@@ -81,17 +80,17 @@ def test_learn_uses_only_workflow_devices(learn, mesh_size):
     workflow.samples_per_step = 4 * workers
     workflow.episodes_per_step = workers
     workflow.config = OmegaConf.create(
-        dict(
-            num_envs=2,
-            rollout_length=2,
-            fold_iters=2,
-            pop_size=1,
-            total_timesteps=48,
-            rollout_episodes=1,
-            total_episodes=12,
-            eval_interval=2,
-            save_replay_buffer=True,
-        )
+        {
+            "num_envs": 2,
+            "rollout_length": 2,
+            "fold_iters": 2,
+            "pop_size": 1,
+            "total_timesteps": 48,
+            "rollout_episodes": 1,
+            "total_episodes": 12,
+            "eval_interval": 2,
+            "save_replay_buffer": True,
+        }
     )
     workflow.recorder = Mock()
     workflow.checkpoint_manager = Mock()

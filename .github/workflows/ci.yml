@@ -36,7 +36,7 @@ jobs:
         run: python -m pip install build twine ruff==0.15.7
       - name: Check critical Python errors
         run: |
-          ruff check --select E9,F63,F7,F82 evorl
+          ruff check --select E9,F63,F7,F82 evorl tests
           ruff check scripts/check_dist.py
           ruff format --check scripts/check_dist.py
       - name: Build sdist and wheel from sdist
@@ -103,21 +103,17 @@ jobs:
             "$GITHUB_WORKSPACE/tests/test_recorders.py" \
             "$GITHUB_WORKSPACE/tests/test_accelerator_utils.py" \
             "$GITHUB_WORKSPACE/tests/test_jax_compatibility.py" \
-            "$GITHUB_WORKSPACE/tests/test_distributed_gradients.py" \
             "$GITHUB_WORKSPACE/tests/test_orbax_utils.py" \
-            "$GITHUB_WORKSPACE/tests/test_prng.py" \
-            "$GITHUB_WORKSPACE/tests/test_explicit_sharding.py" \
-            "$GITHUB_WORKSPACE/tests/test_workflow_multidevice.py"
-      - name: Run workflow regression tests on two CPU devices
+            "$GITHUB_WORKSPACE/tests/test_prng.py"
+      - name: Run distributed and workflow tests on two CPU devices
         working-directory: ${{ runner.temp }}
-        env:
-          JAX_NUM_CPU_DEVICES: "2"
-          XLA_FLAGS: "--xla_force_host_platform_device_count=2"
         run: |
-          python -m pytest --import-mode=importlib \
-            "$GITHUB_WORKSPACE/tests/test_mark_varying.py" \
-            "$GITHUB_WORKSPACE/tests/test_workflow_budget.py" \
-            "$GITHUB_WORKSPACE/tests/test_offpolicy_final_iteration.py" \
-            "$GITHUB_WORKSPACE/tests/test_offpolicy_warmup.py" \
-            "$GITHUB_WORKSPACE/tests/test_es_final_checkpoint.py" \
-            "$GITHUB_WORKSPACE/tests/test_ec_workflow_metrics.py"
+          python -m pytest --import-mode=importlib --cpu-devices=2 -m "not four_devices" \
+            "$GITHUB_WORKSPACE/tests/distributed" \
+            "$GITHUB_WORKSPACE/tests/workflows" \
+            "$GITHUB_WORKSPACE/tests/replay_buffers"
+      - name: Check VMA casts across two mesh axes
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -m pytest --import-mode=importlib --cpu-devices=4 -m four_devices \
+            "$GITHUB_WORKSPACE/tests/distributed"

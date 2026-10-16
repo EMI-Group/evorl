@@ -144,6 +144,9 @@ Uniform, prioritized and LAP replay tests cover unequal masked insertion, empty
 writes, wraparound, local sampling and priority updates against independent local
 references. Their compiled buffer steps must contain no collective communication.
 The supported JAX versions run these checks with and without outer JIT.
+See [tests/README.md](../../tests/README.md) for the test layout, selection commands,
+and CPU device configuration. Distributed tests run directly under pytest;
+the two-axis VMA check uses a separate `--cpu-devices=4` invocation.
 RL's `enable_jit` compiles setup as well as step and evaluation, so
 initialization uses the same compiled execution mode.
 

@@ -5,9 +5,7 @@ from unittest.mock import Mock
 import jax
 import jax.numpy as jnp
 import numpy as np
-from omegaconf import OmegaConf
 import pytest
-
 from evorl.agent import AgentState
 from evorl.distributed import POP_AXIS_NAME
 from evorl.evaluators import Evaluator
@@ -21,6 +19,7 @@ from evorl.workflows.ec_workflow import (
     ECWorkflowTemplate,
     MultiObjectiveECWorkflowTemplate,
 )
+from omegaconf import OmegaConf
 
 
 class _FitnessEvaluator(Evaluator):
@@ -59,11 +58,11 @@ def test_ec_metrics_count_only_local_episodes(num_devices, multi_objective):
             env=Mock(num_envs=1), action_fn=None, max_episode_steps=2
         ),
         config=OmegaConf.create(
-            dict(
-                checkpoint=dict(enable=False),
-                episodes_for_fitness=2,
-                metric_names=["episode_returns", "episode_lengths"],
-            )
+            {
+                "checkpoint": {"enable": False},
+                "episodes_for_fitness": 2,
+                "metric_names": ["episode_returns", "episode_lengths"],
+            }
         ),
     )
     mesh = jax.make_mesh(

@@ -1,16 +1,10 @@
 """Regression checks shared by the minimum and latest JAX environments."""
 
-import os
-import subprocess
-import sys
-import textwrap
-
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
 import pytest
-
 from evorl.algorithms.td7 import avg_l1_norm
 from evorl.distributed import get_process_id, is_dist_initialized
 from evorl.networks.linear import MLP
@@ -46,79 +40,6 @@ def test_td7_normalization_handles_zero_and_nonzero_inputs():
 def test_single_process_distributed_status():
     assert not is_dist_initialized()
     assert get_process_id() == 0
-
-
-def test_shard_map_wrappers_and_gradients_on_two_cpu_devices():
-    code = textwrap.dedent(
-        """
-        import jax
-        import jax.numpy as jnp
-        import numpy as np
-        from evorl.distributed import all_gather, shmap_map, shmap_vmap
-
-        assert jax.device_count() == 2
-        mesh = jax.make_mesh((len(jax.devices()),), ("devices",), axis_types=(jax.sharding.AxisType.Explicit,), devices=jax.devices())
-        jax.set_mesh(mesh)
-        inputs = jnp.arange(8, dtype=jnp.float32).reshape(4, 2)
-        inputs = jax.device_put(inputs, jax.P("devices"))
-        # Four logical random streams on two devices: each shard has two keys.
-        keys = jax.device_put(jax.random.split(jax.random.key(7), 4), jax.P("devices"))
-        assert keys.shape == (4,)
-        assert keys.addressable_shards[0].data.shape == (2,)
-        assert jax.dtypes.issubdtype(keys.dtype, jax.dtypes.prng_key)
-        sample = jax.jit(shmap_vmap(
-            lambda key: jax.random.uniform(key),
-            in_specs=jax.P("devices"), out_specs=jax.P("devices"),
-        ))
-        np.testing.assert_array_equal(
-            sample(keys), jax.vmap(jax.random.uniform)(jax.random.split(jax.random.key(7), 4))
-        )
-
-
-        for wrapper in (shmap_map, shmap_vmap):
-            mapped = jax.jit(wrapper(
-                lambda row: row ** 2,
-                in_specs=jax.P("devices"), out_specs=jax.P("devices"),
-            ))
-            np.testing.assert_allclose(mapped(inputs), inputs ** 2)
-            grads = jax.jit(jax.grad(lambda x: jnp.sum(mapped(x))))(inputs)
-            np.testing.assert_allclose(grads, 2 * inputs)
-
-        reduced = jax.jit(jax.shard_map(
-            lambda block: jax.lax.pmean(block.sum(axis=0), "devices"),
-            in_specs=jax.P("devices"), out_specs=jax.P(),
-        ))
-        np.testing.assert_allclose(reduced(inputs), inputs.sum(axis=0) / 2)
-        grads = jax.jit(jax.grad(lambda x: jnp.sum(reduced(x))))(inputs)
-        np.testing.assert_allclose(grads, jnp.full_like(inputs, 0.5))
-
-        gathered = jax.jit(jax.shard_map(
-            lambda block: all_gather(
-                block, "devices", axis=0, tiled=True, to="invarying"
-            ),
-            in_specs=jax.P("devices"), out_specs=jax.P(),
-        ))
-        np.testing.assert_array_equal(gathered(inputs), inputs)
-        grads = jax.jit(jax.grad(lambda x: jnp.sum(gathered(x) ** 2)))(inputs)
-        np.testing.assert_allclose(grads, 2 * inputs)
-        hlo = gathered.lower(inputs).compile().as_text().lower()
-        assert "all-gather(" in hlo
-        assert "all-reduce(" not in hlo
-        """
-    )
-    result = subprocess.run(
-        [sys.executable, "-B", "-c", code],
-        env={
-            **os.environ,
-            "JAX_PLATFORMS": "cpu",
-            "XLA_FLAGS": "--xla_force_host_platform_device_count=2",
-            "JAX_NUM_CPU_DEVICES": "2",
-        },
-        capture_output=True,
-        text=True,
-        timeout=90,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(
@@ -221,14 +142,14 @@ def test_agents_initialize_and_sample_with_typed_keys(name):
         if name in ("dqn", "sac_discrete")
         else Box(low=-jnp.ones(2), high=jnp.ones(2))
     )
-    sizes = dict(actor_hidden_layer_sizes=(8,), critic_hidden_layer_sizes=(8,))
-    factories = dict(
-        a2c=make_mlp_a2c_agent,
-        ppo=make_mlp_ppo_agent,
-        sac=make_mlp_sac_agent,
-        sac_discrete=make_mlp_sac_agent,
-        td3=make_mlp_td3_agent,
-    )
+    sizes = {"actor_hidden_layer_sizes": (8,), "critic_hidden_layer_sizes": (8,)}
+    factories = {
+        "a2c": make_mlp_a2c_agent,
+        "ppo": make_mlp_ppo_agent,
+        "sac": make_mlp_sac_agent,
+        "sac_discrete": make_mlp_sac_agent,
+        "td3": make_mlp_td3_agent,
+    }
     if name == "dqn":
         agent = make_mlp_discrete_dqn_agent(
             action_space, q_hidden_layer_sizes=(8,), normalize_obs=True
