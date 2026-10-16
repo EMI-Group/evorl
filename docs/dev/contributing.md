@@ -79,7 +79,7 @@ keep `POP_AXIS_NAME` (`"POP"`) for their own populations. Rollout and other VMA-
 casts read the active Manual axes from `jax.sharding.get_abstract_mesh()` at trace
 time, including under `jit` and `vmap`. They do not require a Workflow field or
 an axis argument in the rollout API, and their forward casts do not communicate.
-Keep gradient and statistics reduction axes explicit: population-parallel
+Keep loss and statistics reduction axes explicit: population-parallel
 execution does not imply that independent policies should synchronize updates.
 `shard_map` inputs must already match their declared specs.
 RL model parameters, metrics and root keys are replicated; environments and
@@ -96,8 +96,9 @@ Never call `jax.set_mesh` inside a jitted function.
 The outer mesh uses Explicit axes; `jax.shard_map` enters Manual mode for
 its body and returns to the outer mode afterward. Manual mode is appropriate
 for device-local rollout/update code and explicit collectives; it does not
-mean there is no communication. DP synchronizes gradients with `pmean` and
-reduces metrics/running statistics. EC and shared-buffer PBT gather data.
+mean there is no communication. DP averages the scalar loss with `pmean` before
+differentiation; autodiff generates the corresponding gradient synchronization.
+Metrics/running statistics are also reduced. EC and shared-buffer PBT gather data.
 Do not create the outer mesh with Manual axes: `jax.set_mesh` rejects them.
 Build each execution configuration on a fresh workflow subclass, as in
 `scripts/train.py`. `build_from_config(..., multi_device=True, jit=True)` creates
@@ -128,11 +129,17 @@ the buffer through unchanged. Computation runs in Manual mode across the data-pa
 axis, with communication expressed by explicit collectives. Keep the State's
 input and output shardings identical to avoid resharding between calls; `P()`
 on an output is a replication promise, not an implicit reduction.
-Loss metrics must be explicitly reduced as well as gradients before declaring
-them replicated. Tests compare actual replica values and inspect compiled
+Shared-policy updates use `pmean_loss_and_grad`: the primary scalar loss is
+averaged over the explicit DP axis inside `value_and_grad`, yielding the global
+mean loss and gradients without a second gradient reduction. Auxiliary outputs
+remain local and unchanged, including replay priorities; only their logged
+metrics are reduced afterward. With `dp_axis_name=None`, the helper performs
+ordinary local differentiation, including for independent PBT members. Tests
+check gradient values against a global-batch reference and preserve differing
+per-device auxiliary values. They also compare actual replicas and inspect compiled
 collectives: PPO/SAC use all-reduce, and a local-only computation has none.
 The workflow tests cover distributed initialization and PBT shard-map paths,
-plus PPO, SAC, OpenES and RandomAgent setup/step/evaluate on two CPU devices.
+plus RL algorithms, OpenES and RandomAgent setup/step/evaluate on two CPU devices.
 Uniform, prioritized and LAP replay tests cover unequal masked insertion, empty
 writes, wraparound, local sampling and priority updates against independent local
 references. Their compiled buffer steps must contain no collective communication.

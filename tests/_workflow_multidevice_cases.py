@@ -85,6 +85,12 @@ def run_case(agent, jit):
     if agent == "ppo":
         config.minibatch_size = 8
         config.reuse_rollout_epochs = 1
+    elif agent == "impala":
+        config.minibatch_size = 4
+        config.reuse_rollout_epochs = 1
+    elif agent == "contrib/td3-onpolicy":
+        config.minibatch_size = 4
+        config.reuse_rollout_epochs = 1
     elif agent == "sac":
         config.rollout_length = 1
         config.batch_size = 4
@@ -100,7 +106,7 @@ def run_case(agent, jit):
         config.random_timesteps = 4
         config.learning_start_timesteps = 4
         config.agent_network.q_hidden_layer_sizes = [4]
-    elif agent in ("td3", "ddpg", "contrib/td3-v3"):
+    elif agent in ("td3", "ddpg", "contrib/td3-v2", "contrib/td3-v3"):
         config.batch_size = 2
         config.replay_buffer_capacity = 16
         config.random_timesteps = 4
@@ -144,7 +150,9 @@ def run_case(agent, jit):
     def create_env(*args, **kwargs):
         return ToyEnv(kwargs["parallel"], discrete=agent == "dqn")
 
-    with patch(f"{base.__module__}.create_env", side_effect=create_env):
+    with patch(
+        f"{base._build_from_config.__module__}.create_env", side_effect=create_env
+    ):
         workflow = cls.build_from_config(config, multi_device=True, jit=jit)
         local = local_cls.build_from_config(config, multi_device=False, jit=False)
     if agent != "ec/openes":
@@ -232,10 +240,14 @@ def run_case(agent, jit):
                 )
             if agent in (
                 "ppo",
+                "a2c",
+                "impala",
+                "contrib/td3-onpolicy",
                 "sac",
                 "dqn",
                 "td3",
                 "ddpg",
+                "contrib/td3-v2",
                 "contrib/td3-v3",
                 "td7",
             ):
@@ -263,10 +275,14 @@ def run_case(agent, jit):
                 assert collectives <= allowed, (agent, collectives)
                 if agent in (
                     "ppo",
+                    "a2c",
+                    "impala",
+                    "contrib/td3-onpolicy",
                     "sac",
                     "dqn",
                     "td3",
                     "ddpg",
+                    "contrib/td3-v2",
                     "contrib/td3-v3",
                     "td7",
                 ):
@@ -310,7 +326,8 @@ def run_case(agent, jit):
                 assert evaluated.key.sharding.is_fully_replicated
                 expected_key = state.key
                 if agent != "random":
-                    expected_key = jax.random.split(expected_key, 3)[0]
+                    num_keys = 5 if agent == "contrib/td3-v2" else 3
+                    expected_key = jax.random.split(expected_key, num_keys)[0]
                 expected_key = jax.random.split(expected_key, 2)[0]
                 np.testing.assert_array_equal(
                     jax.random.key_data(evaluated.key),
@@ -330,7 +347,18 @@ def run_case(agent, jit):
                     before.sharding,
                     after.sharding,
                 )
-            if agent in ("ppo", "sac", "dqn", "td3", "ddpg", "contrib/td3-v3"):
+            if agent in (
+                "ppo",
+                "a2c",
+                "impala",
+                "contrib/td3-onpolicy",
+                "sac",
+                "dqn",
+                "td3",
+                "ddpg",
+                "contrib/td3-v2",
+                "contrib/td3-v3",
+            ):
                 np.testing.assert_allclose(
                     evaluated.env_state.obs,
                     np.asarray(state.env_state.obs)
@@ -441,7 +469,7 @@ if __name__ == "__main__":
     assert jax.device_count() == 2
     check_invalid_multidevice_configs()
     jit = bool(int(sys.argv[1]))
-    for agent in (
+    for agent in sys.argv[2:] or (
         "ppo",
         "sac",
         "dqn",

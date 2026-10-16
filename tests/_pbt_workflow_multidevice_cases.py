@@ -17,7 +17,17 @@ from _workflow_multidevice_cases import ToyEnv
 
 
 def check_rollout_context():
-    env = ToyEnv(2)
+    class VariableLengthEnv(ToyEnv):
+        def step(self, state, action):
+            next_state = super().step(state, action)
+            # Input-dependent termination keeps the evaluation loop dynamic;
+            # uniform lengths can hide automatic cross-device loop reductions.
+            threshold = 1 + jnp.floor(state.obs[:, 0] * 4).astype(jnp.int32)
+            return next_state.replace(
+                done=(next_state.env_state >= threshold).astype(jnp.float32)
+            )
+
+    env = VariableLengthEnv(2)
 
     def action_fn(agent_state, batch, key):
         return batch.obs[:, :1], PyTreeDict()

@@ -143,9 +143,10 @@ class TD7Critic(nn.Module):
 
 
 class TD7TrainMetric(MetricBase):
-    critic_loss: jax.Array = metric_field(reduce_fn=pmean)
-    actor_loss: jax.Array = metric_field(reduce_fn=pmean)
-    encoder_loss: jax.Array = metric_field(reduce_fn=pmean)
+    # Primary losses are already averaged by pmean_loss_and_grad.
+    critic_loss: jax.Array
+    actor_loss: jax.Array
+    encoder_loss: jax.Array
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
@@ -758,14 +759,16 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             def _skip_actor(carry):
                 agent_state, actor_opt_state = carry
                 actor_loss = jnp.array(0.0)
-                actor_loss = mark_varying(
+                local_actor_loss = mark_varying(
                     actor_loss, jax.sharding.get_abstract_mesh().manual_axes
                 )
+                if not self.is_multi_device:
+                    actor_loss = local_actor_loss
                 return (
                     agent_state,
                     actor_opt_state,
                     actor_loss,
-                    PyTreeDict(actor_loss=actor_loss),
+                    PyTreeDict(actor_loss=local_actor_loss),
                 )
 
             agent_state, actor_opt_state, actor_loss, actor_loss_dict = jax.lax.cond(

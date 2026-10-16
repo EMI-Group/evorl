@@ -485,14 +485,8 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         return state
 
     def _setup_replaybuffer(self, key: jax.Array) -> ReplayBufferState:
-        # replicas across devices: every device needs one replay_buffer_state
-        replay_buffer_state = jax.shard_map(
-            self.workflow._setup_replaybuffer,
-            in_specs=jax.P(),
-            out_specs=jax.P(),
-        )(key)
-
-        return replay_buffer_state
+        # Each device holds a replica of the shared replay buffer.
+        return jax.device_put(self.workflow._setup_replaybuffer(key), jax.P())
 
     def _postsetup_replaybuffer(self, state: State) -> State:
         # Since the replay buffer is shared across workflows, we need an independent post-setup
@@ -562,6 +556,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         return state.replace(
             key=key,
             metrics=workflow_metrics,
+            pop_workflow_state=pop_workflow_state,
             replay_buffer_state=replay_buffer_state,
         )
 

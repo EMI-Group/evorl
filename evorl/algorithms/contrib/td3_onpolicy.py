@@ -163,7 +163,9 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
         trajectory = tree_stop_gradient(trajectory)
         # ============================
 
-        update_fn = build_rl_update_fn(self.agent, self.optimizer, self.config)
+        update_fn = build_rl_update_fn(
+            self.agent, self.optimizer, self.config, dp_axis_name=self.dp_axis_name
+        )
 
         num_minibatches = (
             self.config.rollout_length
@@ -291,6 +293,7 @@ def build_rl_update_fn(
     agent: Agent,
     optimizer: optax.GradientTransformation,
     config: DictConfig,
+    dp_axis_name: str | None = None,
 ):
     def critic_loss_fn(agent_state, sample_batch, key):
         # loss on a single critic with multiple actors
@@ -314,6 +317,7 @@ def build_rl_update_fn(
     critic_update_fn = agent_gradient_update(
         critic_loss_fn,
         optimizer,
+        dp_axis_name=dp_axis_name,
         has_aux=True,
         attach_fn=lambda agent_state, critic_params: agent_state.replace(
             params=agent_state.params.replace(critic_params=critic_params)
@@ -324,6 +328,7 @@ def build_rl_update_fn(
     actor_update_fn = agent_gradient_update(
         actor_loss_fn,
         optimizer,
+        dp_axis_name=dp_axis_name,
         has_aux=True,
         attach_fn=lambda agent_state, actor_params: agent_state.replace(
             params=agent_state.params.replace(actor_params=actor_params)

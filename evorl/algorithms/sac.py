@@ -39,9 +39,10 @@ logger = logging.getLogger(__name__)
 
 
 class SACTrainMetric(MetricBase):
-    critic_loss: jax.Array = metric_field(reduce_fn=pmean)
-    actor_loss: jax.Array = metric_field(reduce_fn=pmean)
-    alpha_loss: jax.Array | None = metric_field(default=None, reduce_fn=pmean)
+    # Primary losses are already averaged by pmean_loss_and_grad.
+    critic_loss: jax.Array
+    actor_loss: jax.Array
+    alpha_loss: jax.Array | None = None
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 

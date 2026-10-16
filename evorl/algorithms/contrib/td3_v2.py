@@ -7,6 +7,7 @@ import jax.tree_util as jtu
 
 from evorl.distributed import psum
 from evorl.distributed.gradients import agent_gradient_update
+from evorl.distributed.sharding import mark_varying
 from evorl.metrics import MetricBase
 from evorl.rollout import rollout
 from evorl.types import (
@@ -161,7 +162,12 @@ class TD3V2Workflow(TD3Workflow):
 
         def _dummy_update_actor_fn(agent_state, opt_state, sample_batch, key):
             actor_loss = jnp.full((), fill_value=MISSING_LOSS)
-            actor_loss_dict = PyTreeDict(actor_loss=actor_loss)
+            local_actor_loss = mark_varying(
+                actor_loss, jax.sharding.get_abstract_mesh().manual_axes
+            )
+            actor_loss_dict = PyTreeDict(actor_loss=local_actor_loss)
+            if not self.is_multi_device:
+                actor_loss = local_actor_loss
 
             return (
                 actor_loss,

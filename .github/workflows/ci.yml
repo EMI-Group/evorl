@@ -103,7 +103,21 @@ jobs:
             "$GITHUB_WORKSPACE/tests/test_recorders.py" \
             "$GITHUB_WORKSPACE/tests/test_accelerator_utils.py" \
             "$GITHUB_WORKSPACE/tests/test_jax_compatibility.py" \
+            "$GITHUB_WORKSPACE/tests/test_distributed_gradients.py" \
             "$GITHUB_WORKSPACE/tests/test_orbax_utils.py" \
             "$GITHUB_WORKSPACE/tests/test_prng.py" \
             "$GITHUB_WORKSPACE/tests/test_explicit_sharding.py" \
             "$GITHUB_WORKSPACE/tests/test_workflow_multidevice.py"
+      - name: Run workflow regression tests on two CPU devices
+        working-directory: ${{ runner.temp }}
+        env:
+          JAX_NUM_CPU_DEVICES: "2"
+          XLA_FLAGS: "--xla_force_host_platform_device_count=2"
+        run: |
+          python -m pytest --import-mode=importlib \
+            "$GITHUB_WORKSPACE/tests/test_mark_varying.py" \
+            "$GITHUB_WORKSPACE/tests/test_workflow_budget.py" \
+            "$GITHUB_WORKSPACE/tests/test_offpolicy_final_iteration.py" \
+            "$GITHUB_WORKSPACE/tests/test_offpolicy_warmup.py" \
+            "$GITHUB_WORKSPACE/tests/test_es_final_checkpoint.py" \
+            "$GITHUB_WORKSPACE/tests/test_ec_workflow_metrics.py"

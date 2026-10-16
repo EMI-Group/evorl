@@ -173,9 +173,10 @@ def make_mlp_td3_agent(
 
 
 class TD3TrainMetric(MetricBase):
-    actor_loss: jax.Array = metric_field(reduce_fn=pmean)
-    critic1_loss: jax.Array = metric_field(reduce_fn=pmean)
-    critic2_loss: jax.Array = metric_field(reduce_fn=pmean)
+    # Primary losses are already averaged by pmean_loss_and_grad.
+    actor_loss: jax.Array
+    critic1_loss: jax.Array
+    critic2_loss: jax.Array
     q1: jax.Array = metric_field(reduce_fn=pmean)
     q2: jax.Array = metric_field(reduce_fn=pmean)
 
@@ -474,9 +475,10 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
 
         def _dummy_update_actor_fn(agent_state, opt_state, sample_batch, key):
             actor_loss = jnp.asarray(MISSING_LOSS)
-            actor_loss = mark_varying(
-                actor_loss, jax.sharding.get_abstract_mesh().manual_axes
-            )
+            if not self.is_multi_device:
+                actor_loss = mark_varying(
+                    actor_loss, jax.sharding.get_abstract_mesh().manual_axes
+                )
             return (
                 PyTreeDict(actor_loss=actor_loss),
                 agent_state,

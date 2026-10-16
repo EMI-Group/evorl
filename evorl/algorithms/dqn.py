@@ -48,9 +48,8 @@ class DQNNetworkParams(PyTreeData):
 
 
 class DQNTrainMetric(MetricBase):
-    loss: jax.Array = metric_field(
-        default_factory=lambda: jnp.zeros(()), reduce_fn=pmean
-    )
+    # The primary loss is already averaged by pmean_loss_and_grad.
+    loss: jax.Array = metric_field(default_factory=lambda: jnp.zeros(()))
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 

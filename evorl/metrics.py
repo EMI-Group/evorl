@@ -84,10 +84,8 @@ class TrainMetric(MetricBase):
     # manually reduce in the step()
     train_episode_return: jax.Array | None = None
 
-    # Gradient synchronization does not reduce the loss value itself.
-    loss: jax.Array = metric_field(
-        default_factory=lambda: jnp.zeros(()), reduce_fn=pmean
-    )
+    # The primary loss is already averaged by pmean_loss_and_grad.
+    loss: jax.Array = metric_field(default_factory=lambda: jnp.zeros(()))
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 

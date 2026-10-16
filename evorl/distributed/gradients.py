@@ -10,16 +10,41 @@ Modified from https://github.com/google/brax/blob/main/brax/training/gradients.p
 """
 
 
-def loss_and_pgrad(
-    loss_fn: Callable[..., float], dp_axis_name: str | None, has_aux: bool = False
+def pmean_loss_and_grad(
+    loss_fn: Callable, dp_axis_name: str | None, has_aux: bool = False
 ):
-    g = jax.value_and_grad(loss_fn, has_aux=has_aux)
+    """Differentiate the global mean loss over replicated parameters.
 
-    def h(*args, **kwargs):
-        value, grads = g(*args, **kwargs)
-        return value, jax.lax.pmean(grads, axis_name=dp_axis_name)
+    Average the scalar loss inside the differentiated function. Autodiff then
+    produces the mean parameter gradients; no further gradient reduction is
+    applied. Local batches must have equal sizes for this device mean to match
+    the mean over all samples.
 
-    return g if dp_axis_name is None else h
+    Args:
+        loss_fn: Function taking parameters first and returning a scalar loss,
+            or `(loss, aux)` when `has_aux=True`.
+        dp_axis_name: Active data-parallel Manual axis in `shard_map`. The
+            differentiated parameters must be replicated over this axis.
+            Pass `None` to use ordinary local `jax.value_and_grad`.
+        has_aux: Whether `loss_fn` also returns auxiliary data. Aux is returned
+            unchanged on each device and is not differentiated or reduced.
+
+    Returns:
+        A callable with the same arguments as `loss_fn`, returning
+        `(mean_loss, mean_grads)` or `((mean_loss, local_aux), mean_grads)`.
+        With no axis, both the loss and gradients remain local.
+    """
+    if dp_axis_name is None:
+        return jax.value_and_grad(loss_fn, has_aux=has_aux)
+
+    def mean_loss_fn(*args, **kwargs):
+        value = loss_fn(*args, **kwargs)
+        if has_aux:
+            loss, aux = value
+            return jax.lax.pmean(loss, dp_axis_name), aux
+        return jax.lax.pmean(value, dp_axis_name)
+
+    return jax.value_and_grad(mean_loss_fn, has_aux=has_aux)
 
 
 def gradient_update(
@@ -33,7 +58,8 @@ def gradient_update(
     Args:
         loss_fn: The loss function. (params, ...) -> loss
         optimizer: The optimizer to apply gradients.
-        dp_axis_name: If relevant, the name of the pmap axis to synchronize gradients.
+        dp_axis_name: Data-parallel axis for the global mean loss and gradients,
+            or `None` for a local update.
         has_aux: Whether the loss_fn has auxiliary data.
 
     Returns:
@@ -41,12 +67,12 @@ def gradient_update(
         optimizer state. The output of this function is the loss, the new parameter,
         and the new optimizer state.
     """
-    loss_and_pgrad_fn = loss_and_pgrad(
+    loss_and_grad_fn = pmean_loss_and_grad(
         loss_fn, dp_axis_name=dp_axis_name, has_aux=has_aux
     )
 
     def f(opt_state, params, *args, **kwargs):
-        value, grads = loss_and_pgrad_fn(params, *args, **kwargs)
+        value, grads = loss_and_grad_fn(params, *args, **kwargs)
         params_update, opt_state = optimizer.update(grads, opt_state)
         params = optax.apply_updates(params, params_update)
         return (

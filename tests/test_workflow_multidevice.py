@@ -55,13 +55,32 @@ def test_independent_replay_rings_on_two_cpu_devices(jit):
 
 
 @pytest.mark.parametrize("jit", [True, False])
-def test_workflow_methods_on_two_cpu_devices(jit):
+@pytest.mark.parametrize(
+    "agent",
+    [
+        "ppo",
+        "sac",
+        "dqn",
+        "td3",
+        "ddpg",
+        "contrib/td3-v3",
+        "td7",
+        "ec/openes",
+        "random",
+        "a2c",
+        "impala",
+        "contrib/td3-v2",
+        "contrib/td3-onpolicy",
+    ],
+)
+def test_workflow_methods_on_two_cpu_devices(jit, agent):
     result = subprocess.run(
         [
             sys.executable,
             "-B",
             str(Path(__file__).with_name("_workflow_multidevice_cases.py")),
             str(int(jit)),
+            agent,
         ],
         env={
             **os.environ,
