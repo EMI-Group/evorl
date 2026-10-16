@@ -26,14 +26,18 @@ backend, combine its extra with `dev`, for example `pip install -e ".[dev,wandb]
 or install the SDK directly. See [Experiment Logging installation](../guide/installation.md#experiment-logging)
 for the available extras and package names.
 
+Use Google-style docstrings with a concise summary and `Args:`, `Returns:`,
+and `Raises:` sections where appropriate. Use single backticks for inline code
+and identifiers, matching this project's MyST documentation rendering.
+
 ### Dependency compatibility
 
-The framework requires Python 3.12+, JAX/jaxlib 0.7.1+, and Distrax 0.1.9+.
-JAX 0.7.1 satisfies Distrax's requirements and adds `jax.set_mesh`, which
-allows the sharding APIs used here to accept raw `jax.P` specs.
+The framework requires Python 3.12+, JAX/jaxlib 0.10.0+, and Distrax 0.1.9+.
+JAX 0.10.0 provides `jax.lax.all_gather(..., to="invarying")` and the manual-axis
+types used by the multi-device workflows' strict VMA checks.
 Python and JAX minimum versions are independent.
 
-CI tests the built wheel with both JAX/jaxlib 0.7.1 + Orbax 0.11.30 and the
+CI tests the built wheel with both JAX/jaxlib 0.10.0 + Orbax 0.11.30 and the
 latest dependencies. The minimum job lets the resolver select compatible
 versions of Flax and other dependencies; the latest Flax release can require
 a newer JAX version. The framework continues to use Flax Linen and the Orbax
@@ -43,25 +47,10 @@ Orbax requires version 0.11.30 or newer for the typed-key checkpoint restore
 path exercised by our compatibility suite.
 See the [Orbax changelog](https://github.com/google/orbax/blob/main/checkpoint/CHANGELOG.md).
 
-The compatibility audit on 2026-10-09 covers these combinations:
-
-| Component | Minimum JAX combination | Latest combination |
-| --- | --- | --- |
-| Python | 3.12 | 3.12 |
-| JAX / jaxlib | 0.7.1 | 0.11.2 |
-| Flax (Linen) | 0.11.2 | 0.12.10 |
-| Orbax (V0) | 0.11.30 | 0.12.7 |
-| Optax | 0.2.8 | 0.2.8 |
-| Chex | 0.1.90 | 0.1.92 |
-| Distrax | 0.1.9 | 0.1.9 |
-| NumPy / SciPy / pandas | 2.5.3 / 1.18.1 / 3.0.6 | 2.5.3 / 1.18.1 / 3.0.6 |
-| TFP nightly | 0.26.0.dev20261008 | 0.26.0.dev20261008 |
-
-These are tested combinations, not independent lower bounds for every package.
-Coverage includes typed-key batching and host callbacks, Linen initialization,
-mutable normalization state and gradients, seven RL agents, Optax hyperparameter
-updates, running statistics, two-device CPU sharding and gradients, V0
-checkpoints, and logging with NumPy/pandas.
+The compatibility suite covers typed-key batching and host callbacks, Linen
+initialization, mutable normalization state and gradients, seven RL agents,
+Optax hyperparameter updates, running statistics, two-device CPU sharding and
+gradients, V0 checkpoints, and logging with NumPy/pandas.
 
 DQN uses Distrax's `EpsilonGreedy` distribution; other distributions use
 TFP's JAX substrate. Distrax 0.1.9+ depends on `tfp-nightly`, matching the
@@ -70,11 +59,11 @@ alongside `tfp-nightly`: they install overlapping files.
 
 Construct device meshes with `jax.make_mesh` and inline simple `jax.P` specs.
 Keep named specs for structured state trees or generic function parameters.
-Training meshes use `axis_types=(jax.sharding.AxisType.Explicit,)` explicitly
-so JAX 0.7.1 and newer versions use the same mode. RL stores a replicated scalar
-root key. Each iteration splits the next root from the keys it consumes, then
-folds `lax.axis_index(dp_axis_name)` into the consumed keys for independent local
-random streams. Never fold the saved next root: it must remain replicated.
+Training meshes use `axis_types=(jax.sharding.AxisType.Explicit,)` explicitly.
+RL stores a replicated scalar root key. Each iteration splits the next root
+from the keys it consumes, then folds `lax.axis_index(dp_axis_name)` into the
+consumed keys for independent local random streams. Never fold the saved next
+root: it must remain replicated.
 Environment setup, evaluation and buffer warmup follow the same rule; model
 initialization keeps a shared key so parameters start identical. Single-device paths
 keep their original split sequences; distributed random sequences change.
@@ -85,6 +74,13 @@ individuals to each device. RL environment arrays have global shape
 Each device resets and steps `(local_num_envs, ...)` using the environment's
 existing batching; do not add an outer worker `vmap` to the batched environment.
 PBT uses its existing inner `vmap` to process local population members.
+Its outer axis is `META_POP_AXIS_NAME` (`"META_POP"`); evolutionary algorithms
+keep `POP_AXIS_NAME` (`"POP"`) for their own populations. Rollout and other VMA-only
+casts read the active Manual axes from `jax.sharding.get_abstract_mesh()` at trace
+time, including under `jit` and `vmap`. They do not require a Workflow field or
+an axis argument in the rollout API, and their forward casts do not communicate.
+Keep gradient and statistics reduction axes explicit: population-parallel
+execution does not imply that independent policies should synchronize updates.
 `shard_map` inputs must already match their declared specs.
 RL model parameters, metrics and root keys are replicated; environments and
 per-device replay buffers are sharded. PBT replicates fitnesses for global selection and
@@ -140,12 +136,9 @@ plus PPO, SAC, OpenES and RandomAgent setup/step/evaluate on two CPU devices.
 Uniform, prioritized and LAP replay tests cover unequal masked insertion, empty
 writes, wraparound, local sampling and priority updates against independent local
 references. Their compiled buffer steps must contain no collective communication.
-Current JAX supports these checks with and without outer JIT. On JAX 0.7.1,
-use `jit=True`: eager `shard_map` can fail with a gather `ShardingTypeError`
-on `fold_in(key, axis_index)` or replicated arrays captured by `scan`, independently
-of Workflow or static `self`. RL's `enable_jit` compiles setup as well as step
-and evaluation, so initialization uses the same compiled execution mode.
-The eager regression tests record this failure as xfail only on 0.7.1.
+The supported JAX versions run these checks with and without outer JIT.
+RL's `enable_jit` compiles setup as well as step and evaluation, so
+initialization uses the same compiled execution mode.
 
 
 TFP nightly still uses deprecated JAX internals, and Brax imports unmaintained
@@ -265,62 +258,63 @@ configuration may still change between releases. The version is maintained in
    be included in the upload. Update the tag in the example for subsequent versions.
 4. Commit the reviewed release changes, push `main`, and wait for branch CI to pass.
    The PyPI Trusted Publisher and GitHub `pypi` environment must already be configured
-   for `.github/workflows/release.yml` before pushing a release tag.
+   for `.github/workflows/release.yml` before publishing a GitHub Release.
 
-### Tag and publish
+### Tag the release commit
 
-An annotated tag (`git tag -a`) marks a release commit and stores its author,
-date, and message. The message describes the whole version, independently of
-commit messages. Write the release summary in `-m`, then push the tag:
+A tag identifies the commit to release. Creating or pushing a tag does not
+publish packages or create a GitHub Release:
 
 ```shell
 git switch main
 git status --short  # Release changes must already be committed.
-git tag -a v0.1.2 --cleanup=whitespace -m '## Highlights
-- Summarize new features and fixes.
-
-## Compatibility
-- Describe breaking changes or migration steps; omit if unnecessary.'
+git tag -a v0.1.2 -m 'Version 0.1.2'
 git push origin v0.1.2
 ```
 
-Replace the example version and summary before running. `--cleanup=whitespace`
-preserves Markdown headings beginning with `#`. The tag must match
+Replace the example version before running. The tag must match
 `evorl.__version__`: `v0.1.2` requires `0.1.2`. Release candidates use a version
 such as `0.2.0rc1` and tag `v0.2.0rc1`, marked as a GitHub prerelease.
 
-Tag pushes run CI against the tagged commit, then publish the wheel and sdist to
-PyPI and GitHub Release in parallel. Pushing `main` alone only runs CI.
+Annotated and lightweight tags are both supported; tag messages are not used
+as release notes.
 
-### Release description
+### Publish a GitHub Release
 
-The workflow uses the annotated tag message as the GitHub Release summary and
-appends GitHub-generated change links. Without a tag annotation, it uses only
-generated notes. Focus the summary on user-visible changes and compatibility.
+Open **Releases → Draft a new release**, select the version tag, and write the
+release title and description. Focus on user-visible changes and compatibility.
+Click **Publish release** when ready. Saving a draft does not start publishing.
 
-After publishing, use **Releases → version → Edit** to refine the description.
-Retries preserve these edits. GitHub Release text does not update PyPI metadata;
-PyPI displays the packaged README and a **Changelog** link to GitHub Releases.
+Alternatively, write the description in a local Markdown file and publish with
+GitHub CLI:
 
-### Run an existing tag manually
+```shell
+gh release create v0.1.2 --verify-tag --title 'v0.1.2' --notes-file release-notes.md
+```
 
-If a tag already exists but its release workflow never started, open **Actions →
-Release → Run workflow**, choose `main` for the workflow, and enter the existing
-version tag (for example `v0.1.0`) in the `tag` field. The workflow on `main`
-resolves and builds the tagged commit rather than building the latest `main`.
-This does not create, delete, or move a tag. Normal releases still start with
-`git push origin vX.Y.Z`.
+Add `--prerelease` for a release candidate. Publishing either a stable release or
+a prerelease triggers the release workflow. It resolves the release's tag to an
+exact commit, builds and tests that commit through CI, then uploads the same wheel
+and sdist to PyPI and the existing GitHub Release in parallel. The GitHub Release
+is already public while these jobs run; check that the workflow succeeds before
+announcing package availability.
+
+The workflow does not create releases or generate or change their title and
+description. To refine the description later, use **Releases → version → Edit**;
+editing it does not trigger another package upload. GitHub Release text does not
+update PyPI metadata; PyPI displays the packaged README and a **Changelog** link
+to GitHub Releases.
 
 ### Handle a failed release
 
 If a publishing job fails, correct its configuration and rerun only the failed
 jobs. The PyPI and GitHub Release jobs run independently: retrying a failed PyPI
-job does not recreate the GitHub Release, and retrying a failed GitHub job does not
+job does not upload GitHub assets again, and retrying a failed GitHub job does not
 upload the package to PyPI again. The GitHub job updates distribution assets from
-the current run when the release already exists. If any PyPI files have already uploaded,
-check the published files before retrying; an upload can fail after partial success.
+the current run. If any PyPI files have already uploaded, check the published files
+before retrying; an upload can fail after partial success.
 
 PyPI files cannot be replaced for an already uploaded version. If a release needs
-code changes, update the version and publish a new tag. Do not move or reuse a
-published version tag. Editing the GitHub Release description is safe and does
-not change the uploaded package.
+code changes, update the version, create a new tag, and publish a new GitHub Release.
+Do not move or reuse a published version tag. Editing the GitHub Release
+description is safe and does not change the uploaded package.

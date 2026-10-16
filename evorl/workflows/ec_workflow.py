@@ -67,12 +67,12 @@ class ECWorkflow(Workflow):
         """Build the ec workflow instance from the config.
 
         Call on a fresh subclass for each execution configuration, as in
-        ``scripts/train.py``. The enable_* class methods transform that subclass.
+        `scripts/train.py`. The enable_* class methods transform that subclass.
 
         Args:
-            config: Config of the workflow
-            multi_device: Whether multi-devices training is enabled
-            jit: Whether jit is enabled
+            config: Config of the workflow.
+            multi_device: Whether multi-devices training is enabled.
+            jit: Whether jit is enabled.
         """
         config = copy.deepcopy(config)  # avoid in-place modification
 
@@ -229,7 +229,6 @@ class ECWorkflowTemplate(ECWorkflow):
             sharded_step,
             in_specs=(None, state_specs),
             out_specs=(jax.P(), state_specs),
-            check_vma=False,
         )
 
         original_postsetup = cls._postsetup
@@ -251,7 +250,6 @@ class ECWorkflowTemplate(ECWorkflow):
             sharded_postsetup,
             in_specs=(None, state_specs),
             out_specs=state_specs,
-            check_vma=False,
         )
 
     def _setup_agent_and_optimizer(self, key: jax.Array) -> tuple[AgentState, ECState]:
@@ -393,7 +391,9 @@ class ECWorkflowTemplate(ECWorkflow):
             )
 
         fitnesses = self._metrics_to_fitnesses(rollout_metrics)
-        fitnesses = all_gather(fitnesses, self.dp_axis_name, axis=0, tiled=True)
+        fitnesses = all_gather(
+            fitnesses, self.dp_axis_name, axis=0, tiled=True, to="invarying"
+        )
 
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
@@ -491,7 +491,9 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
             )
 
         fitnesses = self._metrics_to_fitnesses(rollout_metrics)
-        fitnesses = all_gather(fitnesses, self.dp_axis_name, axis=0, tiled=True)
+        fitnesses = all_gather(
+            fitnesses, self.dp_axis_name, axis=0, tiled=True, to="invarying"
+        )
 
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 

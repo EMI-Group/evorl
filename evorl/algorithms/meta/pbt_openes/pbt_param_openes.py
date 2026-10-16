@@ -4,7 +4,7 @@ import jax
 from evorl.types import PyTreeDict, State
 from evorl.metrics import EvaluateMetric
 from evorl.utils.jax_utils import tree_deepcopy
-from evorl.distributed import POP_AXIS_NAME, shmap_vmap
+from evorl.distributed import META_POP_AXIS_NAME, shmap_vmap
 
 from ..pbt_workflow import PBTWorkflowTemplate, PBTOptState, PBTEvalMetric
 from ..pbt_utils import log_uniform_init
@@ -72,15 +72,15 @@ class PBTParamOpenESWorkflow(PBTWorkflowTemplate):
 
         eval_fn = shmap_vmap(
             _evaluate,
-            in_specs=jax.P(POP_AXIS_NAME),
-            out_specs=jax.P(POP_AXIS_NAME),
-            check_vma=False,
+            in_specs=jax.P(META_POP_AXIS_NAME),
+            out_specs=jax.P(META_POP_AXIS_NAME),
         )
 
         pop_eval_metrics = eval_fn(
             state.pop_workflow_state,
             jax.device_put(
-                jax.random.split(eval_key, self.config.pop_size), jax.P(POP_AXIS_NAME)
+                jax.random.split(eval_key, self.config.pop_size),
+                jax.P(META_POP_AXIS_NAME),
             ),
         )
 

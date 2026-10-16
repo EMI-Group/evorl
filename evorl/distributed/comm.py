@@ -30,12 +30,11 @@ def pmax(x, axis_name: str | None = None):
         return jax.lax.pmax(x, axis_name)
 
 
-def all_gather(x, axis_name: str | None = None, **kwargs):
-    """All-gather the data across all devices."""
+def all_gather(x, axis_name: str | None = None, *, to: str = "varying", **kwargs):
+    """All-gather data, preserving the requested manual-axis type."""
     if axis_name is None:
         return x
-    else:
-        return jax.lax.all_gather(x, axis_name, **kwargs)
+    return jax.lax.all_gather(x, axis_name, to=to, **kwargs)
 
 
 def is_dist_initialized():

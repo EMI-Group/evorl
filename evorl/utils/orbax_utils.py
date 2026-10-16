@@ -20,7 +20,18 @@ def to_shape_dtype_struct(value):
     if isinstance(value, (jax.Array, jax.ShapeDtypeStruct)) and jax.dtypes.issubdtype(
         value.dtype, jax.dtypes.prng_key
     ):
-        return jax.ShapeDtypeStruct(value.shape, value.dtype, sharding=value.sharding)
+        sharding = value.sharding
+        if (
+            isinstance(sharding, jax.sharding.NamedSharding)
+            and len(sharding.spec) > value.ndim
+            and all(axis is None for axis in sharding.spec[value.ndim :])
+        ):
+            sharding = jax.sharding.NamedSharding(
+                sharding.mesh,
+                jax.P(*sharding.spec[: value.ndim]),
+                memory_kind=sharding.memory_kind,
+            )
+        return jax.ShapeDtypeStruct(value.shape, value.dtype, sharding=sharding)
     return ocp.utils.to_shape_dtype_struct(value)
 
 

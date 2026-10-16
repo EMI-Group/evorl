@@ -65,9 +65,9 @@ dependencies = [
     "gymnasium>=1.1.0",
     "hydra-core",
     "hydra-joblib-launcher",
-    # jax.set_mesh and mesh-context PartitionSpecs require JAX 0.7.1+.
-    "jax>=0.7.1",
-    "jaxlib>=0.7.1",
+    # Explicit shard_map VMA checks use all_gather(to="invarying") from JAX 0.10.0.
+    "jax>=0.10.0",
+    "jaxlib>=0.10.0",
     "numpy",
     "omegaconf",
     "optax",

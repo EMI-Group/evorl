@@ -217,7 +217,6 @@ def run_case(agent, jit):
                 @jax.shard_map(
                     in_specs=(jax.P(), jax.P()),
                     out_specs=jax.P(workflow.dp_axis_name),
-                    check_vma=False,
                 )
                 def local_checkpoint_perf(agent_state, key):
                     key = jax.random.fold_in(

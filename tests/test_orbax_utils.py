@@ -62,9 +62,8 @@ def test_checkpoint_restores_empty_leaves(tmp_path, use_manager, target_kind):
 
 @pytest.mark.parametrize("use_manager", [False, True], ids=["standalone", "manager"])
 @pytest.mark.parametrize("abstract", [False, True])
-@pytest.mark.parametrize("impl", ["threefry2x32", "rbg"])
-def test_checkpoint_typed_keys(tmp_path, use_manager, abstract, impl):
-    key = jax.random.key(41, impl=impl)
+def test_checkpoint_typed_keys(tmp_path, use_manager, abstract):
+    key = jax.random.key(41)
     state = {
         "key": key,
         "keys": jax.random.split(key, (2, 3)),

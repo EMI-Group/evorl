@@ -154,5 +154,4 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
             sharded_evaluate,
             in_specs=(None, state_specs),
             out_specs=(jax.P(), state_specs),
-            check_vma=False,
         )

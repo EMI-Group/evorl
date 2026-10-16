@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from evorl.types import PyTreeDict, State
-from evorl.distributed import POP_AXIS_NAME, tree_scatter_set
+from evorl.distributed import META_POP_AXIS_NAME, tree_scatter_set
 from evorl.utils.jax_utils import tree_zeros_like, tree_set, tree_get
 
 from ..pbt_workflow import PBTOptState
@@ -139,12 +139,14 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
         pbt_opt_state = pbt_opt_state.replace(velocity=velocity)
 
         # ==== survival | merge population ====
-        pop = tree_scatter_set(pop, offsprings, student_indices, jax.P(POP_AXIS_NAME))
+        pop = tree_scatter_set(
+            pop, offsprings, student_indices, jax.P(META_POP_AXIS_NAME)
+        )
         pop_workflow_state = tree_scatter_set(
             pop_workflow_state,
             offsprings_workflow_state,
             student_indices,
-            jax.P(POP_AXIS_NAME),
+            jax.P(META_POP_AXIS_NAME),
         )
 
         return pop, pop_workflow_state, pbt_opt_state

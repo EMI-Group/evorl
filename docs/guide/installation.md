@@ -4,7 +4,7 @@
 
 ## Setup
 
-EvoRL requires Python 3.12 or newer and JAX/jaxlib 0.7.0 or newer. So `jax` should be installed first, please follow [JAX official installation guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation).
+EvoRL requires Python 3.12 or newer and JAX/jaxlib 0.10.0 or newer. Install JAX first by following the [official installation guide](https://docs.jax.dev/en/latest/installation.html).
 
 Install the released package from PyPI (available after the first release):
 

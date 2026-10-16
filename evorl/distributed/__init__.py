@@ -15,6 +15,9 @@ DP_AXIS_NAME = "DP"
 
 POP_AXIS_NAME = "POP"
 
+# Population of independent workflows, such as the outer PBT population.
+META_POP_AXIS_NAME = "META_POP"
+
 
 __all__ = [
     "get_global_ranks",
@@ -32,4 +35,5 @@ __all__ = [
     "tree_scatter_set",
     "DP_AXIS_NAME",
     "POP_AXIS_NAME",
+    "META_POP_AXIS_NAME",
 ]

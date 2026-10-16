@@ -12,6 +12,7 @@ from omegaconf import DictConfig
 
 from evorl.distributed import pmax, pmean, pmin, psum
 from evorl.distributed.gradients import gradient_update
+from evorl.distributed.sharding import mark_varying
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase, metric_field
@@ -756,11 +757,15 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
 
             def _skip_actor(carry):
                 agent_state, actor_opt_state = carry
+                actor_loss = jnp.array(0.0)
+                actor_loss = mark_varying(
+                    actor_loss, jax.sharding.get_abstract_mesh().manual_axes
+                )
                 return (
                     agent_state,
                     actor_opt_state,
-                    jnp.array(0.0),
-                    PyTreeDict(actor_loss=jnp.array(0.0)),
+                    actor_loss,
+                    PyTreeDict(actor_loss=actor_loss),
                 )
 
             agent_state, actor_opt_state, actor_loss, actor_loss_dict = jax.lax.cond(

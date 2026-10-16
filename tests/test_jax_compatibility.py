@@ -54,7 +54,7 @@ def test_shard_map_wrappers_and_gradients_on_two_cpu_devices():
         import jax
         import jax.numpy as jnp
         import numpy as np
-        from evorl.distributed import shmap_map, shmap_vmap
+        from evorl.distributed import all_gather, shmap_map, shmap_vmap
 
         assert jax.device_count() == 2
         mesh = jax.make_mesh((len(jax.devices()),), ("devices",), axis_types=(jax.sharding.AxisType.Explicit,), devices=jax.devices())
@@ -69,7 +69,6 @@ def test_shard_map_wrappers_and_gradients_on_two_cpu_devices():
         sample = jax.jit(shmap_vmap(
             lambda key: jax.random.uniform(key),
             in_specs=jax.P("devices"), out_specs=jax.P("devices"),
-            check_vma=False,
         ))
         np.testing.assert_array_equal(
             sample(keys), jax.vmap(jax.random.uniform)(jax.random.split(jax.random.key(7), 4))
@@ -80,7 +79,6 @@ def test_shard_map_wrappers_and_gradients_on_two_cpu_devices():
             mapped = jax.jit(wrapper(
                 lambda row: row ** 2,
                 in_specs=jax.P("devices"), out_specs=jax.P("devices"),
-                check_vma=False,
             ))
             np.testing.assert_allclose(mapped(inputs), inputs ** 2)
             grads = jax.jit(jax.grad(lambda x: jnp.sum(mapped(x))))(inputs)
@@ -89,11 +87,23 @@ def test_shard_map_wrappers_and_gradients_on_two_cpu_devices():
         reduced = jax.jit(jax.shard_map(
             lambda block: jax.lax.pmean(block.sum(axis=0), "devices"),
             in_specs=jax.P("devices"), out_specs=jax.P(),
-            check_vma=False,
         ))
         np.testing.assert_allclose(reduced(inputs), inputs.sum(axis=0) / 2)
         grads = jax.jit(jax.grad(lambda x: jnp.sum(reduced(x))))(inputs)
         np.testing.assert_allclose(grads, jnp.full_like(inputs, 0.5))
+
+        gathered = jax.jit(jax.shard_map(
+            lambda block: all_gather(
+                block, "devices", axis=0, tiled=True, to="invarying"
+            ),
+            in_specs=jax.P("devices"), out_specs=jax.P(),
+        ))
+        np.testing.assert_array_equal(gathered(inputs), inputs)
+        grads = jax.jit(jax.grad(lambda x: jnp.sum(gathered(x) ** 2)))(inputs)
+        np.testing.assert_allclose(grads, 2 * inputs)
+        hlo = gathered.lower(inputs).compile().as_text().lower()
+        assert "all-gather(" in hlo
+        assert "all-reduce(" not in hlo
         """
     )
     result = subprocess.run(

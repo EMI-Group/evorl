@@ -10,7 +10,7 @@ def main():
     from evorl.types import State, PyTreeDict
     from evorl.replay_buffers import ReplayBufferState
     from evorl.sample_batch import SampleBatch
-    from evorl.distributed import tree_scatter_set
+    from evorl.distributed import META_POP_AXIS_NAME, tree_scatter_set
     from evorl.utils.jax_utils import tree_get
     from evorl.agent import AgentState
     from evorl.metrics import WorkflowMetric, EvaluateMetric
@@ -172,7 +172,9 @@ def main():
             eval_episodes=1,
         )
     )
-    mesh = jax.make_mesh((2,), ("POP",), axis_types=(jax.sharding.AxisType.Explicit,))
+    mesh = jax.make_mesh(
+        (2,), (META_POP_AXIS_NAME,), axis_types=(jax.sharding.AxisType.Explicit,)
+    )
 
     class Buffer:
         def add(self, state, trajectory):
@@ -220,9 +222,9 @@ def main():
         for _ in range(2):
             metrics, state = jax.jit(wf.step)(state)
         metrics, state = jax.jit(wf.evaluate)(state)
-        assert state.pop.actor_loss_weight.sharding.spec == jax.P("POP")
+        assert state.pop.actor_loss_weight.sharding.spec == jax.P(META_POP_AXIS_NAME)
         assert state.pop_workflow_state.agent_state.params.w.sharding.spec == jax.P(
-            "POP", None
+            META_POP_AXIS_NAME, None
         )
         assert metrics.pop_episode_returns.shape == (4,)
         jax.block_until_ready(state)
@@ -235,7 +237,7 @@ def main():
         reference = cls(OffTarget() if cls is OffHarness else Target(), evaluator, cfg)
         reference.mesh = jax.make_mesh(
             (1,),
-            ("POP",),
+            (META_POP_AXIS_NAME,),
             axis_types=(jax.sharding.AxisType.Explicit,),
             devices=jax.devices()[:1],
         )
@@ -258,7 +260,9 @@ def main():
                 )
         print(cls.__name__, "one-/two-device equivalence PASS", flush=True)
 
-    source = jax.device_put(jnp.array([10.0, 20.0, 30.0, 40.0]), jax.P("POP"))
+    source = jax.device_put(
+        jnp.array([10.0, 20.0, 30.0, 40.0]), jax.P(META_POP_AXIS_NAME)
+    )
     selected = tree_get(source, jnp.array([3, 0, 3]), out_sharding=jax.P())
     np.testing.assert_array_equal(selected, [40, 10, 40])
     result = jax.jit(
@@ -266,7 +270,7 @@ def main():
             x,
             jnp.array([100.0, 400.0]),
             jnp.array([1, 3]),
-            jax.P("POP"),
+            jax.P(META_POP_AXIS_NAME),
         )
     )(source)
     np.testing.assert_array_equal(result, [10, 100, 30, 400])
@@ -277,15 +281,15 @@ def main():
 
     norm = running_statistics.init_state(jnp.zeros(3))
     norm = jax.tree.map(lambda x: jnp.broadcast_to(x, (4, *x.shape)), norm)
-    norm = jax.device_put(norm, jax.P("POP"))
+    norm = jax.device_put(norm, jax.P(META_POP_AXIS_NAME))
     data = jax.device_put(
         jnp.arange(18, dtype=jnp.float32).reshape(6, 3),
         jax.P(),
     )
     update = shmap_vmap(
         running_statistics.update,
-        in_specs=(jax.P("POP"), jax.P()),
-        out_specs=jax.P("POP"),
+        in_specs=(jax.P(META_POP_AXIS_NAME), jax.P()),
+        out_specs=jax.P(META_POP_AXIS_NAME),
         vmap_in_axes=(0, None),
     )
     norm = jax.jit(update)(norm, data)

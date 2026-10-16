@@ -48,6 +48,22 @@ class EpisodeCollector(PyTreeNode):
         key: jax.Array,
         num_episodes: int,
     ) -> tuple[EvaluateMetric, SampleBatch]:
+        """Collect episodes and local metrics.
+
+        Rollout handles VMA casts using the enclosing `shard_map` context.
+        No data sharding or metric reduction is performed here.
+
+        Args:
+            agent_state: Agent state used to compute actions.
+            key: PRNG key for environment initialization and action sampling.
+            num_episodes: Episode count, rounded up to complete batches of
+                environments.
+
+        Returns:
+            A tuple `(metrics, trajectory)`. Metrics contain discounted episode
+            returns and lengths; the trajectory has shape
+            `(max_episode_steps, actual_num_episodes, ...)`.
+        """
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
         if num_episodes % num_envs != 0:

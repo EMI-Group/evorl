@@ -107,11 +107,9 @@ class RandomAgentWorkflow(RLWorkflow):
             cls.step,
             in_specs=(None, state_specs),
             out_specs=(jax.P(), state_specs),
-            check_vma=False,
         )
         cls.evaluate = jax.shard_map(
             cls.evaluate,
             in_specs=(None, state_specs),
             out_specs=(jax.P(), state_specs),
-            check_vma=False,
         )

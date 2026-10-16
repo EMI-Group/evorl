@@ -13,6 +13,7 @@ from omegaconf import DictConfig
 from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import pmean, psum
 from evorl.distributed.gradients import gradient_update
+from evorl.distributed.sharding import mark_varying
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase, metric_field
@@ -472,8 +473,12 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
             )
 
         def _dummy_update_actor_fn(agent_state, opt_state, sample_batch, key):
+            actor_loss = jnp.asarray(MISSING_LOSS)
+            actor_loss = mark_varying(
+                actor_loss, jax.sharding.get_abstract_mesh().manual_axes
+            )
             return (
-                PyTreeDict(actor_loss=MISSING_LOSS),
+                PyTreeDict(actor_loss=actor_loss),
                 agent_state,
                 opt_state,
             )

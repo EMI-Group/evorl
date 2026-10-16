@@ -13,7 +13,8 @@ import jax.tree_util as jtu
 
 from evorl.agent import RandomAgent
 from evorl.distributed import (
-    POP_AXIS_NAME,
+    META_POP_AXIS_NAME,
+    all_gather,
     shmap_vmap,
     tree_scatter_set,
 )
@@ -75,7 +76,7 @@ class PBTWorkflowBase(Workflow):
         self.evaluator = evaluator
         self.mesh = jax.make_mesh(
             (1,),
-            (POP_AXIS_NAME,),
+            (META_POP_AXIS_NAME,),
             axis_types=(jax.sharding.AxisType.Explicit,),
             devices=jax.local_devices()[:1],
         )
@@ -107,7 +108,7 @@ class PBTWorkflowBase(Workflow):
 
         mesh = jax.make_mesh(
             (len(devices),),
-            (POP_AXIS_NAME,),
+            (META_POP_AXIS_NAME,),
             axis_types=(jax.sharding.AxisType.Explicit,),
             devices=devices,
         )
@@ -163,7 +164,7 @@ class PBTWorkflowBase(Workflow):
         key, workflow_key, pop_key = jax.random.split(key, num=3)
 
         pop, pbt_opt_state = self._setup_pop_and_pbt_optimizer(pop_key)
-        pop = jax.device_put(pop, jax.P(POP_AXIS_NAME))
+        pop = jax.device_put(pop, jax.P(META_POP_AXIS_NAME))
 
         workflow_metrics = PBTWorkflowMetric()
         key, workflow_metrics, pbt_opt_state = jax.device_put(
@@ -171,12 +172,11 @@ class PBTWorkflowBase(Workflow):
         )
 
         workflow_keys = jax.random.split(workflow_key, pop_size)
-        workflow_keys = jax.device_put(workflow_keys, jax.P(POP_AXIS_NAME))
+        workflow_keys = jax.device_put(workflow_keys, jax.P(META_POP_AXIS_NAME))
         pop_workflow_state = shmap_vmap(
             self.workflow.setup,
-            in_specs=jax.P(POP_AXIS_NAME),
-            out_specs=jax.P(POP_AXIS_NAME),
-            check_vma=False,
+            in_specs=jax.P(META_POP_AXIS_NAME),
+            out_specs=jax.P(META_POP_AXIS_NAME),
         )(workflow_keys)
 
         # Note: for obs_preprocessor, we assume pop_workflow_state.agent_state.obs_preprocessor_state
@@ -186,9 +186,8 @@ class PBTWorkflowBase(Workflow):
 
         pop_workflow_state = shmap_vmap(
             self.apply_hyperparams_to_workflow_state,
-            in_specs=jax.P(POP_AXIS_NAME),
-            out_specs=jax.P(POP_AXIS_NAME),
-            check_vma=False,
+            in_specs=jax.P(META_POP_AXIS_NAME),
+            out_specs=jax.P(META_POP_AXIS_NAME),
         )(pop_workflow_state, pop)
 
         return State(
@@ -218,9 +217,8 @@ class PBTWorkflowBase(Workflow):
 
         train_steps_fn = jax.shard_map(
             _train_steps,
-            in_specs=jax.P(POP_AXIS_NAME),
-            out_specs=jax.P(POP_AXIS_NAME),
-            check_vma=False,
+            in_specs=jax.P(META_POP_AXIS_NAME),
+            out_specs=jax.P(META_POP_AXIS_NAME),
         )
 
         pop_train_metrics, pop_workflow_state = train_steps_fn(pop_workflow_state)
@@ -228,9 +226,8 @@ class PBTWorkflowBase(Workflow):
         # ===== eval ======
         eval_fn = shmap_vmap(
             self.workflow.evaluate,
-            in_specs=jax.P(POP_AXIS_NAME),
-            out_specs=jax.P(POP_AXIS_NAME),
-            check_vma=False,
+            in_specs=jax.P(META_POP_AXIS_NAME),
+            out_specs=jax.P(META_POP_AXIS_NAME),
         )
 
         pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)
@@ -308,15 +305,15 @@ class PBTWorkflowBase(Workflow):
 
         eval_fn = shmap_vmap(
             _evaluate,
-            in_specs=jax.P(POP_AXIS_NAME),
-            out_specs=jax.P(POP_AXIS_NAME),
-            check_vma=False,
+            in_specs=jax.P(META_POP_AXIS_NAME),
+            out_specs=jax.P(META_POP_AXIS_NAME),
         )
 
         pop_eval_metrics = eval_fn(
             state.pop_workflow_state,
             jax.device_put(
-                jax.random.split(eval_key, self.config.pop_size), jax.P(POP_AXIS_NAME)
+                jax.random.split(eval_key, self.config.pop_size),
+                jax.P(META_POP_AXIS_NAME),
             ),
         )
 
@@ -393,13 +390,15 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
         )
 
         # ==== survival | merge population ====
-        pop = tree_scatter_set(pop, offsprings, bottom_indices, jax.P(POP_AXIS_NAME))
+        pop = tree_scatter_set(
+            pop, offsprings, bottom_indices, jax.P(META_POP_AXIS_NAME)
+        )
         # we copy wf_state back to offspring wf_state
         pop_workflow_state = tree_scatter_set(
             pop_workflow_state,
             offsprings_workflow_state,
             bottom_indices,
-            jax.P(POP_AXIS_NAME),
+            jax.P(META_POP_AXIS_NAME),
         )
 
         return pop, pop_workflow_state, pbt_opt_state
@@ -491,7 +490,6 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             self.workflow._setup_replaybuffer,
             in_specs=jax.P(),
             out_specs=jax.P(),
-            check_vma=False,
         )(key)
 
         return replay_buffer_state
@@ -543,10 +541,9 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
             obs_preprocessor_state = shmap_vmap(
                 running_statistics.update,
-                in_specs=(jax.P(POP_AXIS_NAME), jax.P()),
-                out_specs=jax.P(POP_AXIS_NAME),
+                in_specs=(jax.P(META_POP_AXIS_NAME), jax.P()),
+                out_specs=jax.P(META_POP_AXIS_NAME),
                 vmap_in_axes=(0, None),
-                check_vma=False,
             )(obs_preprocessor_state, trajectory.obs)
 
             pop_workflow_state = pop_workflow_state.replace(
@@ -594,8 +591,8 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
                 trajectory = jtu.tree_map(
                     lambda x: jax.lax.collapse(x, 0, 2), pop_train_metrics.trajectory
                 )
-                trajectory = jax.lax.all_gather(
-                    trajectory, POP_AXIS_NAME, axis=0, tiled=True
+                trajectory = all_gather(
+                    trajectory, META_POP_AXIS_NAME, axis=0, tiled=True, to="invarying"
                 )
 
                 replay_buffer_state = self.replay_buffer.add(
@@ -616,17 +613,15 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
         pop_train_metrics, pop_workflow_state, replay_buffer_state = jax.shard_map(
             _train_steps,
-            in_specs=(jax.P(POP_AXIS_NAME), jax.P()),
-            out_specs=(jax.P(POP_AXIS_NAME), jax.P(POP_AXIS_NAME), jax.P()),
-            check_vma=False,
+            in_specs=(jax.P(META_POP_AXIS_NAME), jax.P()),
+            out_specs=(jax.P(META_POP_AXIS_NAME), jax.P(META_POP_AXIS_NAME), jax.P()),
         )(pop_workflow_state, replay_buffer_state)
 
         # ===== eval ======
         eval_fn = shmap_vmap(
             self.workflow.evaluate,
-            in_specs=jax.P(POP_AXIS_NAME),
-            out_specs=jax.P(POP_AXIS_NAME),
-            check_vma=False,
+            in_specs=jax.P(META_POP_AXIS_NAME),
+            out_specs=jax.P(META_POP_AXIS_NAME),
         )
 
         pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)

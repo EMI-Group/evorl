@@ -24,13 +24,15 @@ from evorl.utils.jax_utils import (
 from .utils import FakeEnv
 
 
-@pytest.fixture(params=["typed", "rbg"])
-def key(request):
-    return jax.random.key(17, impl="rbg" if request.param == "rbg" else "threefry2x32")
+@pytest.fixture
+def key():
+    return jax.random.key(17)
 
 
+@pytest.mark.parametrize("impl", ["threefry2x32", "rbg"])
 @pytest.mark.parametrize("batch_shape", [(), (3,), (2, 3)])
-def test_split_preserves_key_batch_axes(key, batch_shape):
+def test_split_preserves_key_batch_axes(impl, batch_shape):
+    key = jax.random.key(17, impl=impl)
     keys = rng_split_by_shape(key, batch_shape)
     actual = jax.jit(lambda k: rng_split(k, 4))(keys)
     expected = jax.random.split

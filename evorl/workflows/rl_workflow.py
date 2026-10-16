@@ -90,7 +90,7 @@ class RLWorkflow(Workflow):
         """Build the rl workflow instance from the config.
 
         Call on a fresh subclass for each execution configuration, as in
-        ``scripts/train.py``. The enable_* class methods transform that subclass.
+        `scripts/train.py`. The enable_* class methods transform that subclass.
 
         Args:
             config: Config of the workflow.
@@ -236,13 +236,11 @@ class OnPolicyWorkflow(RLWorkflow):
             cls.step,
             in_specs=(None, state_specs),
             out_specs=(jax.P(), state_specs),
-            check_vma=False,
         )
         cls.evaluate = jax.shard_map(
             cls.evaluate,
             in_specs=(None, state_specs),
             out_specs=(jax.P(), state_specs),
-            check_vma=False,
         )
 
     def _setup_agent_and_optimizer(
@@ -289,7 +287,6 @@ class OnPolicyWorkflow(RLWorkflow):
                 reset_env,
                 in_specs=jax.P(),
                 out_specs=jax.P(self.dp_axis_name),
-                check_vma=False,
             )
             env_state = env_reset_fn(env_key)
         else:
@@ -381,14 +378,12 @@ class OffPolicyWorkflow(RLWorkflow):
             sharded_step,
             in_specs=(None, state_specs),
             out_specs=(jax.P(), state_specs),
-            check_vma=False,
         )
         # Evaluation passes the buffer through without reading or updating it.
         cls.evaluate = jax.shard_map(
             cls.evaluate,
             in_specs=(None, state_specs),
             out_specs=(jax.P(), state_specs),
-            check_vma=False,
         )
 
         _postsetup_replaybuffer = cls._postsetup_replaybuffer
@@ -403,7 +398,6 @@ class OffPolicyWorkflow(RLWorkflow):
             sharded_postsetup_replaybuffer,
             in_specs=(None, state_specs),
             out_specs=state_specs,
-            check_vma=False,
         )
 
     def _setup_agent_and_optimizer(
@@ -458,7 +452,6 @@ class OffPolicyWorkflow(RLWorkflow):
                 reset_env,
                 in_specs=jax.P(),
                 out_specs=jax.P(self.dp_axis_name),
-                check_vma=False,
             )
             env_state = env_reset_fn(env_key)
 
@@ -481,7 +474,6 @@ class OffPolicyWorkflow(RLWorkflow):
                 setup_replaybuffer,
                 in_specs=jax.P(),
                 out_specs=jax.P(self.dp_axis_name),
-                check_vma=False,
             )
             replay_buffer_state = setup_rb_fn(rb_key)
         else:
