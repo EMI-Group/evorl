@@ -1,4 +1,3 @@
-from functools import partial
 import warnings
 
 import envpool
@@ -12,7 +11,8 @@ import math
 from evorl.types import Action, PyTreeDict
 
 from .env import Env, EnvAdapter, EnvState
-from .space import Box, Discrete, Space
+from .space import Box, Discrete, Space, SpaceContainer
+from .utils import check_host_env_spaces, make_batched_io_callback
 from .wrappers import Wrapper, AutoresetMode
 
 
@@ -27,7 +27,7 @@ def _to_jax_spec(pytree):
 
 def _reshape_batch_dims(pytree, batch_shape):
     # [B1*...*Bn*#envs, *] -> [B1, ..., Bn, #envs, *]
-    return jtu.tree_map(lambda x: jnp.reshape(x, batch_shape + x.shape[1:]), pytree)
+    return jtu.tree_map(lambda x: np.reshape(x, batch_shape + x.shape[1:]), pytree)
 
 
 class EnvPoolGymAdapter(EnvAdapter):
@@ -46,6 +46,8 @@ class EnvPoolGymAdapter(EnvAdapter):
 
     # TODO: multi-device support
 
+    uses_host_callback = True
+
     def __init__(
         self,
         env_name: str,
@@ -62,12 +64,33 @@ class EnvPoolGymAdapter(EnvAdapter):
         self.env_kwargs = env_kwargs
 
         def _env_fn(_num_envs):
-            return envpool.make_gymnasium(
+            env = envpool.make_gymnasium(
                 self.env_name,
                 num_envs=_num_envs,
                 max_episode_steps=max_episode_steps,
                 **env_kwargs,
             )
+            try:
+                check_host_env_spaces(env.observation_space, env.action_space)
+                if env.config["max_num_players"] != 1:
+                    raise NotImplementedError(
+                        "EnvPool adapter requires single-player tasks."
+                    )
+                if env.config["batch_size"] != _num_envs:
+                    raise ValueError(
+                        "EnvPool batch_size must equal the full environment count."
+                    )
+                if (
+                    env.metadata.get("autoreset_mode")
+                    == gymnasium.vector.AutoresetMode.SAME_STEP
+                ):
+                    raise NotImplementedError(
+                        "EnvPool adapter requires next-step autoreset."
+                    )
+            except Exception:
+                env.close()
+                raise
+            return env
 
         self._env_fn = _env_fn
         self.env = _env_fn(self.num_envs)
@@ -78,20 +101,26 @@ class EnvPoolGymAdapter(EnvAdapter):
         dummy_obs, _ = self.env.reset()
         # define your own dummy reset info
         dummy_reset_info = PyTreeDict()
-        reset_spec = _to_jax_spec((dummy_obs, dummy_reset_info))
+        # Preserve mapped state axes even when every member uses constant actions.
+        dummy_token = np.zeros((self.num_envs,), dtype=np.int32)
+        reset_spec = _to_jax_spec((dummy_obs, dummy_reset_info, dummy_token))
 
         dummy_action = self.env.action_space.sample()
+        action_ndim = dummy_action.ndim
         dummy_actions = np.broadcast_to(
             dummy_action, (self.num_envs,) + dummy_action.shape
         )
         # define your own dummy step info
         dummy_step_info = PyTreeDict()
-        step_spec = _to_jax_spec(self.env.step(dummy_actions)[:-1] + (dummy_step_info,))
+        step_spec = _to_jax_spec(
+            self.env.step(dummy_actions)[:-1] + (dummy_step_info, dummy_token)
+        )
 
         def _reset(key):
             batch_shape = key.shape[:-1]
             num_envs = math.prod(batch_shape) * self.num_envs
 
+            self.env.close()
             self.env = self._env_fn(num_envs)
 
             assert self.env.config["num_envs"] == num_envs
@@ -103,40 +132,36 @@ class EnvPoolGymAdapter(EnvAdapter):
             # drop the original info dict as they do not have static shape.
             info = PyTreeDict()
 
-            return obs, info
+            token = np.zeros((*batch_shape, self.num_envs), dtype=np.int32)
+            return obs, info, token
 
-        def _step(actions):
-            # Note: we are not sure if self.env is always updated by _reset in JIT mode.
-
+        def _step(token, actions):
             # [B1, ..., Bn, #envs]
-            batch_ndim = actions.ndim - len(self.action_space.shape)
+            batch_ndim = actions.ndim - action_ndim
             batch_shape = actions.shape[:batch_ndim]
 
             # [B1, ..., Bn, #envs, *] -> [B1*...*Bn*#envs, *]
-            actions = jax.lax.collapse(actions, 0, len(batch_shape))
+            actions = np.asarray(actions).reshape((-1, *actions.shape[batch_ndim:]))
 
-            obs, reward, termination, truncation, _info = self.env.step(
-                np.asarray(actions)
-            )
+            obs, reward, termination, truncation, _info = self.env.step(actions)
 
             # drop the original info dict as they do not have static shape.
             info = PyTreeDict()
 
-            return _reshape_batch_dims(
-                (obs, reward, termination, truncation, info), batch_shape
+            return (
+                *_reshape_batch_dims(
+                    (obs, reward, termination, truncation, info), batch_shape
+                ),
+                np.asarray(token) + np.int32(1),
             )
 
-        # You are entring the dangerous zone!!!
-        # _reset and _step are not pure functions. Use with caution.
-        self._reset = partial(
-            jax.pure_callback, _reset, reset_spec, vmap_method="expand_dims"
-        )
-        self._step = partial(
-            jax.pure_callback, _step, step_spec, vmap_method="expand_dims"
-        )
+        self._reset = make_batched_io_callback(_reset, reset_spec)
+        self._step = make_batched_io_callback(_step, step_spec)
 
     def reset(self, key: jax.Array) -> EnvState:
-        obs, info = _to_jax(self._reset(jax.random.key_data(key)))
+        obs, info, token = _to_jax(self._reset(jax.random.key_data(key)))
+        if isinstance(obs, dict):
+            obs = PyTreeDict(obs)
 
         info.steps = jnp.zeros((self.num_envs,), dtype=jnp.int32)
         info.termination = jnp.zeros((self.num_envs,))
@@ -151,12 +176,17 @@ class EnvPoolGymAdapter(EnvAdapter):
             reward=jnp.zeros((self.num_envs,)),
             done=jnp.zeros((self.num_envs,)),
             info=info,
+            _internal=PyTreeDict(callback_token=token),
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
         autorest = state.done  # True = this step is the reset() step
 
-        obs, reward, termination, truncation, info = _to_jax(self._step(action))
+        obs, reward, termination, truncation, info, token = _to_jax(
+            self._step(state._internal.callback_token, action)
+        )
+        if isinstance(obs, dict):
+            obs = PyTreeDict(obs)
 
         reward = reward.astype(jnp.float32)
         done = (jnp.logical_or(termination, truncation)).astype(jnp.float32)
@@ -174,7 +204,13 @@ class EnvPoolGymAdapter(EnvAdapter):
                 episode_return += jnp.power(self.discount, state.info.steps) * reward
             info.episode_return = episode_return * (1 - autorest)
 
-        return state.replace(obs=obs, reward=reward, done=done, info=info)
+        return state.replace(
+            obs=obs,
+            reward=reward,
+            done=done,
+            info=info,
+            _internal=state._internal.replace(callback_token=token),
+        )
 
     @property
     def action_space(self) -> Space:
@@ -219,6 +255,15 @@ def gym_space_to_evorl_space(space: gymnasium.Space) -> Space:
         return Box(low=low, high=high)
     elif isinstance(space, gymnasium.spaces.Discrete):
         return Discrete(n=space.n)
+    elif isinstance(space, gymnasium.spaces.Dict):
+        return SpaceContainer(
+            spaces=PyTreeDict(
+                {
+                    key: gym_space_to_evorl_space(child)
+                    for key, child in space.spaces.items()
+                }
+            )
+        )
     else:
         raise NotImplementedError(f"Unsupported space type: {type(space)}")
 

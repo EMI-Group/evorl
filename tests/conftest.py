@@ -5,7 +5,48 @@ import os
 import pytest
 
 
+@pytest.fixture(params=["gymnasium", "envpool"])
+def host_envs(request, monkeypatch, tmp_path):
+    """Track native host environments and close their worker resources."""
+    # Native simulators can write logs/configuration in the cwd.
+    monkeypatch.chdir(tmp_path)
+    backend = request.param
+    library = pytest.importorskip(backend)
+    factory_name = "make_vec" if backend == "gymnasium" else "make_gymnasium"
+    original_factory = getattr(library, factory_name)
+    environments = []
+
+    def make_env(*args, **kwargs):
+        if backend == "envpool":
+            kwargs.setdefault("num_threads", 2)
+        env = original_factory(*args, **kwargs)
+        environments.append(env)
+        return env
+
+    monkeypatch.setattr(library, factory_name, make_env)
+    try:
+        yield backend, environments
+    finally:
+        import jax
+
+        try:
+            jax.effects_barrier()
+        finally:
+            for env in environments:
+                env.close()
+
+
 def pytest_addoption(parser):
+    parser.addoption(
+        "--host-env-catalog",
+        action="store_true",
+        help="Run every EnvPool YAML through JIT and nested vmap instead of family representatives.",
+    )
+    parser.addoption(
+        "--host-env-stress",
+        action="store_true",
+        help="Run large native environment batches in addition to regression tests.",
+    )
     parser.addoption(
         "--device",
         action="store",

@@ -121,3 +121,12 @@ For CPU-based Envs, please refer to the following API References:
   - Use C++ Thread Pool, more efficient than Gymnasium.
 - Gymnasium: [`evorl.envs.gymnasium`](#evorl.envs.gymnasium)
   - Use Python `multiprocessing`. The most commonly used Env API.
+
+Both CPU adapters support Box observations, zero-based Discrete observations and
+nested Dicts of these spaces through `SpaceContainer`, with floating-point Box or
+zero-based Discrete actions. Tuple spaces and multi-agent tasks require separate
+adapters. EnvPool requires full synchronous
+batches and next-step autoreset.
+Observations retain their native layout and dtype. Agents must support the
+task's observation encoding and action bounds; continuous policies assuming
+`[-1, 1]` need `ActionSquashWrapper` for other native bounds.

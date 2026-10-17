@@ -6,7 +6,11 @@ import jax
 from evorl.agent import AgentState
 from evorl.envs import Env
 from evorl.metrics import EvaluateMetric
-from evorl.rollout import rollout, fast_eval_rollout_episode
+from evorl.rollout import (
+    rollout,
+    fast_eval_rollout_episode,
+    host_fast_eval_rollout_episode,
+)
 from evorl.types import PyTreeNode, pytree_field
 from evorl.agent import AgentActionFn
 from evorl.utils.jax_utils import rng_split
@@ -63,12 +67,16 @@ class Evaluator(PyTreeNode):
         action_fn = self.action_fn
         env_reset_fn = self.env.reset
         env_step_fn = self.env.step
+        if getattr(self.env, "uses_host_callback", False):
+            fast_rollout_fn = host_fast_eval_rollout_episode
+        else:
+            fast_rollout_fn = fast_eval_rollout_episode
 
         def _evaluate_fn(key, unused_t):
             next_key, init_env_key, eval_key = rng_split(key, 3)
             env_state = env_reset_fn(init_env_key)
             if self.discount == 1.0:
-                episode_metrics, env_state = fast_eval_rollout_episode(
+                episode_metrics, env_state = fast_rollout_fn(
                     env_step_fn,
                     action_fn,
                     env_state,

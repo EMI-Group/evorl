@@ -1,0 +1,3 @@
+env_name: RacetrackOval-v1
+env_type: envpool
+max_episode_steps: 1500
