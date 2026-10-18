@@ -1,38 +1,42 @@
 import jax
 
-from evorl.types import Action
-
-from ..env import Env, EnvState, Space
+from ..env import BaseEnv, EnvState
 
 
-class Wrapper(Env):
-    """Wraps an environment to allow modular transformations."""
+class Wrapper[ActionT, SpaceT](BaseEnv[ActionT, SpaceT]):
+    """Wrap a single-agent or multi-agent environment with the common API.
 
-    def __init__(self, env: Env):
+    Public attributes not defined by the wrapper are forwarded to the wrapped
+    environment, including `agents` for multi-agent environments.
+    Actions and spaces retain the types of the wrapped environment.
+    """
+
+    def __init__(self, env: BaseEnv[ActionT, SpaceT]):
         """Initialize the env wrapper.
 
         Args:
-            env: the orginal env.
+            env: The environment or another wrapper.
         """
         self.env = env
 
     def reset(self, key: jax.Array) -> EnvState:
         return self.env.reset(key)
 
-    def step(self, state: EnvState, action: Action) -> EnvState:
-        return self.env.step(state.env_state, action)
+    def step(self, state: EnvState, action: ActionT) -> EnvState:
+        return self.env.step(state, action)
 
     @property
-    def obs_space(self) -> Space:
+    def obs_space(self) -> SpaceT:
         return self.env.obs_space
 
     @property
-    def action_space(self) -> Space:
+    def action_space(self) -> SpaceT:
         return self.env.action_space
 
     @property
-    def unwrapped(self) -> Env:
-        if isinstance(self.env, Wrapper) and hasattr(self.env, "unwrapped"):
+    def unwrapped(self) -> BaseEnv:
+        """Return the EvoRL environment underneath all EvoRL wrappers."""
+        if isinstance(self.env, Wrapper):
             return self.env.unwrapped
         else:
             return self.env
@@ -43,7 +47,9 @@ class Wrapper(Env):
         return getattr(self.env, name)
 
 
-def get_wrapper(env: Env, wrapper_cls: type) -> Wrapper | None:
+def get_wrapper[WrapperT: Wrapper](
+    env: BaseEnv, wrapper_cls: type[WrapperT]
+) -> WrapperT | None:
     """Return a specific wrapper of an env."""
     if isinstance(env, wrapper_cls):
         return env

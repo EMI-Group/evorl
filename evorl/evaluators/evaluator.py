@@ -4,14 +4,14 @@ import math
 import jax
 
 from evorl.agent import AgentState
-from evorl.envs import Env
+from evorl.envs import BaseEnv, Space
 from evorl.metrics import EvaluateMetric
 from evorl.rollout import (
     rollout,
     fast_eval_rollout_episode,
     host_fast_eval_rollout_episode,
 )
-from evorl.types import PyTreeNode, pytree_field
+from evorl.types import Action, PyTreeNode, pytree_field
 from evorl.agent import AgentActionFn
 from evorl.utils.jax_utils import rng_split
 from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_length
@@ -29,7 +29,7 @@ class Evaluator(PyTreeNode):
         discount: The discount factor.
     """
 
-    env: Env = pytree_field(static=True)
+    env: BaseEnv[Action, Space] = pytree_field(static=True)
     action_fn: AgentActionFn = pytree_field(static=True)
     max_episode_steps: int = pytree_field(static=True)
     discount: float = pytree_field(default=1.0, static=True)

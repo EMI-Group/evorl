@@ -3,15 +3,15 @@ import jax.numpy as jnp
 
 from evorl.types import Action
 
-from ..env import Env, EnvState
+from ..env import BaseEnv, EnvState
 from ..space import Box, Space
 from .wrapper import Wrapper
 
 
-class ObsFlattenWrapper(Wrapper):
+class ObsFlattenWrapper(Wrapper[Action, Space]):
     """Flatten the multi-dimention observation array into a 1D vector."""
 
-    def __init__(self, env: Env):
+    def __init__(self, env: BaseEnv[Action, Space]):
         super().__init__(env)
 
         self.obs_ndim = len(env.obs_space.shape)

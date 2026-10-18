@@ -1,0 +1,3 @@
+env_name: RubiksCube-partly-scrambled-v0
+env_type: jumanji
+max_episode_steps: 20

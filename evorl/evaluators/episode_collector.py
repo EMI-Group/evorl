@@ -7,10 +7,10 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 
 from evorl.agent import AgentActionFn
-from evorl.envs import Env
+from evorl.envs import BaseEnv, Space
 from evorl.metrics import EvaluateMetric
 from evorl.rollout import rollout, RolloutFn
-from evorl.types import PyTreeNode, pytree_field
+from evorl.types import Action, PyTreeNode, pytree_field
 from evorl.sample_batch import SampleBatch
 from evorl.utils.jax_utils import rng_split
 from evorl.utils.rl_toolkits import compute_discount_return, compute_episode_length
@@ -31,7 +31,7 @@ class EpisodeCollector(PyTreeNode):
         discount: The discount factor.
     """
 
-    env: Env
+    env: BaseEnv[Action, Space]
     action_fn: AgentActionFn
     max_episode_steps: int = pytree_field(static=True)
     env_extra_fields: Sequence[str] = ()

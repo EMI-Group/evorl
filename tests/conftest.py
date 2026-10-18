@@ -38,6 +38,11 @@ def host_envs(request, monkeypatch, tmp_path):
 
 def pytest_addoption(parser):
     parser.addoption(
+        "--jumanji-catalog",
+        action="store_true",
+        help="Check every Jumanji YAML under all four autoreset modes and nested vmap.",
+    )
+    parser.addoption(
         "--host-env-catalog",
         action="store_true",
         help="Run every EnvPool YAML through JIT and nested vmap instead of family representatives.",

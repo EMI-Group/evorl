@@ -8,7 +8,7 @@ import jax.tree_util as jtu
 
 from evorl.agent import AgentState, AgentActionFn, RandomAgent
 from evorl.distributed.sharding import mark_varying
-from evorl.envs import Env, EnvState, EnvStepFn, create_env, AutoresetMode
+from evorl.envs import BaseEnv, EnvState, EnvStepFn, create_env, AutoresetMode
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeNode
 from evorl.utils.jax_utils import rng_split
@@ -70,7 +70,7 @@ def init_obs_preprocessor(agent_state, config, key, dp_axis_name=None):
 def init_obs_preprocessor_with_random_timesteps(
     obs_preprocessor_state: Any,
     timesteps: int,
-    env: Env,
+    env: BaseEnv,
     key: jax.Array,
     dp_axis_name: str | None = None,
 ) -> Any:

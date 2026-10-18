@@ -17,7 +17,7 @@ from evorl.replay_buffers import (
 )
 from evorl.agent import Agent, AgentState
 from evorl.distributed import DP_AXIS_NAME
-from evorl.envs import Env
+from evorl.envs import BaseEnv
 from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase, WorkflowMetric
 from evorl.types import State
@@ -199,7 +199,7 @@ class OnPolicyWorkflow(RLWorkflow):
 
     def __init__(
         self,
-        env: Env,
+        env: BaseEnv,
         agent: Agent,
         optimizer: optax.GradientTransformation,
         evaluator: Evaluator,
@@ -329,7 +329,7 @@ class OffPolicyWorkflow(RLWorkflow):
 
     def __init__(
         self,
-        env: Env,
+        env: BaseEnv,
         agent: Agent,
         optimizer: optax.GradientTransformation,
         evaluator: Evaluator,

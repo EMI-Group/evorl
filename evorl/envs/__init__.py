@@ -1,20 +1,21 @@
 import importlib
 
-from .space import Space, Box, Discrete, SpaceContainer, is_leaf_space
-from .env import Env, EnvState, EnvStepFn, EnvResetFn
+from .space import Space, Box, Discrete, MultiDiscrete, SpaceContainer, is_leaf_space
+from .env import BaseEnv, Env, EnvState, EnvStepFn, EnvResetFn
 from .multi_agent_env import MultiAgentEnv
 from .wrappers.training_wrapper import AutoresetMode
 from .brax import create_brax_env, create_wrapped_brax_env
 from .gymnasium import create_gymnasium_env
 
 
-def create_env(env_cfg, **kwargs) -> Env:
+def create_env(env_cfg, **kwargs) -> BaseEnv:
     """Unified env creator.
 
     Args:
         env_cfg: The environment configuration. Gymnasium configurations can set
             `obs_type` to select the Atari observation format. Gymnax
             configurations can set `env_kwargs` for environment construction.
+            Jumanji multi-agent tasks use the `MultiAgentEnv` API automatically.
         **kwargs: Additional keyword arguments for the environment creator.
             Explicit `obs_type` and `env_kwargs` arguments override the
             corresponding configuration values.
@@ -35,9 +36,9 @@ def create_env(env_cfg, **kwargs) -> Env:
                 kwargs.setdefault("env_kwargs", env_cfg.env_kwargs)
             env = create_wrapped_gymnax_env(env_name, **kwargs)
         case "jumanji":
-            env = create_jumanji_env(env_name, **kwargs)
+            env = create_wrapped_jumanji_env(env_name, **kwargs)
         case "jaxmarl":
-            env = create_mabrax_env(env_name, **kwargs)
+            env = create_wrapped_mabrax_env(env_name, **kwargs)
         case "envpool":
             env = create_envpool_env(env_name, **kwargs)
         case "gymnasium":
@@ -51,12 +52,14 @@ def create_env(env_cfg, **kwargs) -> Env:
 
 
 __all__ = [
+    "BaseEnv",
     "Env",
     "EnvState",
     "MultiAgentEnv",
     "Space",
     "Box",
     "Discrete",
+    "MultiDiscrete",
     "SpaceContainer",
     "AutoresetMode",
     "is_leaf_space",
@@ -72,9 +75,9 @@ if importlib.util.find_spec("gymnax") is not None:
     __all__.extend(["create_gymnax_env", "create_wrapped_gymnax_env"])
 
 if importlib.util.find_spec("jumanji") is not None:
-    from .jumanji import create_jumanji_env
+    from .jumanji import create_jumanji_env, create_wrapped_jumanji_env
 
-    __all__.extend(["create_jumanji_env"])
+    __all__.extend(["create_jumanji_env", "create_wrapped_jumanji_env"])
 
 if importlib.util.find_spec("jaxmarl") is not None:
     from .jaxmarl import create_mabrax_env, create_wrapped_mabrax_env

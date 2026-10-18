@@ -11,10 +11,17 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 
 Metrics = Mapping[str, chex.ArrayTree]
+AgentID = Any
+type AgentMapping[T] = Mapping[AgentID, T]
+
 Observation = jax.Array | Mapping[str, jax.Array]
 Action = jax.Array | Mapping[str, jax.Array]
-Reward = jax.Array | Mapping[str, jax.Array]
-Done = jax.Array | Mapping[str, jax.Array]
+# A single agent can already have a structured observation or action. The
+# outer mapping below represents agents, rather than fields of one agent.
+type EnvObservation = Observation | AgentMapping[Observation]
+type EnvAction = Action | AgentMapping[Action]
+Reward = jax.Array | AgentMapping[jax.Array]
+Done = jax.Array | AgentMapping[jax.Array]
 PolicyExtraInfo = Mapping[str, Any]
 ExtraInfo = Mapping[str, Any]
 RewardDict = Mapping[str, Reward]
@@ -26,8 +33,6 @@ EnvInternalState = chex.ArrayTree
 Params = chex.ArrayTree
 ObsPreprocessorParams = Mapping[str, Any]
 ActionPostprocessorParams = Mapping[str, Any]
-
-AgentID = Any
 
 ReplayBufferState = chex.ArrayTree
 

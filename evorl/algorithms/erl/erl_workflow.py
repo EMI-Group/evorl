@@ -18,7 +18,7 @@ from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.sample_batch import SampleBatch
 from evorl.replay_buffers import AbstractReplayBuffer, ReplayBufferState
 from evorl.agent import Agent, AgentState, RandomAgent
-from evorl.envs import create_env, AutoresetMode, Env
+from evorl.envs import create_env, AutoresetMode, BaseEnv
 from evorl.workflows import Workflow
 from evorl.rollout import rollout
 from evorl.ec.optimizers import EvoOptimizer, ECState
@@ -49,7 +49,7 @@ class ERLWorkflowBase(Workflow):
     def __init__(
         self,
         *,
-        env: Env,
+        env: BaseEnv,
         agent: Agent,
         agent_state_vmap_axes: AgentStateAxis,
         optimizer: optax.GradientTransformation,

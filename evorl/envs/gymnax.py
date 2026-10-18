@@ -9,7 +9,7 @@ from gymnax.environments.spaces import Space as GymnaxSpace
 
 from evorl.types import Action, PyTreeDict
 
-from .env import Env, EnvAdapter, EnvState
+from .env import BaseEnv, Env, EnvAdapter, EnvState
 from .space import Box, Discrete, Space
 from .wrappers.action_wrapper import ActionSquashWrapper
 from .wrappers.obs_wrapper import ObsFlattenWrapper
@@ -161,7 +161,7 @@ def create_wrapped_gymnax_env(
     *,
     env_kwargs: dict | None = None,
     **kwargs,
-) -> Env:
+) -> BaseEnv[Action, Space]:
     """Create a vectorized Gymnax environment with episode wrappers.
 
     Args:

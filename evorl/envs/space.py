@@ -33,7 +33,7 @@ class Space(PyTreeData):
 
 
 class Box(Space):
-    """Continuous space in R^n.
+    """Array space with continuous, integer or boolean bounds.
 
     Attributes:
         low: The lower bounds of the box.
@@ -44,6 +44,26 @@ class Box(Space):
     high: jax.Array
 
     def sample(self, key: jax.Array) -> jax.Array:
+        """Sample within the bounds, including integer upper bounds.
+
+        Integer bounds use at least `int32` for arithmetic. `high + 1` must
+        fit that sampling dtype.
+        """
+        dtype = self.low.dtype
+        if jnp.issubdtype(dtype, jnp.bool_):
+            return jnp.clip(
+                jax.random.bernoulli(key, shape=self.shape), self.low, self.high
+            )
+        if jnp.issubdtype(dtype, jnp.integer):
+            # Widen bounds before adding one, e.g. uint8 image bounds [0, 255].
+            bounds_dtype = jnp.promote_types(dtype, jnp.int32)
+            return jax.random.randint(
+                key,
+                self.shape,
+                self.low,
+                self.high.astype(bounds_dtype) + 1,
+                dtype=dtype,
+            )
         return jax.random.uniform(
             key,
             shape=self.low.shape,
@@ -78,6 +98,32 @@ class Discrete(Space):
 
     def contains(self, x: jax.typing.ArrayLike) -> jax.Array:
         return jnp.logical_and(x >= 0, x < self.n)
+
+
+class MultiDiscrete(Space):
+    """An integer array with a separate category count for each element.
+
+    Attributes:
+        nvec: Positive category counts. Samples have the same shape and integer
+            dtype, and each element lies in `[0, nvec)`.
+    """
+
+    nvec: jax.Array
+
+    def sample(self, key: jax.Array) -> jax.Array:
+        return jax.random.randint(
+            key, self.shape, minval=0, maxval=self.nvec, dtype=self.nvec.dtype
+        )
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return self.nvec.shape
+
+    def contains(self, x: jax.typing.ArrayLike) -> jax.Array:
+        x = jnp.asarray(x)
+        if x.shape != self.shape or not jnp.issubdtype(x.dtype, jnp.integer):
+            return jnp.asarray(False)
+        return jnp.all((x >= 0) & (x < self.nvec))
 
 
 class SpaceContainer(Space):

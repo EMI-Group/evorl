@@ -10,7 +10,7 @@ import math
 
 from evorl.types import Action, PyTreeDict
 
-from .env import Env, EnvAdapter, EnvState
+from .env import BaseEnv, EnvAdapter, EnvState
 from .space import Box, Discrete, Space, SpaceContainer
 from .utils import check_host_env_spaces, make_batched_io_callback
 from .wrappers import Wrapper, AutoresetMode
@@ -222,10 +222,10 @@ class EnvPoolGymAdapter(EnvAdapter):
 
 
 # TODO: EnvPoolDMAdapter
-class OneEpisodeWrapper(Wrapper):
+class OneEpisodeWrapper(Wrapper[Action, Space]):
     """Vectorized one-episode wrapper for evaluation."""
 
-    def __init__(self, env: Env):
+    def __init__(self, env: BaseEnv[Action, Space]):
         super().__init__(env)
 
     def step(self, state: EnvState, action: Action) -> EnvState:
@@ -275,7 +275,7 @@ def create_envpool_env(
     autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
     discount: float | None = 1.0,
     **kwargs,
-) -> EnvPoolGymAdapter:
+) -> BaseEnv[Action, Space]:
     """Create an EnvPool environment with Gymnasium API.
 
     Unlike other jax-based env, most wrappers are handled inside the envpool.

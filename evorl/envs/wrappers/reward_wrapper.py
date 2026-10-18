@@ -3,11 +3,12 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 from evorl.types import Action
 
-from ..env import Env, EnvState
+from ..env import BaseEnv, EnvState
+from ..space import Space
 from .wrapper import Wrapper
 
 
-class RewardScaleWrapper(Wrapper):
+class RewardScaleWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
     """Scale the reward by a factor.
 
     Usage:
@@ -15,7 +16,7 @@ class RewardScaleWrapper(Wrapper):
     - Use RewardScaleWrapper(EpisodeWrapper(env)) to get the original `info.episode_return`.
     """
 
-    def __init__(self, env: Env, reward_scale: float):
+    def __init__(self, env: BaseEnv[ActionT, SpaceT], reward_scale: float):
         super().__init__(env)
         self.reward_scale = reward_scale
 
@@ -27,7 +28,7 @@ class RewardScaleWrapper(Wrapper):
 
         return state.replace(reward=reward, info=info)
 
-    def step(self, state: EnvState, action: Action) -> EnvState:
+    def step(self, state: EnvState, action: ActionT) -> EnvState:
         state = self.env.step(state, action)
         info = state.info.replace(ori_reward=state.reward)
 
@@ -36,13 +37,13 @@ class RewardScaleWrapper(Wrapper):
         return state.replace(reward=reward, info=info)
 
 
-class SparseRewardWrapper(Wrapper):
+class SparseRewardWrapper(Wrapper[Action, Space]):
     """Convert dense reward to sparse reward.
 
     The dense rewards become: 0, 0, ..., sum(rewards), 0, 0, ..., sum(rewards)
     """
 
-    def __init__(self, env: Env, sparse_length: int):
+    def __init__(self, env: BaseEnv[Action, Space], sparse_length: int):
         super().__init__(env)
         self.sparse_length = sparse_length
 

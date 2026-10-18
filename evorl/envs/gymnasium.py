@@ -10,7 +10,7 @@ import jax.tree_util as jtu
 
 from evorl.types import Action, PyTreeDict
 
-from .env import Env, EnvAdapter, EnvState
+from .env import BaseEnv, EnvAdapter, EnvState
 from .space import Box, Discrete, Space, SpaceContainer
 from .utils import check_host_env_spaces, make_batched_io_callback
 from .wrappers import Wrapper, AutoresetMode
@@ -300,10 +300,10 @@ class GymnasiumAdapter(EnvAdapter):
         return gymnasium_space_to_evorl_space(self.env.single_observation_space)
 
 
-class OneEpisodeWrapper(Wrapper):
+class OneEpisodeWrapper(Wrapper[Action, Space]):
     """Vectorized one-episode wrapper for evaluation."""
 
-    def __init__(self, env: Env):
+    def __init__(self, env: BaseEnv[Action, Space]):
         super().__init__(env)
 
     def step(self, state: EnvState, action: Action) -> EnvState:
@@ -354,7 +354,7 @@ def create_gymnasium_env(
     discount: float | None = 1.0,
     record_ori_obs: bool = False,
     **kwargs,
-) -> GymnasiumAdapter:
+) -> BaseEnv[Action, Space]:
     """Create a gym env based on Gymnasium.
 
     Unlike other jax-based env, most wrappers are handled inside the gymnasium.

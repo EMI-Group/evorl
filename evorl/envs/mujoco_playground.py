@@ -5,7 +5,7 @@ from mujoco_playground import registry, MjxEnv
 
 from evorl.types import Action, PyTreeDict
 
-from .env import Env, EnvAdapter, EnvState
+from .env import BaseEnv, EnvAdapter, EnvState
 from .space import Box, Space, SpaceContainer
 from .utils import sort_dict
 from .wrappers.training_wrapper import (
@@ -143,7 +143,7 @@ def create_wrapped_mujoco_playground_env(
     discount: float | None = 1.0,
     record_ori_obs: bool = False,
     **kwargs,
-) -> Env:
+) -> BaseEnv[Action, Space]:
     """Create wrapped Brax environment for training.
 
     Args:

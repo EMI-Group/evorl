@@ -17,7 +17,7 @@ from evorl.metrics import (
     ECTrainMetric,
 )
 from evorl.ec.optimizers import EvoOptimizer, ECState
-from evorl.envs import Env
+from evorl.envs import BaseEnv
 from evorl.sample_batch import SampleBatch
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState, AgentStateAxis
@@ -174,7 +174,7 @@ class ECWorkflowTemplate(ECWorkflow):
     def __init__(
         self,
         *,
-        env: Env,
+        env: BaseEnv,
         agent: Agent,
         ec_optimizer: EvoOptimizer,
         ec_evaluator: Evaluator | EpisodeCollector,

@@ -11,7 +11,7 @@ from evorl.agent import Agent, AgentState, AgentStateAxis
 from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase
 from evorl.types import State
-from evorl.envs import Env
+from evorl.envs import BaseEnv
 from evorl.ec.optimizers import EvoOptimizer
 from evorl.recorders import get_1d_array_statistics
 from evorl.workflows import ECWorkflowTemplate
@@ -44,7 +44,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
     def __init__(
         self,
         *,
-        env: Env,
+        env: BaseEnv,
         agent: Agent,
         ec_optimizer: EvoOptimizer,
         ec_evaluator: Evaluator,

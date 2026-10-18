@@ -9,7 +9,6 @@ from evorl.agent import RandomAgent
 from evorl.ec.operators import ERLMutation, MLPCrossover, MLPMutation
 from evorl.envs import Discrete
 from evorl.envs.wrappers import training_wrapper as wrappers
-from evorl.envs.wrappers import ma_training_wrapper as ma_wrappers
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict
 from evorl.utils.jax_utils import (
@@ -110,9 +109,9 @@ class MultiAgentFakeEnv(FakeEnv):
 @pytest.mark.parametrize(
     "wrapper",
     [
-        ma_wrappers.VmapWrapper,
-        ma_wrappers.VmapAutoResetWrapper,
-        ma_wrappers.FastVmapAutoResetWrapper,
+        wrappers.VmapWrapper,
+        wrappers.VmapAutoResetWrapper,
+        wrappers.FastVmapAutoResetWrapper,
     ],
 )
 def test_multi_agent_vector_wrappers_with_batched_keys(key, wrapper):

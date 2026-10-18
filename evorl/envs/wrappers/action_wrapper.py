@@ -4,15 +4,15 @@ import jax.tree_util as jtu
 
 from evorl.types import Action
 
-from ..env import Env, EnvState
+from ..env import BaseEnv, EnvState
 from ..space import Box, Space
 from .wrapper import Wrapper
 
 
-class ActionSquashWrapper(Wrapper):
+class ActionSquashWrapper(Wrapper[Action, Space]):
     """Convert continuous action space from [-1, 1] to [low, high]."""
 
-    def __init__(self, env: Env):
+    def __init__(self, env: BaseEnv[Action, Space]):
         super().__init__(env)
 
         # TODO: support pytree action space
@@ -31,7 +31,7 @@ class ActionSquashWrapper(Wrapper):
         return Box(low=-jnp.ones_like(self.scale), high=jnp.ones_like(self.scale))
 
 
-class ActionRepeatWrapper(Wrapper):
+class ActionRepeatWrapper(Wrapper[Action, Space]):
     """Repeat action for a number of steps.
 
     :::{note}
@@ -42,7 +42,7 @@ class ActionRepeatWrapper(Wrapper):
     :::
     """
 
-    def __init__(self, env: Env, action_repeat: int):
+    def __init__(self, env: BaseEnv[Action, Space], action_repeat: int):
         super().__init__(env)
 
         self.action_repeat = action_repeat

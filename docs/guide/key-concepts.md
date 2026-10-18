@@ -141,7 +141,12 @@ Besides, most RL-based Agents also include one or multiple loss functions, which
 
 ## RL Environments
 
-We provide a unified environment API in [`Env`](#evorl.envs.env.Env) to adapt multiple env libraries.
+[`BaseEnv`](#evorl.envs.env.BaseEnv) defines the common functional interface for
+environments and their wrappers: `reset(key)` and `step(state, action)` return an
+`EnvState`, while the environment object holds static configuration.
+[`Env`](#evorl.envs.env.Env) defines the single-agent interface, and
+[`MultiAgentEnv`](#evorl.envs.multi_agent_env.MultiAgentEnv) defines the
+simultaneous multi-agent interface with agent-keyed actions and spaces.
 
 An example about how to interact with the environment:
 
@@ -161,7 +166,20 @@ actions = jnp.zeros((3,))
 env_nstate = env.step(env_state, actions)
 ```
 
-We provide multiple [`Wrapper`](#evorl.envs.wrappers.Wrapper) classes for `Env`, they are defined in [`evorl.envs.wrappers`](#evorl.envs.wrappers). For instance, [`ActionSquashWrapper`](#evorl.envs.wrappers.ActionSquashWrapper) converts the action space from [-1,1] to [low, high], [`VmapAutoResetWrapper`](#evorl.envs.wrappers.VmapAutoResetWrapper) converts a single env to k parallel envs.
+[`Wrapper`](#evorl.envs.wrappers.Wrapper) also implements `BaseEnv`, so wrapped
+environments expose the same common interface. Episode and autoreset wrappers
+preserve the wrapped environment's action and space types, and share an
+implementation for single-agent and multi-agent environments. In a
+multi-agent environment, `done["__all__"]` controls whole-episode resets.
+`wrapped.env` accesses the next layer; `wrapped.unwrapped` accesses the EvoRL
+adapter beneath all EvoRL wrappers. Wrappers forward additional attributes,
+including `agents`, without inheriting the adapter's concrete type.
+
+Other wrappers apply to particular spaces. For instance,
+[`ActionSquashWrapper`](#evorl.envs.wrappers.ActionSquashWrapper) converts a
+single-agent Box action space from [-1, 1] to [low, high], while
+[`VmapAutoResetWrapper`](#evorl.envs.wrappers.VmapAutoResetWrapper) converts one
+environment into k parallel environments.
 
 Based on the top of them, we provide environment creation functions for different libraries.
 

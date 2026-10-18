@@ -1,13 +1,11 @@
-from collections.abc import Mapping
-
 import jax
 import jax.numpy as jnp
 from jaxmarl.environments import MultiAgentEnv
 
-from evorl.types import Action, AgentID, PyTreeDict
+from evorl.types import Action, AgentID, AgentMapping, EnvAction, PyTreeDict
 from evorl.utils.jax_utils import tree_astype, tree_zeros_like
 
-from .env import EnvState
+from .env import BaseEnv, EnvState
 from .gymnax import gymnax_space_to_evorl_space
 from .jaxmarl_envs import make_mabrax_env
 from .multi_agent_env import MultiAgentEnvAdapter
@@ -60,7 +58,7 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
             _internal=extra,
         )
 
-    def step(self, state: EnvState, action: Action) -> EnvState:
+    def step(self, state: EnvState, action: AgentMapping[Action]) -> EnvState:
         key, step_key = jax.random.split(state._internal.step_key)
 
         # call step_env() instead of step() to disable autoreset
@@ -84,11 +82,11 @@ class JaxMARLAdapter(MultiAgentEnvAdapter):
         )
 
     @property
-    def action_space(self) -> Mapping[AgentID, Space]:
+    def action_space(self) -> AgentMapping[Space]:
         return jaxmarl_space_to_evorl_space(self.env.action_spaces)
 
     @property
-    def obs_space(self) -> Mapping[AgentID, Space]:
+    def obs_space(self) -> AgentMapping[Space]:
         return jaxmarl_space_to_evorl_space(self.env.observation_spaces)
 
     @property
@@ -150,7 +148,7 @@ class MABraxAdapter(JaxMARLAdapter):
 
         return state
 
-    def step(self, state: EnvState, action: Action) -> EnvState:
+    def step(self, state: EnvState, action: EnvAction) -> EnvState:
         if not isinstance(action, dict):
             action = self.unwrapped.map_agents_to_global_action(action)
 
@@ -178,7 +176,7 @@ def create_wrapped_mabrax_env(
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
     **kwargs,
-) -> JaxMARLAdapter:
+) -> BaseEnv[AgentMapping[Action], AgentMapping[Space]]:
     env = create_mabrax_env(env_name, **kwargs)
     if autoreset_mode != AutoresetMode.DISABLED:
         env = EpisodeWrapper(env, episode_length)

@@ -20,6 +20,12 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `workflows/test_eval_batching.py` | Pure JAX and host early-stop metrics/final states, mixed shared/mapped agent leaves and keys |
 | `test_brax_env.py::test_brax_fast` | Brax Fast action bounds, array/dict observations and all autoreset modes |
 | `test_gymnax_env.py` | Constructor arguments, `EnvParams` overrides, unknown argument errors and EvoRL episode limits |
+| `test_multi_agent_env.py` | Shared environment/wrapper interfaces, individual and whole-episode boundaries, per-agent returns, terminal/global observations and nested autoreset |
+| `test_jumanji_env.py` | Native state conversion, structured observations, extras and action spaces |
+| `test_jumanji_multi_agent.py` | Native reward/discount preservation, joint actions, per-agent spaces, masks and observations for all seven multi-agent tasks |
+| `test_jumanji_autoreset.py` | EvoRL wrapper selection, staggered episodes and reset keys, terminal masks/observations, native truncation and frozen evaluation states |
+| `test_jumanji_catalog.py` | Registered spaces, YAML tasks under nested `vmap`, serial references and in-memory Sokoban levels |
+| `workflows/test_jumanji_env.py` | PPO training/evaluation with dictionary observations and RandomAgent evaluation with integer vector actions |
 | Root `test_*.py` files | Existing unit, dependency, checkpoint, environment and algorithm tests |
 
 Install the development dependencies with `pip install -e ".[dev]"`.
@@ -45,6 +51,20 @@ python -m pytest tests/test_host_envs.py tests/workflows/test_host_envs.py --dev
 python -m pytest tests/test_host_env_stress.py --host-env-stress --device=gpu
 python -m pytest tests/test_envpool_catalog.py tests/test_gymnasium_catalog.py --host-env-catalog
 ```
+
+With the Jumanji extra installed, check its registered environments, episode
+wrappers and PPO integration with:
+
+```shell
+python -m pytest tests/test_multi_agent_env.py tests/test_jumanji_env.py tests/test_jumanji_multi_agent.py tests/test_jumanji_autoreset.py tests/test_jumanji_catalog.py tests/workflows/test_jumanji_env.py
+python -m pytest tests/test_jumanji_catalog.py --jumanji-catalog
+```
+
+The Jumanji catalogue checks every YAML with next-step autoreset, plus all four
+autoreset modes for representative tasks. `--jumanji-catalog` checks every YAML
+under all four modes. Each nested population is compared with separate serial
+runs using the same keys. Sokoban uses upstream in-memory levels in tests; its
+default external dataset is not downloaded.
 
 Host simulators run on the CPU even when the policy runs on the GPU. PBT host
 workflow tests require one JAX device because native pools do not support
@@ -76,7 +96,7 @@ the process boundary itself is under test, such as importing accelerator probes.
 
 CI runs the same collected tests against the built wheel with the minimum and
 latest supported dependencies, including the separate four-device invocation.
-The host environment tests run in CI with Gymnasium; EnvPool and Atari cases run
+Jumanji and Gymnasium environment tests run in CI; EnvPool and Atari cases run
 when their optional dependencies are installed. Other environment-specific tests
 in the root directory may require simulator dependencies and assets and remain
 outside this CPU suite.

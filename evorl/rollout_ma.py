@@ -1,12 +1,12 @@
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from functools import partial
 
 import jax
 
 from evorl.agent import Agent, AgentState
-from evorl.envs import EnvState, MultiAgentEnv
+from evorl.envs import BaseEnv, EnvState, Space
 from evorl.sample_batch import SampleBatch
-from evorl.types import AgentID, PyTreeDict
+from evorl.types import Action, AgentMapping, PyTreeDict
 from evorl.utils.jax_utils import tree_get
 from evorl.utils.ma_utils import batchify, unbatchify
 
@@ -23,10 +23,10 @@ __all__ = [
 
 
 def decentralized_env_step(
-    env: MultiAgentEnv,
-    agents: Mapping[AgentID, Agent],
+    env: BaseEnv[AgentMapping[Action], AgentMapping[Space]],
+    agents: AgentMapping[Agent],
     env_state: EnvState,
-    agent_states: Mapping[AgentID, AgentState],  # readonly
+    agent_states: AgentMapping[AgentState],  # readonly
     sample_batch: SampleBatch,
     key: jax.Array,
     env_extra_fields: Sequence[str] = (),
@@ -66,10 +66,10 @@ def decentralized_env_step(
 
 
 def decentralized_rollout(
-    env: MultiAgentEnv,
-    agents: Mapping[AgentID, Agent],
+    env: BaseEnv[AgentMapping[Action], AgentMapping[Space]],
+    agents: AgentMapping[Agent],
     env_state: EnvState,
-    agent_states: Mapping[AgentID, AgentState],  # readonly
+    agent_states: AgentMapping[AgentState],  # readonly
     key: jax.Array,
     rollout_length: int,
     env_extra_fields: Sequence[str] = (),
@@ -111,13 +111,13 @@ def decentralized_rollout(
 
 
 def decentralized_env_step_with_shared_model(
-    env: MultiAgentEnv,
+    env: BaseEnv[AgentMapping[Action], AgentMapping[Space]],
     agent: Agent,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
     key: jax.Array,
-    obs_batchify_fn: Callable[[jax.Array], Mapping[AgentID, jax.Array]],
-    action_unbatchify_fn: Callable[[jax.Array], Mapping[AgentID, jax.Array]],
+    obs_batchify_fn: Callable[[jax.Array], AgentMapping[jax.Array]],
+    action_unbatchify_fn: Callable[[jax.Array], AgentMapping[jax.Array]],
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
     """Collect one-step data."""
@@ -151,15 +151,15 @@ def decentralized_env_step_with_shared_model(
 
 
 def decentralized_rollout_with_shared_model(
-    env: MultiAgentEnv,
+    env: BaseEnv[AgentMapping[Action], AgentMapping[Space]],
     agent: Agent,
     env_state: EnvState,
     agent_state: AgentState,  # readonly
     key: jax.Array,
     rollout_length: int,
-    obs_batchify_fn: None | (Callable[[jax.Array], Mapping[AgentID, jax.Array]]) = None,
+    obs_batchify_fn: None | (Callable[[jax.Array], AgentMapping[jax.Array]]) = None,
     action_unbatchify_fn: None
-    | (Callable[[jax.Array], Mapping[AgentID, jax.Array]]) = None,
+    | (Callable[[jax.Array], AgentMapping[jax.Array]]) = None,
     env_extra_fields: Sequence[str] = (),
 ) -> tuple[EnvState, SampleBatch]:
     """Centrialized Execution: Collect given rollout_length trajectory.

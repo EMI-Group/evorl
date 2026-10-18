@@ -95,6 +95,25 @@ gymnasium>=1.4.0
 EOF
 ```
 
+### Jumanji
+
+Jumanji single-agent tasks use `Env`; multi-agent tasks use `MultiAgentEnv` with
+agent-keyed actions, observations, rewards and done flags. Individual rewards
+are preserved; native shared rewards are copied unchanged to each agent and
+retained under `reward["__all__"]`. `done["__all__"]` marks the episode boundary.
+
+Structured observations use nested dictionaries and `SpaceContainer`, preserving
+native dtypes and action masks. Multi-agent observations separate agent-specific
+fields from shared fields and include an `agent_id`; `info.global_obs` retains
+the native joint observation. Masks are provided to policies without enforcing
+action selection. Single-agent MultiDiscrete actions remain integer arrays.
+SearchAndRescue's continuous actions retain their native `[-1, 1]` bounds.
+
+Episode limits and autoreset use EvoRL's wrappers. Native Jumanji truncations
+remain truncations. YAML configurations are in `configs/env/jumanji/`, grouped
+by task family. Default Sokoban requires an external level dataset and has no
+bundled YAML.
+
 ### Environment support
 
 | Environment Library                                                        | Descriptions                            |
