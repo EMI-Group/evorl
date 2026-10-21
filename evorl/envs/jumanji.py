@@ -40,6 +40,11 @@ class JumanjiAdapter(EnvAdapter):
     Observation records become nested `PyTreeDict` objects, preserving array
     shapes, dtypes and action masks. Multi-agent tasks use the separate
     `JumanjiMultiAgentAdapter` with agent-keyed data.
+
+    Base `done` flags indicate native termination, derived from zero native
+    discounts. Use `EpisodeWrapper` with the same limit as the native task to
+    add time truncation. Native discounts are consumed during conversion and
+    are not stored in `EnvState`.
     """
 
     def reset(self, key: jax.Array) -> EnvState:
@@ -65,6 +70,24 @@ class JumanjiAdapter(EnvAdapter):
         return space
 
 
+# Native task constructors that accept an episode time limit.
+_TIME_LIMIT_ENVS = {
+    "Cleaner",
+    "Connector",
+    "LevelBasedForaging",
+    "Maze",
+    "MMST",
+    "PacMan",
+    "RobotWarehouse",
+    "RubiksCube",
+    "SearchAndRescue",
+    "SlidingTilePuzzle",
+    "Snake",
+    "Sokoban",
+    "Tetris",
+}
+
+
 # Only these fields describe individual agents' observations. Shared fields,
 # including Cleaner/MMST positions, stay visible to all agents. Array size alone
 # cannot distinguish agent observations from global data.
@@ -87,11 +110,16 @@ class JumanjiMultiAgentAdapter(MultiAgentEnvAdapter):
     identifying its agent in shared grids and graphs. The unmodified joint
     observation is available as `info.global_obs`.
 
-    Vector rewards and discounts are indexed by agent. Scalar team rewards are
-    copied unchanged to every agent and retained under `reward["__all__"]`.
-    Zero discount marks an agent's termination, while a LAST timestep ends the
-    whole episode. LAST with nonzero discount is truncation. No upstream
-    autoreset or reward aggregation wrapper is installed.
+    Vector rewards and native discounts are indexed by agent. Scalar team
+    rewards are copied unchanged to every agent and retained under
+    `reward["__all__"]`. Zero native discount marks an agent's termination;
+    scalar discounts give all agents the same flag. Base `done["__all__"]`
+    indicates that all agents have terminated. Native discounts are consumed
+    during conversion and are not stored in `EnvState`.
+
+    Use `EpisodeWrapper` with the native time limit to add truncation for
+    unfinished agents and the whole episode. No upstream autoreset or reward
+    aggregation wrapper is installed.
     """
 
     def __init__(self, env: JumanjiEnv):
@@ -128,21 +156,16 @@ class JumanjiMultiAgentAdapter(MultiAgentEnvAdapter):
     def _multi_agent_state(self, state: EnvState) -> EnvState:
         observation = state.obs
         reward = state.reward
-        discount = state.info.discount
-        episode_done = state.done
-        rewards, discounts, dones = PyTreeDict(), PyTreeDict(), PyTreeDict()
-        terminations, truncations = PyTreeDict(), PyTreeDict()
+        terminated = state.done
+        rewards, dones = PyTreeDict(), PyTreeDict()
         for i, agent in enumerate(self._agents):
             rewards[agent] = reward if reward.ndim == 0 else reward[i]
-            discounts[agent] = discount if discount.ndim == 0 else discount[i]
-            terminations[agent] = (discounts[agent] == 0).astype(jnp.float32)
-            dones[agent] = jnp.maximum(episode_done, terminations[agent])
-            truncations[agent] = episode_done * (1 - terminations[agent])
+            dones[agent] = terminated if terminated.ndim == 0 else terminated[i]
         if reward.ndim == 0:
             rewards["__all__"] = reward
-        dones["__all__"] = episode_done
-        terminations["__all__"] = state._internal.termination
-        truncations["__all__"] = state._internal.truncation
+        # This function runs before vectorization, so only native agent flags
+        # are reduced; environment and population axes are added by wrappers.
+        dones["__all__"] = jnp.all(terminated).astype(jnp.float32)
         return state.replace(
             obs=PyTreeDict(
                 {
@@ -158,10 +181,7 @@ class JumanjiMultiAgentAdapter(MultiAgentEnvAdapter):
             ),
             reward=rewards,
             done=dones,
-            info=state.info.replace(discount=discounts, global_obs=observation),
-            _internal=state._internal.replace(
-                termination=terminations, truncation=truncations
-            ),
+            info=state.info.replace(global_obs=observation),
         )
 
     @property
@@ -190,39 +210,26 @@ class JumanjiMultiAgentAdapter(MultiAgentEnvAdapter):
 
 def _reset(env: JumanjiEnv, key: jax.Array) -> EnvState:
     """Convert a native reset result shared by both Jumanji adapters."""
-    env_state, transition = env.reset(key)
+    env_state, timestep = env.reset(key)
     return EnvState(
         env_state=env_state,
-        obs=_observation_to_dict(transition.observation),
-        reward=jnp.asarray(transition.reward, dtype=jnp.float32),
-        done=jnp.asarray(transition.last(), dtype=jnp.float32),
-        info=PyTreeDict(transition.extras, discount=transition.discount),
-        _internal=PyTreeDict(
-            termination=jnp.zeros((), dtype=jnp.float32),
-            truncation=jnp.zeros((), dtype=jnp.float32),
-        ),
+        obs=_observation_to_dict(timestep.observation),
+        reward=jnp.asarray(timestep.reward, dtype=jnp.float32),
+        done=jnp.asarray(timestep.discount == 0, dtype=jnp.float32),
+        info=PyTreeDict(timestep.extras),
     )
 
 
 def _step(env: JumanjiEnv, state: EnvState, action: jax.Array) -> EnvState:
     """Convert a native transition shared by both Jumanji adapters."""
     action = jnp.asarray(action, dtype=env.action_spec.dtype)
-    env_state, transition = env.step(state.env_state, action)
-    info = state.info.replace(**transition.extras)
-    info.discount = transition.discount
-    done = jnp.asarray(transition.last(), dtype=jnp.float32)
-    # A LAST timestep with nonzero discount is a native truncation. For
-    # vector rewards, terminate globally only when every agent's discount is 0.
-    termination = done * jnp.all(transition.discount == 0)
+    env_state, timestep = env.step(state.env_state, action)
     return state.replace(
         env_state=env_state,
-        obs=_observation_to_dict(transition.observation),
-        reward=jnp.asarray(transition.reward, dtype=jnp.float32),
-        done=done,
-        info=info,
-        _internal=state._internal.replace(
-            termination=termination, truncation=done - termination
-        ),
+        obs=_observation_to_dict(timestep.observation),
+        reward=jnp.asarray(timestep.reward, dtype=jnp.float32),
+        done=jnp.asarray(timestep.discount == 0, dtype=jnp.float32),
+        info=state.info.replace(**timestep.extras),
     )
 
 
@@ -300,6 +307,10 @@ def create_jumanji_env(
 ) -> BaseEnv:
     """Create an adapted Jumanji environment without episode wrappers.
 
+    Base `done` flags report native termination. Use
+    `create_wrapped_jumanji_env` to apply the shared time limit and autoreset,
+    including native Connector and LevelBasedForaging time truncations.
+
     Args:
         env_name: Registered Jumanji environment name.
         **kwargs: Arguments passed to the Jumanji environment constructor.
@@ -309,6 +320,7 @@ def create_jumanji_env(
         tasks, preserving structured observations, action masks and rewards.
         Continuous actions retain their native bounds; SearchAndRescue uses
         `[-1, 1]` natively.
+
     """
     env = jumanji.make(env_name, **kwargs)
     if isinstance(env, MultiCVRP) and type(env.action_spec) is BoundedArray:
@@ -333,23 +345,36 @@ def create_wrapped_jumanji_env(
 ) -> BaseEnv:
     """Create a vectorized single-agent or multi-agent Jumanji environment.
 
-    Uses EvoRL's episode and autoreset wrappers, without Jumanji autoreset. Native
-    termination, truncation and action masks are preserved. Multi-agent tasks
+    Native tasks supporting `time_limit` receive `episode_length` at
+    construction. EvoRL's episode wrapper uses the same limit and preserves
+    native termination; tasks without a native limit are externally truncated.
+    Native rewards and action masks are preserved. Multi-agent tasks
     use agent-keyed observations, actions, rewards and done flags, with
     `done["__all__"]` controlling episode limits and autoreset.
 
     Args:
         env_name: Registered Jumanji environment name.
-        episode_length: Maximum episode length enforced by EvoRL.
+        episode_length: Shared native and EvoRL episode limit.
         parallel: Number of parallel environments.
         autoreset_mode: Episode autoreset behavior.
         discount: Discount for recording episode returns, or `None` to disable.
         record_ori_obs: Whether to record observations before autoreset.
         **kwargs: Arguments passed to the Jumanji environment constructor.
+            An explicit `time_limit` must equal `episode_length`.
 
     Returns:
         Environment with the requested vectorization and autoreset behavior.
+
+    Raises:
+        ValueError: A native `time_limit` conflicts with `episode_length`.
     """
+    if env_name.partition("-")[0] in _TIME_LIMIT_ENVS:
+        if "time_limit" in kwargs and kwargs["time_limit"] != episode_length:
+            raise ValueError(
+                "Configure the shared Jumanji time limit with episode_length "
+                "(max_episode_steps in YAML); time_limit must match it."
+            )
+        kwargs["time_limit"] = episode_length
     env = create_jumanji_env(env_name, **kwargs)
 
     if autoreset_mode == AutoresetMode.ENVPOOL:

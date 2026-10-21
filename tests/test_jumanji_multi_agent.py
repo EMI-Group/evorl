@@ -69,7 +69,7 @@ def test_multi_agent_step_preserves_native_rewards_actions_and_observations(env_
         native_discount = (
             expected.discount if expected.discount.ndim == 0 else expected.discount[i]
         )
-        np.testing.assert_array_equal(next_state.info.discount[agent], native_discount)
+        np.testing.assert_array_equal(next_state.done[agent], native_discount == 0)
         if hasattr(expected.observation, "action_mask"):
             np.testing.assert_array_equal(
                 next_state.obs[agent].action_mask, expected.observation.action_mask[i]
@@ -80,7 +80,13 @@ def test_multi_agent_step_preserves_native_rewards_actions_and_observations(env_
         np.testing.assert_allclose(next_state.reward["__all__"], expected.reward)
     else:
         assert "__all__" not in next_state.reward
-    np.testing.assert_array_equal(next_state.done["__all__"], expected.last())
+    np.testing.assert_array_equal(
+        next_state.done["__all__"], jnp.all(expected.discount == 0)
+    )
+    assert "discount" not in state.info
+    assert "discount" not in next_state.info
+    assert not state._internal
+    assert not next_state._internal
     # Global fields must not be accidentally sliced when their size equals N.
     if env_name == "MultiCVRP-v0":
         assert state.obs.agent_0.nodes.coordinates.shape == (21, 2)
@@ -131,10 +137,36 @@ def test_native_individual_termination_does_not_end_episode(monkeypatch):
     monkeypatch.setattr(env.unwrapped, "step", step)
     initial = jax.jit(env.reset)(jax.random.key(0))
     result = jax.jit(env.step)(initial, {agent: jnp.array(0) for agent in env.agents})
-    assert result.done.agent_0 == result._internal.termination.agent_0 == 1
+    assert result.done.agent_0 == 1
     assert result.done.agent_1 == result.done["__all__"] == 0
-    assert result._internal.truncation.agent_0 == 0
-    assert result._internal.termination["__all__"] == 0
+    assert jax.tree.all(jax.tree.map(lambda flag: flag == 0, initial.done))
+    assert not initial._internal
+    assert not result._internal
+    assert "discount" not in result.info
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("env_name", ["Connector-v3", "LevelBasedForaging-v0"])
+def test_native_timeout_is_left_for_matching_episode_wrapper(env_name):
+    env = create_jumanji_env(env_name, time_limit=1)
+    key = jax.random.key(0)
+    native = env.unwrapped
+    native_state, _ = jax.jit(native.reset)(key)
+    joint_action = jnp.zeros(native.action_spec.shape, native.action_spec.dtype)
+    expected_state, timestep = jax.jit(native.step)(native_state, joint_action)
+    assert timestep.last()
+    np.testing.assert_array_equal(timestep.discount, 1)
+
+    state = jax.jit(env.reset)(key)
+    result = jax.jit(env.step)(
+        state, {agent: joint_action[i] for i, agent in enumerate(env.agents)}
+    )
+    assert jax.tree.all(jax.tree.map(jnp.array_equal, result.env_state, expected_state))
+    for i, agent in enumerate(env.agents):
+        np.testing.assert_allclose(result.reward[agent], timestep.reward[i])
+    assert jax.tree.all(jax.tree.map(lambda flag: flag == 0, result.done))
+    assert "discount" not in result.info
+    assert not result._internal
 
 
 @pytest.mark.parametrize("actions", [{}, {"unexpected": jnp.array(0)}])

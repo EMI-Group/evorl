@@ -1,5 +1,4 @@
 env_name: jaxnav
 env_type: jaxmarl
 max_episode_steps: 100
-env_kwargs:
-  act_type: Discrete
+act_type: Discrete

@@ -13,19 +13,15 @@ from .gymnasium import create_gymnasium_env
 
 
 def create_env(env_cfg, **kwargs) -> BaseEnv:
-    """Unified env creator.
+    """Create an environment from configuration defaults and explicit overrides.
 
     Args:
-        env_cfg: The environment configuration. Gymnasium configurations can set
-            `obs_type` to select the Atari observation format. Gymnax
-            and JaxMARL configurations can set `env_kwargs` for environment
-            construction.
-            Jumanji multi-agent tasks use the `MultiAgentEnv` API automatically.
-            Brax and Playground configurations can set `reward_keys` to expose
-            selected per-step metrics as a multi-objective reward vector.
-        **kwargs: Additional keyword arguments for the environment creator.
-            Explicit `obs_type` and `env_kwargs` arguments override the
-            corresponding configuration values.
+        env_cfg: Configuration containing `env_name` and `env_type`. All other
+            fields are forwarded to the environment factory, with
+            `max_episode_steps` renamed to `episode_length`.
+        **kwargs: Factory arguments overriding configuration defaults, including
+            an explicit `None`. Use `episode_length` to override
+            `env_cfg.max_episode_steps`.
 
     Returns:
         The created environment.
@@ -33,30 +29,26 @@ def create_env(env_cfg, **kwargs) -> BaseEnv:
     env_type = env_cfg.env_type
     env_name = env_cfg.env_name
 
+    for name, value in env_cfg.items():
+        if name not in ("env_name", "env_type", "max_episode_steps"):
+            kwargs.setdefault(name, value)
+    if "max_episode_steps" in env_cfg:
+        kwargs.setdefault("episode_length", env_cfg.max_episode_steps)
+
     match env_type:
         case "brax":
-            if "reward_keys" in env_cfg:
-                kwargs.setdefault("reward_keys", env_cfg.reward_keys)
             env = create_wrapped_brax_env(env_name, **kwargs)
         case "playground":
-            if "reward_keys" in env_cfg:
-                kwargs.setdefault("reward_keys", env_cfg.reward_keys)
             env = create_wrapped_mujoco_playground_env(env_name, **kwargs)
         case "gymnax":
-            if "env_kwargs" in env_cfg:
-                kwargs.setdefault("env_kwargs", env_cfg.env_kwargs)
             env = create_wrapped_gymnax_env(env_name, **kwargs)
         case "jumanji":
             env = create_wrapped_jumanji_env(env_name, **kwargs)
         case "jaxmarl":
-            if "env_kwargs" in env_cfg:
-                kwargs.setdefault("env_kwargs", env_cfg.env_kwargs)
             env = create_wrapped_jaxmarl_env(env_name, **kwargs)
         case "envpool":
             env = create_envpool_env(env_name, **kwargs)
         case "gymnasium":
-            if "obs_type" in env_cfg:
-                kwargs.setdefault("obs_type", env_cfg.obs_type)
             env = create_gymnasium_env(env_name, **kwargs)
         case _:
             raise ValueError(f"env_type {env_type} not supported")

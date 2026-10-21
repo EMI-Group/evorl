@@ -2,8 +2,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from omegaconf import OmegaConf
 
 from evorl.envs import (
+    create_env,
     create_wrapped_brax_env,
     AutoresetMode,
     Box,
@@ -68,13 +70,19 @@ def test_has_brax_wrapper():
 @pytest.mark.parametrize("autoreset_mode", list(AutoresetMode))
 @pytest.mark.parametrize("obs_mode", ["ndarray", "dict_state"])
 def test_brax_fast(autoreset_mode, obs_mode):
-    env = create_wrapped_brax_env(
-        "fast",
+    config = OmegaConf.create(
+        dict(
+            env_name="fast",
+            env_type="brax",
+            max_episode_steps=2,
+            obs_mode=obs_mode,
+            asymmetric_obs=obs_mode == "dict_state",
+        )
+    )
+    env = create_env(
+        config,
         parallel=2,
-        episode_length=2,
         autoreset_mode=autoreset_mode,
-        obs_mode=obs_mode,
-        asymmetric_obs=obs_mode == "dict_state",
     )
     assert env.action_space.shape == (1,)
     np.testing.assert_array_equal(env.action_space.low, [-1.0])

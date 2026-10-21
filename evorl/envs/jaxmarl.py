@@ -1,5 +1,4 @@
 from collections.abc import Mapping
-from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -230,7 +229,6 @@ def create_wrapped_jaxmarl_env(
     autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
     discount: float | None = 1.0,
     record_ori_obs: bool = False,
-    env_kwargs: Mapping[str, Any] | None = None,
     **kwargs,
 ) -> BaseEnv[AgentMapping[Action], AgentMapping[Space]]:
     """Create a JaxMARL environment with EvoRL episode and autoreset wrappers.
@@ -242,15 +240,12 @@ def create_wrapped_jaxmarl_env(
         autoreset_mode: EvoRL reset mode; native `step` autoreset is bypassed.
         discount: Discount for per-agent episode returns, or `None` to disable.
         record_ori_obs: Preserve terminal observations for same-step autoreset.
-        env_kwargs: Native environment constructor options from configuration.
-        **kwargs: Native constructor arguments, overriding `env_kwargs` entries.
+        **kwargs: Native environment constructor arguments for `jaxmarl.make`.
 
     Returns:
         A vectorized environment preserving per-agent rewards and observations.
     """
-    native_kwargs = dict(env_kwargs or {})
-    native_kwargs.update(kwargs)
-    env = create_jaxmarl_env(env_name, **native_kwargs)
+    env = create_jaxmarl_env(env_name, **kwargs)
     if autoreset_mode == AutoresetMode.ENVPOOL:
         record_ori_obs = False
     if autoreset_mode == AutoresetMode.DISABLED:

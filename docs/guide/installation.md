@@ -100,35 +100,6 @@ Multi-agent rewards remain agent-keyed mappings.
 Examples are `brax/ant_multi_objective` and
 `playground/dm_control_suite/CartpoleBalance_multi_objective`.
 
-### Gymnax (best effort)
-
-Gymnax 1.0.0 declares older JAX and Gymnasium version bounds. After installing
-EvoRL, use uv to override these bounds without creating a separate file:
-
-```shell
-uv pip install "gymnax==1.0.0" --overrides - <<'EOF'
-jax>=0.10.0
-gymnasium>=1.4.0
-EOF
-```
-
-### JaxMARL (best effort)
-
-JaxMARL requires Gymnax, so support is best effort because of its dependency
-bounds. If installation conflicts occur, use the [Gymnax uv overrides](#gymnax-best-effort)
-above with `jaxmarl>=0.2.0` as the installation target.
-
-JaxMARL 0.2.0 or newer uses `MultiAgentEnv` with EvoRL episode and autoreset
-wrappers. Configurations cover MPE, SMAX, Switch Riddle, Hanabi, OvercookedV2,
-CoinGame and JaxNav, including continuous and discrete JaxNav actions. Use
-`env_kwargs` in an environment YAML to select native constructor options such
-as an OvercookedV2 layout.
-
-SMAX and Hanabi observations contain `observation` and `action_mask` fields.
-Native global observations are available in `info.global_obs` when provided.
-MABrax has been removed. STORM's nonuniform native APIs and the separately
-installed JaxRobotarium environments are not included in this adapter.
-
 ### Jumanji
 
 Jumanji single-agent tasks use `Env`; multi-agent tasks use `MultiAgentEnv` with
@@ -143,26 +114,58 @@ the native joint observation. Masks are provided to policies without enforcing
 action selection. Single-agent MultiDiscrete actions remain integer arrays.
 SearchAndRescue's continuous actions retain their native `[-1, 1]` bounds.
 
-Episode limits and autoreset use EvoRL's wrappers. Native Jumanji truncations
-remain truncations. YAML configurations are in `configs/env/jumanji/`, grouped
+Set `max_episode_steps` as the shared episode limit. Tasks with a native
+`time_limit` receive it at construction, and EvoRL's episode wrapper uses the
+same value. Wrapped environments preserve native termination and truncation; tasks
+without a native time limit are externally truncated. Native rewards and
+generators are unchanged. Autoreset uses EvoRL's wrappers.
+YAML configurations are in `configs/env/jumanji/`, grouped
 by task family. Default Sokoban requires an external level dataset and has no
 bundled YAML.
 
+### Gymnax (best effort)
+
+Gymnax 1.0.1 requires JAX below 0.12 and Gymnasium below 1.4. No dependency
+overrides are needed. From a source checkout, create an environment and install
+compatible versions together:
+
+```shell
+uv venv --python 3.14
+source .venv/bin/activate
+uv pip install -e ".[gymnax,jaxmarl]" "gymnax>=1.0.1" "jax[cuda13]>=0.10.0,<0.12"
+```
+
+The CUDA 13 extra enables NVIDIA GPU support. For CPU-only installation, replace
+`jax[cuda13]` with `jax` while keeping the version bounds. See the
+[JAX installation guide](https://docs.jax.dev/en/latest/installation.html) for
+platform and driver requirements.
+
+### JaxMARL (best effort)
+
+JaxMARL depends on Gymnax; the command above installs both.
+
+JaxMARL 0.2.0 or newer uses `MultiAgentEnv` with EvoRL episode and autoreset
+wrappers. Configurations cover MPE, SMAX, Switch Riddle, Hanabi, OvercookedV2,
+CoinGame and JaxNav, including continuous and discrete JaxNav actions. Set native
+constructor options such as `layout` and `act_type` at the top level of the
+environment YAML. Explicit arguments to `create_env()` override YAML values.
+
+SMAX and Hanabi observations contain `observation` and `action_mask` fields.
+Native global observations are available in `info.global_obs` when provided.
+MABrax has been removed. STORM's nonuniform native APIs and the separately
+installed JaxRobotarium environments are not included in this adapter.
+
 ### Environment support
 
-| Environment Library                                                        | Descriptions                            |
-| -------------------------------------------------------------------------- | --------------------------------------- |
-| [Brax](https://github.com/google/brax)                                     | Robotic control                         |
-| [MuJoCo Playground](https://github.com/google-deepmind/mujoco_playground)  | Robotic control                         |
-| [gymnax (experimental)](https://github.com/RobertTLange/gymnax)            | classic control, bsuite, MinAtar        |
-| [JaxMARL (experimental)](https://github.com/FLAIROx/JaxMARL)               | Multi-agent Envs                        |
-| [Jumanji (experimental)](https://github.com/instadeepai/jumanji)           | Game, Combinatorial optimization        |
-| [EnvPool (experimental)](https://github.com/sail-sg/envpool)               | High-performance CPU-based environments |
-| [Gymnasium (experimental)](https://github.com/Farama-Foundation/Gymnasium) | Standard CPU-based environments         |
-
-```{attention}
-These experimental environments have limited supports, some algorithms are incompatible with them.
-```
+| Environment Library                                                    | Description                            |
+| ---------------------------------------------------------------------- | -------------------------------------- |
+| [Brax](https://github.com/google/brax)                                   | Robotic control                        |
+| [MuJoCo Playground](https://github.com/google-deepmind/mujoco_playground) | Robotic control                        |
+| [Jumanji](https://github.com/instadeepai/jumanji)                         | Games and combinatorial optimization   |
+| [EnvPool](https://github.com/sail-sg/envpool)                             | High-performance CPU-based environments |
+| [Gymnasium](https://github.com/Farama-Foundation/Gymnasium)               | Standard CPU-based environments        |
+| [Gymnax (best effort)](https://github.com/RobertTLange/gymnax)             | Classic control, bsuite and MinAtar     |
+| [JaxMARL (best effort)](https://github.com/FLAIROx/JaxMARL)                | Multi-agent environments               |
 
 ```{attention}
 Users with NVIDIA Ampere architecture GPUs (e.g., RTX 30 and 40 series) may experience reproducibility issues in `mujoco_playground` due to JAX’s default use of TF32 for matrix multiplications. See [Reproducibility / GPU Precision Issues](https://github.com/google-deepmind/mujoco_playground?tab=readme-ov-file#reproducibility--gpu-precision-issues)

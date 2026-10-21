@@ -12,6 +12,7 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `workflows/test_execution.py` | Template state layouts, population selection/transfer and per-member statistics |
 | Other `workflows/` tests | Training budgets, final evaluation/checkpoints, warmup and EC accounting |
 | `helpers/` | Reusable toy environment and compiled-communication inspection |
+| `test_env_factory.py` | YAML argument forwarding, episode-limit defaults and explicit override precedence across environment factories |
 | `test_host_envs.py` | Ordered host effects across resets, constant actions, nested `vmap`, autoreset modes and Atari RGB/RAM configuration |
 | `test_host_env_shapes.py` | Scalar/matrix actions, array/nested Dict observations, terminal observations, nested `vmap` and unsupported spaces/modes |
 | `test_envpool_catalog.py` / `test_gymnasium_catalog.py` | Configured task shapes/dtypes under JIT, including nested EnvPool populations |
@@ -19,13 +20,13 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `workflows/test_host_envs.py` | Real PPO training/evaluation and nested PBT/OpenES populations with both host backends |
 | `workflows/test_eval_batching.py` | Pure JAX and host early-stop metrics/final states, mixed shared/mapped agent leaves and keys |
 | `test_brax_env.py::test_brax_fast` | Brax Fast action bounds, array/dict observations and all autoreset modes |
-| `test_gymnax_env.py` | Constructor arguments, `EnvParams` overrides, unknown argument errors and EvoRL episode limits |
+| `test_gymnax_env.py` | Configured environments under JIT, constructor and `EnvParams` overrides, unknown argument errors, and nested vmap across episode resets in all four autoreset modes |
 | `test_multi_agent_env.py` | Shared environment/wrapper interfaces, individual and whole-episode boundaries, per-agent returns, terminal/global observations and nested autoreset |
 | `test_jaxmarl_env.py` | Configured native transitions, per-agent spaces/rewards, legal action masks, global observations and all autoreset modes under nested `vmap` |
 | `test_vector_rewards.py` | Scalar and vector reward shapes, terminal masking, nested evaluation, action repeat, reward scaling, autoreset and native Brax/Playground metric selection |
 | `test_jumanji_env.py` | Native state conversion, structured observations, extras and action spaces |
-| `test_jumanji_multi_agent.py` | Native reward/discount preservation, joint actions, per-agent spaces, masks and observations for all seven multi-agent tasks |
-| `test_jumanji_autoreset.py` | EvoRL wrapper selection, staggered episodes and reset keys, terminal masks/observations, native truncation and frozen evaluation states |
+| `test_jumanji_multi_agent.py` | Native states/rewards, discount-to-done conversion, native timeouts, joint actions, per-agent spaces, masks and observations for all seven multi-agent tasks |
+| `test_jumanji_autoreset.py` | EvoRL wrapper selection, staggered episodes and reset keys, terminal masks/observations, shared native time limits, termination/truncation and frozen evaluation states |
 | `test_jumanji_catalog.py` | Registered spaces, YAML tasks under nested `vmap`, serial references and in-memory Sokoban levels |
 | `workflows/test_jumanji_env.py` | PPO training/evaluation with dictionary observations and RandomAgent evaluation with integer vector actions |
 | Root `test_*.py` files | Existing unit, dependency, checkpoint, environment and algorithm tests |

@@ -1,5 +1,7 @@
 """Check Gymnax construction and parameter overrides with the real backend."""
 
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -10,6 +12,11 @@ pytest.importorskip("gymnax")
 
 from evorl.envs import create_env
 from evorl.envs.gymnax import create_gymnax_env, create_wrapped_gymnax_env
+from evorl.envs.wrappers.training_wrapper import AutoresetMode
+
+CONFIGS = sorted(
+    (Path(__file__).resolve().parents[1] / "configs/env/gymnax").glob("*.yaml")
+)
 
 
 @pytest.mark.parametrize("factory", ["base", "wrapped", "config", "override"])
@@ -77,3 +84,55 @@ def test_gymnax_constructor_and_params(factory):
 def test_gymnax_unknown_arguments(create, kwargs, field):
     with pytest.raises(TypeError, match=field):
         create("DeepSea-bsuite", **kwargs)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("config_path", CONFIGS, ids=lambda p: p.stem)
+def test_configured_environment_reset_and_step(config_path):
+    config = OmegaConf.load(config_path)
+    env = create_env(config, parallel=2, record_ori_obs=True)
+    state = jax.jit(env.reset)(jax.random.key(0))
+    actions = jax.vmap(env.action_space.sample)(jax.random.split(jax.random.key(1), 2))
+    state = jax.jit(env.step)(state, actions)
+    assert state.obs.shape == (2, *env.obs_space.shape)
+    assert state.reward.shape == state.done.shape == (2,)
+    assert state.reward.dtype == state.done.dtype == jnp.float32
+    assert jnp.all(jnp.isfinite(state.obs))
+    assert jnp.all(jnp.isfinite(state.reward))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("mode", list(AutoresetMode))
+@pytest.mark.parametrize("env_name", ["CartPole-v1", "Pendulum-v1", "Breakout-MinAtar"])
+def test_nested_vmap_matches_independent_worlds(env_name, mode):
+    env = create_wrapped_gymnax_env(
+        env_name,
+        parallel=2,
+        episode_length=2,
+        autoreset_mode=mode,
+        record_ori_obs=True,
+        discount=0.5,
+    )
+    keys = jax.random.split(jax.random.key(0), (2, 1))
+    state = jax.jit(jax.vmap(jax.vmap(env.reset)))(keys)
+    reset = jax.jit(env.reset)
+    serial = [reset(keys[i, 0]) for i in range(2)]
+    step = jax.jit(env.step)
+    nested_step = jax.jit(jax.vmap(jax.vmap(env.step)))
+    actions = jax.vmap(jax.vmap(jax.vmap(env.action_space.sample)))(
+        jax.random.split(jax.random.key(1), (2, 1, 2))
+    )
+    for _ in range(4):
+        state = nested_step(state, actions)
+        serial = [step(serial[i], actions[i, 0]) for i in range(2)]
+        expected = jax.tree.map(lambda *xs: jnp.stack(xs)[:, None], *serial)
+        assert jax.tree.structure(state) == jax.tree.structure(expected)
+        for actual, reference in zip(
+            jax.tree.leaves(state), jax.tree.leaves(expected), strict=True
+        ):
+            if jax.dtypes.issubdtype(actual.dtype, jax.dtypes.prng_key):
+                np.testing.assert_array_equal(
+                    jax.random.key_data(actual), jax.random.key_data(reference)
+                )
+                continue
+            np.testing.assert_allclose(actual, reference, atol=1e-6, rtol=1e-5)

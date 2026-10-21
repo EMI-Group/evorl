@@ -38,10 +38,13 @@ def test_step_matches_native_state_and_preserves_input(jit):
     )
     np.testing.assert_array_equal(next_state.reward, transition.reward)
     np.testing.assert_array_equal(next_state.done, transition.last())
-    np.testing.assert_array_equal(next_state.info.discount, transition.discount)
+    assert "discount" not in state.info
+    assert "discount" not in next_state.info
     assert isinstance(env.obs_space, SpaceContainer)
     assert isinstance(env.action_space, Discrete)
     assert env.obs_space.contains(next_state.obs)
+    assert not state._internal
+    assert not next_state._internal
 
 
 def test_step_updates_extras_without_mutating_previous_state(jit):

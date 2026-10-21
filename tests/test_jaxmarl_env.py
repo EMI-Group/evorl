@@ -46,7 +46,12 @@ def sample_actions(env, state):
 @pytest.mark.parametrize("config_path", CONFIGS, ids=lambda p: p.stem)
 def test_configured_environment_matches_native_transition(config_path):
     config = OmegaConf.load(config_path)
-    env = create_jaxmarl_env(config.env_name, **config.get("env_kwargs", {}))
+    kwargs = {
+        name: value
+        for name, value in config.items()
+        if name not in ("env_name", "env_type", "max_episode_steps")
+    }
+    env = create_jaxmarl_env(config.env_name, **kwargs)
     assert isinstance(env, MultiAgentEnv)
     key = jax.random.key(7)
     step_key, reset_key = jax.random.split(key)
@@ -173,17 +178,16 @@ def test_nested_vmap_matches_independent_worlds(env_name, mode):
 
 @pytest.mark.parametrize(
     "overrides",
-    [{}, {"env_kwargs": {"layout": "cramped_room"}}, {"layout": "cramped_room"}],
+    [{}, {"layout": "cramped_room"}],
 )
 def test_factory_forwards_native_configuration(overrides):
     config = PyTreeDict(
         env_type="jaxmarl",
         env_name="overcooked_v2",
-        env_kwargs=PyTreeDict(layout="forced_coord"),
+        max_episode_steps=2,
+        layout="forced_coord",
     )
-    env = create_env(
-        config, parallel=2, episode_length=2, record_ori_obs=True, **overrides
-    )
+    env = create_env(config, parallel=2, record_ori_obs=True, **overrides)
     state = jax.jit(env.reset)(jax.random.key(0))
     assert state.obs.agent_0.shape[0] == 2
     assert env.unwrapped.env.width == 5

@@ -1,5 +1,7 @@
 # 开发待办
 
+- [ ] 清理算法构建环境时重复传入的 `episode_length`。
+  `create_env()` 已将环境配置中的 `max_episode_steps` 作为默认 `episode_length`；算法侧统一使用该配置，仅在确有不同上限需求时显式覆盖。
 - [x] PRNGKey 改为新 API（`jax.random.key` / typed keys）。
   已迁移构造函数、批量 key 处理及 host callback，并验证 typed key checkpoint；不支持旧 checkpoint 格式迁移。
 - [x] 检查 `check_vma=False` 相关使用地方的合理性。
