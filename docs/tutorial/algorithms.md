@@ -40,7 +40,7 @@ Workflows for Single objective EC are derived from [`ECWorkflowTemplate`](#evorl
 | CMA-ES    | [`CMAESWorkflow`](#evorl.algorithms.ec.so.cmaes.CMAESWorkflow)              | Deterministic | Continuous             |
 
 
-Workflows for Multi-objective EC are derived from [`MultiObjectiveECWorkflowTemplate`](#evorl.workflows.ec_workflow.MultiObjectiveECWorkflowTemplate). Currently, we provide NSGA-II with [`NSGA2Workflow`](#evorl.algorithms.ec.mo.nsga2_brax.NSGA2Workflow) for brax environments.
+Workflows for multi-objective EC derive from [`MultiObjectiveECWorkflowTemplate`](#evorl.workflows.ec_workflow.MultiObjectiveECWorkflowTemplate). [`NSGA2Workflow`](#evorl.algorithms.ec.mo.nsga2_brax.NSGA2Workflow) uses the standard evaluator with vector rewards from Brax or MuJoCo Playground. Select objectives with `env.reward_keys`, for example `env=brax/ant_multi_objective agent=ec/nsga2-brax`. Fitness averages episode returns over episodes and preserves the objective axis. Episode lengths remain a separate statistic.
 
 ## ERL Algorithms
 

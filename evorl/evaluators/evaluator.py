@@ -54,7 +54,11 @@ class Evaluator(PyTreeNode):
             num_episodes: The number of episodes to evaluate.
 
         Returns:
-            EvaluateMetric(episode_returns, episode_lengths).
+            Evaluation metrics. For scalar rewards, `episode_returns` has
+            shape `(actual_num_episodes,)`; for vector rewards it has shape
+            `(actual_num_episodes, num_objectives)`. `episode_lengths` always
+            has shape `(actual_num_episodes,)`. Episode counts are rounded up
+            to complete environment batches.
         """
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)
@@ -111,9 +115,9 @@ class Evaluator(PyTreeNode):
             _evaluate_fn, key, (), length=num_iters
         )
 
-        # [#iters, #envs] -> [num_episodes]
+        # Merge evaluation batches and environments, preserving objective axes.
         eval_metrics = EvaluateMetric(
-            episode_returns=episode_returns.flatten(),
+            episode_returns=episode_returns.reshape((-1, *episode_returns.shape[2:])),
             episode_lengths=episode_lengths.flatten(),
         )
 

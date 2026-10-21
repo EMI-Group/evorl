@@ -1,0 +1,4 @@
+env_type: playground
+env_name: CartpoleBalance
+max_episode_steps: 1000
+reward_keys: [reward/upright, reward/centered]

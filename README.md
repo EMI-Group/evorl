@@ -191,14 +191,14 @@ Currently, EvoRL supports 4 types of algorithms
 
 # RL Environments
 
-By default, `pip install evorl-jax` will automatically install environments on `brax`. If you want to use other supported environments, please install the additional environment packages. We provide useful extras for different environments.
+Brax and MuJoCo Playground are supported by default and installed with
+`pip install evorl-jax` (or `pip install -e .` from source). Other supported
+environment libraries can be installed through extras.
 
 For example:
 
 ```shell
 # ===== GPU-accelerated Environments =====
-# Mujoco playground Envs:
-pip install -e ".[mujoco-playground]"
 # gymnax Envs:
 pip install -e ".[gymnax]"
 # Jumanji Envs:

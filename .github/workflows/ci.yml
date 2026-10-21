@@ -111,6 +111,7 @@ jobs:
           python -m pytest --import-mode=importlib \
             "$GITHUB_WORKSPACE/tests/test_host_envs.py" \
             "$GITHUB_WORKSPACE/tests/test_host_env_shapes.py" \
+            "$GITHUB_WORKSPACE/tests/test_vector_rewards.py" \
             "$GITHUB_WORKSPACE/tests/test_jumanji_env.py" \
             "$GITHUB_WORKSPACE/tests/test_multi_agent_env.py" \
             "$GITHUB_WORKSPACE/tests/test_jaxmarl_env.py" \

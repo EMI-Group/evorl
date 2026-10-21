@@ -1,0 +1,4 @@
+env_name: ant
+env_type: brax
+max_episode_steps: 1000
+reward_keys: [reward_forward, reward_ctrl]

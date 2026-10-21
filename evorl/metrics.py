@@ -93,8 +93,10 @@ class EvaluateMetric(MetricBase):
     """Evaluation metrics for RLWorkflow.
 
     Attributes:
-        episode_returns: The return array of evaluation episodes.
-        episode_lengths: The length array of evaluation episodes.
+        episode_returns: Returns with shape `(num_episodes,)` for scalar rewards
+            or `(num_episodes, num_objectives)` for vector rewards.
+        episode_lengths: Episode lengths with shape `(num_episodes,)`,
+            independent of the number of reward objectives.
     """
 
     episode_returns: jax.Array = metric_field(reduce_fn=pmean)

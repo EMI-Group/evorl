@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -12,6 +14,7 @@ from evorl.types import Action, PyTreeDict
 from .env import BaseEnv, EnvAdapter, EnvState
 from .space import Box, Space, SpaceContainer
 from .utils import sort_dict
+from .wrappers.reward_wrapper import BraxMultiObjectiveRewardWrapper
 from .wrappers.training_wrapper import (
     AutoresetMode,
     EpisodeWrapper,
@@ -123,6 +126,7 @@ def create_wrapped_brax_env(
     autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
     discount: float | None = 1.0,
     record_ori_obs: bool = False,
+    reward_keys: Sequence[str] | None = None,
     **kwargs,
 ) -> BaseEnv[Action, Space]:
     """Create wrapped Brax environment for training.
@@ -134,6 +138,9 @@ def create_wrapped_brax_env(
         autoreset_mode: Autoreset mode.
         discount: Discount factor.
         record_ori_obs: Whether record original observation in AutoresetMode.NORMAL and AutoresetMode.FAST mode.
+        reward_keys: Per-step metric names to expose as a reward vector. `None`
+            preserves the native scalar reward; a single key produces `(1,)`
+            rewards before vectorization.
         kwargs: Other arguments passing into Brax.
 
     Returns:
@@ -141,6 +148,8 @@ def create_wrapped_brax_env(
 
     """
     env = create_brax_env(env_name, **kwargs)
+    if reward_keys is not None:
+        env = BraxMultiObjectiveRewardWrapper(env, reward_keys)
 
     if autoreset_mode == AutoresetMode.ENVPOOL:
         # envpool mode will always record last obs

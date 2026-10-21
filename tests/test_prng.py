@@ -165,30 +165,45 @@ def test_gymnasium_callback_accepts_typed_keys(monkeypatch):
 
 
 @pytest.mark.parametrize("batch_shape", [(3,), (2, 3)])
-def test_multiobjective_evaluator_maps_typed_key_batch_axes(monkeypatch, batch_shape):
-    from evorl.evaluators import mo_brax_evaluator
+def test_multiobjective_evaluator_maps_typed_key_batch_axes(batch_shape):
+    from evorl.evaluators import Evaluator
+    from evorl.envs.wrappers import BraxMultiObjectiveRewardWrapper
 
     class MetricEnv(FakeEnv):
         def reset(self, key):
             state = super().reset(key)
-            state.info.metrics = PyTreeDict()
+            state.info.metrics = PyTreeDict(value=state.reward)
             return state
 
-    monkeypatch.setattr(mo_brax_evaluator, "BraxAdapter", MetricEnv)
+        def step(self, state, action):
+            state = super().step(state, action)
+            return state.replace(
+                info=state.info.replace(metrics=PyTreeDict(value=state.reward))
+            )
+
     env = wrappers.VmapWrapper(
-        MetricEnv(jnp.ones(2), jnp.array([0.0, 1.0])), num_envs=2
+        wrappers.OneEpisodeWrapper(
+            BraxMultiObjectiveRewardWrapper(
+                MetricEnv(jnp.ones(2), jnp.array([0.0, 1.0])), ("value",)
+            ),
+            episode_length=2,
+        ),
+        num_envs=2,
     )
 
     def action_fn(state, batch, key):
         return jnp.zeros(batch.obs.shape[:-1], dtype=jnp.int32), PyTreeDict()
 
-    evaluator = mo_brax_evaluator.BraxEvaluator(
+    evaluator = Evaluator(
         env=env,
         action_fn=action_fn,
         max_episode_steps=2,
     )
     keys = jax.random.split(jax.random.key(0), batch_shape)
-    metrics = jax.jit(lambda k: evaluator.evaluate(None, k, 4))(keys)
-    assert metrics.reward.shape == (*batch_shape, 4)
-    np.testing.assert_array_equal(metrics.reward, 2.0)
+    evaluate = lambda k: evaluator.evaluate(None, k, 4)
+    for _ in batch_shape:
+        evaluate = jax.vmap(evaluate)
+    metrics = jax.jit(evaluate)(keys)
+    assert metrics.episode_returns.shape == (*batch_shape, 4, 1)
+    np.testing.assert_array_equal(metrics.episode_returns, 2.0)
     np.testing.assert_array_equal(metrics.episode_lengths, 2)

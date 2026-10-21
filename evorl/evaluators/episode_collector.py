@@ -62,7 +62,9 @@ class EpisodeCollector(PyTreeNode):
         Returns:
             A tuple `(metrics, trajectory)`. Metrics contain discounted episode
             returns and lengths; the trajectory has shape
-            `(max_episode_steps, actual_num_episodes, ...)`.
+            `(max_episode_steps, actual_num_episodes, ...)`. Vector rewards
+            retain their final objective axis in both rewards and returns;
+            episode lengths have no objective axis.
         """
         num_envs = self.env.num_envs
         num_iters = math.ceil(num_episodes / num_envs)

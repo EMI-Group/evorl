@@ -3,13 +3,14 @@ from enum import Enum
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+from evorl.types import Action
 from evorl.utils.jax_utils import ensure_batched_key, rng_split
 
-from ..env import BaseEnv, EnvState, get_episode_done
+from ..env import Env, EnvState, get_episode_done
 from .wrapper import Wrapper
 
 
-class EpisodeWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
+class EpisodeWrapper(Wrapper):
     """Maintains episode step count and sets done at episode end.
 
     This is the same as brax's EpisodeWrapper, and add some new fields in transition.info.
@@ -28,7 +29,7 @@ class EpisodeWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
 
     def __init__(
         self,
-        env: BaseEnv[ActionT, SpaceT],
+        env: Env,
         episode_length: int,
         record_ori_obs: bool = True,
         discount: float | None = None,
@@ -68,10 +69,10 @@ class EpisodeWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
 
         return state.replace(info=info)
 
-    def step(self, state: EnvState, action: ActionT) -> EnvState:
+    def step(self, state: EnvState, action: Action) -> EnvState:
         return self._step(state, action)
 
-    def _step(self, state: EnvState, action: ActionT) -> EnvState:
+    def _step(self, state: EnvState, action: Action) -> EnvState:
         prev_done = get_episode_done(state.done)
         # reset steps when prev episode is done(truncation or termination)
         steps = state.info.steps * (1 - prev_done).astype(jnp.int32)
@@ -138,14 +139,14 @@ class EpisodeWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
         return state.replace(done=done, info=info)
 
 
-class OneEpisodeWrapper[ActionT, SpaceT](EpisodeWrapper[ActionT, SpaceT]):
+class OneEpisodeWrapper(EpisodeWrapper):
     """Maintains episode step count and sets done at episode end.
 
     When call step() after the env is done, stop simulation and
     directly return previous state.
     """
 
-    def step(self, state: EnvState, action: ActionT) -> EnvState:
+    def step(self, state: EnvState, action: Action) -> EnvState:
         new_state = self._step(state, action)
         # Select old state when already done (via jnp.where on leaves).
         # We avoid lax.cond here because under jax.vmap it traces both
@@ -157,12 +158,10 @@ class OneEpisodeWrapper[ActionT, SpaceT](EpisodeWrapper[ActionT, SpaceT]):
         )
 
 
-class VmapWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
+class VmapWrapper(Wrapper):
     """Vectorize env."""
 
-    def __init__(
-        self, env: BaseEnv[ActionT, SpaceT], num_envs: int = 1, vmap_step: bool = False
-    ):
+    def __init__(self, env: Env, num_envs: int = 1, vmap_step: bool = False):
         """Initialize the env wrapper.
 
         Args:
@@ -184,17 +183,17 @@ class VmapWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
 
         return jax.vmap(self.env.reset)(key)
 
-    def step(self, state: EnvState, action: ActionT) -> EnvState:
+    def step(self, state: EnvState, action: Action) -> EnvState:
         if self.vmap_step:
             return jax.vmap(self.env.step)(state, action)
         else:
             return jax.lax.map(lambda x: self.env.step(*x), (state, action))
 
 
-class VmapAutoResetWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
+class VmapAutoResetWrapper(Wrapper):
     """Vectorize env and Autoreset."""
 
-    def __init__(self, env: BaseEnv[ActionT, SpaceT], num_envs: int = 1):
+    def __init__(self, env: Env, num_envs: int = 1):
         """Initialize the env wrapper.
 
         Args:
@@ -218,7 +217,7 @@ class VmapAutoResetWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
 
         return state
 
-    def step(self, state: EnvState, action: ActionT) -> EnvState:
+    def step(self, state: EnvState, action: Action) -> EnvState:
         state = jax.vmap(self.env.step)(state, action)
 
         # Map heterogeneous computation (non-parallelizable).
@@ -258,13 +257,13 @@ class VmapAutoResetWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
         )
 
 
-class FastVmapAutoResetWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
+class FastVmapAutoResetWrapper(Wrapper):
     """Brax-style AutoReset: no randomness in reset.
 
     This wrapper reuses the state in the return of `env.reset()`. When the episodes have short length or the `env.reset()` is expensive, This wrapper is more efficient than `VmapAutoResetWrapper`.
     """
 
-    def __init__(self, env: BaseEnv[ActionT, SpaceT], num_envs: int = 1):
+    def __init__(self, env: Env, num_envs: int = 1):
         """Initialize the env wrapper.
 
         Args:
@@ -290,7 +289,7 @@ class FastVmapAutoResetWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
 
         return state
 
-    def step(self, state: EnvState, action: ActionT) -> EnvState:
+    def step(self, state: EnvState, action: Action) -> EnvState:
         state = jax.vmap(self.env.step)(state, action)
 
         def where_done(x, y):
@@ -318,7 +317,7 @@ class FastVmapAutoResetWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
         return state
 
 
-class VmapEnvPoolAutoResetWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
+class VmapEnvPoolAutoResetWrapper(Wrapper):
     """EnvPool style AutoReset.
 
     When the episode ends, an additional reset step is performed.
@@ -326,7 +325,7 @@ class VmapEnvPoolAutoResetWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
     This is helpful for algorithms that require n-step TD or GAE with Partial episode bootstrapping (PEB) support on time-limited environments. When using this wrapper, remember to skip the invalid transitions via the mask `autoreset`.
     """
 
-    def __init__(self, env: BaseEnv[ActionT, SpaceT], num_envs: int = 1):
+    def __init__(self, env: Env, num_envs: int = 1):
         """Initialize the env wrapper.
 
         Args:
@@ -351,7 +350,7 @@ class VmapEnvPoolAutoResetWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
 
         return state
 
-    def step(self, state: EnvState, action: ActionT) -> EnvState:
+    def step(self, state: EnvState, action: Action) -> EnvState:
         autoreset = get_episode_done(state.done)  # i.e. prev_done
 
         def _where_autoreset(x, y):

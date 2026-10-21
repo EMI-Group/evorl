@@ -88,6 +88,7 @@ dependencies = [
     # Typed-key abstract restore support in the checkpoint V0 API.
     "orbax-checkpoint>=0.11.30",
     "pandas",
+    "playground",
     "scipy",
 ]
 
@@ -106,7 +107,6 @@ neptune = ["neptune-scale"]
 gymnax = ["gymnax"]
 jumanji = ["jumanji>=1.1.2"]
 jaxmarl = ["jaxmarl>=0.2.0"]
-mujoco-playground = ["playground"]
 envpool = ["envpool"]
 gymnasium = ["gymnasium[atari,mujoco,classic-control,box2d]>=1.1.0"]
 dev = [

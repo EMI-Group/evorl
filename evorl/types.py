@@ -20,6 +20,9 @@ Action = jax.Array | Mapping[str, jax.Array]
 # outer mapping below represents agents, rather than fields of one agent.
 type EnvObservation = Observation | AgentMapping[Observation]
 type EnvAction = Action | AgentMapping[Action]
+# Before vectorization, single-agent rewards are scalar arrays with shape `()`
+# or multi-objective vectors with shape `(num_objectives,)`, even for one
+# objective. Multi-agent rewards use an outer agent-keyed mapping.
 Reward = jax.Array | AgentMapping[jax.Array]
 Done = jax.Array | AgentMapping[jax.Array]
 PolicyExtraInfo = Mapping[str, Any]

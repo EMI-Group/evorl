@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env
-from evorl.evaluators import BraxEvaluator
+from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
 from evorl.ec.optimizers.ec_optimizer import ECState
 from evorl.utils.ec_utils import ParamVectorSpec
@@ -25,6 +25,11 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:
+        reward_keys = config.env.get("reward_keys")
+        if not reward_keys:
+            raise ValueError(
+                "NSGA2 requires env.reward_keys to select reward objectives."
+            )
         env = create_env(
             config.env,
             episode_length=config.env.max_episode_steps,
@@ -52,7 +57,7 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
             algorithm=NSGA2(
                 lb=jnp.full((param_vec_spec.vec_size,), config.agent_network.lb),
                 ub=jnp.full((param_vec_spec.vec_size,), config.agent_network.ub),
-                n_objs=len(config.metric_names),
+                n_objs=len(reward_keys),
                 pop_size=config.pop_size,
             ),
             param_vec_spec=param_vec_spec,
@@ -63,12 +68,11 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
         else:
             action_fn = agent.evaluate_actions
 
-        ec_evaluator = BraxEvaluator(
+        ec_evaluator = Evaluator(
             env=env,
             action_fn=action_fn,
             max_episode_steps=config.env.max_episode_steps,
             discount=config.discount,
-            metric_names=tuple(config.metric_names),
         )
 
         agent_state_vmap_axes = AgentState(
@@ -143,7 +147,7 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
                 pf_objectives = train_metrics.objectives[pf_rank == 0]
 
             train_metrics_dict = {}
-            metric_names = self.config.metric_names
+            metric_names = self.config.env.reward_keys
             objectives = np.asarray(objectives)
             pf_objectives = np.asarray(pf_objectives)
             train_metrics_dict["objectives"] = {

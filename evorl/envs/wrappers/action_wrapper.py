@@ -78,13 +78,13 @@ class ActionRepeatWrapper(Wrapper[Action, Space]):
         )
 
         state = state.replace(
-            reward=jtu.tree_map(jnp.sum, rewards),
+            reward=jtu.tree_map(lambda r: r.sum(axis=0), rewards),
         )
 
         if ori_rewards is not None:
             state = state.replace(
                 info=state.info.replace(
-                    ori_reward=jtu.tree_map(jnp.sum, ori_rewards),
+                    ori_reward=jtu.tree_map(lambda r: r.sum(axis=0), ori_rewards),
                 ),
             )
 

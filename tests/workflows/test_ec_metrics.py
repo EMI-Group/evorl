@@ -30,6 +30,16 @@ class _FitnessEvaluator(Evaluator):
         )
 
 
+class _VectorFitnessEvaluator(_FitnessEvaluator):
+    def evaluate(self, agent_state, key, num_episodes):
+        metrics = super().evaluate(agent_state, key, num_episodes)
+        return metrics.replace(
+            episode_returns=jnp.stack(
+                [metrics.episode_returns, jnp.full((num_episodes,), 2.0)], axis=-1
+            )
+        )
+
+
 class _FixedPopulation:
     def ask(self, state):
         return state.population, state
@@ -54,14 +64,13 @@ def test_ec_metrics_count_only_local_episodes(num_devices, multi_objective):
         env=None,
         agent=None,
         ec_optimizer=_FixedPopulation(),
-        ec_evaluator=_FitnessEvaluator(
-            env=Mock(num_envs=1), action_fn=None, max_episode_steps=2
-        ),
+        ec_evaluator=(
+            _VectorFitnessEvaluator if multi_objective else _FitnessEvaluator
+        )(env=Mock(num_envs=1), action_fn=None, max_episode_steps=2),
         config=OmegaConf.create(
             {
                 "checkpoint": {"enable": False},
                 "episodes_for_fitness": 2,
-                "metric_names": ["episode_returns", "episode_lengths"],
             }
         ),
     )
@@ -99,7 +108,12 @@ def test_ec_metrics_count_only_local_episodes(num_devices, multi_objective):
                 distributed_info=jax.P(POP_AXIS_NAME),
             ),
         )
-        _, updated = workflow.step(state)
+        train_metrics, updated = workflow.step(state)
+        if multi_objective:
+            np.testing.assert_allclose(
+                train_metrics.objectives,
+                [[1.5, 2], [2.5, 2], [10.5, 2], [20.5, 2]],
+            )
         if not multi_objective:
             for replica in updated.metrics.best_objective.addressable_shards:
                 assert float(replica.data) == 21

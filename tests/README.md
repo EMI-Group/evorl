@@ -22,6 +22,7 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `test_gymnax_env.py` | Constructor arguments, `EnvParams` overrides, unknown argument errors and EvoRL episode limits |
 | `test_multi_agent_env.py` | Shared environment/wrapper interfaces, individual and whole-episode boundaries, per-agent returns, terminal/global observations and nested autoreset |
 | `test_jaxmarl_env.py` | Configured native transitions, per-agent spaces/rewards, legal action masks, global observations and all autoreset modes under nested `vmap` |
+| `test_vector_rewards.py` | Scalar and vector reward shapes, terminal masking, nested evaluation, action repeat, reward scaling, autoreset and native Brax/Playground metric selection |
 | `test_jumanji_env.py` | Native state conversion, structured observations, extras and action spaces |
 | `test_jumanji_multi_agent.py` | Native reward/discount preservation, joint actions, per-agent spaces, masks and observations for all seven multi-agent tasks |
 | `test_jumanji_autoreset.py` | EvoRL wrapper selection, staggered episodes and reset keys, terminal masks/observations, native truncation and frozen evaluation states |
@@ -97,7 +98,9 @@ the process boundary itself is under test, such as importing accelerator probes.
 
 CI runs the same collected tests against the built wheel with the minimum and
 latest supported dependencies, including the separate four-device invocation.
-Jumanji and Gymnasium environment tests run in CI; EnvPool and Atari cases run
+Brax and MuJoCo Playground are required dependencies; their native metric reward
+tests run in CI, using the JAX backend on CPU for Playground. Jumanji, JaxMARL
+and Gymnasium environment tests also run in CI; EnvPool and Atari cases run
 when their optional dependencies are installed. Other environment-specific tests
 in the root directory may require simulator dependencies and assets and remain
 outside this CPU suite.

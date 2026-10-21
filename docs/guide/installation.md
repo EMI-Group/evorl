@@ -40,7 +40,7 @@ For a source checkout, use `pip install -e ".[extra]"` instead.
 Extras can be combined with each other and with environment extras:
 
 ```shell
-pip install "evorl-jax[wandb,swanlab,mujoco-playground]"
+pip install "evorl-jax[wandb,swanlab,jumanji]"
 ```
 
 Installing an SDK does not enable its recorder. Select the installed backends
@@ -65,12 +65,13 @@ for backend mappings, grouping, and customization.
 
 ## RL Environments
 
-By default, `pip install evorl-jax` (or `pip install -e .` from source) will automatically install environments on `brax`. If you want to install other supported environments, you need manually install the related environment packages. We provide useful extras for different environments. For a source checkout, use `pip install -e ".[extra]"` instead.
+Brax and MuJoCo Playground are supported by default and installed with
+`pip install evorl-jax` (or `pip install -e .` from source). Install extras
+for other environment libraries. For a source checkout, use
+`pip install -e ".[extra]"` instead.
 
 ```shell
 # ===== GPU-accelerated Environments =====
-# Mujoco playground Envs:
-pip install "evorl-jax[mujoco-playground]"
 # Jumanji Envs:
 pip install "evorl-jax[jumanji]"
 # JaxMARL Envs:
@@ -82,6 +83,22 @@ pip install "evorl-jax[envpool]"
 # Gymnasium Envs:
 pip install "evorl-jax[gymnasium]"
 ```
+
+### Multi-objective rewards
+
+Single-agent rewards are scalar arrays with shape `()`. Brax and MuJoCo
+Playground configurations can set `reward_keys` to select scalar per-step
+fields from `info.metrics` as a reward vector. Key order defines objective
+order; even one selected key produces shape `(1,)`. Omitting `reward_keys`
+preserves the native scalar reward.
+
+The selected metrics retain their native signs, weights and time scaling;
+they need not sum to the native total reward. Episode returns preserve the
+objective axis, while done flags and episode lengths remain per environment.
+Multi-agent rewards remain agent-keyed mappings.
+
+Examples are `brax/ant_multi_objective` and
+`playground/dm_control_suite/CartpoleBalance_multi_objective`.
 
 ### Gymnax (best effort)
 

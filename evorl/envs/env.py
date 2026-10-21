@@ -27,7 +27,11 @@ class EnvState(PyTreeData):
     Attributes:
         env_state: The internal state of the environment.
         obs: The observation of the environment.
-        reward: The reward of the environment.
+        reward: For a single agent, a scalar array with shape `()` or a
+            multi-objective array with shape `(num_objectives,)`. A single
+            explicit objective retains shape `(1,)`. Vectorization prepends
+            environment batch axes. Multi-agent rewards use an agent-keyed
+            mapping.
         done: Whether the environment is done. Multi-agent environments use an
             agent-keyed mapping with `__all__` indicating the episode boundary.
         info: Extra info from the environment.

@@ -126,6 +126,8 @@ def rollout(
     Returns:
         A tuple `(trajectory, env_state)` containing the transitions with shape
         `(rollout_length, num_envs, ...)` and the final environment state.
+        Scalar rewards have shape `(rollout_length, num_envs)`; vector rewards
+        retain a final objective axis, including for a single objective.
     """
     # Query the trace-time shard_map context; this also works under jit/vmap.
     # An empty tuple makes local execution a no-op. This performs no communication.
@@ -254,7 +256,8 @@ def fast_eval_rollout_episode(
     Returns:
         A tuple `(metrics, env_state)`. The metrics contain `episode_returns`
         and `episode_lengths` for each environment; `env_state` is the final
-        environment state.
+        environment state. Returns retain the reward's optional objective
+        axis; lengths have the same shape as `env_state.done`.
     """
     _eval_env_step = partial(eval_env_step, env_fn, action_fn)
     manual_axes = jax.sharding.get_abstract_mesh().manual_axes
@@ -272,17 +275,19 @@ def fast_eval_rollout_episode(
         transition, env_nstate = _eval_env_step(env_state, agent_state, current_key)
 
         prev_dones = env_state.done
+        active = 1 - prev_dones
+        # A vector reward adds an objective axis after the environment axes.
+        reward_mask = active
+        if transition.rewards.ndim == prev_dones.ndim + 1:
+            reward_mask = reward_mask[..., None]
 
         metrics = PyTreeDict(
             episode_returns=prev_metrics.episode_returns
-            + (1 - prev_dones) * transition.rewards,
-            episode_lengths=prev_metrics.episode_lengths
-            + (1 - prev_dones).astype(jnp.int32),
+            + reward_mask * transition.rewards,
+            episode_lengths=prev_metrics.episode_lengths + active.astype(jnp.int32),
         )
 
         return env_nstate, next_key, metrics
-
-    batch_shape = env_state.reward.shape
 
     env_state, _, metrics = jax.lax.while_loop(
         _terminate_cond,
@@ -292,8 +297,8 @@ def fast_eval_rollout_episode(
             key,
             mark_varying(
                 PyTreeDict(
-                    episode_returns=jnp.zeros(batch_shape),
-                    episode_lengths=jnp.zeros(batch_shape, dtype=jnp.int32),
+                    episode_returns=jnp.zeros_like(env_state.reward),
+                    episode_lengths=jnp.zeros_like(env_state.done, dtype=jnp.int32),
                 ),
                 manual_axes,
             ),
@@ -340,8 +345,8 @@ def host_fast_eval_rollout_episode(
     def evaluate(env_state, agent_state, key):
         manual_axes = jax.sharding.get_abstract_mesh().manual_axes
         metrics = PyTreeDict(
-            episode_returns=jnp.zeros(env_state.reward.shape),
-            episode_lengths=jnp.zeros(env_state.reward.shape, dtype=jnp.int32),
+            episode_returns=jnp.zeros_like(env_state.reward),
+            episode_lengths=jnp.zeros_like(env_state.done, dtype=jnp.int32),
         )
 
         def continue_evaluation(carry):
@@ -355,9 +360,12 @@ def host_fast_eval_rollout_episode(
             next_state = env_fn(state, actions)
             # Include the terminal step's reward, then ignore later pool steps.
             active = ~state.done.astype(jnp.bool_)
+            reward_mask = active
+            if next_state.reward.ndim == state.done.ndim + 1:
+                reward_mask = reward_mask[..., None]
             metrics = metrics.replace(
                 episode_returns=metrics.episode_returns
-                + jnp.where(active, next_state.reward, 0),
+                + jnp.where(reward_mask, next_state.reward, 0),
                 episode_lengths=metrics.episode_lengths + active.astype(jnp.int32),
             )
             return next_state, next_key, metrics

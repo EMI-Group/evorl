@@ -7,3 +7,11 @@
   `pmean_loss_and_grad` 对全局平均 loss 求导，aux 保持本地；双 CPU 数值测试验证 loss、梯度和优先级数据。
 - [x] 补齐普通 RL/EC 的多卡 `step/evaluate` 执行。
   子类的 `enable_shmap` 类方法直接定义混合 State 布局，以 `in_specs=None` 声明静态 `self`；构建时先应用 `shard_map`，再按需应用 JIT。两设备测试覆盖 PPO、SAC、OpenES 的初始化、训练和评估。
+- [ ] 修复 NORMAL/FAST autoreset 对下层 `_internal` 状态的恢复。
+  当前只恢复原生环境状态和观测，下层环境或 wrapper 的内部计数等仍可能沿用上一局；单智能体和多智能体最小示例均已复现。
+- [x] 调整多目标奖励 wrapper 的命名。
+  Brax 使用 `BraxMultiObjectiveRewardWrapper`；Playground 使用继承它的 `MujocoMultiObjectiveRewardWrapper`，复用相同的 metrics 取值和奖励转换逻辑。
+- [ ] 实现并验证多智能体训练算法。
+  `multi_agents/` 下的 IPPO、MAPPO、MADDPG、MATD3 文件目前均为空文件；环境 API 和 wrapper 测试不代表算法训练已经实现。
+- [ ] 验证 NSGA-II 的完整优化训练。
+  已验证通用 evaluator、向量目标聚合及分布式计数；当前测试环境未安装 EvoX，尚未运行完整优化训练。

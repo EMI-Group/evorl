@@ -27,19 +27,21 @@ def compute_episode_length(
 
 
 def compute_discount_return(
-    rewards: jax.Array,  # [T, B]
-    dones: jax.Array,  # [T, B]
+    rewards: jax.Array,
+    dones: jax.Array,
     discount: float = 1.0,
 ) -> jax.Array:
     """Compute discount return from the episodic trajectory.
 
     Args:
-        rewards: Rewards collected from an episodic trajectory.
-        dones: Dones collected from an episodic trajectory.
+        rewards: Episodic rewards with shape `(T, *batch_shape)` for scalar
+            rewards, or `(T, *batch_shape, num_objectives)` for vector rewards.
+        dones: Episode boundaries with shape `(T, *batch_shape)`.
         discount: Discount factor.
 
     Returns:
-        Discounted return.
+        Discounted returns with the time axis removed. The objective axis, if
+        present, is preserved, including when `num_objectives` is one.
     """
 
     def _compute_discount_return(discount_return, x_t):
@@ -51,16 +53,19 @@ def compute_discount_return(
 
     # [#envs]
     discount_return = jnp.zeros_like(rewards[0])
+    discounts = (1 - dones) * discount
+    if rewards.ndim == dones.ndim + 1:
+        discounts = discounts[..., None]
 
     discount_return, _ = jax.lax.scan(
         _compute_discount_return,
         discount_return,
-        (rewards, (1 - dones) * discount),
+        (rewards, discounts),
         reverse=True,
         unroll=16,
     )
 
-    return discount_return  # [B]
+    return discount_return
 
 
 def compute_gae(
@@ -194,16 +199,23 @@ def flatten_pop_rollout_episode(trajectory: SampleBatch):
 
 
 def average_episode_discount_return(
-    episode_discount_return: jax.Array,  # [T,B]
-    dones: jax.Array,  # [T,B]
+    episode_discount_return: jax.Array,
+    dones: jax.Array,
     dp_axis_name: str | None = None,
 ) -> jax.Array:
     """Estimate the average episode return from a segmented trajectory.
 
     This method does not require the trajectory data from a complete episode.
+    Rewards may have a final objective axis; only the time and environment
+    axes represented by `dones` are reduced.
     """
     cnt = dones.sum()
-    episode_discount_return_sum = (episode_discount_return * dones).sum()
+    mask = dones
+    if episode_discount_return.ndim == dones.ndim + 1:
+        mask = mask[..., None]
+    episode_discount_return_sum = (episode_discount_return * mask).sum(
+        axis=tuple(range(dones.ndim))
+    )
 
     if dp_axis_name is not None:
         episode_discount_return_sum = jax.lax.psum(

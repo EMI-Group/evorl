@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -6,6 +8,55 @@ from evorl.types import Action
 from ..env import BaseEnv, EnvState
 from ..space import Space
 from .wrapper import Wrapper
+
+
+class BraxMultiObjectiveRewardWrapper(Wrapper[Action, Space]):
+    """Expose selected Brax metrics as a single-agent reward vector.
+
+    Apply this wrapper after the adapter and before episode, action-repeat and
+    vectorization wrappers. The wrapped environment must expose scalar metric
+    arrays in `state.info.metrics`, as the Brax adapter does.
+    Values are used unchanged: weighting, signs and time scaling retain
+    their native metric definitions.
+
+    Only the public `EnvState.reward` is replaced; native simulator state is
+    preserved. Reset rewards are zero vectors. The final axis follows
+    `reward_keys` order and is retained even when only one key is selected.
+
+    Args:
+        env: An unvectorized single-agent environment with per-step metrics.
+        reward_keys: Nonempty sequence of scalar metric names to accumulate as
+            reward objectives. These must exist on both reset and step.
+    """
+
+    def __init__(self, env: BaseEnv[Action, Space], reward_keys: Sequence[str]):
+        super().__init__(env)
+        if isinstance(reward_keys, str) or not reward_keys:
+            raise ValueError("reward_keys must be a nonempty sequence of metric names.")
+        self.reward_keys = tuple(reward_keys)
+
+    def _reward_vector(self, state: EnvState) -> jax.Array:
+        rewards = [jnp.asarray(state.info.metrics[name]) for name in self.reward_keys]
+        if any(reward.ndim != 0 for reward in rewards):
+            raise ValueError("Each reward metric must be scalar before vectorization.")
+        return jnp.stack(rewards, axis=-1)
+
+    def reset(self, key: jax.Array) -> EnvState:
+        state = self.env.reset(key)
+        return state.replace(reward=jnp.zeros_like(self._reward_vector(state)))
+
+    def step(self, state: EnvState, action: Action) -> EnvState:
+        state = self.env.step(state, action)
+        return state.replace(reward=self._reward_vector(state))
+
+
+class MujocoMultiObjectiveRewardWrapper(BraxMultiObjectiveRewardWrapper):
+    """Expose selected MuJoCo Playground metrics as a reward vector.
+
+    EvoRL's Playground adapter exposes the same `info.metrics` layout as the
+    Brax adapter, so metric selection and reward conversion are inherited.
+    Selected metrics retain their native signs, weights and time scaling.
+    """
 
 
 class RewardScaleWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
