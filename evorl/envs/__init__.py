@@ -14,7 +14,8 @@ def create_env(env_cfg, **kwargs) -> BaseEnv:
     Args:
         env_cfg: The environment configuration. Gymnasium configurations can set
             `obs_type` to select the Atari observation format. Gymnax
-            configurations can set `env_kwargs` for environment construction.
+            and JaxMARL configurations can set `env_kwargs` for environment
+            construction.
             Jumanji multi-agent tasks use the `MultiAgentEnv` API automatically.
         **kwargs: Additional keyword arguments for the environment creator.
             Explicit `obs_type` and `env_kwargs` arguments override the
@@ -38,7 +39,9 @@ def create_env(env_cfg, **kwargs) -> BaseEnv:
         case "jumanji":
             env = create_wrapped_jumanji_env(env_name, **kwargs)
         case "jaxmarl":
-            env = create_wrapped_mabrax_env(env_name, **kwargs)
+            if "env_kwargs" in env_cfg:
+                kwargs.setdefault("env_kwargs", env_cfg.env_kwargs)
+            env = create_wrapped_jaxmarl_env(env_name, **kwargs)
         case "envpool":
             env = create_envpool_env(env_name, **kwargs)
         case "gymnasium":
@@ -80,9 +83,9 @@ if importlib.util.find_spec("jumanji") is not None:
     __all__.extend(["create_jumanji_env", "create_wrapped_jumanji_env"])
 
 if importlib.util.find_spec("jaxmarl") is not None:
-    from .jaxmarl import create_mabrax_env, create_wrapped_mabrax_env
+    from .jaxmarl import create_jaxmarl_env, create_wrapped_jaxmarl_env
 
-    __all__.extend(["create_mabrax_env", "create_wrapped_mabrax_env"])
+    __all__.extend(["create_jaxmarl_env", "create_wrapped_jaxmarl_env"])
 
 if importlib.util.find_spec("envpool") is not None:
     from .envpool import create_envpool_env

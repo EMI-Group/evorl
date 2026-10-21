@@ -73,7 +73,6 @@ autodoc2_hidden_regexes = [
 autodoc2_skip_module_regexes = [
     r"evorl\.rollout_ma",
     r"evorl\.multi_agent_rollout",
-    r"evorl\.envs\.jaxmarl_envs",
     r"evorl\.envs\.multi_agent_env",
 ]
 autodoc2_sort_names = True

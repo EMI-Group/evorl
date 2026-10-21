@@ -21,6 +21,7 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `test_brax_env.py::test_brax_fast` | Brax Fast action bounds, array/dict observations and all autoreset modes |
 | `test_gymnax_env.py` | Constructor arguments, `EnvParams` overrides, unknown argument errors and EvoRL episode limits |
 | `test_multi_agent_env.py` | Shared environment/wrapper interfaces, individual and whole-episode boundaries, per-agent returns, terminal/global observations and nested autoreset |
+| `test_jaxmarl_env.py` | Configured native transitions, per-agent spaces/rewards, legal action masks, global observations and all autoreset modes under nested `vmap` |
 | `test_jumanji_env.py` | Native state conversion, structured observations, extras and action spaces |
 | `test_jumanji_multi_agent.py` | Native reward/discount preservation, joint actions, per-agent spaces, masks and observations for all seven multi-agent tasks |
 | `test_jumanji_autoreset.py` | EvoRL wrapper selection, staggered episodes and reset keys, terminal masks/observations, native truncation and frozen evaluation states |

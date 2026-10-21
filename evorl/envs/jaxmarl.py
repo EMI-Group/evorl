@@ -1,16 +1,18 @@
+from collections.abc import Mapping
+from typing import Any
+
 import jax
 import jax.numpy as jnp
-from jaxmarl.environments import MultiAgentEnv
+import jaxmarl
+from jaxmarl.environments import Hanabi, MultiAgentEnv as JaxMARLEnv, SMAX
+from jaxmarl.environments import spaces as native_spaces
+from jaxmarl.environments.smax.heuristic_enemy_smax_env import EnemySMAX
 
-from evorl.types import Action, AgentID, AgentMapping, EnvAction, PyTreeDict
-from evorl.utils.jax_utils import tree_astype, tree_zeros_like
+from evorl.types import Action, AgentID, AgentMapping, PyTreeDict
 
 from .env import BaseEnv, EnvState
-from .gymnax import gymnax_space_to_evorl_space
-from .jaxmarl_envs import make_mabrax_env
 from .multi_agent_env import MultiAgentEnvAdapter
-from .space import Space
-from .utils import sort_dict
+from .space import Box, Discrete, MultiDiscrete, Space, SpaceContainer
 from .wrappers.training_wrapper import (
     AutoresetMode,
     EpisodeWrapper,
@@ -22,83 +24,159 @@ from .wrappers.training_wrapper import (
 )
 
 
-def get_random_actions(env: MultiAgentEnv):
-    dummy_key = jax.random.key(42)
-
-    return {
-        agent_id: env.action_space(agent_id).sample(dummy_key)
-        for agent_id in env.agents
-    }
-
-
 class JaxMARLAdapter(MultiAgentEnvAdapter):
-    def __init__(self, env: MultiAgentEnv):
+    """Adapt JaxMARL's agent-keyed API without its automatic episode reset.
+
+    Native rewards and agent IDs are preserved. Global observations, when
+    provided by the environment, are exposed in `info.global_obs`. SMAX and
+    Hanabi observations include `observation` and boolean `action_mask` fields
+    so masks follow current and terminal observations through EvoRL autoreset.
+    """
+
+    def __init__(self, env: JaxMARLEnv):
         super().__init__(env)
+        self._action_mask_fn = None
+        if isinstance(env, Hanabi):
+            self._action_mask_fn = env.get_legal_moves
+        elif isinstance(env, (SMAX, EnemySMAX)) and env.action_type == "discrete":
+            self._action_mask_fn = env.get_avail_actions
+        self._action_spaces = {
+            agent: jaxmarl_space_to_evorl_space(env.action_space(agent))
+            for agent in self.agents
+        }
+        observations, _ = jax.eval_shape(env.reset, jax.random.key(0))
+        self._obs_spaces = {}
+        for agent in self.agents:
+            spec = env.observation_space(agent)
+            # FACMAC 6a/9a retain the default 3a shape in their native spaces;
+            # OvercookedV2 also reports the first agent's shape for mixed views.
+            if isinstance(spec, native_spaces.Box):
+                spec = native_spaces.Box(
+                    spec.low, spec.high, observations[agent].shape, spec.dtype
+                )
+            space = jaxmarl_space_to_evorl_space(spec)
+            if self._action_mask_fn is not None:
+                space = SpaceContainer(
+                    spaces=PyTreeDict(
+                        observation=space,
+                        action_mask=Box(
+                            low=jnp.zeros(env.action_space(agent).n, jnp.bool_),
+                            high=jnp.ones(env.action_space(agent).n, jnp.bool_),
+                        ),
+                    )
+                )
+            self._obs_spaces[agent] = space
+
+    def _observations(self, obs, env_state, info):
+        if "world_state" in obs:
+            info.global_obs = obs["world_state"]
+        elif hasattr(self.env, "get_world_state"):
+            info.global_obs = self.env.get_world_state(env_state)
+        observations = PyTreeDict({agent: obs[agent] for agent in self.agents})
+        if self._action_mask_fn is not None:
+            masks = self._action_mask_fn(env_state)
+            observations = PyTreeDict(
+                {
+                    agent: PyTreeDict(
+                        observation=observations[agent],
+                        action_mask=masks[agent].astype(jnp.bool_),
+                    )
+                    for agent in self.agents
+                }
+            )
+        return observations
 
     def reset(self, key: jax.Array) -> EnvState:
-        key, reset_key, dummy_step_key = jax.random.split(key, 3)
+        key, reset_key = jax.random.split(key)
         obs, env_state = self.env.reset(reset_key)
-
-        dummy_action = get_random_actions(self.env)
-
-        # run one dummy step to get reward,done,info shape
-        _, _, dummy_reward, dummy_done, dummy_info = self.env.step_env(
-            dummy_step_key, env_state, dummy_action
+        # Trace the transition structure without advancing the simulator. Info
+        # fields must have the same pytree structure in reset and step for scans.
+        actions = {}
+        for agent in self.agents:
+            space = self.env.action_space(agent)
+            actions[agent] = jnp.zeros(space.shape, dtype=space.dtype)
+        _, _, rewards, dones, infos = jax.eval_shape(
+            self.env.step_env, key, env_state, actions
         )
-
-        info = PyTreeDict(sort_dict(dummy_info))
-        extra = PyTreeDict(step_key=key)
-
+        info = PyTreeDict(jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), infos))
+        observations = self._observations(obs, env_state, info)
         return EnvState(
             env_state=env_state,
-            obs=obs,
-            reward=tree_zeros_like(dummy_reward, dtype=jnp.float32),
-            done=tree_zeros_like(dummy_done, dtype=jnp.float32),
+            obs=observations,
+            reward=PyTreeDict(
+                {
+                    name: jnp.zeros(spec.shape, jnp.float32)
+                    for name, spec in rewards.items()
+                }
+            ),
+            done=PyTreeDict(
+                {
+                    agent: jnp.zeros(dones[agent].shape, jnp.float32)
+                    for agent in (*self.agents, "__all__")
+                }
+            ),
             info=info,
-            _internal=extra,
+            _internal=PyTreeDict(step_key=key),
         )
 
     def step(self, state: EnvState, action: AgentMapping[Action]) -> EnvState:
+        if not isinstance(action, Mapping) or set(action) != set(self.agents):
+            raise ValueError("Actions must contain exactly one entry per agent.")
         key, step_key = jax.random.split(state._internal.step_key)
-
-        # call step_env() instead of step() to disable autoreset
-        # we handle the autoreset at AutoResetWrapper
-        obs, env_state, reward, done, info = self.env.step_env(
+        obs, env_state, reward, done, infos = self.env.step_env(
             step_key, state.env_state, action
         )
-        reward = tree_astype(reward, jnp.float32)
-        done = tree_astype(done, jnp.float32)
-
-        info = state.info.replace(**info)
-        _internal = state._internal.replace(step_key=key)
-
+        info = state.info.replace(**infos)
+        observations = self._observations(obs, env_state, info)
         return state.replace(
             env_state=env_state,
-            obs=obs,
-            reward=reward,
-            done=done,
+            obs=observations,
+            reward=PyTreeDict(jax.tree.map(lambda x: x.astype(jnp.float32), reward)),
+            done=PyTreeDict(jax.tree.map(lambda x: x.astype(jnp.float32), done)),
             info=info,
-            _internal=_internal,
+            _internal=state._internal.replace(step_key=key),
         )
 
     @property
     def action_space(self) -> AgentMapping[Space]:
-        return jaxmarl_space_to_evorl_space(self.env.action_spaces)
+        return self._action_spaces.copy()
 
     @property
     def obs_space(self) -> AgentMapping[Space]:
-        return jaxmarl_space_to_evorl_space(self.env.observation_spaces)
+        return self._obs_spaces.copy()
 
     @property
     def agents(self) -> list[AgentID]:
-        return self.env.agents
+        return list(self.env.agents)
 
 
-def jaxmarl_space_to_evorl_space(space):
-    return {
-        agent_id: gymnax_space_to_evorl_space(space)
-        for agent_id, space in space.items()
-    }
+def jaxmarl_space_to_evorl_space(space: native_spaces.Space) -> Space:
+    """Convert JaxMARL spaces, preserving nested structures and bounds."""
+    if isinstance(space, native_spaces.Box):
+        low = jnp.broadcast_to(jnp.asarray(space.low, dtype=space.dtype), space.shape)
+        high = jnp.broadcast_to(jnp.asarray(space.high, dtype=space.dtype), space.shape)
+        return Box(
+            low=jnp.nan_to_num(low, neginf=-1e10, posinf=1e10),
+            high=jnp.nan_to_num(high, neginf=-1e10, posinf=1e10),
+        )
+    if isinstance(space, native_spaces.Discrete):
+        return Discrete(n=space.n)
+    if isinstance(space, native_spaces.MultiDiscrete):
+        return MultiDiscrete(nvec=space.num_categories)
+    if isinstance(space, native_spaces.Dict):
+        return SpaceContainer(
+            spaces=PyTreeDict(
+                {
+                    name: jaxmarl_space_to_evorl_space(child)
+                    for name, child in space.spaces.items()
+                }
+            )
+        )
+    if isinstance(space, native_spaces.Tuple):
+        return SpaceContainer(
+            spaces=tuple(jaxmarl_space_to_evorl_space(child) for child in space.spaces)
+        )
+    raise NotImplementedError(f"Unsupported JaxMARL space: {type(space)}")
 
 
 supported_jaxmarl_env_list = (
@@ -115,79 +193,75 @@ supported_jaxmarl_env_list = (
     "MPE_simple_facmac_3a_v1",
     "MPE_simple_facmac_6a_v1",
     "MPE_simple_facmac_9a_v1",
-    # "switch_riddle",
-    # "SMAX",
-    # "HeuristicEnemySMAX",
-    # "LearnedPolicyEnemySMAX",
-    "ant_4x2",
-    "halfcheetah_6x1",
-    "hopper_3x1",
-    "humanoid_9|8",
-    "walker2d_2x3",
-    # "storm",
-    # "storm_2p",
-    # "hanabi",
-    # "overcooked",
-    # "coin_game",
-)
-
-ma_brax_env_list = (
-    "ant_4x2",
-    "halfcheetah_6x1",
-    "hopper_3x1",
-    "humanoid_9|8",
-    "walker2d_2x3",
+    "switch_riddle",
+    "SMAX",
+    "HeuristicEnemySMAX",
+    "LearnedPolicyEnemySMAX",
+    "hanabi",
+    "overcooked",
+    "overcooked_v2",
+    "coin_game",
+    "jaxnav",
 )
 
 
-class MABraxAdapter(JaxMARLAdapter):
-    def reset(self, key: jax.Array) -> EnvState:
-        state = super().reset(key)
-        # setup global info
-        state.info.global_obs = state.env_state.obs
+def create_jaxmarl_env(env_name: str, **kwargs) -> JaxMARLAdapter:
+    """Create a JaxMARL environment with agent-keyed observations and rewards.
 
-        return state
+    Args:
+        env_name: Supported JaxMARL registry name. STORM's heterogeneous native
+            APIs, optional JaxRobotarium tasks and deprecated MABrax are not
+            included. Prefer `overcooked_v2` over deprecated `overcooked`.
+        **kwargs: Arguments for `jaxmarl.make`. `LearnedPolicyEnemySMAX` requires
+            the caller to supply its opponent `policy` and `params`.
 
-    def step(self, state: EnvState, action: EnvAction) -> EnvState:
-        if not isinstance(action, dict):
-            action = self.unwrapped.map_agents_to_global_action(action)
-
-        state = super().step(state, action)
-        # update global info
-        state.info.global_obs = state.env_state.obs
-        return state
-
-
-def create_mabrax_env(env_name: str, **kwargs) -> JaxMARLAdapter:
-    if env_name not in ma_brax_env_list:
-        raise ValueError(f"Unsupported jaxmarl env: {env_name}")
-
-    env = make_mabrax_env(env_name, **kwargs)
-
-    # Note: mabrax internally use brax's traning wrapper (EpisodeWrapper)
-    env = MABraxAdapter(env)
-
-    return env
+    Returns:
+        An environment following the EvoRL `MultiAgentEnv` interface.
+    """
+    if env_name not in supported_jaxmarl_env_list:
+        raise ValueError(f"Unsupported JaxMARL environment: {env_name}")
+    return JaxMARLAdapter(jaxmarl.make(env_name, **kwargs))
 
 
-def create_wrapped_mabrax_env(
+def create_wrapped_jaxmarl_env(
     env_name: str,
     episode_length: int = 1000,
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.NORMAL,
+    discount: float | None = 1.0,
+    record_ori_obs: bool = False,
+    env_kwargs: Mapping[str, Any] | None = None,
     **kwargs,
 ) -> BaseEnv[AgentMapping[Action], AgentMapping[Space]]:
-    env = create_mabrax_env(env_name, **kwargs)
-    if autoreset_mode != AutoresetMode.DISABLED:
-        env = EpisodeWrapper(env, episode_length)
-        if autoreset_mode == AutoresetMode.FAST:
-            env = FastVmapAutoResetWrapper(env, num_envs=parallel)
-        elif autoreset_mode == AutoresetMode.NORMAL:
-            env = VmapAutoResetWrapper(env, num_envs=parallel)
-        elif autoreset_mode == AutoresetMode.ENVPOOL:
-            env = VmapEnvPoolAutoResetWrapper(env, num_envs=parallel)
-    else:
-        env = OneEpisodeWrapper(env, episode_length)
-        env = VmapWrapper(env, num_envs=parallel, vmap_step=True)
+    """Create a JaxMARL environment with EvoRL episode and autoreset wrappers.
 
-    return env
+    Args:
+        env_name: Supported JaxMARL registry name.
+        episode_length: Maximum episode length enforced by EvoRL.
+        parallel: Number of parallel worlds, each containing all agents.
+        autoreset_mode: EvoRL reset mode; native `step` autoreset is bypassed.
+        discount: Discount for per-agent episode returns, or `None` to disable.
+        record_ori_obs: Preserve terminal observations for same-step autoreset.
+        env_kwargs: Native environment constructor options from configuration.
+        **kwargs: Native constructor arguments, overriding `env_kwargs` entries.
+
+    Returns:
+        A vectorized environment preserving per-agent rewards and observations.
+    """
+    native_kwargs = dict(env_kwargs or {})
+    native_kwargs.update(kwargs)
+    env = create_jaxmarl_env(env_name, **native_kwargs)
+    if autoreset_mode == AutoresetMode.ENVPOOL:
+        record_ori_obs = False
+    if autoreset_mode == AutoresetMode.DISABLED:
+        env = OneEpisodeWrapper(env, episode_length, record_ori_obs=record_ori_obs)
+        return VmapWrapper(env, num_envs=parallel, vmap_step=True)
+    env = EpisodeWrapper(
+        env, episode_length, record_ori_obs=record_ori_obs, discount=discount
+    )
+    wrapper = {
+        AutoresetMode.NORMAL: VmapAutoResetWrapper,
+        AutoresetMode.FAST: FastVmapAutoResetWrapper,
+        AutoresetMode.ENVPOOL: VmapEnvPoolAutoResetWrapper,
+    }[autoreset_mode]
+    return wrapper(env, num_envs=parallel)

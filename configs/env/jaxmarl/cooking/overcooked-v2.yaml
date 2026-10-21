@@ -1,0 +1,3 @@
+env_name: overcooked_v2
+env_type: jaxmarl
+max_episode_steps: 400

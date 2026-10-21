@@ -177,26 +177,3 @@ def test_wrapper_chain_preserves_spaces_attributes_and_transitions(multi_agent):
         np.testing.assert_array_equal(env.obs_space.low, native.obs_space.low)
         np.testing.assert_array_equal(env.obs_space.high, native.obs_space.high)
         assert jnp.all(jax.vmap(env.obs_space.contains)(initial.obs))
-
-
-@pytest.mark.integration
-def test_mabrax_factory_uses_common_episode_and_autoreset_wrappers():
-    pytest.importorskip("jaxmarl")
-    from evorl.envs import create_env
-
-    env = create_env(
-        PyTreeDict(env_type="jaxmarl", env_name="hopper_3x1"),
-        parallel=2,
-        episode_length=1,
-    )
-    assert isinstance(env.unwrapped, MultiAgentEnv)
-    initial = jax.jit(env.reset)(jax.random.key(0))
-    action = {
-        agent: jnp.zeros((2, *space.shape)) for agent, space in env.action_space.items()
-    }
-    terminal = jax.jit(env.step)(initial, action)
-    np.testing.assert_array_equal(terminal.done["__all__"], [1, 1])
-    np.testing.assert_array_equal(terminal.info.steps, [1, 1])
-    np.testing.assert_array_equal(terminal.info.truncation["__all__"], [1, 1])
-    np.testing.assert_array_equal(terminal.info.global_obs, terminal.env_state.obs)
-    assert terminal.info.ori_global_obs.shape == terminal.info.global_obs.shape

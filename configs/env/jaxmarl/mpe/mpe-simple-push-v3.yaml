@@ -1,0 +1,3 @@
+env_name: MPE_simple_push_v3
+env_type: jaxmarl
+max_episode_steps: 25

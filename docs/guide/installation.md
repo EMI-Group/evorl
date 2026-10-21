@@ -95,6 +95,23 @@ gymnasium>=1.4.0
 EOF
 ```
 
+### JaxMARL (best effort)
+
+JaxMARL requires Gymnax, so support is best effort because of its dependency
+bounds. If installation conflicts occur, use the [Gymnax uv overrides](#gymnax-best-effort)
+above with `jaxmarl>=0.2.0` as the installation target.
+
+JaxMARL 0.2.0 or newer uses `MultiAgentEnv` with EvoRL episode and autoreset
+wrappers. Configurations cover MPE, SMAX, Switch Riddle, Hanabi, OvercookedV2,
+CoinGame and JaxNav, including continuous and discrete JaxNav actions. Use
+`env_kwargs` in an environment YAML to select native constructor options such
+as an OvercookedV2 layout.
+
+SMAX and Hanabi observations contain `observation` and `action_mask` fields.
+Native global observations are available in `info.global_obs` when provided.
+MABrax has been removed. STORM's nonuniform native APIs and the separately
+installed JaxRobotarium environments are not included in this adapter.
+
 ### Jumanji
 
 Jumanji single-agent tasks use `Env`; multi-agent tasks use `MultiAgentEnv` with
