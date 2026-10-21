@@ -3,6 +3,7 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import chex
+import pytest
 
 
 def test_ParamVectorSpec():
@@ -30,3 +31,26 @@ def test_ParamVectorSpec():
 
     batch_recover = param_spec.to_tree(batch_flat)
     chex.assert_trees_all_close(batch_params, batch_recover)
+
+
+@pytest.mark.parametrize("shape", [(), (3,), (2, 3), (2, 1, 3)])
+@pytest.mark.parametrize("batch_shape", [(), (4,), (2, 4), (0,), (2, 0)])
+def test_param_vector_spec_roundtrip_with_different_leaf_ranks(shape, batch_shape):
+    params = {
+        "first": jnp.zeros(shape),
+        "second": (jnp.zeros(2, jnp.int32), None, jnp.zeros(2, jnp.float16)),
+    }
+    spec = ParamVectorSpec(params)
+
+    def values(x):
+        shape = batch_shape + x.shape
+        size = 1
+        for dim in shape:
+            size *= dim
+        return jnp.arange(size, dtype=jnp.float32).reshape(shape).astype(x.dtype)
+
+    batched = jax.tree.map(values, params)
+    flat = jax.jit(spec.to_vector)(batched)
+    assert flat.shape == batch_shape + (spec.vec_size,)
+    recovered = jax.jit(spec.to_tree)(flat)
+    chex.assert_trees_all_equal(batched, recovered)

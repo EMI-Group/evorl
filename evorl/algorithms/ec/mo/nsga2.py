@@ -3,13 +3,13 @@ from omegaconf import DictConfig
 from typing import Self
 
 import jax
-import jax.numpy as jnp
 
 from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
-from evorl.ec.optimizers.ec_optimizer import ECState
+from evorl.ec.optimizers import NSGA2, ECState
+from evorl.ec.operators.selection.non_dominated import non_dominated_sort
 from evorl.utils.ec_utils import ParamVectorSpec
 from evorl.recorders import get_1d_array_statistics
 from evorl.workflows import MultiObjectiveECWorkflowTemplate
@@ -19,17 +19,20 @@ from ..ec_agent import make_deterministic_ec_agent
 
 
 class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
+    """Optimize a continuous-action policy using single-agent vector rewards.
+
+    Environments return rewards of shape `(num_envs, num_objectives)`. The
+    objective count is inferred without executing a reset. `env.reward_keys`
+    is optional and provides metric names when an environment uses it to
+    select reward components. Every objective is maximized.
+    """
+
     @classmethod
     def name(cls):
         return "NSGA2"
 
     @classmethod
     def _build_from_config(cls, config: DictConfig) -> Self:
-        reward_keys = config.env.get("reward_keys")
-        if not reward_keys:
-            raise ValueError(
-                "NSGA2 requires env.reward_keys to select reward objectives."
-            )
         env = create_env(
             config.env,
             parallel=config.num_envs,
@@ -42,23 +45,24 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
             use_bias=config.agent_network.use_bias,
             normalize_obs=config.normalize_obs,
             norm_layer_type=config.agent_network.norm_layer_type,
+            policy_obs_key=config.agent_network.policy_obs_key,
         )
 
         # dummy agent_state
         agent_key = jax.random.key(config.seed)
+        reward = jax.eval_shape(env.reset, agent_key).reward
+        if len(reward.shape) != 2 or reward.shape[1] < 1:
+            raise ValueError(
+                "NSGA2 requires vector rewards with shape (num_envs, num_objectives)."
+            )
         agent_state = agent.init(env.obs_space, env.action_space, agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
-        from evorl.ec.optimizers.evox_wrapper import EvoXAlgorithmAdapter
-        from evox.algorithms import NSGA2
-
-        ec_optimizer = EvoXAlgorithmAdapter(
-            algorithm=NSGA2(
-                lb=jnp.full((param_vec_spec.vec_size,), config.agent_network.lb),
-                ub=jnp.full((param_vec_spec.vec_size,), config.agent_network.ub),
-                n_objs=len(reward_keys),
-                pop_size=config.pop_size,
-            ),
+        ec_optimizer = NSGA2(
+            lb=config.agent_network.lb,
+            ub=config.agent_network.ub,
+            num_objectives=reward.shape[1],
+            pop_size=config.pop_size,
             param_vec_spec=param_vec_spec,
         )
 
@@ -128,6 +132,7 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
         )
 
     def learn(self, state: State) -> State:
+        """Run the remaining iterations and return the final workflow state."""
         start_iteration = state.metrics.iterations
 
         for i in range(start_iteration, self.config.num_iters):
@@ -137,18 +142,21 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
 
             self.recorder.write(workflow_metrics.to_local_dict(), iters)
 
+            objectives = np.asarray(train_metrics.objectives)
             cpu_device = jax.devices("cpu")[0]
-            with jax.default_device(cpu_device):
-                from evox.operators import non_dominated_sort
-
-                objectives = jax.device_put(train_metrics.objectives, cpu_device)
-                pf_rank = non_dominated_sort(-objectives, "scan")
-                pf_objectives = train_metrics.objectives[pf_rank == 0]
+            with (
+                jax.set_mesh(jax.sharding.Mesh(np.asarray(cpu_device), ())),
+                jax.default_device(cpu_device),
+            ):
+                pf_rank = np.asarray(
+                    non_dominated_sort(jax.device_put(objectives, cpu_device))
+                )
+            pf_objectives = objectives[pf_rank == 0]
 
             train_metrics_dict = {}
-            metric_names = self.config.env.reward_keys
-            objectives = np.asarray(objectives)
-            pf_objectives = np.asarray(pf_objectives)
+            metric_names = self.config.env.get("reward_keys") or [
+                f"objective_{i}" for i in range(objectives.shape[-1])
+            ]
             train_metrics_dict["objectives"] = {
                 metric_names[i]: get_1d_array_statistics(
                     objectives[:, i], histogram=True
@@ -169,5 +177,7 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
             self.checkpoint_manager.save(
                 iters,
                 state,
-                force=i == self.config.num_iters,
+                force=iters == self.config.num_iters,
             )
+
+        return state

@@ -13,6 +13,8 @@ buffer type and execution mode has its own test node and assertion traceback.
 | Other `workflows/` tests | Training budgets, final evaluation/checkpoints, warmup and EC accounting |
 | `helpers/` | Reusable toy environment and compiled-communication inspection |
 | `test_env_factory.py` | YAML argument forwarding, episode-limit defaults and explicit override precedence across environment factories |
+| `test_ec_optimizers.py` | Native CMA-ES reference updates and convergence, NSGA-II Pareto ranks/crowding/elitism and ZDT1 progress, bounded variation and nested `vmap` |
+| `test_ec_workflow.py` | Native CMA-ES, SepCMA-ES and NSGA-II setup, training, recording and final checkpoint in eager/JIT and single/multiple device modes |
 | `test_host_envs.py` | Ordered host effects across resets, constant actions, nested `vmap`, autoreset modes and Atari RGB/RAM configuration |
 | `test_host_env_shapes.py` | Scalar/matrix actions, array/nested Dict observations, terminal observations, nested `vmap` and unsupported spaces/modes |
 | `test_envpool_catalog.py` / `test_gymnasium_catalog.py` | Configured task shapes/dtypes under JIT, including nested EnvPool populations |

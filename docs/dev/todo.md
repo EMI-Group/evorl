@@ -15,5 +15,9 @@
   Brax 使用 `BraxMultiObjectiveRewardWrapper`；Playground 使用继承它的 `MujocoMultiObjectiveRewardWrapper`，复用相同的 metrics 取值和奖励转换逻辑。
 - [ ] 实现并验证多智能体训练算法。
   `multi_agents/` 下的 IPPO、MAPPO、MADDPG、MATD3 文件目前均为空文件；环境 API 和 wrapper 测试不代表算法训练已经实现。
-- [ ] 验证 NSGA-II 的完整优化训练。
-  已验证通用 evaluator、向量目标聚合及分布式计数；当前测试环境未安装 EvoX，尚未运行完整优化训练。
+- [x] 移除核心 EC 算法对 EvoX 的依赖并验证 NSGA-II 优化流程。
+  CMA-ES、SepCMA-ES 和 NSGA-II 直接实现 `EvoOptimizer`；旧 EvoX 算法、适配器与配置已删除。测试覆盖原生更新、ZDT1 优化、nested vmap、单/多设备 workflow，以及真实 Brax Ant 多目标奖励的两代优化。
+- [x] 修复 CMA-ES 正权重配置约束与 EC 训练返回值。
+  按论文附录 C 保留种群相关对数权重，限制 `1 <= num_elites <= pop_size // 2`；白化改用矩阵—向量乘法。ES 与 NSGA-II 的 `learn()` 返回最终状态，测试同时覆盖已完成训练的空循环。
+- [ ] 优化 `non_dominated_sort` 的大种群性能。
+  这是暂缓的性能优化，当前保留已验证的稠密支配矩阵与分层实现。

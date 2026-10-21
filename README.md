@@ -194,7 +194,7 @@ Currently, EvoRL supports 4 types of algorithms
 | Type                    | Algorithms                                                                                                    |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
 | RL                      | A2C, PPO, IMPALA, DQN, DDPG, TD3, SAC, TD7                                                                    |
-| EA                      | OpenES, VanillaES, ARS, CMA-ES, algorithms from [EvoX](https://github.com/EMI-Group/evox) (PSO, NSGA-II, ...) |
+| EA                      | OpenES, VanillaES, ARS, CMA-ES, SepCMA-ES, NSGA-II |
 | Evolution-guided RL     | ERL-GA, ERL-ES, ERL-EDA, CEMRL, CEMRL-OpenES                                                                  |
 | Population-based AutoRL | PBT family (e.g: PBT-PPO, PBT-SAC, PBT-CSO-PPO)                                                               |
 

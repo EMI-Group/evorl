@@ -3,6 +3,8 @@ import jax
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_leaves
 
+from evorl.types import Params
+
 __all__ = ["ParamVectorSpec"]
 
 
@@ -23,7 +25,7 @@ class ParamVectorSpec:
         self.vec_size = flat.shape[0]
         self.to_vec_fn = lambda x: ravel_pytree(x)[0]
 
-    def to_vector(self, x) -> jax.Array:
+    def to_vector(self, x: Params) -> jax.Array:
         """Convert the original params to flatten params.
 
         see `jax.flatten_util.ravel_pytree`
@@ -43,7 +45,7 @@ class ParamVectorSpec:
 
         return vmap_to_vector(x)
 
-    def to_tree(self, x) -> jax.Array:
+    def to_tree(self, x: jax.Array) -> Params:
         """Convert the flatten params to the original params.
 
         Args:
@@ -52,8 +54,7 @@ class ParamVectorSpec:
         Returns:
             The original params.
         """
-        leaves = tree_leaves(x)
-        batch_ndim = leaves[0].ndim - self._ndim
+        batch_ndim = x.ndim - 1
         vmap_to_tree = self.to_tree_fn
 
         for _ in range(batch_ndim):

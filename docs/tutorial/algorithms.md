@@ -40,7 +40,11 @@ Workflows for Single objective EC are derived from [`ECWorkflowTemplate`](#evorl
 | CMA-ES    | [`CMAESWorkflow`](#evorl.algorithms.ec.so.cmaes.CMAESWorkflow)              | Deterministic | Continuous             |
 
 
-Workflows for multi-objective EC derive from [`MultiObjectiveECWorkflowTemplate`](#evorl.workflows.ec_workflow.MultiObjectiveECWorkflowTemplate). [`NSGA2Workflow`](#evorl.algorithms.ec.mo.nsga2_brax.NSGA2Workflow) uses the standard evaluator with vector rewards from Brax or MuJoCo Playground. Select objectives with `env.reward_keys`, for example `env=brax/ant_multi_objective agent=ec/nsga2-brax`. Fitness averages episode returns over episodes and preserves the objective axis. Episode lengths remain a separate statistic.
+Workflows for multi-objective EC derive from [`MultiObjectiveECWorkflowTemplate`](#evorl.workflows.ec_workflow.MultiObjectiveECWorkflowTemplate). [`NSGA2Workflow`](#evorl.algorithms.ec.mo.nsga2.NSGA2Workflow) uses the native [`NSGA2`](#evorl.ec.optimizers.nsga2.NSGA2) optimizer and the standard evaluator. It accepts single-agent environments with vector rewards and the continuous action space supported by the deterministic EC agent. The objective count is inferred from the environment's reward shape; `env.reward_keys` is optional. Without reward names, metrics use `objective_0`, `objective_1`, and so on. For Brax and MuJoCo Playground, select reward components with `env.reward_keys`, for example `env=brax/ant_multi_objective agent=ec/nsga2`. Fitness averages episode returns over episodes and preserves the objective axis. Episode lengths remain a separate statistic.
+
+CMA-ES, SepCMA-ES and NSGA-II implement `EvoOptimizer` directly and maximize fitness without EvoX. NSGA-II maximizes every reward objective; use negative rewards for quantities to minimize. Its variation uses bounded simulated binary crossover and polynomial mutation.
+
+The CMA-ES variants use the positive logarithmic recombination weights from Appendix C of [Hansen's tutorial](https://arxiv.org/abs/1604.00772). Set `num_elites` between 1 and `pop_size // 2`; the supplied configs select half the population. The initial search center is the policy initialized during workflow setup. ES and NSGA-II workflows return the final state from `learn()`, including when the requested iterations are already complete.
 
 ## ERL Algorithms
 

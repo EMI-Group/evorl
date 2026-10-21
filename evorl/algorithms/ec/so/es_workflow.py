@@ -88,6 +88,7 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         return eval_metrics, state.replace(key=key)
 
     def learn(self, state: State) -> State:
+        """Run the remaining iterations and return the final workflow state."""
         start_iteration = state.metrics.iterations
 
         for i in range(start_iteration, self.config.num_iters):
@@ -117,6 +118,8 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
                 state,
                 force=iters == self.config.num_iters,
             )
+
+        return state
 
     @classmethod
     def enable_jit(cls) -> None:

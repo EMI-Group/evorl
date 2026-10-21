@@ -8,10 +8,7 @@ ECState = PyTreeData | PyTreeDict  # used for type hinting
 
 
 class EvoOptimizer(PyTreeNode, metaclass=ABCMeta):
-    """By default, all EvoOptimizer maximize the fitness.
-
-    This is different from the behavior in EvoX.
-    """
+    """Evolutionary optimizer interface; all fitness objectives are maximized."""
 
     @abstractmethod
     def init(self, *args, **kwargs) -> ECState:

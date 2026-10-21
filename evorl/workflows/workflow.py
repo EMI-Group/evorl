@@ -9,8 +9,6 @@ from evorl.recorders import ChainRecorder, Recorder
 from evorl.types import State
 from evorl.utils.orbax_utils import setup_checkpoint_manager
 
-# TODO: remove it when evox is updated
-
 
 class AbstractWorkflow(ABC):
     """A Workflow Interface for EvoRL training pipelines."""

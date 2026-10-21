@@ -10,7 +10,7 @@ from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
 from evorl.agent import AgentState
-from evorl.ec.optimizers.ec_optimizer import ECState
+from evorl.ec.optimizers import CMAES, SepCMAES, ECState
 from evorl.utils.ec_utils import ParamVectorSpec
 
 from .es_workflow import ESWorkflowTemplate
@@ -45,18 +45,7 @@ class CMAESWorkflow(ESWorkflowTemplate):
         agent_state = agent.init(env.obs_space, env.action_space, agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
 
-        from evorl.ec.optimizers.evox_wrapper import EvoXAlgorithmAdapter
-        from evorl.ec.evox_algorithm import CMAES
-
-        ec_optimizer = EvoXAlgorithmAdapter(
-            algorithm=CMAES(
-                center_init=param_vec_spec.to_vector(agent_state.params.policy_params),
-                init_stdev=config.init_stdev,
-                pop_size=config.pop_size,
-                mu=config.num_elites,
-            ),
-            param_vec_spec=param_vec_spec,
-        )
+        ec_optimizer = cls._build_optimizer(config, param_vec_spec)
 
         if config.explore:
             action_fn = agent.compute_actions
@@ -98,13 +87,22 @@ class CMAESWorkflow(ESWorkflowTemplate):
             agent_state_vmap_axes=agent_state_vmap_axes,
         )
 
+    @classmethod
+    def _build_optimizer(cls, config: DictConfig, param_vec_spec: ParamVectorSpec):
+        return CMAES(
+            pop_size=config.pop_size,
+            num_elites=config.num_elites,
+            init_stdev=config.init_stdev,
+            param_vec_spec=param_vec_spec,
+        )
+
     def _setup_agent_and_optimizer(self, key: jax.Array) -> tuple[AgentState, ECState]:
         agent_key, ec_key = jax.random.split(key)
         agent_state = self.agent.init(
             self.env.obs_space, self.env.action_space, agent_key
         )
 
-        ec_opt_state = self.ec_optimizer.init(ec_key)
+        ec_opt_state = self.ec_optimizer.init(agent_state.params.policy_params, ec_key)
 
         # remove params
         agent_state = self._replace_actor_params(agent_state, params=None)
@@ -138,14 +136,14 @@ class CMAESWorkflow(ESWorkflowTemplate):
         )
 
     def _get_pop_center(self, state: State) -> AgentState:
-        flat_pop_center = state.ec_opt_state.algo_state.mean
+        flat_pop_center = state.ec_opt_state.mean
 
         pop_center = self.ec_optimizer.param_vec_spec.to_tree(flat_pop_center)
 
         return self._replace_actor_params(state.agent_state, pop_center)
 
     def _record_callback(self, state: State, iters: int) -> None:
-        algo_state = state.ec_opt_state.algo_state
+        algo_state = state.ec_opt_state
         C = algo_state.C
         std = jnp.sqrt(jnp.diagonal(C)) * algo_state.sigma
 
@@ -161,82 +159,16 @@ class SepCMAESWorkflow(CMAESWorkflow):
         return "SepCMAES"
 
     @classmethod
-    def _build_from_config(cls, config: DictConfig) -> Self:
-        env = create_env(
-            config.env,
-            parallel=config.num_envs,
-            autoreset_mode=AutoresetMode.DISABLED,
-        )
-
-        agent = make_deterministic_ec_agent(
-            action_space=env.action_space,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-            use_bias=config.agent_network.use_bias,
-            normalize_obs=config.normalize_obs,
-            norm_layer_type=config.agent_network.norm_layer_type,
-            policy_obs_key=config.agent_network.policy_obs_key,
-        )
-
-        # dummy agent_state
-        agent_key = jax.random.key(config.seed)
-        agent_state = agent.init(env.obs_space, env.action_space, agent_key)
-        param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
-
-        from evorl.ec.optimizers.evox_wrapper import EvoXAlgorithmAdapter
-        from evorl.ec.evox_algorithm import SepCMAES
-
-        ec_optimizer = EvoXAlgorithmAdapter(
-            algorithm=SepCMAES(
-                center_init=param_vec_spec.to_vector(agent_state.params.policy_params),
-                init_stdev=config.init_stdev,
-                pop_size=config.pop_size,
-                mu=config.num_elites,
-            ),
+    def _build_optimizer(cls, config: DictConfig, param_vec_spec: ParamVectorSpec):
+        return SepCMAES(
+            pop_size=config.pop_size,
+            num_elites=config.num_elites,
+            init_stdev=config.init_stdev,
             param_vec_spec=param_vec_spec,
         )
 
-        if config.explore:
-            action_fn = agent.compute_actions
-        else:
-            action_fn = agent.evaluate_actions
-
-        ec_evaluator = Evaluator(
-            env=env,
-            action_fn=action_fn,
-            max_episode_steps=config.env.max_episode_steps,
-            discount=config.discount,
-        )
-
-        # to evaluate the pop-mean actor
-        eval_env = create_env(
-            config.env,
-            parallel=config.num_eval_envs,
-            autoreset_mode=AutoresetMode.DISABLED,
-        )
-
-        evaluator = Evaluator(
-            env=eval_env,
-            action_fn=agent.evaluate_actions,
-            max_episode_steps=config.env.max_episode_steps,
-        )
-
-        agent_state_vmap_axes = AgentState(
-            params=0,
-            obs_preprocessor_state=None,
-        )
-
-        return cls(
-            config=config,
-            env=env,
-            agent=agent,
-            ec_optimizer=ec_optimizer,
-            ec_evaluator=ec_evaluator,
-            evaluator=evaluator,
-            agent_state_vmap_axes=agent_state_vmap_axes,
-        )
-
     def _record_callback(self, state: State, iters: int) -> None:
-        algo_state = state.ec_opt_state.algo_state
+        algo_state = state.ec_opt_state
         C = algo_state.C
         std = jnp.sqrt(C) * algo_state.sigma
 

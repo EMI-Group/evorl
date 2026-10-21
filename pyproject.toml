@@ -75,7 +75,6 @@ dependencies = [
     "distrax>=0.1.9",
     "flax",
     "tfp-nightly[jax]",
-    # "evox<1.0.0",
     "gymnasium>=1.1.0",
     "hydra-core",
     "hydra-joblib-launcher",

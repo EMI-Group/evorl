@@ -4,80 +4,57 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from evox import Algorithm, State
-from .sort_utils import sort_by_key
+from evorl.types import Params, PyTreeData, PyTreeDict, pytree_field
+from evorl.utils.ec_utils import ParamVectorSpec
+from .ec_optimizer import EvoOptimizer
 
 
-class CMAES(Algorithm):
-    """CMA-ES.
+class CMAESState(PyTreeData):
+    """Mean, covariance, evolution paths and pending candidates."""
 
-    Paper: [Completely Derandomized Self-Adaptation in Evolution Strategies](http://www.cmap.polytechnique.fr/~nikolaus.hansen/cmaartic.pdf)
+    mean: jax.Array
+    sigma: jax.Array
+    pc: jax.Array
+    ps: jax.Array
+    C: jax.Array
+    B: jax.Array | None
+    D: jax.Array | None
+    count_iter: jax.Array
+    population: jax.Array
+    key: jax.Array
+
+
+class CMAES(EvoOptimizer):
+    """CMA-ES maximizing scalar fitness, with a full covariance matrix.
+
+    `init(mean, key)` accepts policy parameters as a PyTree. The state stores
+    flattened parameters for covariance updates; `ask` returns parameter trees
+    with a leading population dimension, using `param_vec_spec` to restore them.
+    This is the positive-weight variant in Appendix C of the tutorial. Use
+    `num_elites <= pop_size // 2` with the population-based logarithmic weights.
+
+    Reference: https://arxiv.org/abs/1604.00772.
     """
 
-    def __init__(
-        self,
-        center_init,
-        init_stdev,
-        pop_size=None,
-        mu=None,
-        recombination_weights=None,
-        cm: float = 1.0,
-        alpha_cov: float = 2.0,
-        delay_decomp: bool = True,
-    ):
-        """This implementation follows `The CMA Evolution Strategy: A Tutorial <https://arxiv.org/pdf/1604.00772.pdf>`_.
+    pop_size: int
+    num_elites: int
+    init_stdev: float
+    param_vec_spec: ParamVectorSpec = pytree_field(static=True)
+    cm: float = 1.0
+    alpha_cov: float = 2.0
+    delay_decomp: bool = True
 
-        .. note::
-            CMA-ES involves eigendecomposition,
-            which introduces relatively large numerical error,
-            and may lead to non-deterministic behavior on different hardware backends.
-        """
-        self.center_init = center_init
-        assert init_stdev > 0, "Expect variance to be a non-negative float"
-        self.init_stdev = init_stdev
-        self.dim = center_init.shape[0]
-        self.cm = cm
-
-        if pop_size is None:
-            # auto
-            self.pop_size = 4 + math.floor(3 * math.log(self.dim))
-        else:
-            self.pop_size = pop_size
-
-        if mu is None:
-            self.mu = self.pop_size // 2
-        else:
-            assert mu <= self.pop_size, "mu should be less than or equal to pop_size"
-            self.mu = mu
-
-        if recombination_weights is None:
-            # log(pop/2+1) - log(i) for i=1,2,...,mu
-
-            # Note: equivalent when mu = pop_size / 2
-            # weights = jnp.log(self.mu + 0.5) - jnp.log(jnp.arange(1, self.mu + 1))
-            weights = np.log((self.pop_size + 1) / 2) - np.log(
-                np.arange(1, self.mu + 1)
-            )
-            self.weights = weights / np.sum(weights)
-        else:
-            assert recombination_weights.shape[0] == self.mu, (
-                "recombination_weights' length must match mu"
-            )
-            # currently, we don't support negative weights
-            assert (recombination_weights[1:] <= recombination_weights[:-1]).all(), (
-                "recombination_weights must be non-increasing"
-            )
-            assert jnp.abs(jnp.sum(recombination_weights) - 1) < 1e-6, (
-                "sum of recombination_weights must be 1"
-            )
-            assert (recombination_weights > 0).all(), (
-                "recombination_weights must be positive"
-            )
-            self.weights = np.asarray(recombination_weights, dtype=np.float32)
-
-        self.mueff = (
-            np.sum(np.abs(self.weights)) ** 2 / np.sum(self.weights**2)
-        ).tolist()
+    def __post_init__(self):
+        if self.init_stdev <= 0:
+            raise ValueError("init_stdev must be positive")
+        if not 1 <= self.num_elites <= self.pop_size // 2:
+            raise ValueError("num_elites must be between 1 and pop_size // 2")
+        self.dim = self.param_vec_spec.vec_size
+        self.mu = self.num_elites
+        weights = np.log((self.pop_size + 1) / 2) - np.log(np.arange(1, self.mu + 1))
+        weights /= weights.sum()
+        self.mueff = float(1 / np.sum(weights**2))
+        self.weights = jnp.asarray(weights, dtype=jnp.float32)
 
         # time constant for cumulation for C
         self.cc = (4 + self.mueff / self.dim) / (
@@ -85,7 +62,7 @@ class CMAES(Algorithm):
         )
 
         # learning rate for rank-one update of C
-        self.alpha_cov = alpha_cov
+        alpha_cov = self.alpha_cov
         self.c1 = alpha_cov / ((self.dim + 1.3) ** 2 + self.mueff)
 
         # learning rate for rank-μ update of C
@@ -110,27 +87,27 @@ class CMAES(Algorithm):
             math.sqrt(self.dim) * (1 - 1 / (4 * self.dim) + 1 / (21 * self.dim**2))
         )
 
-        if delay_decomp:
+        if self.delay_decomp:
             self.delay_decomp_iters = max(
                 1, math.floor(1 / ((self.c1 + self.cmu) * self.dim * 10))
             )
         else:
             self.delay_decomp_iters = 0
 
-    def setup(self, key):
+    def init(self, mean: Params, key: jax.Array) -> CMAESState:
         pc = jnp.zeros((self.dim,))
         ps = jnp.zeros((self.dim,))
         B = jnp.eye(self.dim)
         D = jnp.ones((self.dim,))
         C = jnp.eye(self.dim)
-        return State(
-            pc=pc,  # env path for C
-            ps=ps,  # env path for sigma
+        return CMAESState(
+            pc=pc,  # Evolution path for covariance.
+            ps=ps,  # Evolution path for step size.
             B=B,
             D=D,
             C=C,
             count_iter=jnp.zeros((), dtype=jnp.int32),
-            mean=jnp.asarray(self.center_init, dtype=jnp.float32),
+            mean=jnp.asarray(self.param_vec_spec.to_vector(mean), dtype=jnp.float32),
             sigma=jnp.asarray(self.init_stdev, dtype=jnp.float32),
             key=key,
             population=jnp.empty((self.pop_size, self.dim)),
@@ -159,10 +136,10 @@ class CMAES(Algorithm):
             count_iter=state.count_iter + 1,
             key=key,
         )
-        return population, new_state
+        return self.param_vec_spec.to_tree(population), new_state
 
     def tell(self, state, fitness):
-        fitness, population = sort_by_key(fitness, state.population)
+        population = state.population[jnp.argsort(fitness, descending=True)]
 
         updates = population[: self.mu] - state.mean
         update = self.weights @ updates
@@ -181,7 +158,7 @@ class CMAES(Algorithm):
         C = self._update_C(state.C, pc, hsig, y)
         sigma = self._update_sigma(state.sigma, ps)
 
-        return state.replace(
+        return PyTreeDict(), state.replace(
             mean=mean,
             ps=ps,
             pc=pc,
@@ -190,10 +167,10 @@ class CMAES(Algorithm):
         )
 
     def _update_ps(self, ps, B, D, y_w):
-        invsqrtC = (B / D) @ B.T  # C^(-1/2)=B*D^(-1)*B^T
-
+        # Apply C^(-1/2) using matrix-vector products without constructing it.
+        whitened = B @ ((B.T @ y_w) / D)
         return (1 - self.cs) * ps + jnp.sqrt(self.cs * (2 - self.cs) * self.mueff) * (
-            invsqrtC @ y_w
+            whitened
         )
 
     def _update_pc(self, pc, hsig, y_w):
@@ -230,17 +207,20 @@ class SepCMAES(CMAES):
     Paper: [A Simple Modification in CMA-ES Achieving Linear Time and Space Complexity](https://inria.hal.science/inria-00287367/document)
     """
 
-    def setup(self, key):
+    def init(self, mean: Params, key: jax.Array) -> CMAESState:
         pc = jnp.zeros((self.dim,))
         ps = jnp.zeros((self.dim,))
         C = jnp.ones((self.dim,))
-        return State(
+        return CMAESState(
             pc=pc,
             ps=ps,
             C=C,
-            count_iter=0,
-            mean=self.center_init,
-            sigma=self.init_stdev,
+            B=None,
+            D=None,
+            population=jnp.zeros((self.pop_size, self.dim)),
+            count_iter=jnp.zeros((), dtype=jnp.int32),
+            mean=self.param_vec_spec.to_vector(mean),
+            sigma=jnp.asarray(self.init_stdev, dtype=jnp.float32),
             key=key,
         )
 
@@ -251,10 +231,10 @@ class SepCMAES(CMAES):
         new_state = state.replace(
             population=population, count_iter=state.count_iter + 1, key=key
         )
-        return population, new_state
+        return self.param_vec_spec.to_tree(population), new_state
 
     def tell(self, state, fitness):
-        fitness, population = sort_by_key(fitness, state.population)
+        population = state.population[jnp.argsort(fitness, descending=True)]
 
         updates = population[: self.mu] - state.mean
         update = self.weights @ updates
@@ -273,7 +253,7 @@ class SepCMAES(CMAES):
         C = self._update_C(state.C, pc, hsig, y)
         sigma = self._update_sigma(state.sigma, ps)
 
-        return state.replace(mean=mean, ps=ps, pc=pc, C=C, sigma=sigma)
+        return PyTreeDict(), state.replace(mean=mean, ps=ps, pc=pc, C=C, sigma=sigma)
 
     def _update_ps(self, ps, C, y_w):
         return (1 - self.cs) * ps + jnp.sqrt(self.cs * (2 - self.cs) * self.mueff) * (
