@@ -1,7 +1,9 @@
+import math
 from typing import Any
 
 import jax
 import jax.numpy as jnp
+from jax.scipy.special import log_ndtr
 from tensorflow_probability.substrates import jax as tfp
 
 tfd = tfp.distributions  # note: tfp use lazy init.
@@ -48,6 +50,38 @@ def get_trancated_norm_dist(loc, scale, low, high):
     return tfd.TruncatedNormal(loc=loc, scale=scale, low=low, high=high)
 
 
+def _normal_log_cdf(x: jax.Array) -> jax.Array:
+    """Compute a standard Normal log CDF for the JAX 0.12.0 workaround.
+
+    JAX 0.12.0's `erf`/`erfc` derivatives fail VMA checks inside `shard_map`.
+    Use `log_ndtr` in the central region, and differentiate the same third-order
+    tail expansion used by TFP directly. This avoids the cancellation in
+    `log_ndtr`'s `exp(log_pdf - log_cdf)` derivative for large negative inputs.
+
+    Args:
+        x: Standardized values with dtype `float32` or `float64`.
+
+    Returns:
+        Log CDF values with the same shape and dtype as `x`.
+    """
+    cutoff = -20.0 if x.dtype == jnp.float64 else -10.0
+    tail = x <= cutoff
+    # Keep both branches finite without clipping derivatives at the cutoff.
+    tail_x = jnp.where(tail, x, cutoff)
+    regular_x = jnp.where(tail, cutoff, x)
+    inverse_square = 1.0 / jnp.square(tail_x)
+    correction = 1.0 + inverse_square * (
+        -1.0 + inverse_square * (3.0 - 15.0 * inverse_square)
+    )
+    tail_value = (
+        -0.5 * jnp.square(tail_x)
+        - jnp.log(-tail_x)
+        - 0.5 * math.log(2.0 * math.pi)
+        + jnp.log(correction)
+    )
+    return jnp.where(tail, tail_value, log_ndtr(regular_x))
+
+
 class TanhTransformedDistribution(tfd.TransformedDistribution):
     """Distribution followed by tanh. from acme."""
 
@@ -74,12 +108,24 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):
         log_epsilon = jnp.log(1.0 - threshold)
         # Those 2 values are differentiable w.r.t. model parameters, such that the
         # gradient is defined everywhere.
-        self._log_prob_left = (
-            self.distribution.log_cdf(-inverse_threshold) - log_epsilon
-        )
-        self._log_prob_right = (
-            self.distribution.log_survival_function(inverse_threshold) - log_epsilon
-        )
+        # Temporary workaround for the confirmed JAX 0.12.0 VMA regression.
+        # Leave other releases on the original TFP path; do not assume that
+        # future JAX versions need this workaround without reproducing it.
+        if jax.__version_info__ == (0, 12, 0):
+            loc, scale = self.distribution.loc, self.distribution.scale
+            self._log_prob_left = (
+                _normal_log_cdf((-inverse_threshold - loc) / scale) - log_epsilon
+            )
+            self._log_prob_right = (
+                _normal_log_cdf((loc - inverse_threshold) / scale) - log_epsilon
+            )
+        else:
+            self._log_prob_left = (
+                self.distribution.log_cdf(-inverse_threshold) - log_epsilon
+            )
+            self._log_prob_right = (
+                self.distribution.log_survival_function(inverse_threshold) - log_epsilon
+            )
 
     def log_prob(self, event):
         # Without this clip there would be NaNs in the inner tf.where and that

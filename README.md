@@ -89,6 +89,15 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 
 
 
+> [!NOTE]
+> JAX 0.12.0 currently fails VMA checks when differentiating `erf`/`erfc` inside
+> `shard_map`. EvoRL includes a local workaround for this release only. For now,
+> install the tested JAX version with CUDA 13 support:
+>
+> ```shell
+> uv pip install "jax[cuda13]==0.11.0"
+> ```
+
 # Installation
 
 EvoRL requires Python 3.12 or newer and JAX/jaxlib 0.10.0 or newer. So `jax` should be installed first, please follow [JAX official installation guide](https://jax.readthedocs.io/en/latest/quickstart.html#installation). Install the released package from PyPI (available after the first release):
