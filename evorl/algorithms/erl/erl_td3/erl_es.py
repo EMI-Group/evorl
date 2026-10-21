@@ -52,7 +52,6 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
         # env for rl&ec rollout
         env = create_env(
             config.env,
-            episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
             record_ori_obs=True,
@@ -124,7 +123,6 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
         # to evaluate the pop-mean actor
         eval_env = create_env(
             config.env,
-            episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,
         )

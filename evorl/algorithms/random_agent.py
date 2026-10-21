@@ -39,7 +39,6 @@ class RandomAgentWorkflow(RLWorkflow):
 
         eval_env = create_env(
             config.env,
-            episode_length=max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,
         )

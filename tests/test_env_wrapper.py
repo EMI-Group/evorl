@@ -154,8 +154,8 @@ def test_sparse_reward_wrapper():
         dones = dones.at[-1].set(1.0)
 
         env = FakeEnv(rewards, dones)
-        env = SparseRewardWrapper(env, sparse_length=sparse_length)
         env = OneEpisodeWrapper(env, episode_length=rollout_length, discount=1.0)
+        env = SparseRewardWrapper(env, sparse_length=sparse_length)
         env = VmapWrapper(env, num_envs=1)
         agent = DebugRandomAgent()
 
@@ -197,8 +197,8 @@ def test_sparse_reward_wrapper2():
     dones = dones.at[term_idx:].set(1.0)
 
     env = FakeEnv(rewards, dones)
-    env = SparseRewardWrapper(env, sparse_length=sparse_length)
     env = OneEpisodeWrapper(env, episode_length=rollout_length, discount=1.0)
+    env = SparseRewardWrapper(env, sparse_length=sparse_length)
     env = VmapWrapper(env, num_envs=1)
     agent = DebugRandomAgent()
 

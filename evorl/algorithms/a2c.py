@@ -252,7 +252,6 @@ class A2CWorkflow(OnPolicyWorkflow):
 
         env = create_env(
             config.env,
-            episode_length=max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.ENVPOOL,
         )
@@ -279,7 +278,6 @@ class A2CWorkflow(OnPolicyWorkflow):
 
         eval_env = create_env(
             config.env,
-            episode_length=max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,
         )

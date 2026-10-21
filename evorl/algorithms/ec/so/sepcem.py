@@ -23,7 +23,6 @@ class SepCEMWorkflow(ESWorkflowTemplate):
     def _build_from_config(cls, config: DictConfig) -> Self:
         env = create_env(
             config.env,
-            episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
         )
@@ -61,7 +60,6 @@ class SepCEMWorkflow(ESWorkflowTemplate):
         # to evaluate the pop-mean actor
         eval_env = create_env(
             config.env,
-            episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,
         )

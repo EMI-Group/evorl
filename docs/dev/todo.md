@@ -1,16 +1,16 @@
 # 开发待办
 
-- [ ] 清理算法构建环境时重复传入的 `episode_length`。
-  `create_env()` 已将环境配置中的 `max_episode_steps` 作为默认 `episode_length`；算法侧统一使用该配置，仅在确有不同上限需求时显式覆盖。
+- [x] 清理算法构建环境时重复传入的 `episode_length`。
+  RL、EC、ERL、PBT 和 contrib 算法统一使用 `create_env()` 从环境配置的 `max_episode_steps` 获取默认上限；评估器自身的 `max_episode_steps` 参数保留。
 - [x] PRNGKey 改为新 API（`jax.random.key` / typed keys）。
   已迁移构造函数、批量 key 处理及 host callback，并验证 typed key checkpoint；不支持旧 checkpoint 格式迁移。
 - [x] 检查 `check_vma=False` 相关使用地方的合理性。
   已全部采用默认 VMA 检查，并修复循环与分支类型、gather 输出类型和梯度尺度。
   `pmean_loss_and_grad` 对全局平均 loss 求导，aux 保持本地；双 CPU 数值测试验证 loss、梯度和优先级数据。
+- [ ] 跟进 JAX 0.12.0 下连续动作训练的 `erf` VMA 报错。
+  Tanh 高斯分布的 `log_cdf` 调用 `erf` 时，`polynomial` 原语报告 varying manual axes 不匹配，影响多设备 RL 和 PBT 工作流；修改前的提交也可复现。保留默认 VMA 检查，单独调查兼容处理。
 - [x] 补齐普通 RL/EC 的多卡 `step/evaluate` 执行。
   子类的 `enable_shmap` 类方法直接定义混合 State 布局，以 `in_specs=None` 声明静态 `self`；构建时先应用 `shard_map`，再按需应用 JIT。两设备测试覆盖 PPO、SAC、OpenES 的初始化、训练和评估。
-- [ ] 修复 NORMAL/FAST autoreset 对下层 `_internal` 状态的恢复。
-  当前只恢复原生环境状态和观测，下层环境或 wrapper 的内部计数等仍可能沿用上一局；单智能体和多智能体最小示例均已复现。
 - [x] 调整多目标奖励 wrapper 的命名。
   Brax 使用 `BraxMultiObjectiveRewardWrapper`；Playground 使用继承它的 `MujocoMultiObjectiveRewardWrapper`，复用相同的 metrics 取值和奖励转换逻辑。
 - [ ] 实现并验证多智能体训练算法。

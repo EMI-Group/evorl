@@ -49,7 +49,6 @@ def init_obs_preprocessor(agent_state, config, key, dp_axis_name=None):
 
     env = create_env(
         config.env,
-        episode_length=config.env.max_episode_steps,
         parallel=config.num_envs,
         autoreset_mode=AutoresetMode.NORMAL,
     )

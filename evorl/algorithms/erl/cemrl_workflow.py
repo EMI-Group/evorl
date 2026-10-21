@@ -164,7 +164,6 @@ class CEMRLWorkflowBase(Workflow):
         # We need a separate autoreset env to fill the replay buffer
         env = create_env(
             config.env,
-            episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.NORMAL,
             record_ori_obs=True,

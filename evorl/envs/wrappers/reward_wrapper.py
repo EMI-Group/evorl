@@ -91,7 +91,15 @@ class RewardScaleWrapper[ActionT, SpaceT](Wrapper[ActionT, SpaceT]):
 class SparseRewardWrapper(Wrapper[Action, Space]):
     """Convert dense reward to sparse reward.
 
-    The dense rewards become: 0, 0, ..., sum(rewards), 0, 0, ..., sum(rewards)
+    Emit accumulated rewards every `sparse_length` steps and at episode end.
+    Each emission clears the accumulator, including partial intervals at the
+    terminal step. Scalar and vector rewards keep their original shape.
+
+    Apply this wrapper after `EpisodeWrapper` (or `OneEpisodeWrapper`) and
+    before vectorization and autoreset. This lets it observe time-limit `done`
+    signals and emit pending rewards before the next episode starts.
+    `info.episode_return` records the rewards seen by the inner episode wrapper,
+    before sparse emission; discounted returns can differ after delaying rewards.
     """
 
     def __init__(self, env: BaseEnv[Action, Space], sparse_length: int):

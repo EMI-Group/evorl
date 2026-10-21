@@ -32,7 +32,6 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
             )
         env = create_env(
             config.env,
-            episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
         )

@@ -231,9 +231,9 @@ def test_episode_wrappers_preserve_terminal_reward_under_nested_vmap(reward_keys
 
 @pytest.mark.parametrize("reward_keys", REWARD_KEYS, ids=REWARD_IDS)
 def test_sparse_rewards_accumulate_each_objective(reward_keys):
-    env = OneEpisodeWrapper(
-        SparseRewardWrapper(make_metric_env(reward_keys), sparse_length=2),
-        episode_length=3,
+    env = SparseRewardWrapper(
+        OneEpisodeWrapper(make_metric_env(reward_keys), episode_length=3),
+        sparse_length=2,
     )
     state = env.reset(jax.random.key(0))
     state = state.replace(env_state=state.env_state.replace(horizon=jnp.int32(3)))
@@ -247,6 +247,94 @@ def test_sparse_rewards_accumulate_each_objective(reward_keys):
         state.reward,
         expected_returns(np.array(3), reward_keys)
         - expected_returns(np.array(2), reward_keys),
+    )
+
+
+@pytest.mark.parametrize("reward_keys", REWARD_KEYS, ids=REWARD_IDS)
+@pytest.mark.parametrize("mode", list(AutoresetMode))
+def test_sparse_rewards_flush_on_external_truncation_under_nested_vmap(
+    reward_keys, mode
+):
+    class LongEpisodeEnv(MetricEnv):
+        def reset(self, key):
+            state = super().reset(key)
+            return state.replace(
+                env_state=state.env_state.replace(horizon=jnp.int32(10))
+            )
+
+    env = LongEpisodeEnv()
+    if reward_keys is not None:
+        env = BraxMultiObjectiveRewardWrapper(env, reward_keys)
+    episode_wrapper = (
+        OneEpisodeWrapper if mode == AutoresetMode.DISABLED else EpisodeWrapper
+    )
+    env = SparseRewardWrapper(
+        episode_wrapper(env, episode_length=2, discount=1.0), sparse_length=3
+    )
+    if mode == AutoresetMode.DISABLED:
+        env = VmapWrapper(env, num_envs=2, vmap_step=True)
+    else:
+        wrapper = {
+            AutoresetMode.NORMAL: VmapAutoResetWrapper,
+            AutoresetMode.FAST: FastVmapAutoResetWrapper,
+            AutoresetMode.ENVPOOL: VmapEnvPoolAutoResetWrapper,
+        }[mode]
+        env = wrapper(env, num_envs=2)
+
+    def run(key):
+        def step(state, _):
+            state = env.step(state, jnp.zeros((2, 1)))
+            return state, (
+                state.reward,
+                state.done,
+                state._internal.cum_count,
+                state._internal.cum_reward,
+                state.info.truncation,
+                state.info.episode_return,
+            )
+
+        return jax.lax.scan(step, env.reset(key), None, length=6)[1]
+
+    keys = jax.random.split(jax.random.key(5), (2, 2))
+    rewards, dones, counts, pending, truncations, returns = jax.jit(
+        jax.vmap(jax.vmap(run))
+    )(keys)
+    if mode == AutoresetMode.DISABLED:
+        expected_counts = [1, 0, 0, 0, 0, 0]
+        expected_dones = [0, 1, 1, 1, 1, 1]
+        expected_lengths = [1, 2, 2, 2, 2, 2]
+    elif mode == AutoresetMode.ENVPOOL:
+        expected_counts = [1, 0, 0, 1, 0, 0]
+        expected_dones = [0, 1, 0, 0, 1, 0]
+        expected_lengths = [1, 2, 0, 1, 2, 0]
+    else:
+        expected_counts = [1, 0, 1, 0, 1, 0]
+        expected_dones = [0, 1, 0, 1, 0, 1]
+        expected_lengths = [1, 2, 1, 2, 1, 2]
+
+    def broadcast_steps(values, shape):
+        return np.broadcast_to(
+            np.asarray(values).reshape((1, 1, 6, 1, *shape[4:])), shape
+        )
+
+    reward_shape = () if reward_keys is None else (len(reward_keys),)
+    assert rewards.shape == (2, 2, 6, 2, *reward_shape)
+    expected_rewards = expected_returns(np.array(expected_dones) * 2, reward_keys)
+    np.testing.assert_allclose(
+        rewards, broadcast_steps(expected_rewards, rewards.shape)
+    )
+    np.testing.assert_array_equal(dones, broadcast_steps(expected_dones, dones.shape))
+    np.testing.assert_array_equal(truncations, dones)
+    np.testing.assert_array_equal(
+        counts, broadcast_steps(expected_counts, counts.shape)
+    )
+    np.testing.assert_allclose(
+        pending,
+        broadcast_steps(expected_returns(expected_counts, reward_keys), pending.shape),
+    )
+    np.testing.assert_allclose(
+        returns,
+        broadcast_steps(expected_returns(expected_lengths, reward_keys), returns.shape),
     )
 
 

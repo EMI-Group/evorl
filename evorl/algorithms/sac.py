@@ -447,7 +447,6 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
     def _build_from_config(cls, config: DictConfig):
         env = create_env(
             config.env,
-            episode_length=config.env.max_episode_steps,
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.NORMAL,
             record_ori_obs=True,
@@ -488,7 +487,6 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
 
         eval_env = create_env(
             config.env,
-            episode_length=config.env.max_episode_steps,
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,
         )
