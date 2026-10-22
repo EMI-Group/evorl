@@ -63,6 +63,18 @@ hosted service was discontinued on March 5, 2026; its extra is retained for
 compatibility with functioning endpoints. See [Logging in the quickstart](quickstart.md#logging)
 for backend mappings, grouping, and customization.
 
+## Optional EvoX algorithms
+
+```shell
+uv pip install "evorl-jax[evox]"
+# From source:
+uv pip install -e ".[evox]"
+```
+
+Requires EvoX `>=1.4,<2` and PyTorch `>=2.9`. Choose a PyTorch build supporting
+the accelerator used by JAX. See the [CSO and RVEA examples](../tutorial/algorithms.md#optional-pytorch-evox-integration)
+for usage and execution constraints.
+
 ## RL Environments
 
 Brax and MuJoCo Playground are supported by default and installed with

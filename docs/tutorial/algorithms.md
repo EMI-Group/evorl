@@ -46,6 +46,35 @@ CMA-ES, SepCMA-ES and NSGA-II implement `EvoOptimizer` directly and maximize fit
 
 The CMA-ES variants use the positive logarithmic recombination weights from Appendix C of [Hansen's tutorial](https://arxiv.org/abs/1604.00772). Set `num_elites` between 1 and `pop_size // 2`; the supplied configs select half the population. The initial search center is the policy initialized during workflow setup. ES and NSGA-II workflows return the final state from `learn()`, including when the requested iterations are already complete.
 
+### Optional PyTorch EvoX integration
+
+Install the [EvoX extra](../guide/installation.md#optional-evox-algorithms) to use
+CSO for scalar rewards or RVEA for vector rewards with at least two objectives:
+
+```shell
+python scripts/train.py agent=contrib/cso-evox env=brax/ant
+python scripts/train.py agent=contrib/rvea-evox env=brax/ant_multi_objective
+```
+
+Both examples use [`EvoXWorkflow`](#evorl.algorithms.contrib.evox.evox_workflow.EvoXWorkflow)
+with the deterministic continuous-action EC agent. All reward objectives are
+maximized. JAX evaluation and PyTorch optimization share one device through
+DLPack. `jit=true` compiles JAX evaluation; `torch_compile=true` independently
+compiles PyTorch updates. The outer workflow runs in Python; multi-device
+training and outer JAX `jit`/`vmap` are unsupported.
+
+Setup executes EvoX's native `init_step` and counts its sampling. `num_iters`
+counts subsequent updates. Only `learn` records metrics and saves checkpoints.
+Explicit state includes algorithm tensors, Torch RNG and JAX evaluation data,
+so restored state can resume directly.
+
+To add an algorithm, subclass `EvoXWorkflow` and implement `_build_algorithm`
+using [`EvoXAlgorithmWrapper`](#evorl.algorithms.contrib.evox.evox_algorithm_wrapper.EvoXAlgorithmWrapper).
+Its constructor must support FakeTensor execution; evolving tensors must be
+registered parameters or buffers. Supply fixed, unregistered tensor attributes
+through `static_tensors`. 64-bit tensors are rejected; the RVEA example uses
+int32 generation counters.
+
 ## ERL Algorithms
 
 The ERL algorithms are defined in the subpackage [`evorl.algorithms.erl`](#evorl.algorithms.erl). We provide ERL and CEM-RL and their variants.

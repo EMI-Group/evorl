@@ -1,0 +1,24 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.contrib.evox.rvea.RVEAWorkflow
+
+num_iters: 1000
+pop_size: 128
+num_envs: 16
+episodes_for_fitness: 16
+torch_compile: false
+discount: 1.0
+
+normalize_obs: true
+random_timesteps: 10000
+
+alpha: 2.0
+fr: 0.1
+
+agent_network:
+  actor_hidden_layer_sizes: [16, 16]
+  use_bias: true
+  norm_layer_type: none
+  policy_obs_key: ""
+  lb: -10.0
+  ub: 10.0

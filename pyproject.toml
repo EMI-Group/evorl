@@ -99,6 +99,7 @@ Issues = "https://github.com/EMI-Group/evorl/issues"
 Changelog = "https://github.com/EMI-Group/evorl/releases"
 
 [project.optional-dependencies]
+evox = ["evox>=1.4.0,<2", "torch>=2.9.0"]
 wandb = ["wandb"]
 swanlab = ["swanlab"]
 comet = ["comet_ml"]
