@@ -53,3 +53,20 @@ class ToyEnv(Env):
                 ori_obs=obs,
             ),
         )
+
+
+class VectorRewardEnv(ToyEnv):
+    def __init__(self, num_envs, num_objectives=2):
+        super().__init__(num_envs)
+        self.num_objectives = num_objectives
+
+    def reset(self, key):
+        state = super().reset(key)
+        return state.replace(reward=jnp.zeros((self.num_envs, self.num_objectives)))
+
+    def step(self, state, action):
+        state = super().step(state, action)
+        rewards = [
+            1 - jnp.square(action - 0.5 * i).sum(-1) for i in range(self.num_objectives)
+        ]
+        return state.replace(reward=jnp.stack(rewards, axis=-1))

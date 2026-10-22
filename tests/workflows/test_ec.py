@@ -5,38 +5,20 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 import pytest
 from hydra.utils import get_class
 from omegaconf import OmegaConf
 
-from tests.helpers.envs import ToyEnv
+from tests.helpers.envs import ToyEnv, VectorRewardEnv
 
 pytestmark = pytest.mark.integration
-
-
-class VectorRewardEnv(ToyEnv):
-    def __init__(self, num_envs, num_objectives=2):
-        super().__init__(num_envs)
-        self.num_objectives = num_objectives
-
-    def reset(self, key):
-        state = super().reset(key)
-        return state.replace(reward=jnp.zeros((self.num_envs, self.num_objectives)))
-
-    def step(self, state, action):
-        state = super().step(state, action)
-        rewards = [
-            1 - jnp.square(action - 0.5 * i).sum(-1) for i in range(self.num_objectives)
-        ]
-        return state.replace(reward=jnp.stack(rewards, axis=-1))
 
 
 @pytest.mark.parametrize("agent", ["cmaes", "sepcmaes", "nsga2"])
 @pytest.mark.parametrize("multi_device", [False, True])
 def test_native_ec_workflow_setup_step_and_learn(agent, multi_device, jit):
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     config = OmegaConf.merge(
         OmegaConf.load(root / "configs/config.yaml"),
         OmegaConf.load(root / f"configs/agent/ec/{agent}.yaml"),
@@ -96,7 +78,7 @@ def test_native_ec_workflow_setup_step_and_learn(agent, multi_device, jit):
     "num_objectives", [None, 1, 3], ids=["scalar", "vector1", "vector3"]
 )
 def test_nsga2_infers_native_reward_shape_without_reward_keys(num_objectives):
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     config = OmegaConf.merge(
         OmegaConf.load(root / "configs/config.yaml"),
         OmegaConf.load(root / "configs/agent/ec/nsga2.yaml"),
@@ -134,7 +116,7 @@ def test_nsga2_infers_native_reward_shape_without_reward_keys(num_objectives):
 
 
 def test_nsga2_trains_with_real_brax_vector_rewards():
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     config = OmegaConf.merge(
         OmegaConf.load(root / "configs/config.yaml"),
         OmegaConf.load(root / "configs/agent/ec/nsga2.yaml"),

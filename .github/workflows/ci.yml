@@ -97,8 +97,7 @@ jobs:
           python -m pytest --import-mode=importlib \
             "$GITHUB_WORKSPACE/tests/test_space.py" \
             "$GITHUB_WORKSPACE/tests/test_distribution.py" \
-            "$GITHUB_WORKSPACE/tests/test_ec_operator.py" \
-            "$GITHUB_WORKSPACE/tests/test_ec_utils.py" \
+            "$GITHUB_WORKSPACE/tests/ec" \
             "$GITHUB_WORKSPACE/tests/test_toolkits.py" \
             "$GITHUB_WORKSPACE/tests/test_recorders.py" \
             "$GITHUB_WORKSPACE/tests/test_accelerator_utils.py" \
@@ -132,3 +131,53 @@ jobs:
         run: |
           python -m pytest --import-mode=importlib --cpu-devices=4 -m four_devices \
             "$GITHUB_WORKSPACE/tests/distributed"
+
+  evox:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dependencies: ["minimum", "latest"]
+    env:
+      JAX_PLATFORMS: cpu
+      XLA_PYTHON_CLIENT_PREALLOCATE: "false"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-distributions
+          path: dist
+      - name: Install CPU PyTorch
+        run: >-
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu
+          "${{ matrix.dependencies == 'minimum' && 'torch==2.9.0' || 'torch' }}"
+      - name: Install built wheel with the EvoX extra
+        run: |
+          wheels=(dist/*.whl)
+          constraints=()
+          if [[ "${{ matrix.dependencies }}" == "minimum" ]]; then
+            constraints=(
+              "jax==0.10.0" "jaxlib==0.10.0" "orbax-checkpoint==0.11.30"
+              "torch==2.9.0" "evox==1.4.0"
+            )
+          fi
+          python -m pip install "${wheels[0]}[evox]" pytest "${constraints[@]}"
+      - name: Check optional dependencies and installed package
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -m pip check
+          python -I -c 'import evox, torch; from evorl.algorithms.contrib.evox.evox_workflow import EvoXWorkflow; print(torch.__version__, EvoXWorkflow.__module__)'
+      - name: Run EvoX and Torch interoperability regressions
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -m pytest --import-mode=importlib -m "not slow" \
+            "$GITHUB_WORKSPACE/tests/evox" \
+            "$GITHUB_WORKSPACE/tests/test_torch_utils.py"

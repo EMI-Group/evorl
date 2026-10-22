@@ -6,7 +6,7 @@ import chex
 import pytest
 
 
-def test_ParamVectorSpec():
+def test_flax_parameters_roundtrip_through_vector_spec():
     model = nn.Dense(features=7)
 
     x = jnp.ones((2, 3))
@@ -25,6 +25,7 @@ def test_ParamVectorSpec():
     assert flat.shape == (param_spec.vec_size,)
     recover = param_spec.to_tree(flat)
     chex.assert_trees_all_equal_shapes_and_dtypes(params, recover)
+    chex.assert_trees_all_equal(params, recover)
 
     batch_flat = param_spec.to_vector(batch_params)
     assert batch_flat.shape == (5, param_spec.vec_size)

@@ -13,10 +13,14 @@ buffer type and execution mode has its own test node and assertion traceback.
 | Other `workflows/` tests | Training budgets, final evaluation/checkpoints, warmup and EC accounting |
 | `helpers/` | Reusable toy environment and compiled-communication inspection |
 | `test_env_factory.py` | YAML argument forwarding, episode-limit defaults and explicit override precedence across environment factories |
-| `test_ec_optimizers.py` | Native CMA-ES reference updates and convergence, NSGA-II Pareto ranks/crowding/elitism and ZDT1 progress, bounded variation and nested `vmap` |
-| `test_non_dominated_sort.py` | All sorting modes in eager/JIT, independent Pareto ranks, duplicate/tied values, nested `vmap`, backend dispatch, partial batches, replicated execution without collectives and linear scratch memory growth |
-| `test_ec_workflow.py` | Native CMA-ES, SepCMA-ES and NSGA-II setup, training, recording and final checkpoint in eager/JIT and single/multiple device modes |
-| `test_evox.py` | Optional PyTorch EvoX: FakeTensor templates with real fixed tensors, native first-call initialization and iteration budgets, direct checkpoint resume, DLPack, state/RNG isolation, 64-bit rejection, independent JAX/Torch compilation, scalar/vector rewards, evaluation counts, int32 RVEA equivalence and full Brax training/checkpoint resume |
+| `ec/test_operators.py` | MLP mutation counts/bounds, parent-row inheritance, LayerNorm preservation and population keys |
+| `ec/test_optimizers.py` | CMA-ES reference equations/convergence, NSGA-II elitism/ZDT1, nested `vmap` and replicated execution |
+| `ec/test_non_dominated_sort.py` | Independent Pareto references, all sorting modes, ties, nested batches, backend dispatch and linear scratch memory |
+| `ec/test_param_vector.py` | Parameter vector/tree roundtrips with Flax, mixed dtypes, scalar leaves and empty/nested batches |
+| `workflows/test_ec.py` | Native EC setup, updates, evaluation, logging, final checkpoints and single/multiple device execution |
+| `evox/test_algorithm.py` | Explicit tensor/RNG state, replay, failure isolation, DLPack, dtype checks and native RVEA equivalence |
+| `evox/test_workflow.py` | Initialization budgets, scalar/vector rewards, independent JAX/Torch compilation, evaluation counts and checkpoint resume |
+| `evox/test_brax.py` | Real CSO/RVEA training, observation warmup, file logging and checkpoint replay; full-length cases carry `slow` |
 | `test_torch_utils.py` | Optional PyTorch: DLPack conversion and storage isolation/sharing, dtype/device preservation, CPU/GPU device mapping, local hardware indices, RNG replay and restoration on success/failure |
 | `test_host_envs.py` | Ordered host effects across resets, constant actions, nested `vmap`, autoreset modes and Atari RGB/RAM configuration |
 | `test_host_env_shapes.py` | Scalar/matrix actions, array/nested Dict observations, terminal observations, nested `vmap` and unsupported spaces/modes |
@@ -36,11 +40,11 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `workflows/test_jumanji_env.py` | PPO training/evaluation with dictionary observations and RandomAgent evaluation with integer vector actions |
 | Root `test_*.py` files | Existing unit, dependency, checkpoint, environment and algorithm tests |
 
-Install the development dependencies with `pip install -e ".[dev]"`.
+Install the development dependencies with `uv pip install -e ".[dev]"`.
 Run the distributed and workflow suite from the repository root:
 
 ```shell
-python -m pytest tests/distributed tests/replay_buffers tests/workflows -m "not four_devices"
+python -m pytest tests/ec tests/distributed tests/replay_buffers tests/workflows -m "not four_devices"
 ```
 
 Tests default to CPU with two logical devices. `conftest.py` configures the device
@@ -102,11 +106,28 @@ replay tests compare independent local ring references; PBT tests compare member
 updates and a single-device population reference. Keep subprocesses only when
 the process boundary itself is under test, such as importing accelerator probes.
 
-CI runs the same collected tests against the built wheel with the minimum and
-latest supported dependencies, including the separate four-device invocation.
-Brax and MuJoCo Playground are required dependencies; their native metric reward
-tests run in CI, using the JAX backend on CPU for Playground. Jumanji, JaxMARL
-and Gymnasium environment tests also run in CI; EnvPool and Atari cases run
-when their optional dependencies are installed. Other environment-specific tests
-in the root directory may require simulator dependencies and assets and remain
-outside this CPU suite.
+CI runs these suites against the built wheel from outside the checkout.
+The core job includes the entire `ec/` and `workflows/` directories, with
+minimum and latest JAX dependencies and a separate four-device invocation.
+A separate EvoX job installs the optional extra with CPU PyTorch and tests
+minimum JAX/PyTorch 2.9 and latest dependencies.
+
+Run the optional interoperability suite or full-length Brax training with:
+
+```shell
+uv pip install -e ".[dev,evox]"
+python -m pytest tests/evox tests/test_torch_utils.py -m "not slow"
+python -m pytest tests/evox/test_brax.py --device=gpu -m slow
+```
+
+The normal EvoX CPU suite includes short real-Brax evaluations. Full-length
+training tests remain ordinary pytest cases marked `slow`; CPU CI excludes
+those four cases. The marker does not skip them in an unfiltered local run.
+Shared EvoX test constructors live in `helpers/evox.py`; shared scalar/vector
+workflow environments live in `helpers/envs.py`. Test modules do not import
+other test modules.
+
+Brax and MuJoCo Playground are required dependencies. Jumanji, JaxMARL and
+Gymnasium environment tests also run in CI; EnvPool and Atari cases run when
+their optional dependencies are installed. Other simulator-dependent root
+tests remain available for local runs.

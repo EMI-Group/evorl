@@ -17,6 +17,11 @@ def mlp_crossover(
     *,
     num_crossover_frac: float = 0.1,
 ):
+    """Copy randomly chosen parent rows to both children at selected positions.
+
+    Matrix rows and vector elements are selected without replacement.
+    Unselected positions and LayerNorm parameters retain their parent values.
+    """
     chex.assert_trees_all_equal_shapes_and_dtypes(x1, x2)
 
     leaves1, treedef = jtu.tree_flatten_with_path(x1)
@@ -48,17 +53,9 @@ def mlp_crossover(
             if param1.ndim > 1:
                 mask = mask[..., None]
 
-            zero_update = jnp.zeros((num_crossover, *param1.shape[1:]))
-
-            param1 = param1.at[ind].set(
-                jnp.where(mask, zero_update, param2[ind]),
-                unique_indices=True,
-            )
-
-            param2 = param2.at[ind].set(
-                jnp.where(jnp.logical_not(mask), zero_update, param1[ind]),
-                unique_indices=True,
-            )
+            inherited_rows = jnp.where(mask, param1[ind], param2[ind])
+            param1 = param1.at[ind].set(inherited_rows, unique_indices=True)
+            param2 = param2.at[ind].set(inherited_rows, unique_indices=True)
 
         else:
             raise ValueError(f"Unsupported parameter shape: {param1.shape}")

@@ -47,6 +47,7 @@ testpaths = ["tests"]
 markers = [
     "integration: real workflow execution; release compiled executables after each case",
     "four_devices: requires four devices (run with --cpu-devices=4)",
+    "slow: full-length simulator training; run separately from CPU CI",
 ]
 
 [project]
