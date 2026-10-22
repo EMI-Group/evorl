@@ -7,7 +7,7 @@ defaults:
 num_iters: 2000
 
 normalize_obs: true # enable of disable VBN
-normalize_obs_mode: "RS" # "Global" or "RS" or "VBN"
+normalize_obs_mode: "Global" # "Global" or "RS" or "VBN"
 
 pop_size: 128
 num_elites: 8

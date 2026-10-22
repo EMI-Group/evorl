@@ -59,7 +59,7 @@ class PBTEvalMetric(MetricBase):
 
 
 class PBTWorkflowMetric(MetricBase):
-    # the average of sampled timesteps of all workflows
+    # Total environment samples across the population, in millions.
     sampled_timesteps_m: jax.Array = jnp.zeros((), dtype=jnp.float32)
     iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
 
@@ -610,6 +610,17 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             out_specs=(jax.P(META_POP_AXIS_NAME), jax.P(META_POP_AXIS_NAME), jax.P()),
         )(pop_workflow_state, replay_buffer_state)
 
+        # Count new interactions before PBT copies parent states into offspring.
+        sampled_timesteps_m = (
+            jnp.sum(
+                (
+                    pop_workflow_state.metrics.sampled_timesteps
+                    - state.pop_workflow_state.metrics.sampled_timesteps
+                ).astype(jnp.float32)
+            )
+            / 1e6
+        )
+
         # ===== eval ======
         eval_fn = shmap_vmap(
             self.workflow.evaluate,
@@ -644,9 +655,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
         # ===== record metrics ======
         workflow_metrics = state.metrics.replace(
-            sampled_timesteps_m=jnp.sum(
-                pop_workflow_state.metrics.sampled_timesteps / 1e6
-            ),  # convert uint32 to float32
+            sampled_timesteps_m=state.metrics.sampled_timesteps_m + sampled_timesteps_m,
             iterations=state.metrics.iterations + 1,
         )
 

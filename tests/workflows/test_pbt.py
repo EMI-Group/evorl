@@ -364,3 +364,118 @@ def test_paramsac_trains_with_shared_readonly_buffer_and_native_optimizers(neste
             strict=True,
         ):
             np.testing.assert_allclose(actual[0, 0], reference, atol=1e-6)
+
+
+@pytest.mark.parametrize("num_devices", [1, 2])
+def test_pbt_sac_counts_shared_warmup_and_training_before_member_replacement(
+    num_devices, mesh_factory, jit
+):
+    """Keep global sampling history when shared warmup and member copies differ."""
+    root = Path(__file__).resolve().parents[2]
+    common = OmegaConf.load(root / "configs/config.yaml")
+    target_config = OmegaConf.merge(
+        common,
+        OmegaConf.load(root / "configs/agent/meta/paramsac.yaml"),
+        dict(
+            num_envs=2,
+            rollout_length=2,
+            num_eval_envs=2,
+            eval_episodes=2,
+            batch_size=4,
+            replay_buffer_capacity=64,
+            agent_network=dict(
+                actor_hidden_layer_sizes=[4], critic_hidden_layer_sizes=[4]
+            ),
+        ),
+    )
+    config = OmegaConf.merge(
+        common,
+        OmegaConf.load(root / "configs/agent/meta/pbt-paramsac.yaml"),
+        dict(
+            target_workflow=target_config,
+            env=dict(max_episode_steps=2),
+            pop_size=4,
+            random_timesteps=4,
+            workflow_steps_per_iter=2,
+            warmup_steps=0,
+            bottom_ratio=0.25,
+            top_ratio=0.25,
+            num_eval_envs=2,
+            eval_episodes=2,
+        ),
+    )
+    member_cls = type("CountingParamSAC", (ParamSACWorkflow,), {})
+    workflow_cls = type("CountingPBTSAC", (PBTParamSACWorkflow,), {})
+
+    def create_env(*args, **kwargs):
+        return ToyEnv(kwargs["parallel"])
+
+    with (
+        patch("hydra.utils.get_class", return_value=member_cls),
+        patch(
+            "evorl.algorithms.meta.pbt_sac.param_sac.create_env", side_effect=create_env
+        ),
+        patch("evorl.algorithms.meta.pbt_workflow.create_env", side_effect=create_env),
+    ):
+        workflow = workflow_cls.build_from_config(config, jit=jit)
+    workflow.mesh = mesh_factory((num_devices,), (META_POP_AXIS_NAME,))
+    try:
+        with jax.set_mesh(workflow.mesh):
+            # Force a known parent copy, independent of random policy fitnesses.
+            selection = (
+                jax.device_put(jnp.array([3]), jax.P()),
+                jax.device_put(jnp.array([0]), jax.P()),
+            )
+            with patch(
+                "evorl.algorithms.meta.pbt_workflow.select", return_value=selection
+            ):
+                state = workflow.setup(jax.random.key(23))
+                np.testing.assert_allclose(state.metrics.sampled_timesteps_m, 4e-6)
+                np.testing.assert_array_equal(
+                    state.pop_workflow_state.metrics.sampled_timesteps, [0] * 4
+                )
+                _, first = workflow.step(state)
+                # 4 shared warmup steps + 4 members * 2 steps * 2 envs * 2 calls.
+                np.testing.assert_allclose(first.metrics.sampled_timesteps_m, 36e-6)
+                np.testing.assert_array_equal(
+                    first.pop_workflow_state.metrics.sampled_timesteps, [8] * 4
+                )
+
+                # Resume from unequal member histories. Copying member 3 into 0
+                # must not count the parent's historical samples a second time.
+                history = jax.device_put(
+                    jnp.array([10, 20, 30, 40], dtype=jnp.uint32),
+                    jax.P(META_POP_AXIS_NAME),
+                )
+                members = first.pop_workflow_state
+                resumed = first.replace(
+                    metrics=first.metrics.replace(
+                        sampled_timesteps_m=jnp.float32(136e-6)
+                    ),
+                    pop_workflow_state=members.replace(
+                        metrics=members.metrics.replace(
+                            sampled_timesteps=members.metrics.sampled_timesteps
+                            + history
+                        )
+                    ),
+                )
+                _, second = workflow.step(resumed)
+                _, third = workflow.step(second)
+                np.testing.assert_allclose(second.metrics.sampled_timesteps_m, 168e-6)
+                np.testing.assert_allclose(third.metrics.sampled_timesteps_m, 200e-6)
+                np.testing.assert_array_equal(
+                    second.pop_workflow_state.metrics.sampled_timesteps,
+                    [56, 36, 46, 56],
+                )
+                np.testing.assert_array_equal(
+                    third.pop_workflow_state.metrics.sampled_timesteps,
+                    [64, 44, 54, 64],
+                )
+                assert int(third.metrics.iterations) == 3
+                np.testing.assert_allclose(state.metrics.sampled_timesteps_m, 4e-6)
+                np.testing.assert_array_equal(
+                    resumed.pop_workflow_state.metrics.sampled_timesteps,
+                    [18, 28, 38, 48],
+                )
+    finally:
+        workflow.close()
