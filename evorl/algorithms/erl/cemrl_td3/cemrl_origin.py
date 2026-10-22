@@ -1,3 +1,4 @@
+from flax import nnx
 import time
 from omegaconf import DictConfig
 
@@ -168,7 +169,13 @@ class CEMRLWorkflow(_CEMRLWorkflow):
             )
             # reset and add actors' opt_state
             learning_opt_state = opt_state.replace(
-                actor=self.optimizer.init(learning_actor_params),
+                actor=nnx.unpack(
+                    nnx.vmap(
+                        lambda model: nnx.Optimizer(
+                            model, self.optimizer, wrt=nnx.Param
+                        )
+                    )(nnx.merge(learning_agent_state.model_state, copy=True).actor)
+                ),
             )
 
             num_updates = (
@@ -189,14 +196,17 @@ class CEMRLWorkflow(_CEMRLWorkflow):
 
             pop_actor_params = tree_set(
                 pop_actor_params,
-                learning_agent_state.params.actor_params,
+                nnx.state(
+                    nnx.merge(learning_agent_state.model_state, copy=True).actor,
+                    nnx.Param,
+                ),
                 learning_actor_indices,
                 unique_indices=True,
             )
 
             # drop the actors and their opt_state
             agent_state = cemrl_replace_td3_actor_params(
-                learning_agent_state, pop_actor_params=None
+                learning_agent_state, actor_params=None
             )
             opt_state = learning_opt_state.replace(actor=None)
 

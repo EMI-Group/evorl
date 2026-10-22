@@ -1,3 +1,5 @@
+from evorl.utils import running_statistics
+from flax import nnx
 import logging
 import math
 from omegaconf import DictConfig
@@ -17,7 +19,7 @@ from evorl.agent import AgentState
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix, get_1d_array
 from evorl.ec.optimizers import ECState, VanillaESMod, ExponentialScheduleSpec
-from evorl.algorithms.td3 import make_mlp_td3_agent
+from evorl.algorithms.td3 import TD3Agent
 from evorl.algorithms.offpolicy_utils import skip_replay_buffer_state
 
 from ..erl_workflow import ERLTrainMetric
@@ -57,18 +59,16 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
             record_ori_obs=True,
         )
 
-        agent = make_mlp_td3_agent(
-            action_space=env.action_space,
-            norm_layer_type=config.agent_network.norm_layer_type,
-            num_critics=config.agent_network.num_critics,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+        agent = TD3Agent(
+            agent_network_cfg=config.agent_network,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
             critics_in_actor_loss=config.critics_in_actor_loss,
-            normalize_obs=config.normalize_obs,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         if (
@@ -133,10 +133,7 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
             max_episode_steps=config.env.max_episode_steps,
         )
 
-        agent_state_vmap_axes = AgentState(
-            params=0,
-            obs_preprocessor_state=None,
-        )
+        agent_state_vmap_axes = AgentState(model_state=0, obs_preprocessor_state=None)
 
         workflow = cls(
             env=env,
@@ -171,16 +168,30 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
                 obs_preprocessor_state=tree_get(agent_state.obs_preprocessor_state, 0)
             )
 
-        dummy_obs = self.env.obs_space.sample(key)
-        init_actor_params = self.agent.actor_network.init(
-            pop_agent_key, jtu.tree_map(lambda x: x[None, ...], dummy_obs)
+        init_actor_params = nnx.state(
+            nnx.merge(
+                self.agent.init(
+                    self.env.obs_space, self.env.action_space, pop_agent_key
+                ).model_state,
+                copy=True,
+            ).actor,
+            nnx.Param,
         )
 
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
+        models = nnx.merge(agent_state.model_state, copy=True)
         opt_state = PyTreeDict(
-            actor=self.optimizer.init(agent_state.params.actor_params),
-            critic=self.optimizer.init(agent_state.params.critic_params),
+            actor=nnx.unpack(
+                nnx.vmap(
+                    lambda model: nnx.Optimizer(model, self.optimizer, wrt=nnx.Param)
+                )(models.actor)
+            ),
+            critic=nnx.unpack(
+                nnx.vmap(
+                    lambda model: nnx.Optimizer(model, self.optimizer, wrt=nnx.Param)
+                )(models.critic)
+            ),
         )
 
         return agent_state, opt_state, ec_opt_state
@@ -194,7 +205,7 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
     ) -> tuple[jax.Array, ECState]:
         rl_noise = jtu.tree_map(
             lambda x, m: x - m,
-            agent_state.params.actor_params,
+            nnx.state(nnx.merge(agent_state.model_state, copy=True).actor, nnx.Param),
             ec_opt_state.mean,
         )
 

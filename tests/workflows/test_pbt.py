@@ -7,6 +7,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+import optax
+from flax import nnx
+from evorl.algorithms.meta.pbt_sac.param_sac import ParamSACWorkflow, ParamSACAgent
+from evorl.algorithms.meta.pbt_sac.pbt_param_sac import PBTParamSACWorkflow
+from evorl.algorithms.meta.pbt import PBTWorkflow
+from evorl.types import State
 from evorl.algorithms.meta.pbt_workflow import PBTOffpolicyWorkflowTemplate
 from evorl.algorithms.offpolicy_utils import OffPolicyWorkflowTemplate
 from evorl.distributed import META_POP_AXIS_NAME, POP_AXIS_NAME
@@ -16,6 +22,7 @@ from evorl.types import PyTreeDict
 from hydra.utils import get_class
 from omegaconf import OmegaConf
 
+from tests.helpers.agents import build_agent
 from tests.helpers.envs import ToyEnv
 from tests.helpers.sharding import compiled_collectives
 
@@ -99,13 +106,20 @@ def test_rollout_uses_local_population_axes(rollout_kind, meta_mesh):
         np.testing.assert_allclose(np.asarray(actual)[0], expected, rtol=1e-6)
 
 
-@pytest.mark.parametrize("target", ["paramppo", "paramopenes"])
+@pytest.mark.parametrize("target", ["ppo", "paramppo", "paramopenes"])
 def test_pbt_members_train_independently(target):
     root = Path(__file__).resolve().parents[2]
     common = OmegaConf.load(root / "configs/config.yaml")
     target_config = OmegaConf.merge(
         common,
-        OmegaConf.load(root / f"configs/agent/meta/{target}.yaml"),
+        OmegaConf.load(
+            root
+            / (
+                "configs/agent/ppo.yaml"
+                if target == "ppo"
+                else f"configs/agent/meta/{target}.yaml"
+            )
+        ),
         {
             "num_envs": 2,
             "num_eval_envs": 2,
@@ -115,7 +129,7 @@ def test_pbt_members_train_independently(target):
             "agent_network": {"actor_hidden_layer_sizes": [4]},
         },
     )
-    if target == "paramppo":
+    if target in ("ppo", "paramppo"):
         target_config.rollout_length = 2
         target_config.minibatch_size = 4
         target_config.reuse_rollout_epochs = 1
@@ -126,7 +140,10 @@ def test_pbt_members_train_independently(target):
         target_config.episodes_for_fitness = 1
     config = OmegaConf.merge(
         common,
-        OmegaConf.load(root / f"configs/agent/meta/pbt-{target}.yaml"),
+        OmegaConf.load(
+            root
+            / f"configs/agent/meta/pbt-{'paramppo' if target == 'ppo' else target}.yaml"
+        ),
         {
             "target_workflow": target_config,
             "pop_size": 4,
@@ -139,6 +156,10 @@ def test_pbt_members_train_independently(target):
             "env": {"max_episode_steps": 2},
         },
     )
+    if target == "ppo":
+        config.workflow_cls = "evorl.algorithms.meta.pbt.PBTWorkflow"
+        config.search_space = {"lr": {"low": 1e-4, "high": 1e-2}}
+        config.perturb_factor = {"lr": 0.2}
     target_cls = get_class(target_config.workflow_cls)
     original_target_step = target_cls.step
     # Both the PBT class and its dynamically loaded member class must be fresh:
@@ -188,7 +209,7 @@ def test_pbt_members_train_independently(target):
             hlo = executable.as_text()
             assert not compiled_collectives(hlo)
             _, trained = executable(state.pop_workflow_state)
-            if target == "paramppo":
+            if target in ("ppo", "paramppo"):
                 # One population member must match its independent local update.
                 member_index = jnp.array([0])
                 member = jax.tree.map(
@@ -197,8 +218,8 @@ def test_pbt_members_train_independently(target):
                 )
                 _, expected = workflow.workflow.step(member)
                 for actual, reference in zip(
-                    jax.tree.leaves(trained.agent_state.params),
-                    jax.tree.leaves(expected.agent_state.params),
+                    jax.tree.leaves(trained.agent_state.model_state),
+                    jax.tree.leaves(expected.agent_state.model_state),
                     strict=True,
                 ):
                     np.testing.assert_allclose(
@@ -216,3 +237,130 @@ def test_pbt_members_train_independently(target):
             )
     finally:
         workflow.close()
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_learning_rate_mutation_restores_nnx_optimizer_and_preserves_input(nested, jit):
+    """Mutated learning rates affect updates inside a functional NNX snapshot."""
+    tx = optax.inject_hyperparams(optax.sgd)(learning_rate=0.01)
+    model = nnx.Linear(1, 1, rngs=nnx.Rngs(0))
+    optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
+    state = State(opt_state=nnx.unpack(optimizer))
+    workflow = object.__new__(PBTWorkflow)
+    grads = jax.tree.map(jnp.ones_like, nnx.state(model, nnx.Param))
+    model_state = nnx.unpack(model)
+
+    def mutate_and_update(rate):
+        updated = workflow.apply_hyperparams_to_workflow_state(
+            state, PyTreeDict(lr=rate)
+        )
+        local_optimizer = nnx.merge(updated.opt_state, copy=True)
+        local_model = nnx.merge(model_state, copy=True)
+        local_optimizer.update(local_model, grads)
+        return nnx.state(local_model, nnx.Param), nnx.unpack(local_optimizer)
+
+    rates = jnp.array([[0.1, 0.2], [0.3, 0.4]]) if nested else jnp.float32(0.1)
+    fn = jax.vmap(jax.vmap(mutate_and_update)) if nested else mutate_and_update
+    params, next_opt = (jax.jit(fn) if jit else fn)(rates)
+    for actual, original in zip(
+        jax.tree.leaves(params),
+        jax.tree.leaves(nnx.state(model, nnx.Param)),
+        strict=True,
+    ):
+        expected = original - rates.reshape((*rates.shape, *([1] * original.ndim)))
+        np.testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-7)
+    np.testing.assert_allclose(
+        nnx.merge(state.opt_state, copy=True).opt_state.hyperparams["learning_rate"][
+            ...
+        ],
+        0.01,
+    )
+    assert int(nnx.merge(state.opt_state, copy=True).step[...]) == 0
+    np.testing.assert_array_equal(
+        nnx.merge(next_opt, copy=True).step[...], jnp.ones_like(rates, dtype=jnp.uint32)
+    )
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_paramsac_trains_with_shared_readonly_buffer_and_native_optimizers(nested):
+
+    env = ToyEnv(2)
+    agent = build_agent(
+        ParamSACAgent,
+        env.obs_space,
+        env.action_space,
+        actor_hidden_layer_sizes=(4,),
+        critic_hidden_layer_sizes=(4,),
+    )
+    config = OmegaConf.merge(
+        OmegaConf.load(Path(__file__).resolve().parents[2] / "configs/config.yaml"),
+        {
+            "num_envs": 2,
+            "rollout_length": 2,
+            "actor_update_interval": 2,
+            "num_updates_per_iter": 1,
+            "tau": 0.1,
+        },
+    )
+    buffer = ReplayBuffer(capacity=16, sample_batch_size=4)
+    workflow = ParamSACWorkflow(env, agent, optax.adam(1e-3), None, buffer, config)
+    rb_state = workflow._setup_replaybuffer(jax.random.key(1))
+    samples = jax.tree.map(
+        lambda x: jnp.ones((8, *x.shape[1:]), x.dtype), rb_state.data
+    )
+    rb_state = buffer.add(rb_state, samples)
+
+    def member(key):
+        state = workflow.setup(key).replace(replay_buffer_state=rb_state)
+        metric, updated = workflow.step(state)
+        return state, metric, updated
+
+    key = jax.random.key(2)
+    initial, metric, updated = jax.jit(member)(key)
+    assert np.isfinite(metric.actor_loss) and np.isfinite(metric.critic_loss)
+    assert int(nnx.merge(updated.opt_state.actor, copy=True).step[...]) == 1
+    assert int(nnx.merge(updated.opt_state.critic, copy=True).step[...]) == 2
+    initial_models = nnx.merge(initial.agent_state.model_state, copy=True)
+    updated_models = nnx.merge(updated.agent_state.model_state, copy=True)
+    np.testing.assert_array_equal(
+        updated_models.log_alpha[...], initial_models.log_alpha[...]
+    )
+
+    pbt = object.__new__(PBTParamSACWorkflow)
+    hyperparams = PyTreeDict(
+        log_alpha=jnp.float32(-2),
+        discount_g=jnp.float32(3),
+        actor_loss_weight=jnp.float32(0.5),
+        critic_loss_weight=jnp.float32(2),
+    )
+    adapted = jax.jit(pbt.apply_hyperparams_to_workflow_state)(initial, hyperparams)
+    adapted_models = nnx.merge(adapted.agent_state.model_state, copy=True)
+    np.testing.assert_array_equal(adapted_models.log_alpha[...], -2)
+    np.testing.assert_array_equal(adapted.agent_state.extra_state.discount_g, 3)
+    np.testing.assert_array_equal(adapted.hp_state.actor_loss_weight, 0.5)
+    np.testing.assert_allclose(
+        initial_models.log_alpha[...], jnp.log(jnp.float32(agent.init_alpha)), atol=1e-6
+    )
+    for target, original, online in zip(
+        jax.tree.leaves(nnx.state(updated_models.target_critic, nnx.Param)),
+        jax.tree.leaves(nnx.state(initial_models.target_critic, nnx.Param)),
+        jax.tree.leaves(nnx.state(updated_models.critic, nnx.Param)),
+        strict=True,
+    ):
+        np.testing.assert_allclose(target, 0.9 * original + 0.1 * online, atol=1e-6)
+    for before, after in zip(
+        jax.tree.leaves(rb_state),
+        jax.tree.leaves(updated.replay_buffer_state),
+        strict=True,
+    ):
+        np.testing.assert_array_equal(before, after)
+    if nested:
+        keys = jax.random.split(key, 6).reshape(2, 3)
+        _, _, population = jax.jit(jax.vmap(jax.vmap(member)))(keys)
+        _, _, expected = jax.jit(member)(keys[0, 0])
+        for actual, reference in zip(
+            jax.tree.leaves(population.agent_state.model_state),
+            jax.tree.leaves(expected.agent_state.model_state),
+            strict=True,
+        ):
+            np.testing.assert_allclose(actual[0, 0], reference, atol=1e-6)

@@ -40,15 +40,15 @@ Python and JAX minimum versions are independent.
 CI tests the built wheel with both JAX/jaxlib 0.10.0 + Orbax 0.11.30 and the
 latest dependencies. The minimum job lets the resolver select compatible
 versions of Flax and other dependencies; the latest Flax release can require
-a newer JAX version. The framework continues to use Flax Linen and the Orbax
-checkpoint V0 API.
+a newer JAX version. Networks use Flax NNX 0.12.8+; checkpoints use the Orbax
+V0 API.
 
 Orbax requires version 0.11.30 or newer for the typed-key checkpoint restore
 path exercised by our compatibility suite.
 See the [Orbax changelog](https://github.com/google/orbax/blob/main/checkpoint/CHANGELOG.md).
 
-The compatibility suite covers typed-key batching and host callbacks, Linen
-initialization, mutable normalization state and gradients, seven RL agents,
+The compatibility suite covers typed-key batching and host callbacks, NNX
+initialization, mutable normalization state and gradients, RL agents,
 Optax hyperparameter updates, running statistics, two-device CPU sharding and
 gradients, V0 checkpoints, and logging with NumPy/pandas.
 
@@ -56,6 +56,53 @@ DQN uses Distrax's `EpsilonGreedy` distribution; other distributions use
 TFP's JAX substrate. Distrax 0.1.9+ depends on `tfp-nightly`, matching the
 existing direct dependency. Do not install stable `tensorflow-probability`
 alongside `tfp-nightly`: they install overlapping files.
+
+### Agent state and NNX training
+
+Agents hold fixed configuration. `AgentState.model_state` holds a complete
+`nnx.GraphState`: its graph definition is static PyTree metadata, while network
+parameters and auxiliary variables are dynamic leaves. Agent loss methods take
+`AgentState` and return a loss dictionary; workflows choose which parameters
+to differentiate and apply optimizer updates.
+
+For example, TD3's critic update uses this sequence:
+
+```python
+models = nnx.merge(agent_state.model_state, copy=True)
+
+def loss_fn(models, batch, key):
+    working_state = agent_state.replace(model_state=nnx.unpack(models))
+    losses = agent.critic_loss(working_state, batch, key)
+    return losses.critic_loss, losses
+
+value, grads = pmean_nnx_loss_and_grad(
+    loss_fn,
+    axis_name,
+    has_aux=True,
+    wrt=nnx.All(nnx.Param, nnx.PathContains("critic")),
+)(models, batch, key)
+optimizer.update(models.critic, grads["critic"])
+next_agent_state = agent_state.replace(model_state=nnx.unpack(models))
+```
+
+`nnx.unpack(models)` retains references to the existing NNX variables.
+`Agent.get_models(working_state)` calls `nnx.merge(..., copy=False)`: it creates
+new module objects sharing those variables with the working `models`.
+Consequently, a forward-pass write such as `variable[...] = value` reaches the
+models managed by `nnx.value_and_grad`. This includes non-parameter state such
+as SpectralNorm's singular vector, even though only critic parameters receive
+gradients. The final snapshot includes both the optimizer's parameter updates
+and these forward-pass variable updates; the loss need not return another state.
+
+The initial `copy=True` isolates variable objects from the input snapshot.
+Rollout and evaluation also use isolated models so their input state is preserved.
+For the array-backed variables used here, these copies create new Python
+variable objects without duplicating device array buffers.
+Module structure is established during `Agent.init()`: the shared-variable view
+propagates updates to existing variable values, not replacement of module
+attributes with new variables or submodules.
+
+### Multi-device execution
 
 Construct device meshes with `jax.make_mesh` and inline simple `jax.P` specs.
 Keep named specs for structured state trees or generic function parameters.
@@ -133,7 +180,7 @@ Shared-policy updates use `pmean_loss_and_grad`: the primary scalar loss is
 averaged over the explicit DP axis inside `value_and_grad`, yielding the global
 mean loss and gradients without a second gradient reduction. Auxiliary outputs
 remain local and unchanged, including replay priorities; only their logged
-metrics are reduced afterward. With `dp_axis_name=None`, the helper performs
+metrics are reduced afterward. With `axis_name=None`, the helper performs
 ordinary local differentiation, including for independent PBT members. Tests
 check gradient values against a global-batch reference and preserve differing
 per-device auxiliary values. They also compare actual replicas and inspect compiled

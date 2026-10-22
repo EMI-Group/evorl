@@ -29,18 +29,18 @@ class ObsPreprocessor(PyTreeNode):
             )
 
 
-def init_obs_preprocessor(agent_state, config, key, dp_axis_name=None):
+def init_obs_preprocessor(agent_state, config, key, axis_name=None):
     """Initialize observation statistics from random rollouts.
 
     Rollout reads its Manual axes from the current `shard_map` context.
-    `dp_axis_name` controls only statistics reduction; `None` keeps each
+    `axis_name` controls only statistics reduction; `None` keeps each
     workflow's statistics independent, including inside PBT.
 
     Args:
         agent_state: Agent state whose observation statistics are initialized.
         config: Configuration containing environment and warmup settings.
         key: PRNG key for environment, agent, and rollout initialization.
-        dp_axis_name: Axis for statistics reduction, or `None` to disable it.
+        axis_name: Axis for statistics reduction, or `None` to disable it.
 
     Returns:
         An agent state with initialized observation preprocessing statistics.
@@ -58,7 +58,7 @@ def init_obs_preprocessor(agent_state, config, key, dp_axis_name=None):
         config.random_timesteps,
         env,
         key,
-        dp_axis_name=dp_axis_name,
+        axis_name=axis_name,
     )
 
     agent_state = agent_state.replace(obs_preprocessor_state=obs_preprocessor_state)
@@ -71,12 +71,12 @@ def init_obs_preprocessor_with_random_timesteps(
     timesteps: int,
     env: BaseEnv,
     key: jax.Array,
-    dp_axis_name: str | None = None,
+    axis_name: str | None = None,
 ) -> Any:
     """Collect observations and initialize their running statistics.
 
     Rollout obtains its VMA axes from the enclosing Manual context.
-    `dp_axis_name` explicitly selects the statistics reduction axis;
+    `axis_name` explicitly selects the statistics reduction axis;
     `None` disables statistics reduction.
 
     Args:
@@ -85,7 +85,7 @@ def init_obs_preprocessor_with_random_timesteps(
             of environments.
         env: Vectorized environment used for random rollouts.
         key: PRNG key for environment, agent, and rollout initialization.
-        dp_axis_name: Axis for statistics reduction, or `None` to disable it.
+        axis_name: Axis for statistics reduction, or `None` to disable it.
 
     Returns:
         The running statistics state updated with the collected observations.
@@ -113,7 +113,7 @@ def init_obs_preprocessor_with_random_timesteps(
         obs = jtu.tree_map(lambda x: jax.lax.collapse(x, 0, 2), obs)
 
     obs_preprocessor_state = running_statistics.update(
-        obs_preprocessor_state, obs, dp_axis_name=dp_axis_name
+        obs_preprocessor_state, obs, axis_name=axis_name
     )
 
     return obs_preprocessor_state

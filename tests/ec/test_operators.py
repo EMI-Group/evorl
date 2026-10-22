@@ -2,12 +2,14 @@
 
 from functools import partial
 
+from flax import nnx
 import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from evorl.networks import make_policy_network
 from evorl.ec.operators import MLPCrossover, MLPMutation, mlp_crossover, mlp_mutate
 
 
@@ -145,3 +147,30 @@ def test_crossover_rejects_odd_populations(parameters):
     population = jax.tree.map(lambda x: jnp.stack([x, x, x]), parameters)
     with pytest.raises(AssertionError, match="pop_size must be even"):
         MLPCrossover()(population, jax.random.key(2))
+
+
+def test_nnx_parameters_preserve_normalization_during_variation(jit):
+
+    first = make_policy_network(
+        3, 2, hidden_layer_sizes=(4,), norm_layer_type="layer_norm", rngs=nnx.Rngs(1)
+    )
+    second = make_policy_network(
+        3, 2, hidden_layer_sizes=(4,), norm_layer_type="layer_norm", rngs=nnx.Rngs(2)
+    )
+    graphdef, params1 = nnx.split(first, nnx.Param)
+    _, params2 = nnx.split(second, nnx.Param)
+    mutate = MLPMutation(matrix_num_mutation_frac=1.0, vector_num_mutation_frac=1.0)
+    population = jax.tree.map(lambda x, y: jnp.stack((x, y)), params1, params2)
+    mutation = jax.jit(mutate) if jit else mutate
+    mutated = mutation(population, jax.random.key(4))
+    crossover = MLPCrossover(num_crossover_frac=1.0)
+    crossed = (jax.jit(crossover) if jit else crossover)(population, jax.random.key(5))
+    for result in (mutated, crossed):
+        model = nnx.merge(graphdef, jax.tree.map(lambda x: x[0], result), copy=True)
+        np.testing.assert_array_equal(
+            model.mlp.layer_norms[0].scale[...], first.mlp.layer_norms[0].scale[...]
+        )
+        np.testing.assert_array_equal(
+            model.mlp.layer_norms[0].bias[...], first.mlp.layer_norms[0].bias[...]
+        )
+        assert jnp.all(jnp.isfinite(model(jnp.ones((2, 3)))))

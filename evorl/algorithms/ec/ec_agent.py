@@ -2,44 +2,39 @@ import logging
 from typing import Any
 
 import jax
-import flax.linen as nn
+from flax import nnx
 import jax.numpy as jnp
-import jax.tree_util as jtu
 
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
+from omegaconf import DictConfig
+
 from evorl.networks import make_policy_network
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
-    Params,
     PolicyExtraInfo,
     PyTreeDict,
     pytree_field,
-    PyTreeData,
 )
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_get
-from evorl.envs import Space, Box, Discrete
+from evorl.envs import Discrete, Space, Box
 
 from evorl.agent import Agent, AgentState
 
 logger = logging.getLogger(__name__)
 
 
-class ECNetworkParams(PyTreeData):
-    """Contains training state for the learner."""
-
-    policy_params: Params
-
-
 class StochasticECAgent(Agent):
     """Stochastic Agent.
 
-    Support continuous action space in [-1, 1] via TanhNormal distribution or discrete action space via Softmax distribution.
+    Support continuous action space in [-1, 1] via TanhNormal distribution or
+    discrete action space via Softmax distribution. Spectral-normalization
+    vectors are stored alongside weights in `model_state`; action evaluation uses local
+    model copies and does not persist their power-iteration updates.
     """
 
     continuous_action: bool
-    policy_network: nn.Module
+    agent_network_cfg: DictConfig = pytree_field(static=True)
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     @property
@@ -47,23 +42,33 @@ class StochasticECAgent(Agent):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
-        policy_params = self.policy_network.init(key, dummy_obs)
-
-        params_state = ECNetworkParams(
-            policy_params=policy_params,
+        if not isinstance(action_space, (Box, Discrete)):
+            raise TypeError(f"Unsupported action space: {action_space}")
+        cfg = self.agent_network_cfg
+        obs_key = cfg.get("policy_obs_key", "")
+        policy = make_policy_network(
+            input_size=(obs_space.spaces[obs_key] if obs_key else obs_space).shape[-1],
+            action_size=action_space.shape[0] * 2
+            if self.continuous_action
+            else action_space.n,
+            hidden_layer_sizes=cfg.actor_hidden_layer_sizes,
+            norm_layer_type=cfg.norm_layer_type,
+            use_bias=cfg.use_bias,
+            obs_key=obs_key,
+            rngs=nnx.Rngs(key),
         )
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+                obs_space.sample(key)
             )
         else:
             obs_preprocessor_state = None
 
         return AgentState(
-            params=params_state, obs_preprocessor_state=obs_preprocessor_state
+            model_state=nnx.unpack(nnx.Dict(policy=policy)),
+            obs_preprocessor_state=obs_preprocessor_state,
         )
 
     def compute_actions(
@@ -73,7 +78,7 @@ class StochasticECAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
+        raw_actions = nnx.merge(agent_state.model_state, copy=True).policy(obs)
 
         if self.continuous_action:
             actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
@@ -96,7 +101,7 @@ class StochasticECAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
+        raw_actions = nnx.merge(agent_state.model_state, copy=True).policy(obs)
 
         if self.continuous_action:
             actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
@@ -109,9 +114,13 @@ class StochasticECAgent(Agent):
 
 
 class DeterministicECAgent(Agent):
-    """Deterministic Agent for continuous action space in [-1, 1]."""
+    """Deterministic agent for continuous actions in [-1, 1].
 
-    policy_network: nn.Module
+    Spectral-normalization vectors stay outside the evolutionary parameters.
+    Local power-iteration updates during inference are not persisted.
+    """
+
+    agent_network_cfg: DictConfig = pytree_field(static=True)
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     @property
@@ -119,23 +128,33 @@ class DeterministicECAgent(Agent):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
-        policy_params = self.policy_network.init(key, dummy_obs)
-
-        params_state = ECNetworkParams(
-            policy_params=policy_params,
+        assert isinstance(action_space, Box), (
+            "Only continuous action space is supported."
+        )
+        cfg = self.agent_network_cfg
+        obs_key = cfg.get("policy_obs_key", "")
+        policy = make_policy_network(
+            input_size=(obs_space.spaces[obs_key] if obs_key else obs_space).shape[-1],
+            action_size=action_space.shape[0],
+            hidden_layer_sizes=cfg.actor_hidden_layer_sizes,
+            norm_layer_type=cfg.norm_layer_type,
+            use_bias=cfg.use_bias,
+            obs_key=obs_key,
+            activation_final=jnp.tanh,
+            rngs=nnx.Rngs(key),
         )
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+                obs_space.sample(key)
             )
         else:
             obs_preprocessor_state = None
 
         return AgentState(
-            params=params_state, obs_preprocessor_state=obs_preprocessor_state
+            model_state=nnx.unpack(nnx.Dict(policy=policy)),
+            obs_preprocessor_state=obs_preprocessor_state,
         )
 
     def compute_actions(
@@ -145,7 +164,7 @@ class DeterministicECAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        actions = self.policy_network.apply(agent_state.params.policy_params, obs)
+        actions = nnx.merge(agent_state.model_state, copy=True).policy(obs)
 
         return actions, PyTreeDict()
 
@@ -153,72 +172,3 @@ class DeterministicECAgent(Agent):
         self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
         return self.compute_actions(agent_state, sample_batch, key)
-
-
-def make_stochastic_ec_agent(
-    action_space: Space,
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    use_bias: bool = True,
-    norm_layer_type: str = "none",
-    normalize_obs: bool = False,
-    policy_obs_key: str = "",
-):
-    if isinstance(action_space, Box):
-        action_size = action_space.shape[0] * 2
-        continuous_action = True
-    elif isinstance(action_space, Discrete):
-        action_size = action_space.n
-        continuous_action = False
-    else:
-        raise NotImplementedError(f"Unsupported action space: {action_space}")
-
-    policy_network = make_policy_network(
-        action_size=action_size,
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-        norm_layer_type=norm_layer_type,
-        use_bias=use_bias,
-        obs_key=policy_obs_key,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return StochasticECAgent(
-        continuous_action=continuous_action,
-        policy_network=policy_network,
-        obs_preprocessor=obs_preprocessor,
-    )
-
-
-def make_deterministic_ec_agent(
-    action_space: Space,
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    use_bias: bool = True,
-    norm_layer_type: str = "none",
-    normalize_obs: bool = False,
-    policy_obs_key: str = "",
-):
-    assert isinstance(action_space, Box), "Only continue action space is supported."
-
-    action_size = action_space.shape[0]
-
-    policy_network = make_policy_network(
-        action_size=action_size,
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-        use_bias=use_bias,
-        activation_final=nn.tanh,
-        norm_layer_type=norm_layer_type,
-        obs_key=policy_obs_key,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return DeterministicECAgent(
-        policy_network=policy_network,
-        obs_preprocessor=obs_preprocessor,
-    )

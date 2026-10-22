@@ -1,9 +1,9 @@
+from evorl.utils import running_statistics
 import logging
 import math
 from typing import Any
 
-import chex
-import flax.linen as nn
+from flax import nnx
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -12,25 +12,19 @@ from omegaconf import DictConfig
 
 from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import pmean, psum
-from evorl.distributed.gradients import gradient_update
+from evorl.distributed.gradients import pmean_nnx_loss_and_grad
 from evorl.distributed.sharding import mark_varying
 from evorl.envs import AutoresetMode, Box, create_env, Space
 from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase, metric_field
 from evorl.rollout import rollout
 from evorl.networks import make_policy_network, make_q_network
-from evorl.sample_batch import SampleBatch
 from evorl.types import (
-    Action,
-    Params,
-    PyTreeData,
     PyTreeDict,
-    PolicyExtraInfo,
     State,
     pytree_field,
 )
-from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, tree_get
+from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 from evorl.agent import AgentState, Agent
 from evorl.recorders import add_prefix
@@ -48,128 +42,73 @@ MISSING_LOSS = -1e10
 
 
 class TD3Agent(Agent):
-    """The Agnet for TD3."""
+    """TD3 with two separately optimized critics."""
 
-    critic_network: nn.Module
-    actor_network: nn.Module
+    agent_network_cfg: DictConfig = pytree_field(static=True)
     obs_preprocessor: Any = pytree_field(default=None, static=True)
-
     discount: float = 0.99
     exploration_epsilon: float = 0.5
     policy_noise: float = 0.2
     clip_policy_noise: float = 0.5
-    critics_in_actor_loss: str = "first"  #  or "min"
+    critics_in_actor_loss: str = "first"
 
     @property
     def normalize_obs(self):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
-        key, q_key1, q_key2, actor_key = jax.random.split(key, num=4)
-
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
-        dummy_action = action_space.sample(key)[None, ...]
-
-        critic1_params = self.critic_network.init(q_key1, dummy_obs, dummy_action)
-        target_critic1_params = critic1_params
-        critic2_params = self.critic_network.init(q_key2, dummy_obs, dummy_action)
-        target_critic2_params = critic2_params
-
-        actor_params = self.actor_network.init(actor_key, dummy_obs)
-        target_actor_params = actor_params
-
-        params_state = TD3NetworkParams(
-            actor_params=actor_params,
-            target_actor_params=target_actor_params,
-            critic1_params=critic1_params,
-            target_critic1_params=target_critic1_params,
-            critic2_params=critic2_params,
-            target_critic2_params=target_critic2_params,
+        if not isinstance(action_space, Box):
+            raise TypeError(f"Unsupported action space: {action_space}")
+        key, q_key1, q_key2, actor_key = jax.random.split(key, 4)
+        cfg = self.agent_network_cfg
+        actor = make_policy_network(
+            input_size=obs_space.shape[-1],
+            action_size=action_space.shape[0],
+            hidden_layer_sizes=cfg.actor_hidden_layer_sizes,
+            activation_final=jnp.tanh,
+            norm_layer_type=cfg.get("norm_layer_type", "none"),
+            rngs=nnx.Rngs(actor_key),
         )
 
-        if self.normalize_obs:
-            # Note: statistics are broadcasted to [T*B]
-            obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+        def create_critic(key):
+            return make_q_network(
+                input_size=obs_space.shape[-1],
+                action_size=action_space.shape[0],
+                n_stack=1,
+                hidden_layer_sizes=cfg.critic_hidden_layer_sizes,
+                norm_layer_type=cfg.get("norm_layer_type", "none"),
+                rngs=nnx.Rngs(key),
             )
-        else:
-            obs_preprocessor_state = None
 
+        critic1, critic2 = create_critic(q_key1), create_critic(q_key2)
+        models = nnx.Dict(
+            actor=actor,
+            critic1=critic1,
+            critic2=critic2,
+            target_actor=nnx.clone(actor, arrays=True),
+            target_critic1=nnx.clone(critic1, arrays=True),
+            target_critic2=nnx.clone(critic2, arrays=True),
+        )
+        obs_state = (
+            running_statistics.init_state(obs_space.sample(key))
+            if self.normalize_obs
+            else None
+        )
         return AgentState(
-            params=params_state,
-            obs_preprocessor_state=obs_preprocessor_state,
+            model_state=nnx.unpack(models), obs_preprocessor_state=obs_state
         )
 
-    def compute_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
-    ) -> tuple[Action, PolicyExtraInfo]:
-        obs = sample_batch.obs
-        if self.normalize_obs:
-            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
-
-        actions = self.actor_network.apply(agent_state.params.actor_params, obs)
-        # add random noise
+    def compute_actions(self, agent_state, sample_batch, key):
+        actions, _ = self.evaluate_actions(agent_state, sample_batch, key)
         noise = jax.random.normal(key, actions.shape) * self.exploration_epsilon
-        actions += noise
-        actions = jnp.clip(actions, -1.0, 1.0)
+        return jnp.clip(actions + noise, -1.0, 1.0), PyTreeDict()
 
-        return actions, PyTreeDict()
-
-    def evaluate_actions(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
-    ) -> tuple[Action, PolicyExtraInfo]:
+    def evaluate_actions(self, agent_state, sample_batch, key):
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
-
-        actions = self.actor_network.apply(agent_state.params.actor_params, obs)
-
-        return actions, PyTreeDict()
-
-
-def make_mlp_td3_agent(
-    action_space: Space,
-    norm_layer_type: str = "none",
-    critic_hidden_layer_sizes: tuple[int] = (256, 256),
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    discount: float = 0.99,
-    exploration_epsilon: float = 0.5,
-    policy_noise: float = 0.2,
-    clip_policy_noise: float = 0.5,
-    critics_in_actor_loss: str = "first",  #  or "min"
-    normalize_obs: bool = False,
-):
-    assert isinstance(action_space, Box), "Only continue action space is supported."
-
-    action_size = action_space.shape[0]
-
-    critic_network = make_q_network(
-        n_stack=1,
-        hidden_layer_sizes=critic_hidden_layer_sizes,
-        norm_layer_type=norm_layer_type,
-    )
-    actor_network = make_policy_network(
-        action_size=action_size,
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-        activation_final=nn.tanh,
-        norm_layer_type=norm_layer_type,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return TD3Agent(
-        critic_network=critic_network,
-        actor_network=actor_network,
-        obs_preprocessor=obs_preprocessor,
-        discount=discount,
-        exploration_epsilon=exploration_epsilon,
-        policy_noise=policy_noise,
-        clip_policy_noise=clip_policy_noise,
-        critics_in_actor_loss=critics_in_actor_loss,
-    )
+        models = nnx.merge(agent_state.model_state, copy=True)
+        return models.actor(obs), PyTreeDict()
 
 
 class TD3TrainMetric(MetricBase):
@@ -179,17 +118,6 @@ class TD3TrainMetric(MetricBase):
     critic2_loss: jax.Array
     q1: jax.Array = metric_field(reduce_fn=pmean)
     q2: jax.Array = metric_field(reduce_fn=pmean)
-
-
-class TD3NetworkParams(PyTreeData):
-    """Contains training state for the learner."""
-
-    actor_params: Params
-    critic1_params: Params
-    critic2_params: Params
-    target_actor_params: Params
-    target_critic1_params: Params
-    target_critic2_params: Params
 
 
 class TD3V3Workflow(OffPolicyWorkflowTemplate):
@@ -212,17 +140,16 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
             "Only continue action space is supported."
         )
 
-        agent = make_mlp_td3_agent(
-            action_space=env.action_space,
-            norm_layer_type=config.agent_network.norm_layer_type,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+        agent = TD3Agent(
+            agent_network_cfg=config.agent_network,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
             critics_in_actor_loss=config.critics_in_actor_loss,
-            normalize_obs=config.normalize_obs,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         # one optimizer, two opt_states (in setup function) for both actor and critic
@@ -266,14 +193,19 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
             config,
         )
 
-    def _setup_agent_and_optimizer(
-        self, key: jax.Array
-    ) -> tuple[AgentState, chex.ArrayTree]:
+    def _setup_agent_and_optimizer(self, key):
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
+        models = nnx.merge(agent_state.model_state, copy=True)
         opt_state = PyTreeDict(
-            actor=self.optimizer.init(agent_state.params.actor_params),
-            critic1=self.optimizer.init(agent_state.params.critic1_params),
-            critic2=self.optimizer.init(agent_state.params.critic2_params),
+            actor=nnx.unpack(
+                nnx.Optimizer(models.actor, self.optimizer, wrt=nnx.Param)
+            ),
+            critic1=nnx.unpack(
+                nnx.Optimizer(models.critic1, self.optimizer, wrt=nnx.Param)
+            ),
+            critic2=nnx.unpack(
+                nnx.Optimizer(models.critic2, self.optimizer, wrt=nnx.Param)
+            ),
         )
         return agent_state, opt_state
 
@@ -312,7 +244,7 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
+                    axis_name=self.dp_axis_name,
                 )
             )
 
@@ -321,76 +253,49 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
         )
 
         def _update_critic_fn(agent_state, opt_state, sample_batch, key):
-            critic1_opt_state = opt_state.critic1
-            critic2_opt_state = opt_state.critic2
-
             agent = self.agent
-
+            models = nnx.merge(agent_state.model_state, copy=True)
             next_obs = sample_batch.extras.env_extras.ori_obs
             obs = sample_batch.obs
-            actions = sample_batch.actions
-
             if agent.normalize_obs:
                 next_obs = agent.obs_preprocessor(
                     next_obs, agent_state.obs_preprocessor_state
                 )
                 obs = agent.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
-
-            actions_next = agent.actor_network.apply(
-                agent_state.params.target_actor_params, next_obs
-            )
+            actions_next = models.target_actor(next_obs)
             actions_next += jnp.clip(
-                jax.random.normal(key, actions.shape) * agent.policy_noise,
+                jax.random.normal(key, sample_batch.actions.shape) * agent.policy_noise,
                 -agent.clip_policy_noise,
                 agent.clip_policy_noise,
             )
-            # Note: when calculating the critic loss, we also clip the actions to the action space
             actions_next = jnp.clip(actions_next, -1.0, 1.0)
-
-            # [B]
-            qs1_next = agent.critic_network.apply(
-                agent_state.params.target_critic1_params, next_obs, actions_next
+            qs_next = jnp.minimum(
+                models.target_critic1(next_obs, actions_next),
+                models.target_critic2(next_obs, actions_next),
             )
-            qs2_next = agent.critic_network.apply(
-                agent_state.params.target_critic2_params, next_obs, actions_next
-            )
-            qs_next_min = jnp.minimum(qs1_next, qs2_next)
-
             discounts = agent.discount * (
                 1 - sample_batch.extras.env_extras.termination
             )
-
-            qs_target = sample_batch.rewards + discounts * qs_next_min
-            qs_target = jax.lax.stop_gradient(qs_target)
-
-            # q_loss = optax.huber_loss(qs, qs_target).sum(-1).mean()
-            def _critic_loss(params):
-                qs = agent.critic_network.apply(params, obs, actions)
-                loss = optax.squared_error(qs, qs_target).mean()
-                return loss, qs.mean()
-
-            critic_update_fn = gradient_update(
-                _critic_loss,
-                self.optimizer,
-                dp_axis_name=self.dp_axis_name,
-                has_aux=True,
+            qs_target = jax.lax.stop_gradient(
+                sample_batch.rewards + discounts * qs_next
             )
 
-            (critic1_loss, q1), ciritc1_params, critic1_opt_state = critic_update_fn(
-                critic1_opt_state, agent_state.params.critic1_params
-            )
-            (critic2_loss, q2), ciritc2_params, critic2_opt_state = critic_update_fn(
-                critic2_opt_state, agent_state.params.critic2_params
-            )
+            def critic_loss(critic):
+                qs = critic(obs, sample_batch.actions)
+                return optax.squared_error(qs, qs_target).mean(), qs.mean()
 
-            agent_state = agent_state.replace(
-                params=agent_state.params.replace(
-                    critic1_params=ciritc1_params, critic2_params=ciritc2_params
-                )
+            loss_and_grad = pmean_nnx_loss_and_grad(
+                critic_loss, self.dp_axis_name, has_aux=True
             )
-
+            (critic1_loss, q1), grads1 = loss_and_grad(models.critic1)
+            (critic2_loss, q2), grads2 = loss_and_grad(models.critic2)
+            optimizer1 = nnx.merge(opt_state.critic1, copy=True)
+            optimizer2 = nnx.merge(opt_state.critic2, copy=True)
+            optimizer1.update(models.critic1, grads1)
+            optimizer2.update(models.critic2, grads2)
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
             opt_state = opt_state.replace(
-                critic1=critic1_opt_state, critic2=critic2_opt_state
+                critic1=nnx.unpack(optimizer1), critic2=nnx.unpack(optimizer2)
             )
 
             train_info = PyTreeDict(
@@ -407,59 +312,37 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
             )
 
         def _update_actor_fn(agent_state, opt_state, sample_batch, key):
-            actor_opt_state = opt_state.actor
             agent = self.agent
+            models = nnx.merge(agent_state.model_state, copy=True)
             obs = sample_batch.obs
-
             if agent.normalize_obs:
-                obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
+                obs = agent.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-            # ==== actor update ====
-            def _actor_loss(params):
-                actions = agent.actor_network.apply(params, obs)
-                loss = -agent.critic_network.apply(
-                    agent_state.params.critic1_params, obs, actions
-                ).mean()
-                return loss
+            def actor_loss(models):
+                return -models.critic1(obs, models.actor(obs)).mean()
 
-            actor_update_fn = gradient_update(
-                _actor_loss,
-                self.optimizer,
-                dp_axis_name=self.dp_axis_name,
-                has_aux=False,
-            )
-
-            actor_loss, actor_params, actor_opt_state = actor_update_fn(
-                actor_opt_state, agent_state.params.actor_params
-            )
-
-            # soft update all target networks
-            target_actor_params = soft_target_update(
-                agent_state.params.target_actor_params,
-                agent_state.params.actor_params,
-                self.config.tau,
-            )
-            target_critic1_params = soft_target_update(
-                agent_state.params.target_critic1_params,
-                agent_state.params.critic1_params,
-                self.config.tau,
-            )
-            target_critic2_params = soft_target_update(
-                agent_state.params.target_critic2_params,
-                agent_state.params.critic2_params,
-                self.config.tau,
-            )
-
-            agent_state = agent_state.replace(
-                params=agent_state.params.replace(
-                    actor_params=actor_params,
-                    target_actor_params=target_actor_params,
-                    target_critic1_params=target_critic1_params,
-                    target_critic2_params=target_critic2_params,
+            actor_loss, grads = pmean_nnx_loss_and_grad(
+                actor_loss,
+                self.dp_axis_name,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("actor")),
+            )(models)
+            optimizer = nnx.merge(opt_state.actor, copy=True)
+            optimizer.update(models.actor, grads["actor"])
+            for target, online in (
+                (models.target_actor, models.actor),
+                (models.target_critic1, models.critic1),
+                (models.target_critic2, models.critic2),
+            ):
+                nnx.update(
+                    target,
+                    soft_target_update(
+                        nnx.state(target, nnx.Param),
+                        nnx.state(online, nnx.Param),
+                        self.config.tau,
+                    ),
                 )
-            )
-
-            opt_state = opt_state.replace(actor=actor_opt_state)
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            opt_state = opt_state.replace(actor=nnx.unpack(optimizer))
 
             train_info = PyTreeDict(
                 actor_loss=actor_loss,
@@ -489,7 +372,6 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
             agent_state, opt_state, sample_batch, critic_key
         )
 
-        # Note: using cond prohibits the parallel training with vmap
         (
             actor_train_info,
             agent_state,
@@ -507,7 +389,7 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
         train_metrics = TD3TrainMetric(
             **actor_train_info,
             **critic_train_info,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         # calculate the number of timestep
         sampled_timesteps = psum(
@@ -519,7 +401,7 @@ class TD3V3Workflow(OffPolicyWorkflowTemplate):
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             iterations=iterations,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,

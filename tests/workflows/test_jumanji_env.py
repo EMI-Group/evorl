@@ -8,6 +8,8 @@ import pytest
 from hydra.utils import get_class
 from omegaconf import OmegaConf
 
+from evorl.algorithms.random_agent import RandomAgentWorkflow
+
 pytest.importorskip("jumanji")
 pytestmark = pytest.mark.integration
 
@@ -44,14 +46,14 @@ def test_ppo_jumanji_under_nested_vmap():
         keys = jax.random.split(jax.random.key(0), (2, 2))
         state = jax.jit(jax.vmap(jax.vmap(workflow.setup)))(keys)
         assert state.env_state.obs.colors.shape == (2, 2, 2, 20)
-        before = state.agent_state.params
+        before = state.agent_state.model_state
         metrics, state = jax.jit(jax.vmap(jax.vmap(workflow.step)))(state)
         jax.block_until_ready(state)
         assert any(
             np.any(np.asarray(a) != np.asarray(b))
             for a, b in zip(
                 jax.tree.leaves(before),
-                jax.tree.leaves(state.agent_state.params),
+                jax.tree.leaves(state.agent_state.model_state),
                 strict=True,
             )
         )
@@ -67,7 +69,6 @@ def test_ppo_jumanji_under_nested_vmap():
 
 
 def test_random_agent_with_integer_vector_actions():
-    from evorl.algorithms.random_agent import RandomAgentWorkflow
 
     root = Path(__file__).resolve().parents[2]
     env_config = OmegaConf.load(root / "configs/env/jumanji/logic/sudoku-v0.yaml")

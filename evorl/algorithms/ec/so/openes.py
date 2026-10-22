@@ -1,3 +1,5 @@
+from evorl.utils import running_statistics
+from flax import nnx
 from omegaconf import DictConfig
 from typing import Self
 
@@ -12,7 +14,7 @@ from evorl.ec.optimizers import OpenES, ExponentialScheduleSpec, ECState
 
 from .es_workflow import ESWorkflowTemplate
 from ..obs_utils import init_obs_preprocessor
-from ..ec_agent import make_deterministic_ec_agent
+from ..ec_agent import DeterministicECAgent
 
 
 class OpenESWorkflow(ESWorkflowTemplate):
@@ -28,13 +30,11 @@ class OpenESWorkflow(ESWorkflowTemplate):
             autoreset_mode=AutoresetMode.DISABLED,
         )
 
-        agent = make_deterministic_ec_agent(
-            action_space=env.action_space,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-            use_bias=config.agent_network.use_bias,
-            normalize_obs=config.normalize_obs,
-            norm_layer_type=config.agent_network.norm_layer_type,
-            policy_obs_key=config.agent_network.policy_obs_key,
+        agent = DeterministicECAgent(
+            agent_network_cfg=config.agent_network,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         ec_optimizer = OpenES(
@@ -72,7 +72,7 @@ class OpenESWorkflow(ESWorkflowTemplate):
         )
 
         agent_state_vmap_axes = AgentState(
-            params=0,
+            model_state=nnx.StateAxes({nnx.Param: 0, ...: None}),
             obs_preprocessor_state=None,
         )
 
@@ -92,7 +92,9 @@ class OpenESWorkflow(ESWorkflowTemplate):
             self.env.obs_space, self.env.action_space, agent_key
         )
 
-        init_actor_params = agent_state.params.policy_params
+        init_actor_params = nnx.state(
+            nnx.merge(agent_state.model_state, copy=True).policy, nnx.Param
+        )
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
         # remove params
@@ -108,7 +110,7 @@ class OpenESWorkflow(ESWorkflowTemplate):
                 agent_state=state.agent_state,
                 config=self.config,
                 key=obs_key,
-                dp_axis_name=self.dp_axis_name,
+                axis_name=self.dp_axis_name,
             )
 
             # Note: we don't count these random timesteps in state.metrics
@@ -122,9 +124,11 @@ class OpenESWorkflow(ESWorkflowTemplate):
     def _replace_actor_params(
         self, agent_state: AgentState, params: Params
     ) -> AgentState:
-        return agent_state.replace(
-            params=agent_state.params.replace(policy_params=params)
-        )
+        models = nnx.merge(agent_state.model_state, copy=True)
+        if params is None:
+            params = jax.tree.map(lambda _: None, nnx.state(models.policy, nnx.Param))
+        nnx.update(models.policy, params)
+        return agent_state.replace(model_state=nnx.unpack(models))
 
     def _get_pop_center(self, state: State) -> AgentState:
         pop_center = state.ec_opt_state.mean

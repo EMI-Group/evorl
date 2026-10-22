@@ -4,6 +4,7 @@ from copy import deepcopy
 from collections.abc import Callable
 from typing import Self
 
+from flax import nnx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -11,7 +12,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from evorl.agent import Agent, AgentState
-from evorl.algorithms.ec.ec_agent import make_deterministic_ec_agent
+from evorl.algorithms.ec.ec_agent import DeterministicECAgent
 from evorl.algorithms.ec.obs_utils import init_obs_preprocessor
 from evorl.envs import AutoresetMode, BaseEnv, create_env
 from evorl.evaluators import Evaluator
@@ -19,6 +20,8 @@ from evorl.metrics import ECTrainMetric, MultiObjectiveECWorkflowMetric
 from evorl.recorders import get_1d_array_statistics
 from evorl.types import PyTreeDict, State
 from evorl.utils.ec_utils import ParamVectorSpec
+from evorl.utils import running_statistics
+from evorl.networks.utils import model_state_axes
 from evorl.utils.torch_utils import jax_to_torch_device
 from evorl.workflows import Workflow
 
@@ -133,13 +136,11 @@ class EvoXWorkflow(Workflow):
             parallel=config.num_envs,
             autoreset_mode=AutoresetMode.DISABLED,
         )
-        agent = make_deterministic_ec_agent(
-            action_space=env.action_space,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-            use_bias=config.agent_network.use_bias,
-            normalize_obs=config.normalize_obs,
-            norm_layer_type=config.agent_network.norm_layer_type,
-            policy_obs_key=config.agent_network.policy_obs_key,
+        agent = DeterministicECAgent(
+            agent_network_cfg=config.agent_network,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
         key = jax.random.key(config.seed)
         reward = jax.eval_shape(env.reset, key).reward
@@ -150,7 +151,9 @@ class EvoXWorkflow(Workflow):
         if num_objectives is not None and num_objectives < 1:
             raise ValueError("Vector rewards must have at least one objective")
         dummy_agent_state = agent.init(env.obs_space, env.action_space, key)
-        params = dummy_agent_state.params.policy_params
+        params = nnx.state(
+            nnx.merge(dummy_agent_state.model_state, copy=True).policy, nnx.Param
+        )
         param_vec_spec = ParamVectorSpec(params)
         torch_device = jax_to_torch_device(jax.tree.leaves(params)[0].device)
         evaluator = Evaluator(
@@ -218,9 +221,12 @@ class EvoXWorkflow(Workflow):
         )
         if self.config.normalize_obs:
             agent_state = init_obs_preprocessor(agent_state, self.config, obs_key)
-        agent_state = agent_state.replace(
-            params=agent_state.params.replace(policy_params=None)
+        models = nnx.merge(agent_state.model_state, copy=True)
+        nnx.update(
+            models.policy,
+            jax.tree.map(lambda _: None, nnx.state(models.policy, nnx.Param)),
         )
+        agent_state = agent_state.replace(model_state=nnx.unpack(models))
         evaluation_metrics, algorithm_state = self.algorithm.init(
             algorithm_key, PyTreeDict(key=key, agent_state=agent_state)
         )
@@ -247,12 +253,22 @@ class EvoXWorkflow(Workflow):
         key, rollout_key = jax.random.split(evaluation_state.key)
         params = self.param_vec_spec.to_tree(population)
         agent_state = evaluation_state.agent_state
-        population_state = agent_state.replace(
-            params=agent_state.params.replace(policy_params=params)
-        )
+        models = nnx.merge(agent_state.model_state, copy=True)
+        nnx.update(models.policy, params)
+        population_state = agent_state.replace(model_state=nnx.unpack(models))
         metrics = jax.vmap(
             self.evaluator.evaluate,
-            in_axes=(AgentState(params=0, obs_preprocessor_state=None), 0, None),
+            in_axes=(
+                AgentState(
+                    model_state=model_state_axes(
+                        population_state.model_state,
+                        nnx.StateAxes({nnx.Param: 0, ...: None}),
+                    ),
+                    obs_preprocessor_state=None,
+                ),
+                0,
+                None,
+            ),
         )(
             population_state,
             jax.random.split(rollout_key, population.shape[0]),

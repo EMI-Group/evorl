@@ -1,3 +1,5 @@
+from evorl.utils import running_statistics
+from flax import nnx
 import math
 import numpy as np
 from typing import Self
@@ -18,7 +20,7 @@ from evorl.agent import AgentState
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import SepCEM, ECState, ExponentialScheduleSpec
-from evorl.algorithms.td3 import make_mlp_td3_agent, TD3NetworkParams
+from evorl.algorithms.td3 import TD3Agent
 from evorl.algorithms.offpolicy_utils import skip_replay_buffer_state
 
 from ..cemrl_workflow import CEMRLTrainMetric
@@ -58,18 +60,16 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
             record_ori_obs=True,
         )
 
-        agent = make_mlp_td3_agent(
-            action_space=env.action_space,
-            norm_layer_type=config.agent_network.norm_layer_type,
-            num_critics=config.agent_network.num_critics,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+        agent = TD3Agent(
+            agent_network_cfg=config.agent_network,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
             critics_in_actor_loss=config.critics_in_actor_loss,
-            normalize_obs=config.normalize_obs,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         if (
@@ -124,12 +124,7 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
         )
 
         agent_state_vmap_axes = AgentState(
-            params=TD3NetworkParams(
-                critic_params=None,
-                actor_params=0,
-                target_critic_params=None,
-                target_actor_params=0,
-            ),
+            model_state=dict(actor=0, target_actor=0, critic=None, target_critic=None),
             obs_preprocessor_state=None,
         )
 
@@ -157,14 +152,22 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
             self.env.obs_space, self.env.action_space, agent_key
         )
 
-        init_actor_params = agent_state.params.actor_params
+        init_actor_params = nnx.state(
+            nnx.merge(agent_state.model_state, copy=True).actor, nnx.Param
+        )
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
-        agent_state = cemrl_replace_td3_actor_params(agent_state, pop_actor_params=None)
+        agent_state = cemrl_replace_td3_actor_params(agent_state, actor_params=None)
 
         opt_state = PyTreeDict(
             # Note: we create and drop the actors' opt_state at every step
-            critic=self.optimizer.init(agent_state.params.critic_params),
+            critic=nnx.unpack(
+                nnx.Optimizer(
+                    nnx.merge(agent_state.model_state, copy=True).critic,
+                    self.optimizer,
+                    wrt=nnx.Param,
+                )
+            ),
             actor=None,
         )
 
@@ -205,7 +208,13 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
 
             # reset actors' opt_state
             learning_opt_state = opt_state.replace(
-                actor=self.optimizer.init(learning_actor_params),
+                actor=nnx.unpack(
+                    nnx.vmap(
+                        lambda model: nnx.Optimizer(
+                            model, self.optimizer, wrt=nnx.Param
+                        )
+                    )(nnx.merge(learning_agent_state.model_state, copy=True).actor)
+                ),
             )
 
             td3_metrics, learning_agent_state, learning_opt_state = self._rl_update(
@@ -217,13 +226,16 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
 
             pop_actor_params = tree_set(
                 pop_actor_params,
-                learning_agent_state.params.actor_params,
+                nnx.state(
+                    nnx.merge(learning_agent_state.model_state, copy=True).actor,
+                    nnx.Param,
+                ),
                 learning_actor_indices,
                 unique_indices=True,
             )
             # drop the actors and their opt_state
             agent_state = cemrl_replace_td3_actor_params(
-                learning_agent_state, pop_actor_params=None
+                learning_agent_state, actor_params=None
             )
             opt_state = learning_opt_state.replace(actor=None)
             return td3_metrics, pop_actor_params, agent_state, opt_state
@@ -368,7 +380,7 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
 
             self.recorder.write(train_metrics_dict, iters)
 
-            std_statistics = get_std_statistics(state.ec_opt_state.variance["params"])
+            std_statistics = get_std_statistics(state.ec_opt_state.variance)
             self.recorder.write({"ec/std": std_statistics}, iters)
 
             if iters % self.config.eval_interval == 0 or iters == final_iteration:
@@ -392,6 +404,9 @@ class CEMRLWorkflow(CEMRLTD3WorkflowTemplate):
 
 
 def get_std_statistics(variance):
+    if isinstance(variance, nnx.State):
+        variance = nnx.to_pure_dict(variance)
+
     def _get_stats(x):
         x = np.sqrt(x)
         return dict(

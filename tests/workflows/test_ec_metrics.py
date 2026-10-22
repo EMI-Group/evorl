@@ -25,7 +25,7 @@ from omegaconf import OmegaConf
 class _FitnessEvaluator(Evaluator):
     def evaluate(self, agent_state, key, num_episodes):
         return PyTreeDict(
-            episode_returns=agent_state.params + jnp.arange(num_episodes),
+            episode_returns=agent_state.model_state + jnp.arange(num_episodes),
             episode_lengths=jnp.full((num_episodes,), 2),
         )
 
@@ -58,7 +58,7 @@ def test_ec_metrics_count_only_local_episodes(num_devices, multi_objective):
 
     class FitnessWorkflow(base):
         def _replace_actor_params(self, agent_state, params):
-            return agent_state.replace(params=params)
+            return agent_state.replace(model_state=params)
 
     workflow = FitnessWorkflow(
         env=None,
@@ -91,7 +91,7 @@ def test_ec_metrics_count_only_local_episodes(num_devices, multi_objective):
         ).replace(sampled_episodes=jnp.uint32(7))
         state = State(
             key=jax.random.split(jax.random.key(0), num_devices),
-            agent_state=AgentState(params=jnp.float32(0)),
+            agent_state=AgentState(model_state=jnp.float32(0)),
             ec_opt_state=PyTreeDict(population=jnp.array([1, 2, 10, 20], jnp.float32)),
             metrics=metrics,
             distributed_info=DistributedInfo(
@@ -142,7 +142,7 @@ def test_ec_setup_uses_its_own_mesh_size(mesh_size):
         devices=jax.local_devices()[:mesh_size],
     )
     workflow._setup_agent_and_optimizer = lambda key: (
-        AgentState(params=jnp.float32(0)),
+        AgentState(model_state=jnp.float32(0)),
         PyTreeDict(),
     )
     with jax.set_mesh(workflow.mesh):

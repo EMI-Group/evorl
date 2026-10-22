@@ -1,4 +1,6 @@
+from evorl.utils import running_statistics
 import logging
+from flax import nnx
 from omegaconf import DictConfig
 
 import chex
@@ -7,17 +9,15 @@ import jax.numpy as jnp
 import optax
 
 from evorl.agent import AgentState
-from evorl.envs import Space, Box, create_env, AutoresetMode
+from evorl.envs import Space, create_env, AutoresetMode
 from evorl.evaluators import Evaluator
-from evorl.distributed import agent_gradient_update, psum
+from evorl.distributed import pmean_nnx_loss_and_grad, psum
 from evorl.distribution import get_tanh_norm_dist
 from evorl.metrics import MetricBase
 from evorl.rollout import rollout
 from evorl.replay_buffers import ReplayBuffer
 from evorl.types import PyTreeDict, State, LossDict
 from evorl.sample_batch import SampleBatch
-from evorl.networks import make_policy_network, make_q_network
-from evorl.utils import running_statistics
 from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
@@ -40,15 +40,17 @@ class ParamSACAgent(SACAgent):
 
         return agent_state.replace(
             extra_state=agent_state.extra_state.replace(
-                discount_g=-jnp.log(
-                    1 - jnp.float32(self.discount)
-                ),  # discount = 1 - exp(-g)
+                discount_g=-jnp.log(1 - jnp.float32(self.discount)),
             )
         )
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         obs = sample_batch.obs
         next_obs = sample_batch.extras.env_extras.ori_obs
         if self.normalize_obs:
@@ -61,67 +63,26 @@ class ParamSACAgent(SACAgent):
             1 - sample_batch.extras.env_extras.termination
         )
 
-        alpha = jnp.exp(agent_state.params.log_alpha)
+        alpha = jnp.exp(models.log_alpha[...])
 
         # [B, 2]
-        qs = self.critic_network.apply(
-            agent_state.params.critic_params, obs, sample_batch.actions
-        )
+        qs = models.critic(obs, sample_batch.actions)
 
-        next_raw_actions = self.actor_network.apply(
-            agent_state.params.actor_params, next_obs
-        )
+        next_raw_actions = models.actor(next_obs)
         next_actions_dist = get_tanh_norm_dist(*jnp.split(next_raw_actions, 2, axis=-1))
         next_actions = next_actions_dist.sample(seed=key)
         next_actions_logp = next_actions_dist.log_prob(next_actions)
         # [B, 2]
-        next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, next_actions
-        )
+        next_qs = models.target_critic(next_obs, next_actions)
         qs_target = sample_batch.rewards + discounts * (
             jnp.min(next_qs, axis=-1) - alpha * next_actions_logp
         )
-        qs_target = jnp.broadcast_to(qs_target[..., None], (*qs_target.shape, 2))
+        qs_target = jax.lax.stop_gradient(
+            jnp.broadcast_to(qs_target[..., None], qs.shape)
+        )
 
         q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
         return PyTreeDict(critic_loss=q_loss, q_value=qs.mean())
-
-
-def make_mlp_sac_agent(
-    action_space: Space,
-    critic_hidden_layer_sizes: tuple[int] = (256, 256),
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    init_alpha: float = 1.0,
-    discount: float = 0.99,
-    normalize_obs: bool = False,
-):
-    if isinstance(action_space, Box):
-        action_size = action_space.shape[0] * 2
-    else:
-        raise NotImplementedError(f"Unsupported action space: {action_space}")
-
-    actor_network = make_policy_network(
-        action_size=action_size,  # mean+std
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-    )
-
-    critic_network = make_q_network(
-        n_stack=2,
-        hidden_layer_sizes=critic_hidden_layer_sizes,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return ParamSACAgent(
-        critic_network=critic_network,
-        actor_network=actor_network,
-        obs_preprocessor=obs_preprocessor,
-        init_alpha=init_alpha,
-        discount=discount,
-    )
 
 
 class ParamSACWorkflow(OffPolicyWorkflowTemplate):
@@ -143,13 +104,13 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             record_ori_obs=True,
         )
 
-        agent = make_mlp_sac_agent(
-            action_space=env.action_space,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+        agent = ParamSACAgent(
+            agent_network_cfg=config.agent_network,
             init_alpha=config.alpha,
             discount=config.discount,
-            normalize_obs=config.normalize_obs,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         # TODO: use different lr for critic and actor
@@ -195,11 +156,14 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
         self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
+        models = nnx.merge(agent_state.model_state, copy=True)
         opt_state = PyTreeDict(
-            dict(
-                actor=self.optimizer.init(agent_state.params.actor_params),
-                critic=self.optimizer.init(agent_state.params.critic_params),
-            )
+            actor=nnx.unpack(
+                nnx.Optimizer(models.actor, self.optimizer, wrt=nnx.Param)
+            ),
+            critic=nnx.unpack(
+                nnx.Optimizer(models.critic, self.optimizer, wrt=nnx.Param)
+            ),
         )
 
         return agent_state, opt_state
@@ -211,7 +175,7 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
         workflow_metrics = self._setup_workflow_metrics()
         env_state = self.env.reset(env_key)
 
-        state = State(
+        return State(
             key=key,
             metrics=workflow_metrics,
             agent_state=agent_state,
@@ -223,8 +187,6 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
                 critic_loss_weight=jnp.float32(1.0),
             ),
         )
-
-        return state.replace()
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
@@ -255,7 +217,7 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
+                    axis_name=self.dp_axis_name,
                 )
             )
 
@@ -263,38 +225,33 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
         # we save the data externally instead
         replay_buffer_state = state.replay_buffer_state
 
-        def critic_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.critic_loss(agent_state, sample_batch, key)
+        def critic_loss_fn(models, agent_state, sample_batch, key):
+            loss_dict = self.agent.critic_loss(
+                agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+            )
 
             loss = loss_dict.critic_loss * state.hp_state.critic_loss_weight
             return loss, loss_dict
 
-        def actor_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
+        def actor_loss_fn(models, agent_state, sample_batch, key):
+            loss_dict = self.agent.actor_loss(
+                agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+            )
 
             loss = loss_dict.actor_loss * state.hp_state.actor_loss_weight
             return loss, loss_dict
 
-        critic_update_fn = agent_gradient_update(
+        critic_loss_and_grad = pmean_nnx_loss_and_grad(
             critic_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
+            self.dp_axis_name,
             has_aux=True,
-            attach_fn=lambda agent_state, critic_params: agent_state.replace(
-                params=agent_state.params.replace(critic_params=critic_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.critic_params,
+            wrt=nnx.All(nnx.Param, nnx.PathContains("critic")),
         )
-
-        actor_update_fn = agent_gradient_update(
+        actor_loss_and_grad = pmean_nnx_loss_and_grad(
             actor_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
+            self.dp_axis_name,
             has_aux=True,
-            attach_fn=lambda agent_state, actor_params: agent_state.replace(
-                params=agent_state.params.replace(actor_params=actor_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.actor_params,
+            wrt=nnx.All(nnx.Param, nnx.PathContains("actor")),
         )
 
         def _sample_and_update_fn(carry, unused_t):
@@ -316,11 +273,14 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
                         replay_buffer_state, rb_key
                     )
 
-                    (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                        critic_update_fn(
-                            critic_opt_state, agent_state, sample_batch, critic_key
-                        )
+                    models = nnx.merge(agent_state.model_state, copy=True)
+                    optimizer = nnx.merge(critic_opt_state, copy=True)
+                    _, grads = critic_loss_and_grad(
+                        models, agent_state, sample_batch, critic_key
                     )
+                    optimizer.update(models.critic, grads["critic"])
+                    agent_state = agent_state.replace(model_state=nnx.unpack(models))
+                    critic_opt_state = nnx.unpack(optimizer)
 
                     return (key, agent_state, critic_opt_state), None
 
@@ -335,16 +295,20 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
 
             sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
-            (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                critic_update_fn(
-                    critic_opt_state, agent_state, sample_batch, critic_key
-                )
+            models = nnx.merge(agent_state.model_state, copy=True)
+            critic_optimizer = nnx.merge(critic_opt_state, copy=True)
+            (critic_loss, critic_loss_dict), critic_grads = critic_loss_and_grad(
+                models, agent_state, sample_batch, critic_key
             )
+            critic_optimizer.update(models.critic, critic_grads["critic"])
+            critic_opt_state = nnx.unpack(critic_optimizer)
 
-            (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
-                actor_update_fn(actor_opt_state, agent_state, sample_batch, actor_key)
+            actor_optimizer = nnx.merge(actor_opt_state, copy=True)
+            (actor_loss, actor_loss_dict), actor_grads = actor_loss_and_grad(
+                models, agent_state, sample_batch, actor_key
             )
-
+            actor_optimizer.update(models.actor, actor_grads["actor"])
+            actor_opt_state = nnx.unpack(actor_optimizer)
             opt_state = opt_state.replace(
                 actor=actor_opt_state, critic=critic_opt_state
             )
@@ -356,16 +320,15 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
                 actor_loss_dict,
             )
 
-            target_critic_params = soft_target_update(
-                agent_state.params.target_critic_params,
-                agent_state.params.critic_params,
-                self.config.tau,
+            nnx.update(
+                models.target_critic,
+                soft_target_update(
+                    nnx.state(models.target_critic, nnx.Param),
+                    nnx.state(models.critic, nnx.Param),
+                    self.config.tau,
+                ),
             )
-            agent_state = agent_state.replace(
-                params=agent_state.params.replace(
-                    target_critic_params=target_critic_params
-                )
-            )
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
 
             return (key, agent_state, opt_state), res
 
@@ -389,7 +352,7 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             critic_loss=critic_loss,
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
             trajectory=trajectory,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         # calculate the number of timestep
         sampled_timesteps = psum(
@@ -405,7 +368,7 @@ class ParamSACWorkflow(OffPolicyWorkflowTemplate):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,

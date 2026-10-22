@@ -1,6 +1,8 @@
+from evorl.utils import running_statistics
 import logging
 from functools import partial
 from omegaconf import DictConfig
+from flax import nnx
 
 import jax
 import jax.numpy as jnp
@@ -8,22 +10,18 @@ import jax.tree_util as jtu
 import optax
 
 from evorl.agent import AgentState
-from evorl.envs import Space, create_env, AutoresetMode, Box, Discrete
+from evorl.envs import Box, Space, create_env, AutoresetMode
 from evorl.evaluators import Evaluator
-from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.distributed import agent_gradient_update, psum
+from evorl.distributed import pmean_nnx_loss_and_grad, psum
 from evorl.metrics import TrainMetric, MetricBase
-from evorl.networks import make_policy_network, make_v_network
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
-from evorl.types import PyTreeDict, State, LossDict
-from evorl.utils import running_statistics
+from evorl.types import LossDict, PyTreeDict, State
 from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import (
     average_episode_discount_return,
     compute_gae,
     flatten_rollout_trajectory,
-    approximate_kl,
 )
 
 from evorl.algorithms.ppo import PPOWorkflow, PPOAgent
@@ -42,106 +40,12 @@ class ParamPPOAgent(PPOAgent):
     def loss(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> LossDict:
-        obs = sample_batch.obs
-        if self.normalize_obs:
-            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
-
-        # mask invalid transitions at autoreset
-        mask = jnp.logical_not(sample_batch.extras.env_extras.autoreset)
-
-        # ======= critic =======
-        vs = self.value_network.apply(agent_state.params.value_params, obs)
-
-        v_targets = sample_batch.extras.v_targets
-
-        critic_loss = optax.squared_error(vs, v_targets).mean(where=mask)
-
-        # ====== actor =======
-
-        # [T*B, A]
-        raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
-
-        if self.continuous_action:
-            actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
-        else:
-            actions_dist = get_categorical_dist(raw_actions)
-
-        # [T*B]
-        actions_logp = actions_dist.log_prob(sample_batch.actions)
-        behavior_actions_logp = sample_batch.extras.policy_extras.logp
-
-        advantages = sample_batch.extras.advantages
-        if self.normalize_gae:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-        logrho = actions_logp - behavior_actions_logp
-        rho = jnp.exp(logrho)
-
-        # advantages: [T*B]
-        policy_sorrogate_loss1 = rho * advantages
-        policy_sorrogate_loss2 = (
-            jnp.clip(
-                rho,
-                1 - agent_state.extra_state.clip_epsilon,
-                1 + agent_state.extra_state.clip_epsilon,
-            )
-            * advantages
+        return super().loss(
+            agent_state,
+            sample_batch,
+            key,
+            clip_epsilon=agent_state.extra_state.clip_epsilon,
         )
-        actor_loss = -jnp.minimum(policy_sorrogate_loss1, policy_sorrogate_loss2).mean(
-            where=mask
-        )
-
-        # entropy: [T*B]
-        if self.continuous_action:
-            actor_entropy = actions_dist.entropy(seed=key).mean(where=mask)
-        else:
-            actor_entropy = actions_dist.entropy().mean(where=mask)
-
-        approx_kl = approximate_kl(logrho)
-
-        return PyTreeDict(
-            actor_loss=actor_loss,
-            critic_loss=critic_loss,
-            actor_entropy=actor_entropy,
-            approx_kl=approx_kl,
-        )
-
-
-def make_mlp_ppo_agent(
-    action_space: Space,
-    clip_epsilon: float = 0.2,
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    critic_hidden_layer_sizes: tuple[int] = (256, 256),
-    normalize_obs: bool = False,
-):
-    if isinstance(action_space, Box):
-        action_size = action_space.shape[0] * 2
-        continuous_action = True
-    elif isinstance(action_space, Discrete):
-        action_size = action_space.n
-        continuous_action = False
-    else:
-        raise NotImplementedError(f"Unsupported action space: {action_space}")
-
-    policy_network = make_policy_network(
-        action_size=action_size,
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-    )
-
-    value_network = make_v_network(hidden_layer_sizes=critic_hidden_layer_sizes)
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return ParamPPOAgent(
-        continuous_action=continuous_action,
-        policy_network=policy_network,
-        value_network=value_network,
-        obs_preprocessor=obs_preprocessor,
-        clip_epsilon=clip_epsilon,
-    )
 
 
 class ParamPPOWorkflow(PPOWorkflow):
@@ -159,12 +63,14 @@ class ParamPPOWorkflow(PPOWorkflow):
             autoreset_mode=AutoresetMode.ENVPOOL,
         )
 
-        agent = make_mlp_ppo_agent(
-            action_space=env.action_space,
+        agent = ParamPPOAgent(
+            agent_network_cfg=config.agent_network,
+            continuous_action=isinstance(env.action_space, Box),
             clip_epsilon=config.clip_epsilon,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            normalize_obs=config.normalize_obs,
+            normalize_gae=config.normalize_gae,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         if (
@@ -237,14 +143,14 @@ class ParamPPOWorkflow(PPOWorkflow):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
+                    axis_name=self.dp_axis_name,
                 )
             )
 
         train_episode_return = average_episode_discount_return(
             trajectory.extras.env_extras.episode_return,
             trajectory.dones,
-            dp_axis_name=self.dp_axis_name,
+            axis_name=self.dp_axis_name,
         )
 
         # ======== compute GAE =======
@@ -273,9 +179,11 @@ class ParamPPOWorkflow(PPOWorkflow):
         trajectory = tree_stop_gradient(flatten_rollout_trajectory(trajectory))
         # ============================
 
-        def loss_fn(agent_state, sample_batch, key):
+        def loss_fn(models, agent_state, sample_batch, key):
             # learn all data from trajectory
-            loss_dict = self.agent.loss(agent_state, sample_batch, key)
+            loss_dict = self.agent.loss(
+                agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+            )
             loss_weights = dict(
                 actor_loss=state.hp_state.actor_loss_weight,
                 critic_loss=state.hp_state.critic_loss_weight,
@@ -287,8 +195,8 @@ class ParamPPOWorkflow(PPOWorkflow):
 
             return loss, loss_dict
 
-        update_fn = agent_gradient_update(
-            loss_fn, self.optimizer, dp_axis_name=self.dp_axis_name, has_aux=True
+        loss_and_grad = pmean_nnx_loss_and_grad(
+            loss_fn, self.dp_axis_name, has_aux=True
         )
 
         num_minibatches = (
@@ -307,9 +215,14 @@ class ParamPPOWorkflow(PPOWorkflow):
             opt_state, agent_state, key = carry
             key, learn_key = jax.random.split(key)
 
-            (loss, loss_dict), agent_state, opt_state = update_fn(
-                opt_state, agent_state, trajectory, learn_key
+            models = nnx.merge(agent_state.model_state, copy=True)
+            optimizer = nnx.merge(opt_state, copy=True)
+            (loss, loss_dict), grads = loss_and_grad(
+                models, agent_state, trajectory, learn_key
             )
+            optimizer.update(models, grads)
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            opt_state = nnx.unpack(optimizer)
 
             return (opt_state, agent_state, key), (loss, loss_dict)
 
@@ -348,13 +261,13 @@ class ParamPPOWorkflow(PPOWorkflow):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         train_metrics = TrainMetric(
             train_episode_return=train_episode_return,
             loss=loss,
             raw_loss_dict=loss_dict,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,

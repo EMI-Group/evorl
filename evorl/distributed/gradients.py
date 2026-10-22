@@ -1,8 +1,8 @@
 from collections.abc import Callable
 
-import chex
 import jax
 import optax
+from flax import nnx
 
 """Training gradient utility functions.
 
@@ -11,7 +11,7 @@ Modified from https://github.com/google/brax/blob/main/brax/training/gradients.p
 
 
 def pmean_loss_and_grad(
-    loss_fn: Callable, dp_axis_name: str | None, has_aux: bool = False
+    loss_fn: Callable, axis_name: str | None, has_aux: bool = False
 ):
     """Differentiate the global mean loss over replicated parameters.
 
@@ -23,7 +23,7 @@ def pmean_loss_and_grad(
     Args:
         loss_fn: Function taking parameters first and returning a scalar loss,
             or `(loss, aux)` when `has_aux=True`.
-        dp_axis_name: Active data-parallel Manual axis in `shard_map`. The
+        axis_name: Manual axis in `shard_map` over which losses are averaged. The
             differentiated parameters must be replicated over this axis.
             Pass `None` to use ordinary local `jax.value_and_grad`.
         has_aux: Whether `loss_fn` also returns auxiliary data. Aux is returned
@@ -34,15 +34,15 @@ def pmean_loss_and_grad(
         `(mean_loss, mean_grads)` or `((mean_loss, local_aux), mean_grads)`.
         With no axis, both the loss and gradients remain local.
     """
-    if dp_axis_name is None:
+    if axis_name is None:
         return jax.value_and_grad(loss_fn, has_aux=has_aux)
 
     def mean_loss_fn(*args, **kwargs):
         value = loss_fn(*args, **kwargs)
         if has_aux:
             loss, aux = value
-            return jax.lax.pmean(loss, dp_axis_name), aux
-        return jax.lax.pmean(value, dp_axis_name)
+            return jax.lax.pmean(loss, axis_name), aux
+        return jax.lax.pmean(value, axis_name)
 
     return jax.value_and_grad(mean_loss_fn, has_aux=has_aux)
 
@@ -50,7 +50,7 @@ def pmean_loss_and_grad(
 def gradient_update(
     loss_fn: Callable[..., float],
     optimizer: optax.GradientTransformation,
-    dp_axis_name: str | None,
+    axis_name: str | None,
     has_aux: bool = False,
 ):
     """Wrapper of the loss function that apply gradient updates.
@@ -58,7 +58,7 @@ def gradient_update(
     Args:
         loss_fn: The loss function. (params, ...) -> loss
         optimizer: The optimizer to apply gradients.
-        dp_axis_name: Data-parallel axis for the global mean loss and gradients,
+        axis_name: Axis for the global mean loss and gradients,
             or `None` for a local update.
         has_aux: Whether the loss_fn has auxiliary data.
 
@@ -68,7 +68,7 @@ def gradient_update(
         and the new optimizer state.
     """
     loss_and_grad_fn = pmean_loss_and_grad(
-        loss_fn, dp_axis_name=dp_axis_name, has_aux=has_aux
+        loss_fn, axis_name=axis_name, has_aux=has_aux
     )
 
     def f(opt_state, params, *args, **kwargs):
@@ -84,41 +84,39 @@ def gradient_update(
     return f
 
 
-def _attach_params_to_agent_state(agent_state, params):
-    return agent_state.replace(params=params)
-
-
-def _detach_params_to_agent_state(agent_state):
-    return agent_state.params
-
-
-def agent_gradient_update(
-    loss_fn: Callable[..., float],
-    optimizer: optax.GradientTransformation,
-    dp_axis_name: str | None = None,
+def pmean_nnx_loss_and_grad(
+    loss_fn: Callable,
+    axis_name: str | None,
     has_aux: bool = False,
-    attach_fn: Callable[
-        [chex.ArrayTree, chex.ArrayTree], chex.ArrayTree
-    ] = _attach_params_to_agent_state,
-    detach_fn: Callable[
-        [chex.ArrayTree, chex.ArrayTree], chex.ArrayTree
-    ] = _detach_params_to_agent_state,
+    *,
+    wrt=nnx.Param,
 ):
-    def _loss_fn(params, agent_state, sample_batch, key):
-        agent_state = attach_fn(agent_state, params)
-        return loss_fn(agent_state, sample_batch, key)
+    """Differentiate selected NNX parameters through the global mean loss.
 
-    _gradient_update_fn = gradient_update(
-        _loss_fn, optimizer, dp_axis_name=dp_axis_name, has_aux=has_aux
-    )
+    `wrt` filters variables in the first model argument. Auxiliary outputs stay
+    local. As with `pmean_loss_and_grad`, replicated parameters and equally sized
+    local batches are required for data-parallel training.
 
-    def f(opt_state, agent_state, *args, **kwargs):
-        params = detach_fn(agent_state)
-        value, params, opt_state = _gradient_update_fn(
-            opt_state, params, agent_state, *args, **kwargs
-        )
-        agent_state = attach_fn(agent_state, params)
+    Args:
+        loss_fn: Function taking an NNX model first and returning a scalar loss,
+            or `(loss, aux)` when `has_aux=True`.
+        axis_name: Manual `shard_map` axis over which losses are averaged.
+            Pass `None` for a local update.
+        has_aux: Whether `loss_fn` also returns local auxiliary data.
+        wrt: NNX filter selecting the variables to differentiate.
 
-        return value, agent_state, opt_state
+    Returns:
+        A callable returning the mean loss and selected gradients, with local
+        auxiliary data when requested.
+    """
 
-    return f
+    def mean_loss(*args, **kwargs):
+        result = loss_fn(*args, **kwargs)
+        if axis_name is None:
+            return result
+        if has_aux:
+            loss, aux = result
+            return jax.lax.pmean(loss, axis_name), aux
+        return jax.lax.pmean(result, axis_name)
+
+    return nnx.value_and_grad(mean_loss, argnums=nnx.DiffState(0, wrt), has_aux=has_aux)

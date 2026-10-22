@@ -7,7 +7,7 @@ import jax.tree_util as jtu
 
 from evorl.types import PyTreeNode
 from evorl.utils.jax_utils import ensure_batched_key
-from ..utils import is_layer_norm_layer
+from evorl.networks.utils import is_layer_norm_layer
 
 
 def mlp_crossover(

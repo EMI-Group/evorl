@@ -109,7 +109,7 @@ class DebugRandomAgent(Agent):
             action_space=action_space,
             obs_space=obs_space,
         )
-        return AgentState(params={}, extra_state=extra_state)
+        return AgentState(model_state={}, extra_state=extra_state)
 
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array

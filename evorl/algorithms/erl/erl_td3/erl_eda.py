@@ -1,3 +1,5 @@
+from evorl.utils import running_statistics
+from flax import nnx
 import logging
 import math
 from omegaconf import DictConfig
@@ -9,7 +11,7 @@ import jax.tree_util as jtu
 import optax
 
 from evorl.replay_buffers import ReplayBuffer
-from evorl.distributed import agent_gradient_update
+from evorl.distributed import pmean_nnx_loss_and_grad
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
@@ -24,7 +26,7 @@ from evorl.agent import AgentState, Agent
 from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix
 from evorl.ec.optimizers import ECState, OpenES, ExponentialScheduleSpec
-from evorl.algorithms.td3 import make_mlp_td3_agent, TD3TrainMetric
+from evorl.algorithms.td3 import TD3Agent, TD3TrainMetric
 from evorl.algorithms.offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 
 from ..erl_workflow import ERLTrainMetric
@@ -72,18 +74,16 @@ class ERLEDAWorkflow(ERLTD3WorkflowTemplate):
             record_ori_obs=True,
         )
 
-        agent = make_mlp_td3_agent(
-            action_space=env.action_space,
-            norm_layer_type=config.agent_network.norm_layer_type,
-            num_critics=config.agent_network.num_critics,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+        agent = TD3Agent(
+            agent_network_cfg=config.agent_network,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
             critics_in_actor_loss=config.critics_in_actor_loss,
-            normalize_obs=config.normalize_obs,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         if (
@@ -148,10 +148,7 @@ class ERLEDAWorkflow(ERLTD3WorkflowTemplate):
         )
 
         # this is only used for _ec_rollout()
-        agent_state_vmap_axes = AgentState(
-            params=0,
-            obs_preprocessor_state=None,
-        )
+        agent_state_vmap_axes = AgentState(model_state=0, obs_preprocessor_state=None)
 
         workflow = cls(
             env=env,
@@ -178,13 +175,28 @@ class ERLEDAWorkflow(ERLTD3WorkflowTemplate):
             self.env.obs_space, self.env.action_space, agent_key
         )
 
-        init_actor_params = agent_state.params.actor_params
+        init_actor_params = nnx.state(
+            nnx.merge(agent_state.model_state, copy=True).actor, nnx.Param
+        )
 
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
+        models = nnx.merge(agent_state.model_state, copy=True)
         opt_state = PyTreeDict(
-            actor=self.optimizer.init(agent_state.params.actor_params),
-            critic=self.optimizer.init(agent_state.params.critic_params),
+            actor=nnx.unpack(
+                nnx.Optimizer(
+                    models.actor,
+                    self.optimizer,
+                    wrt=nnx.Param,
+                )
+            ),
+            critic=nnx.unpack(
+                nnx.Optimizer(
+                    models.critic,
+                    self.optimizer,
+                    wrt=nnx.Param,
+                )
+            ),
         )
 
         return agent_state, opt_state, ec_opt_state
@@ -258,7 +270,9 @@ class ERLEDAWorkflow(ERLTD3WorkflowTemplate):
         # update EC pop center with RL weights
 
         pop_mean = ec_opt_state.mean
-        rl_actor_params = agent_state.params.actor_params
+        rl_actor_params = nnx.state(
+            nnx.merge(agent_state.model_state, copy=True).actor, nnx.Param
+        )
 
         # Tips: x = x + stepsize * (y - x)
         ec_opt_state = ec_opt_state.replace(
@@ -440,44 +454,51 @@ def build_rl_update_fn(
     optimizer: optax.GradientTransformation,
     config: DictConfig,
 ):
-    def critic_loss_fn(agent_state, sample_batch, key):
-        # loss on a single critic with multiple actors
-        # sample_batch: (B, ...)
+    def critic_loss_fn(models, agent_state, sample_batch, key):
+        loss_dict = agent.critic_loss(
+            agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+        )
+        return loss_dict.critic_loss, loss_dict
 
-        loss_dict = agent.critic_loss(agent_state, sample_batch, key)
+    def actor_loss_fn(models, agent_state, sample_batch, key):
+        loss_dict = agent.actor_loss(
+            agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+        )
+        return loss_dict.actor_loss, loss_dict
 
-        loss = loss_dict.critic_loss
+    def critic_update_fn(opt_state, agent_state, sample_batch, key):
+        models = nnx.merge(agent_state.model_state, copy=True)
+        value, grads = pmean_nnx_loss_and_grad(
+            critic_loss_fn,
+            None,
+            has_aux=True,
+            wrt=nnx.All(nnx.Param, nnx.PathContains("critic")),
+        )(models, agent_state, sample_batch, key)
+        local_optimizer = nnx.merge(opt_state, copy=True)
+        local_optimizer.update(models.critic, grads["critic"])
+        return (
+            value,
+            agent_state.replace(model_state=nnx.unpack(models)),
+            nnx.unpack(local_optimizer),
+        )
 
-        return loss, loss_dict
-
-    def actor_loss_fn(agent_state, sample_batch, key):
-        # loss on a single actor
-        # different actor shares same sample_batch (B, ...) input
-        loss_dict = agent.actor_loss(agent_state, sample_batch, key)
-
-        loss = loss_dict.actor_loss
-
-        return loss, loss_dict
-
-    critic_update_fn = agent_gradient_update(
-        critic_loss_fn,
-        optimizer,
-        has_aux=True,
-        attach_fn=lambda agent_state, critic_params: agent_state.replace(
-            params=agent_state.params.replace(critic_params=critic_params)
-        ),
-        detach_fn=lambda agent_state: agent_state.params.critic_params,
-    )
-
-    actor_update_fn = agent_gradient_update(
-        actor_loss_fn,
-        optimizer,
-        has_aux=True,
-        attach_fn=lambda agent_state, actor_params: agent_state.replace(
-            params=agent_state.params.replace(actor_params=actor_params)
-        ),
-        detach_fn=lambda agent_state: agent_state.params.actor_params,
-    )
+    def actor_update_fn(opt_state, agent_state, sample_batch, key):
+        models = nnx.merge(agent_state.model_state, copy=True)
+        critic_auxiliary = nnx.clone(nnx.state(models.critic, nnx.Not(nnx.Param)))
+        value, grads = pmean_nnx_loss_and_grad(
+            actor_loss_fn,
+            None,
+            has_aux=True,
+            wrt=nnx.All(nnx.Param, nnx.PathContains("actor")),
+        )(models, agent_state, sample_batch, key)
+        local_optimizer = nnx.merge(opt_state, copy=True)
+        local_optimizer.update(models.actor, grads["actor"])
+        nnx.update(models.critic, critic_auxiliary)
+        return (
+            value,
+            agent_state.replace(model_state=nnx.unpack(models)),
+            nnx.unpack(local_optimizer),
+        )
 
     def _update_fn(agent_state, opt_state, sample_batches, key):
         critic_opt_state = opt_state.critic
@@ -527,22 +548,24 @@ def build_rl_update_fn(
         )
 
         # not need vmap
-        target_actor_params = soft_target_update(
-            agent_state.params.target_actor_params,
-            agent_state.params.actor_params,
-            config.tau,
+        models = nnx.merge(agent_state.model_state, copy=True)
+        nnx.update(
+            models.target_actor,
+            soft_target_update(
+                nnx.state(models.target_actor, nnx.Param),
+                nnx.state(models.actor, nnx.Param),
+                config.tau,
+            ),
         )
-        target_critic_params = soft_target_update(
-            agent_state.params.target_critic_params,
-            agent_state.params.critic_params,
-            config.tau,
+        nnx.update(
+            models.target_critic,
+            soft_target_update(
+                nnx.state(models.target_critic, nnx.Param),
+                nnx.state(models.critic, nnx.Param),
+                config.tau,
+            ),
         )
-        agent_state = agent_state.replace(
-            params=agent_state.params.replace(
-                target_actor_params=target_actor_params,
-                target_critic_params=target_critic_params,
-            )
-        )
+        agent_state = agent_state.replace(model_state=nnx.unpack(models))
 
         opt_state = opt_state.replace(actor=actor_opt_state, critic=critic_opt_state)
 

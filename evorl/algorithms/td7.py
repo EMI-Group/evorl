@@ -1,10 +1,11 @@
+from evorl.utils import running_statistics
 import logging
 from typing import Any
 from collections.abc import Sequence
 import math
 
 import chex
-import flax.linen as nn
+from flax import nnx
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -12,30 +13,25 @@ import optax
 from omegaconf import DictConfig
 
 from evorl.distributed import pmax, pmean, pmin, psum
-from evorl.distributed.gradients import gradient_update
+from evorl.distributed.gradients import pmean_nnx_loss_and_grad
 from evorl.distributed.sharding import mark_varying
-from evorl.envs import AutoresetMode, Box, create_env, Space
-from evorl.evaluators import Evaluator
+from evorl.envs import Box, AutoresetMode, create_env, Space
 from evorl.metrics import MetricBase, metric_field
 from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
     LossDict,
-    Params,
     PolicyExtraInfo,
-    PyTreeData,
     PyTreeDict,
     State,
     pytree_field,
 )
-from evorl.utils import running_statistics
 from evorl.utils.jax_utils import (
     scan_and_mean,
     tree_stop_gradient,
-    tree_get,
     right_shift_with_padding,
 )
-from evorl.evaluators import EpisodeCollector
+from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState
 from evorl.replay_buffers import LAPReplayBuffer
 from evorl.recorders import add_prefix
@@ -52,95 +48,108 @@ def avg_l1_norm(x: jax.Array, eps: float = 1e-8) -> jax.Array:
     return x / mean_abs
 
 
-class TD7Encoder(nn.Module):
-    z_s_dim: int = 256
-    z_sa_dim: int = 256
-    f_layer_sizes: Sequence[int] = (256, 256)
-    g_layer_sizes: Sequence[int] = (256, 256)
+class TD7Encoder(nnx.Module):
+    """TD7 state and state-action embeddings with independent MLPs."""
 
-    def setup(self):
+    def __init__(
+        self,
+        obs_size: int,
+        action_size: int,
+        z_s_dim: int = 256,
+        z_sa_dim: int = 256,
+        f_layer_sizes: Sequence[int] = (256, 256),
+        g_layer_sizes: Sequence[int] = (256, 256),
+        *,
+        rngs: nnx.Rngs,
+    ):
         self.zs_mlp = MLP(
-            layer_sizes=tuple(self.f_layer_sizes) + (self.z_s_dim,),
-            activation=nn.elu,
-            name="zs_mlp",
+            obs_size,
+            (*f_layer_sizes, z_s_dim),
+            activation=jax.nn.elu,
+            rngs=rngs,
         )
         self.zsa_mlp = MLP(
-            layer_sizes=tuple(self.g_layer_sizes) + (self.z_sa_dim,),
-            activation=nn.elu,
-            name="zsa_mlp",
+            z_s_dim + action_size,
+            (*g_layer_sizes, z_sa_dim),
+            activation=jax.nn.elu,
+            rngs=rngs,
         )
 
     def zs(self, obs: jax.Array) -> jax.Array:
-        z = self.zs_mlp(obs)
-        return avg_l1_norm(z)
+        return avg_l1_norm(self.zs_mlp(obs))
 
     def zsa(self, z_s: jax.Array, action: jax.Array) -> jax.Array:
-        z = jnp.concatenate([z_s, action], axis=-1)
-        return self.zsa_mlp(z)
+        return self.zsa_mlp(jnp.concatenate((z_s, action), axis=-1))
 
     def __call__(
         self, obs: jax.Array, action: jax.Array
     ) -> tuple[jax.Array, jax.Array]:
-        # Utility method to make Flax initialization easier
         z_s = self.zs(obs)
-        z_sa = self.zsa(z_s, action)
-        return z_s, z_sa
+        return z_s, self.zsa(z_s, action)
 
 
-class TD7Actor(nn.Module):
-    action_size: int
-    z_s_dim: int = 256
-    state_emb_dim: int = 256
-    hidden_layer_sizes: Sequence[int] = (256, 256)
+class TD7Actor(nnx.Module):
+    """TD7 actor combining a normalized observation projection and state embedding."""
 
-    @nn.compact
+    def __init__(
+        self,
+        obs_size: int,
+        action_size: int,
+        z_s_dim: int = 256,
+        state_emb_dim: int = 256,
+        hidden_layer_sizes: Sequence[int] = (256, 256),
+        *,
+        rngs: nnx.Rngs,
+    ):
+        # Linen Dense used LeCun normal here, unlike the MLP's uniform kernels.
+        self.l0 = nnx.Linear(obs_size, state_emb_dim, rngs=rngs)
+        self.actor_mlp = MLP(
+            state_emb_dim + z_s_dim,
+            (*hidden_layer_sizes, action_size),
+            activation=jax.nn.relu,
+            rngs=rngs,
+        )
+
     def __call__(self, obs: jax.Array, z_s: jax.Array) -> jax.Array:
-        a = nn.Dense(self.state_emb_dim, name="l0")(obs)
-        a = avg_l1_norm(a)
-        a = jnp.concatenate([a, z_s], axis=-1)
-
-        a = MLP(
-            layer_sizes=tuple(self.hidden_layer_sizes) + (self.action_size,),
-            activation=nn.relu,
-            name="actor_mlp",
-        )(a)
-
-        return nn.tanh(a)
+        features = jnp.concatenate((avg_l1_norm(self.l0(obs)), z_s), axis=-1)
+        return jnp.tanh(self.actor_mlp(features))
 
 
-class TD7Critic(nn.Module):
-    z_s_dim: int = 256
-    z_sa_dim: int = 256
-    state_action_emb_dim: int = 256
-    hidden_layer_sizes: Sequence[int] = (256, 256)
+class TD7Critic(nnx.Module):
+    """Independent twin critics using state, action and encoder embeddings."""
 
-    @nn.compact
+    def __init__(
+        self,
+        obs_size: int,
+        action_size: int,
+        z_s_dim: int = 256,
+        z_sa_dim: int = 256,
+        state_action_emb_dim: int = 256,
+        hidden_layer_sizes: Sequence[int] = (256, 256),
+        *,
+        rngs: nnx.Rngs,
+    ):
+        self.q1_0 = nnx.Linear(obs_size + action_size, state_action_emb_dim, rngs=rngs)
+        self.q2_0 = nnx.Linear(obs_size + action_size, state_action_emb_dim, rngs=rngs)
+        input_size = state_action_emb_dim + z_sa_dim + z_s_dim
+        self.q1_mlp = MLP(
+            input_size, (*hidden_layer_sizes, 1), activation=jax.nn.elu, rngs=rngs
+        )
+        self.q2_mlp = MLP(
+            input_size, (*hidden_layer_sizes, 1), activation=jax.nn.elu, rngs=rngs
+        )
+
     def __call__(
         self, obs: jax.Array, action: jax.Array, z_sa: jax.Array, z_s: jax.Array
     ) -> jax.Array:
-        sa = jnp.concatenate([obs, action], axis=-1)
-
-        # q1 network
-        q1 = nn.Dense(self.state_action_emb_dim, name="q1_0")(sa)
-        q1 = avg_l1_norm(q1)
-        q1 = jnp.concatenate([q1, z_sa, z_s], axis=-1)
-        q1 = MLP(
-            layer_sizes=tuple(self.hidden_layer_sizes) + (1,),
-            activation=nn.elu,
-            name="q1_mlp",
-        )(q1)
-
-        # q2 network
-        q2 = nn.Dense(self.state_action_emb_dim, name="q2_0")(sa)
-        q2 = avg_l1_norm(q2)
-        q2 = jnp.concatenate([q2, z_sa, z_s], axis=-1)
-        q2 = MLP(
-            layer_sizes=tuple(self.hidden_layer_sizes) + (1,),
-            activation=nn.elu,
-            name="q2_mlp",
-        )(q2)
-
-        return jnp.concatenate([q1, q2], axis=-1)
+        state_action = jnp.concatenate((obs, action), axis=-1)
+        q1 = self.q1_mlp(
+            jnp.concatenate((avg_l1_norm(self.q1_0(state_action)), z_sa, z_s), axis=-1)
+        )
+        q2 = self.q2_mlp(
+            jnp.concatenate((avg_l1_norm(self.q2_0(state_action)), z_sa, z_s), axis=-1)
+        )
+        return jnp.concatenate((q1, q2), axis=-1)
 
 
 class TD7TrainMetric(MetricBase):
@@ -151,24 +160,11 @@ class TD7TrainMetric(MetricBase):
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
-class TD7NetworkParams(PyTreeData):
-    actor_params: Params
-    critic_params: Params
-    encoder_params: Params
-    target_actor_params: Params
-    target_critic_params: Params
-    fixed_encoder_params: Params
-    fixed_encoder_target_params: Params
-    checkpoint_actor_params: Params
-    checkpoint_encoder_params: Params
-
-
 class TD7Agent(Agent):
     """The Agent for TD7."""
 
-    critic_network: nn.Module
-    actor_network: nn.Module
-    encoder_network: nn.Module
+    agent_network_cfg: DictConfig = pytree_field(static=True)
+
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     discount: float = 0.99
@@ -182,39 +178,52 @@ class TD7Agent(Agent):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
+        if not isinstance(action_space, Box):
+            raise TypeError(f"Unsupported action space: {action_space}")
         key, q_key, actor_key, enc_key = jax.random.split(key, num=4)
 
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
-        dummy_action = action_space.sample(key)[None, ...]
-
-        encoder_params = self.encoder_network.init(enc_key, dummy_obs, dummy_action)
-
-        # Need z_s and z_sa to pass to other networks
-        dummy_z_s, dummy_z_sa = self.encoder_network.apply(
-            encoder_params, dummy_obs, dummy_action
+        cfg = self.agent_network_cfg
+        encoder = TD7Encoder(
+            obs_size=obs_space.shape[-1],
+            action_size=action_space.shape[0],
+            z_s_dim=cfg.zs_dim,
+            z_sa_dim=cfg.zsa_dim,
+            f_layer_sizes=tuple(cfg.f_layer_sizes),
+            g_layer_sizes=tuple(cfg.g_layer_sizes),
+            rngs=nnx.Rngs(enc_key),
         )
-
-        critic_params = self.critic_network.init(
-            q_key, dummy_obs, dummy_action, dummy_z_sa, dummy_z_s
+        actor = TD7Actor(
+            obs_size=obs_space.shape[-1],
+            action_size=action_space.shape[0],
+            z_s_dim=cfg.zs_dim,
+            state_emb_dim=cfg.state_emb_dim,
+            hidden_layer_sizes=tuple(cfg.actor_hidden_layer_sizes),
+            rngs=nnx.Rngs(actor_key),
         )
-
-        actor_params = self.actor_network.init(actor_key, dummy_obs, dummy_z_s)
-
-        params_state = TD7NetworkParams(
-            encoder_params=encoder_params,
-            actor_params=actor_params,
-            critic_params=critic_params,
-            fixed_encoder_params=encoder_params,
-            target_actor_params=actor_params,
-            target_critic_params=critic_params,
-            fixed_encoder_target_params=encoder_params,
-            checkpoint_actor_params=actor_params,
-            checkpoint_encoder_params=encoder_params,
+        critic = TD7Critic(
+            obs_size=obs_space.shape[-1],
+            action_size=action_space.shape[0],
+            z_s_dim=cfg.zs_dim,
+            z_sa_dim=cfg.zsa_dim,
+            state_action_emb_dim=cfg.state_action_emb_dim,
+            hidden_layer_sizes=tuple(cfg.critic_hidden_layer_sizes),
+            rngs=nnx.Rngs(q_key),
+        )
+        models = nnx.Dict(
+            actor=actor,
+            critic=critic,
+            encoder=encoder,
+            target_actor=nnx.clone(actor),
+            target_critic=nnx.clone(critic),
+            fixed_encoder=nnx.clone(encoder),
+            fixed_encoder_target=nnx.clone(encoder),
+            checkpoint_actor=nnx.clone(actor),
+            checkpoint_encoder=nnx.clone(encoder),
         )
 
         if self.normalize_obs:
             obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+                obs_space.sample(key)
             )
         else:
             obs_preprocessor_state = None
@@ -229,7 +238,7 @@ class TD7Agent(Agent):
         )
 
         return AgentState(
-            params=params_state,
+            model_state=nnx.unpack(models),
             obs_preprocessor_state=obs_preprocessor_state,
             extra_state=extra_state,
         )
@@ -237,15 +246,14 @@ class TD7Agent(Agent):
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
+        models = self.get_models(agent_state, copy=True)
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # Uses the fixed_encoder to get the state embedding for the actor
-        z_s = self.encoder_network.apply(
-            agent_state.params.fixed_encoder_params, obs, method="zs"
-        )
-        actions = self.actor_network.apply(agent_state.params.actor_params, obs, z_s)
+        z_s = models.fixed_encoder.zs(obs)
+        actions = models.actor(obs, z_s)
 
         noise = jax.random.normal(key, actions.shape) * self.exploration_epsilon
         actions += noise
@@ -256,23 +264,24 @@ class TD7Agent(Agent):
     def evaluate_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
     ) -> tuple[Action, PolicyExtraInfo]:
+        models = self.get_models(agent_state, copy=True)
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # Evaluation uses checkpoint_encoder and checkpoint_actor
-        z_s = self.encoder_network.apply(
-            agent_state.params.checkpoint_encoder_params, obs, method="zs"
-        )
-        actions = self.actor_network.apply(
-            agent_state.params.checkpoint_actor_params, obs, z_s
-        )
+        z_s = models.checkpoint_encoder.zs(obs)
+        actions = models.checkpoint_actor(obs, z_s)
 
         return actions, PyTreeDict()
 
     def encoder_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         next_obs = sample_batch.extras.env_extras.ori_obs
         obs = sample_batch.obs
         actions = sample_batch.actions
@@ -283,24 +292,22 @@ class TD7Agent(Agent):
             )
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        next_z_s = self.encoder_network.apply(
-            agent_state.params.encoder_params, next_obs, method="zs"
-        )
+        next_z_s = models.encoder.zs(next_obs)
         next_z_s = jax.lax.stop_gradient(next_z_s)
 
-        z_s = self.encoder_network.apply(
-            agent_state.params.encoder_params, obs, method="zs"
-        )
-        pred_z_sa = self.encoder_network.apply(
-            agent_state.params.encoder_params, z_s, actions, method="zsa"
-        )
+        z_s = models.encoder.zs(obs)
+        pred_z_sa = models.encoder.zsa(z_s, actions)
 
         enc_loss = optax.squared_error(pred_z_sa, next_z_s).mean()
         return PyTreeDict(encoder_loss=enc_loss)
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         next_obs = sample_batch.extras.env_extras.ori_obs
         obs = sample_batch.obs
         actions = sample_batch.actions
@@ -312,33 +319,22 @@ class TD7Agent(Agent):
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # Target Q computation
-        fixed_target_z_s = self.encoder_network.apply(
-            agent_state.params.fixed_encoder_target_params, next_obs, method="zs"
-        )
+        fixed_target_z_s = models.fixed_encoder_target.zs(next_obs)
 
         noise = jnp.clip(
             jax.random.normal(key, actions.shape) * self.policy_noise,
             -self.clip_policy_noise,
             self.clip_policy_noise,
         )
-        next_actions = self.actor_network.apply(
-            agent_state.params.target_actor_params, next_obs, fixed_target_z_s
-        )
+        next_actions = models.target_actor(next_obs, fixed_target_z_s)
         next_actions = jnp.clip(next_actions + noise, -1.0, 1.0)
 
-        fixed_target_z_sa = self.encoder_network.apply(
-            agent_state.params.fixed_encoder_target_params,
-            fixed_target_z_s,
-            next_actions,
-            method="zsa",
+        fixed_target_z_sa = models.fixed_encoder_target.zsa(
+            fixed_target_z_s, next_actions
         )
 
-        next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params,
-            next_obs,
-            next_actions,
-            fixed_target_z_sa,
-            fixed_target_z_s,
+        next_qs = models.target_critic(
+            next_obs, next_actions, fixed_target_z_sa, fixed_target_z_s
         )
         next_qs_min = next_qs.min(-1)
 
@@ -355,16 +351,10 @@ class TD7Agent(Agent):
         q_target = jax.lax.stop_gradient(q_target)
 
         # Current Q computation
-        fixed_z_s = self.encoder_network.apply(
-            agent_state.params.fixed_encoder_params, obs, method="zs"
-        )
-        fixed_z_sa = self.encoder_network.apply(
-            agent_state.params.fixed_encoder_params, fixed_z_s, actions, method="zsa"
-        )
+        fixed_z_s = models.fixed_encoder.zs(obs)
+        fixed_z_sa = models.fixed_encoder.zsa(fixed_z_s, actions)
 
-        qs = self.critic_network.apply(
-            agent_state.params.critic_params, obs, actions, fixed_z_sa, fixed_z_s
-        )
+        qs = models.critic(obs, actions, fixed_z_sa, fixed_z_s)
 
         td_error = jnp.abs(qs - q_target)
 
@@ -395,88 +385,26 @@ class TD7Agent(Agent):
         )
 
     def actor_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         obs = sample_batch.obs
 
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        fixed_z_s = self.encoder_network.apply(
-            agent_state.params.fixed_encoder_params, obs, method="zs"
-        )
-        actions = self.actor_network.apply(
-            agent_state.params.actor_params, obs, fixed_z_s
-        )
+        fixed_z_s = models.fixed_encoder.zs(obs)
+        actions = models.actor(obs, fixed_z_s)
 
-        fixed_z_sa = self.encoder_network.apply(
-            agent_state.params.fixed_encoder_params, fixed_z_s, actions, method="zsa"
-        )
+        fixed_z_sa = models.fixed_encoder.zsa(fixed_z_s, actions)
 
-        qs = self.critic_network.apply(
-            agent_state.params.critic_params, obs, actions, fixed_z_sa, fixed_z_s
-        )
+        qs = models.critic(obs, actions, fixed_z_sa, fixed_z_s)
 
         actor_loss = -jnp.mean(qs)
         return PyTreeDict(actor_loss=actor_loss)
-
-
-def make_td7_agent(
-    action_space: Space,
-    z_s_dim: int = 256,
-    z_sa_dim: int = 256,
-    f_layer_sizes: Sequence[int] = (256, 256),
-    g_layer_sizes: Sequence[int] = (256, 256),
-    state_emb_dim: int = 256,
-    state_action_emb_dim: int = 256,
-    critic_hidden_layer_sizes: Sequence[int] = (256, 256),
-    actor_hidden_layer_sizes: Sequence[int] = (256, 256),
-    discount: float = 0.99,
-    exploration_epsilon: float = 0.1,
-    policy_noise: float = 0.2,
-    clip_policy_noise: float = 0.5,
-    min_priority: float = 1.0,
-    normalize_obs: bool = False,
-):
-    assert isinstance(action_space, Box), "Only continue action space is supported."
-
-    action_size = action_space.shape[0]
-
-    encoder_network = TD7Encoder(
-        z_s_dim=z_s_dim,
-        z_sa_dim=z_sa_dim,
-        f_layer_sizes=f_layer_sizes,
-        g_layer_sizes=g_layer_sizes,
-    )
-    critic_network = TD7Critic(
-        z_s_dim=z_s_dim,
-        z_sa_dim=z_sa_dim,
-        state_action_emb_dim=state_action_emb_dim,
-        hidden_layer_sizes=critic_hidden_layer_sizes,
-    )
-    actor_network = TD7Actor(
-        z_s_dim=z_s_dim,
-        state_emb_dim=state_emb_dim,
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-        action_size=action_size,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return TD7Agent(
-        encoder_network=encoder_network,
-        critic_network=critic_network,
-        actor_network=actor_network,
-        obs_preprocessor=obs_preprocessor,
-        discount=discount,
-        exploration_epsilon=exploration_epsilon,
-        policy_noise=policy_noise,
-        clip_policy_noise=clip_policy_noise,
-        min_priority=min_priority,
-    )
 
 
 class TD7Workflow(OffPolicyWorkflowTemplate):
@@ -513,22 +441,16 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             record_ori_obs=True,
         )
 
-        agent = make_td7_agent(
-            action_space=env.action_space,
-            z_s_dim=config.agent_network.zs_dim,
-            z_sa_dim=config.agent_network.zsa_dim,
-            f_layer_sizes=config.agent_network.f_layer_sizes,
-            g_layer_sizes=config.agent_network.g_layer_sizes,
-            state_emb_dim=config.agent_network.state_emb_dim,
-            state_action_emb_dim=config.agent_network.state_action_emb_dim,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+        agent = TD7Agent(
+            agent_network_cfg=config.agent_network,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
             min_priority=config.min_priority,
-            normalize_obs=config.normalize_obs,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         if (
@@ -582,11 +504,17 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
         self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
-
+        models = nnx.merge(agent_state.model_state, copy=True)
         opt_state = PyTreeDict(
-            actor=self.optimizer.init(agent_state.params.actor_params),
-            critic=self.optimizer.init(agent_state.params.critic_params),
-            encoder=self.optimizer.init(agent_state.params.encoder_params),
+            actor=nnx.unpack(
+                nnx.Optimizer(models.actor, self.optimizer, wrt=nnx.Param)
+            ),
+            critic=nnx.unpack(
+                nnx.Optimizer(models.critic, self.optimizer, wrt=nnx.Param)
+            ),
+            encoder=nnx.unpack(
+                nnx.Optimizer(models.encoder, self.optimizer, wrt=nnx.Param)
+            ),
         )
         return agent_state, opt_state
 
@@ -622,7 +550,7 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
+                    axis_name=self.dp_axis_name,
                 )
             )
 
@@ -630,49 +558,77 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             state.replay_buffer_state, trajectory, mask=mask
         )
 
-        # Gradient update wrappers (can't easily use agent_gradient_update because params are nested in TD7NetworkParams)
-        def encoder_loss_fn(params, agent_state, sample_batch, key):
-            # Evaluate using modified encoder params
-            temp_agent_state = agent_state.replace(
-                params=agent_state.params.replace(encoder_params=params)
+        def _update_encoder(agent_state, opt_state, sample_batch, key):
+            """Apply one encoder update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
+
+            def loss_fn(models, batch, key):
+                losses = self.agent.encoder_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)), batch, key
+                )
+                return losses.encoder_loss, losses
+
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("encoder")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.encoder, grads["encoder"])
+            return (
+                value,
+                agent_state.replace(model_state=nnx.unpack(models)),
+                nnx.unpack(optimizer),
             )
-            loss_dict = self.agent.encoder_loss(temp_agent_state, sample_batch, key)
-            return loss_dict.encoder_loss, loss_dict
 
-        def critic_loss_fn(params, agent_state, sample_batch, key):
-            temp_agent_state = agent_state.replace(
-                params=agent_state.params.replace(critic_params=params)
+        def _update_critic(agent_state, opt_state, sample_batch, key):
+            """Apply one critic update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
+
+            def loss_fn(models, batch, key):
+                losses = self.agent.critic_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)), batch, key
+                )
+                return losses.critic_loss, losses
+
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("critic")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.critic, grads["critic"])
+            return (
+                value,
+                agent_state.replace(model_state=nnx.unpack(models)),
+                nnx.unpack(optimizer),
             )
-            loss_dict = self.agent.critic_loss(temp_agent_state, sample_batch, key)
-            return loss_dict.critic_loss, loss_dict
 
-        def actor_loss_fn(params, agent_state, sample_batch, key):
-            temp_agent_state = agent_state.replace(
-                params=agent_state.params.replace(actor_params=params)
+        def _update_actor(agent_state, opt_state, sample_batch, key):
+            """Apply one actor update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
+
+            def loss_fn(models, batch, key):
+                losses = self.agent.actor_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)), batch, key
+                )
+                return losses.actor_loss, losses
+
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("actor")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.actor, grads["actor"])
+            return (
+                value,
+                agent_state.replace(model_state=nnx.unpack(models)),
+                nnx.unpack(optimizer),
             )
-            loss_dict = self.agent.actor_loss(temp_agent_state, sample_batch, key)
-            return loss_dict.actor_loss, loss_dict
-
-        encoder_update_fn = gradient_update(
-            encoder_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-        )
-
-        critic_update_fn = gradient_update(
-            critic_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-        )
-
-        actor_update_fn = gradient_update(
-            actor_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-        )
 
         def _sample_and_update_fn(carry, t):
             key, agent_state, opt_state, replay_state, training_steps = carry
@@ -689,29 +645,21 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             )
 
             # 1. Update Encoder
-            (enc_loss, enc_loss_dict), enc_params, enc_opt_state = encoder_update_fn(
-                enc_opt_state,
-                agent_state.params.encoder_params,
+            (enc_loss, enc_loss_dict), agent_state, enc_opt_state = _update_encoder(
                 agent_state,
+                enc_opt_state,
                 sample_batch,
                 enc_key,
             )
-            agent_state = agent_state.replace(
-                params=agent_state.params.replace(encoder_params=enc_params)
-            )
 
             # 2. Update Critic
-            (critic_loss, critic_loss_dict), critic_params, critic_opt_state = (
-                critic_update_fn(
-                    critic_opt_state,
-                    agent_state.params.critic_params,
+            (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
+                _update_critic(
                     agent_state,
+                    critic_opt_state,
                     sample_batch,
                     critic_key,
                 )
-            )
-            agent_state = agent_state.replace(
-                params=agent_state.params.replace(critic_params=critic_params)
             )
 
             # LAP Priority updates
@@ -739,19 +687,15 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             )
 
             # 3. Update Actor
-            def _update_actor(carry):
+            def _update_actor_step(carry):
                 agent_state, actor_opt_state = carry
-                (actor_loss, actor_loss_dict), actor_params, actor_opt_state = (
-                    actor_update_fn(
-                        actor_opt_state,
-                        agent_state.params.actor_params,
+                (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
+                    _update_actor(
                         agent_state,
+                        actor_opt_state,
                         sample_batch,
                         actor_key,
                     )
-                )
-                agent_state = agent_state.replace(
-                    params=agent_state.params.replace(actor_params=actor_params)
                 )
                 return agent_state, actor_opt_state, actor_loss, actor_loss_dict
 
@@ -772,7 +716,7 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
 
             agent_state, actor_opt_state, actor_loss, actor_loss_dict = jax.lax.cond(
                 (training_steps + 1) % self.config.policy_freq == 0,
-                _update_actor,
+                _update_actor_step,
                 _skip_actor,
                 (agent_state, actor_opt_state),
             )
@@ -780,13 +724,16 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             # 4. Hard target updates
             def _hard_target_updates(carry):
                 agent_state, replay_state = carry
+                models = nnx.merge(agent_state.model_state, copy=True)
+                nnx.update(models.target_actor, nnx.state(models.actor, nnx.Param))
+                nnx.update(models.target_critic, nnx.state(models.critic, nnx.Param))
+                nnx.update(
+                    models.fixed_encoder_target,
+                    nnx.state(models.fixed_encoder, nnx.Param),
+                )
+                nnx.update(models.fixed_encoder, nnx.state(models.encoder, nnx.Param))
                 agent_state = agent_state.replace(
-                    params=agent_state.params.replace(
-                        target_actor_params=agent_state.params.actor_params,
-                        target_critic_params=agent_state.params.critic_params,
-                        fixed_encoder_target_params=agent_state.params.fixed_encoder_params,
-                        fixed_encoder_params=agent_state.params.encoder_params,
-                    ),
+                    model_state=nnx.unpack(models),
                     extra_state=agent_state.extra_state.replace(
                         max_target=agent_state.extra_state.max_q,
                         min_target=agent_state.extra_state.min_q,
@@ -871,11 +818,13 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             )
 
         def _update_checkpoint(ag_state):
+            models = nnx.merge(ag_state.model_state, copy=True)
+            nnx.update(models.checkpoint_actor, nnx.state(models.actor, nnx.Param))
+            nnx.update(
+                models.checkpoint_encoder, nnx.state(models.fixed_encoder, nnx.Param)
+            )
             return ag_state.replace(
-                params=ag_state.params.replace(
-                    checkpoint_actor_params=ag_state.params.actor_params,
-                    checkpoint_encoder_params=ag_state.params.fixed_encoder_params,
-                ),
+                model_state=nnx.unpack(models),
                 extra_state=ag_state.extra_state.replace(best_perf=perf),
             )
 
@@ -897,7 +846,7 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             raw_loss_dict=PyTreeDict(
                 {**enc_loss_dict, **critic_loss_dict, **actor_loss_dict}
             ),
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         sampled_timesteps = jnp.uint32(eval_metrics.episode_lengths.sum())
         sampled_timesteps = psum(sampled_timesteps, axis_name=self.dp_axis_name)
@@ -910,7 +859,7 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         # state.env_state is irrelevant here since episodecollector handles reset internally.
         # we can just pass original env_state unmodified since disabled autoreset env ignores it generally across steps (or we just maintain step 0).

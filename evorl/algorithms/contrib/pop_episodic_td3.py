@@ -1,3 +1,5 @@
+from evorl.utils import running_statistics
+from flax import nnx
 from functools import partial
 import math
 from typing import Self
@@ -8,7 +10,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
-from evorl.distributed import agent_gradient_update
+from evorl.distributed import pmean_nnx_loss_and_grad
 from evorl.agent import Agent, AgentState
 from evorl.types import PyTreeDict, State
 from evorl.metrics import MetricBase, EvaluateMetric
@@ -22,7 +24,7 @@ from evorl.evaluators import Evaluator, EpisodeCollector
 
 
 from evorl.algorithms.offpolicy_utils import skip_replay_buffer_state
-from evorl.algorithms.td3 import make_mlp_td3_agent
+from evorl.algorithms.td3 import TD3Agent
 from evorl.algorithms.erl.cemrl_td3.cemrl_td3_workflow import CEMRLTD3WorkflowTemplate
 from evorl.algorithms.erl.cemrl_workflow import CEMRLTrainMetric
 
@@ -66,18 +68,16 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
             record_ori_obs=True,
         )
 
-        agent = make_mlp_td3_agent(
-            action_space=env.action_space,
-            norm_layer_type=config.agent_network.norm_layer_type,
-            num_critics=config.agent_network.num_critics,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+        agent = TD3Agent(
+            agent_network_cfg=config.agent_network,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
             critics_in_actor_loss=config.critics_in_actor_loss,
-            normalize_obs=config.normalize_obs,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         if (
@@ -123,7 +123,7 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
         )
 
         agent_state_vmap_axes = AgentState(
-            params=0,
+            model_state=0,
             obs_preprocessor_state=None,  # shared
         )
 
@@ -148,9 +148,27 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
             jax.random.split(key, self.config.pop_size),
         )
 
+        if agent_state.obs_preprocessor_state is not None:
+            # Every member starts with identical statistics; normalization is
+            # shared across the population, matching agent_state_vmap_axes.
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=jax.tree.map(
+                    lambda x: x[0], agent_state.obs_preprocessor_state
+                )
+            )
+
+        models = nnx.merge(agent_state.model_state, copy=True)
         opt_state = PyTreeDict(
-            actor=self.optimizer.init(agent_state.params.actor_params),
-            critic=self.optimizer.init(agent_state.params.critic_params),
+            actor=nnx.unpack(
+                nnx.vmap(
+                    lambda model: nnx.Optimizer(model, self.optimizer, wrt=nnx.Param)
+                )(models.actor)
+            ),
+            critic=nnx.unpack(
+                nnx.vmap(
+                    lambda model: nnx.Optimizer(model, self.optimizer, wrt=nnx.Param)
+                )(models.critic)
+            ),
         )
 
         ec_opt_state = None
@@ -290,54 +308,86 @@ def build_rl_update_fn(
     config: DictConfig,
     agent_state_vmap_axes: AgentState,
 ):
-    """K actors + 1 shared critic."""
+    """Train independent actor/critic pairs on population replay samples."""
     num_learning_offspring = config.num_learning_offspring
 
-    def critic_loss_fn(agent_state, sample_batch, key):
-        # loss on a single critic with multiple actors
-        # sample_batch: (n, B, ...)
+    def critic_loss_fn(models, agent_state, sample_batch, key):
+        def member_loss(member, obs_state, batch, member_key):
+            return agent.critic_loss(
+                agent_state.replace(
+                    model_state=nnx.unpack(member), obs_preprocessor_state=obs_state
+                ),
+                batch,
+                member_key,
+            )
 
-        loss_dict = jax.vmap(agent.critic_loss, in_axes=(agent_state_vmap_axes, 0, 0))(
-            agent_state, sample_batch, jax.random.split(key, num_learning_offspring)
+        loss_dict = nnx.vmap(
+            member_loss, in_axes=(0, agent_state_vmap_axes.obs_preprocessor_state, 0, 0)
+        )(
+            models,
+            agent_state.obs_preprocessor_state,
+            sample_batch,
+            jax.random.split(key, num_learning_offspring),
+        )
+        return loss_dict.critic_loss.sum(), loss_dict
+
+    def actor_loss_fn(models, agent_state, sample_batch, key):
+        def member_loss(member, obs_state, batch, member_key):
+            return agent.actor_loss(
+                agent_state.replace(
+                    model_state=nnx.unpack(member), obs_preprocessor_state=obs_state
+                ),
+                batch,
+                member_key,
+            )
+
+        loss_dict = nnx.vmap(
+            member_loss, in_axes=(0, agent_state_vmap_axes.obs_preprocessor_state, 0, 0)
+        )(
+            models,
+            agent_state.obs_preprocessor_state,
+            sample_batch,
+            jax.random.split(key, num_learning_offspring),
+        )
+        return loss_dict.actor_loss.sum(), loss_dict
+
+    def critic_update_fn(opt_state, agent_state, sample_batch, key):
+        models = nnx.merge(agent_state.model_state, copy=True)
+        (loss, loss_dict), grads = pmean_nnx_loss_and_grad(
+            critic_loss_fn,
+            None,
+            has_aux=True,
+            wrt=nnx.All(nnx.Param, nnx.PathContains("critic")),
+        )(models, agent_state, sample_batch, key)
+        local_optimizer = nnx.merge(opt_state, copy=True)
+        nnx.vmap(lambda optimizer, model, grad: optimizer.update(model, grad))(
+            local_optimizer, models.critic, grads["critic"]
+        )
+        return (
+            (loss, loss_dict),
+            agent_state.replace(model_state=nnx.unpack(models)),
+            nnx.unpack(local_optimizer),
         )
 
-        # ++++++++++ diff +++++++++
-        loss = loss_dict.critic_loss.sum()
-        # +++++++++++++++++++++++++
-
-        return loss, loss_dict
-
-    def actor_loss_fn(agent_state, sample_batch, key):
-        # loss on a single actor
-
-        loss_dict = jax.vmap(agent.actor_loss, in_axes=(agent_state_vmap_axes, 0, 0))(
-            agent_state, sample_batch, jax.random.split(key, num_learning_offspring)
+    def actor_update_fn(opt_state, agent_state, sample_batch, key):
+        models = nnx.merge(agent_state.model_state, copy=True)
+        critic_state = nnx.clone(nnx.state(models.critic, nnx.Not(nnx.Param)))
+        (loss, loss_dict), grads = pmean_nnx_loss_and_grad(
+            actor_loss_fn,
+            None,
+            has_aux=True,
+            wrt=nnx.All(nnx.Param, nnx.PathContains("actor")),
+        )(models, agent_state, sample_batch, key)
+        nnx.update(models.critic, critic_state)
+        local_optimizer = nnx.merge(opt_state, copy=True)
+        nnx.vmap(lambda optimizer, model, grad: optimizer.update(model, grad))(
+            local_optimizer, models.actor, grads["actor"]
         )
-
-        # sum over the num_learning_offspring
-        loss = loss_dict.actor_loss.sum()
-
-        return loss, loss_dict
-
-    critic_update_fn = agent_gradient_update(
-        critic_loss_fn,
-        optimizer,
-        has_aux=True,
-        attach_fn=lambda agent_state, critic_params: agent_state.replace(
-            params=agent_state.params.replace(critic_params=critic_params)
-        ),
-        detach_fn=lambda agent_state: agent_state.params.critic_params,
-    )
-
-    actor_update_fn = agent_gradient_update(
-        actor_loss_fn,
-        optimizer,
-        has_aux=True,
-        attach_fn=lambda agent_state, actor_params: agent_state.replace(
-            params=agent_state.params.replace(actor_params=actor_params)
-        ),
-        detach_fn=lambda agent_state: agent_state.params.actor_params,
-    )
+        return (
+            (loss, loss_dict),
+            agent_state.replace(model_state=nnx.unpack(models)),
+            nnx.unpack(local_optimizer),
+        )
 
     def _update_fn(agent_state, opt_state, sample_batches, key):
         critic_opt_state = opt_state.critic
@@ -387,22 +437,20 @@ def build_rl_update_fn(
         )
 
         # not need vmap
-        target_actor_params = soft_target_update(
-            agent_state.params.target_actor_params,
-            agent_state.params.actor_params,
-            config.tau,
-        )
-        target_critic_params = soft_target_update(
-            agent_state.params.target_critic_params,
-            agent_state.params.critic_params,
-            config.tau,
-        )
-        agent_state = agent_state.replace(
-            params=agent_state.params.replace(
-                target_actor_params=target_actor_params,
-                target_critic_params=target_critic_params,
+        models = nnx.merge(agent_state.model_state, copy=True)
+        for target, online in (
+            (models.target_actor, models.actor),
+            (models.target_critic, models.critic),
+        ):
+            nnx.update(
+                target,
+                soft_target_update(
+                    nnx.state(target, nnx.Param),
+                    nnx.state(online, nnx.Param),
+                    config.tau,
+                ),
             )
-        )
+        agent_state = agent_state.replace(model_state=nnx.unpack(models))
 
         opt_state = opt_state.replace(actor=actor_opt_state, critic=critic_opt_state)
 

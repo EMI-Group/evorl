@@ -1,3 +1,4 @@
+from flax import nnx
 import logging
 from functools import partial
 import math
@@ -9,8 +10,8 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
+from evorl.distributed.gradients import pmean_nnx_loss_and_grad
 from evorl.distributed import (
-    agent_gradient_update,
     psum,
 )
 from evorl.agent import AgentState, RandomAgent
@@ -24,7 +25,10 @@ from evorl.utils.rl_toolkits import soft_target_update, flatten_rollout_trajecto
 from evorl.recorders import add_prefix, get_1d_array_statistics, get_1d_array
 
 from evorl.algorithms.offpolicy_utils import clean_trajectory, skip_replay_buffer_state
-from evorl.algorithms.td3 import TD3TrainMetric, TD3Workflow
+from evorl.algorithms.td3 import (
+    TD3TrainMetric,
+    TD3Workflow,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -100,9 +104,22 @@ class PopTD3Workflow(TD3Workflow):
         )
 
         def _opt_init(agent_state):
+            models = nnx.merge(agent_state.model_state, copy=True)
             return PyTreeDict(
-                actor=self.optimizer.init(agent_state.params.actor_params),
-                critic=self.optimizer.init(agent_state.params.critic_params),
+                actor=nnx.unpack(
+                    nnx.Optimizer(
+                        models.actor,
+                        self.optimizer,
+                        wrt=nnx.Param,
+                    )
+                ),
+                critic=nnx.unpack(
+                    nnx.Optimizer(
+                        models.critic,
+                        self.optimizer,
+                        wrt=nnx.Param,
+                    )
+                ),
             )
 
         opt_state = jax.vmap(_opt_init)(agent_state)
@@ -147,7 +164,7 @@ class PopTD3Workflow(TD3Workflow):
                     obs_preprocessor_state=running_statistics.update(
                         agent_state.obs_preprocessor_state,
                         trajectory.obs,
-                        dp_axis_name=self.dp_axis_name,
+                        axis_name=self.dp_axis_name,
                     )
                 )
             return agent_state
@@ -205,7 +222,7 @@ class PopTD3Workflow(TD3Workflow):
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return state.replace(
             key=key,
@@ -239,53 +256,67 @@ class PopTD3Workflow(TD3Workflow):
         agent_state = state.agent_state
         if agent_state.obs_preprocessor_state is not None:
             agent_state = agent_state.replace(
-                obs_preprocessor_state=running_statistics.update(
-                    agent_state.obs_preprocessor_state,
-                    trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
-                )
+                obs_preprocessor_state=jax.vmap(
+                    partial(running_statistics.update, axis_name=self.dp_axis_name),
+                    in_axes=(0, None),
+                )(agent_state.obs_preprocessor_state, trajectory.obs)
             )
 
         replay_buffer_state = self.replay_buffer.add(
             state.replay_buffer_state, trajectory
         )
 
-        def critic_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.critic_loss(agent_state, sample_batch, key)
+        def _update_critic(agent_state, opt_state, sample_batch, key):
+            """Apply one critic update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
 
-            loss = loss_dict.critic_loss
-            return loss, loss_dict
+            def loss_fn(models, sample_batch, key):
+                losses = self.agent.critic_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)),
+                    sample_batch,
+                    key,
+                )
+                return losses.critic_loss, losses
 
-        def actor_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("critic")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.critic, grads["critic"])
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            return value, agent_state, nnx.unpack(optimizer)
 
-            loss = loss_dict.actor_loss
-            return loss, loss_dict
+        def _update_actor(agent_state, opt_state, sample_batch, key):
+            """Apply one actor update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
+            critic_state = nnx.clone(nnx.state(models.critic, nnx.Not(nnx.Param)))
 
-        critic_update_fn = agent_gradient_update(
-            critic_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, critic_params: agent_state.replace(
-                params=agent_state.params.replace(critic_params=critic_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.critic_params,
-        )
+            def loss_fn(models, sample_batch, key):
+                losses = self.agent.actor_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)),
+                    sample_batch,
+                    key,
+                )
+                return losses.actor_loss, losses
 
-        actor_update_fn = agent_gradient_update(
-            actor_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, actor_params: agent_state.replace(
-                params=agent_state.params.replace(actor_params=actor_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.actor_params,
-        )
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("actor")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.actor, grads["actor"])
+            # The actor update only retains the actor's auxiliary variables.
+            nnx.update(models.critic, critic_state)
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            return value, agent_state, nnx.unpack(optimizer)
 
-        critic_update_fn = jax.vmap(critic_update_fn, in_axes=(0, 0, None, 0))
-        actor_update_fn = jax.vmap(actor_update_fn, in_axes=(0, 0, None, 0))
+        critic_update_fn = jax.vmap(_update_critic, in_axes=(0, 0, None, 0))
+        actor_update_fn = jax.vmap(_update_actor, in_axes=(0, 0, None, 0))
 
         def _sample_and_update_fn(carry, unused_t):
             key, agent_state, opt_state = carry
@@ -310,7 +341,7 @@ class PopTD3Workflow(TD3Workflow):
 
                     (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                         critic_update_fn(
-                            critic_opt_state, agent_state, sample_batch, critic_key
+                            agent_state, critic_opt_state, sample_batch, critic_key
                         )
                     )
 
@@ -332,30 +363,28 @@ class PopTD3Workflow(TD3Workflow):
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
                 critic_update_fn(
-                    critic_opt_state, agent_state, sample_batch, critic_key
+                    agent_state, critic_opt_state, sample_batch, critic_key
                 )
             )
 
             (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
-                actor_update_fn(actor_opt_state, agent_state, sample_batch, actor_key)
+                actor_update_fn(agent_state, actor_opt_state, sample_batch, actor_key)
             )
 
-            target_actor_params = soft_target_update(
-                agent_state.params.target_actor_params,
-                agent_state.params.actor_params,
-                self.config.tau,
-            )
-            target_critic_params = soft_target_update(
-                agent_state.params.target_critic_params,
-                agent_state.params.critic_params,
-                self.config.tau,
-            )
-            agent_state = agent_state.replace(
-                params=agent_state.params.replace(
-                    target_actor_params=target_actor_params,
-                    target_critic_params=target_critic_params,
+            models = nnx.merge(agent_state.model_state, copy=True)
+            for target, online in (
+                (models.target_actor, models.actor),
+                (models.target_critic, models.critic),
+            ):
+                nnx.update(
+                    target,
+                    soft_target_update(
+                        nnx.state(target, nnx.Param),
+                        nnx.state(online, nnx.Param),
+                        self.config.tau,
+                    ),
                 )
-            )
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
 
             opt_state = opt_state.replace(
                 actor=actor_opt_state, critic=critic_opt_state
@@ -386,7 +415,7 @@ class PopTD3Workflow(TD3Workflow):
             actor_loss=actor_loss,
             critic_loss=critic_loss,
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         # calculate the number of timestep
         sampled_timesteps_per_agent = psum(
@@ -410,7 +439,7 @@ class PopTD3Workflow(TD3Workflow):
             + sampled_timesteps_per_agent,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,
@@ -435,7 +464,7 @@ class PopTD3Workflow(TD3Workflow):
         eval_metrics = EvaluateMetric(
             episode_returns=raw_eval_metrics.episode_returns.mean(-1),
             episode_lengths=raw_eval_metrics.episode_lengths.mean(-1),
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         state = state.replace(key=key)
         return eval_metrics, state

@@ -325,7 +325,7 @@ def test_rl_workflow_setup_step_and_evaluate(agent, jit):
                     rtol=1e-6,
                 )
             for value in jax.tree.leaves(
-                (evaluated.agent_state.params, metrics, eval_metrics)
+                (evaluated.agent_state.model_state, metrics, eval_metrics)
             ):
                 assert value.sharding.is_fully_replicated
                 assert np.isfinite(np.asarray(value)).all()

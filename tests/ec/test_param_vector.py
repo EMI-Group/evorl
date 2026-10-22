@@ -1,19 +1,29 @@
-from evorl.utils.ec_utils import ParamVectorSpec
-import flax.linen as nn
+import json
+
+from flax import nnx
 import jax
 import jax.numpy as jnp
 import chex
 import pytest
 
+from evorl.algorithms.ec.so.cmaes import _get_std_statistics
+from evorl.algorithms.erl.cemrl_td3.cemrl import get_std_statistics
+from evorl.algorithms.erl.erl_td3.erl_origin import get_ec_pop_statistics
+from evorl.algorithms.ec.ec_agent import DeterministicECAgent
+from evorl.envs import Box
+from evorl.sample_batch import SampleBatch
+from evorl.networks.utils import model_state_axes
+from evorl.utils.ec_utils import ParamVectorSpec
+
+from tests.helpers.agents import build_agent
+
 
 def test_flax_parameters_roundtrip_through_vector_spec():
-    model = nn.Dense(features=7)
-
-    x = jnp.ones((2, 3))
-
     keys = jax.random.split(jax.random.key(0), 5)
 
-    batch_params = [model.init(key, x) for key in keys]
+    batch_params = [
+        nnx.state(nnx.Linear(3, 7, rngs=nnx.Rngs(key)), nnx.Param) for key in keys
+    ]
     params = batch_params[0]
     batch_params = jax.tree_util.tree_map(
         lambda *x: jnp.stack(x, axis=0), *batch_params
@@ -55,3 +65,63 @@ def test_param_vector_spec_roundtrip_with_different_leaf_ranks(shape, batch_shap
     assert flat.shape == batch_shape + (spec.vec_size,)
     recovered = jax.jit(spec.to_tree)(flat)
     chex.assert_trees_all_equal(batched, recovered)
+
+
+def test_parameter_statistics_are_plain_serializable_values():
+
+    params = nnx.state(nnx.Linear(3, 2, rngs=nnx.Rngs(0)), nnx.Param)
+    variance = jax.tree.map(lambda x: jnp.ones_like(x), params)
+    for statistics in (
+        _get_std_statistics(variance),
+        get_std_statistics(variance),
+        get_ec_pop_statistics(params),
+    ):
+        assert json.loads(json.dumps(statistics)) == statistics
+
+
+def test_policy_graphstate_roundtrip_keeps_auxiliary_variables_out_of_genome(jit):
+    """Evolutionary vectors contain weights; nested populations share SN state."""
+    obs_space = Box(low=-jnp.ones(3), high=jnp.ones(3))
+    action_space = Box(low=-jnp.ones(2), high=jnp.ones(2))
+    agent = build_agent(
+        DeterministicECAgent,
+        obs_space,
+        action_space,
+        actor_hidden_layer_sizes=(4,),
+        norm_layer_type="spectral_norm",
+    )
+    initial = agent.init(obs_space, action_space, jax.random.key(0))
+    models = nnx.merge(initial.model_state, copy=True)
+    params = nnx.state(models.policy, nnx.Param)
+    auxiliary = nnx.state(models.policy, nnx.Not(nnx.Param))
+    assert jax.tree.leaves(auxiliary)
+    assert all(isinstance(value, nnx.Param) for _, value in nnx.to_flat_state(params))
+    spec = ParamVectorSpec(params)
+    vectors = jnp.broadcast_to(spec.to_vector(params), (2, 3, spec.vec_size))
+    genes = spec.to_tree(vectors)
+    nnx.update(models.policy, genes)
+    population = initial.replace(model_state=nnx.unpack(models))
+    axes = initial.replace(
+        obs_preprocessor_state=None,
+        model_state=model_state_axes(
+            population.model_state, nnx.StateAxes({nnx.Param: 0, ...: None})
+        ),
+    )
+
+    def evaluate(member):
+        return agent.evaluate_actions(
+            member, SampleBatch(obs=jnp.ones((5, 3))), jax.random.key(1)
+        )[0]
+
+    evaluate_population = jax.vmap(jax.vmap(evaluate, in_axes=(axes,)), in_axes=(axes,))
+    actions = (jax.jit(evaluate_population) if jit else evaluate_population)(population)
+    expected = evaluate(initial)
+    chex.assert_trees_all_close(
+        actions, jnp.broadcast_to(expected, (2, 3, *expected.shape))
+    )
+    chex.assert_trees_all_equal(
+        auxiliary,
+        nnx.state(
+            nnx.merge(population.model_state, copy=True).policy, nnx.Not(nnx.Param)
+        ),
+    )

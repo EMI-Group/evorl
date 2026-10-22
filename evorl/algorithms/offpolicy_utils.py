@@ -146,7 +146,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
                     obs_preprocessor_state=running_statistics.update(
                         agent_state.obs_preprocessor_state,
                         trajectory.obs,
-                        dp_axis_name=self.dp_axis_name,
+                        axis_name=self.dp_axis_name,
                     )
                 )
             return agent_state
@@ -209,7 +209,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
 
         workflow_metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return state.replace(
             key=key,

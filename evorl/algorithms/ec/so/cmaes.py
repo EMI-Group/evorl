@@ -1,3 +1,5 @@
+from evorl.utils import running_statistics
+from flax import nnx
 import numpy as np
 from omegaconf import DictConfig
 from typing import Self
@@ -15,7 +17,7 @@ from evorl.utils.ec_utils import ParamVectorSpec
 
 from .es_workflow import ESWorkflowTemplate
 from ..obs_utils import init_obs_preprocessor
-from ..ec_agent import make_deterministic_ec_agent
+from ..ec_agent import DeterministicECAgent
 
 
 class CMAESWorkflow(ESWorkflowTemplate):
@@ -31,19 +33,19 @@ class CMAESWorkflow(ESWorkflowTemplate):
             autoreset_mode=AutoresetMode.DISABLED,
         )
 
-        agent = make_deterministic_ec_agent(
-            action_space=env.action_space,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-            use_bias=config.agent_network.use_bias,
-            normalize_obs=config.normalize_obs,
-            norm_layer_type=config.agent_network.norm_layer_type,
-            policy_obs_key=config.agent_network.policy_obs_key,
+        agent = DeterministicECAgent(
+            agent_network_cfg=config.agent_network,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         # dummy agent_state
         agent_key = jax.random.key(config.seed)
         agent_state = agent.init(env.obs_space, env.action_space, agent_key)
-        param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)
+        param_vec_spec = ParamVectorSpec(
+            nnx.state(nnx.merge(agent_state.model_state, copy=True).policy, nnx.Param)
+        )
 
         ec_optimizer = cls._build_optimizer(config, param_vec_spec)
 
@@ -73,7 +75,7 @@ class CMAESWorkflow(ESWorkflowTemplate):
         )
 
         agent_state_vmap_axes = AgentState(
-            params=0,
+            model_state=nnx.StateAxes({nnx.Param: 0, ...: None}),
             obs_preprocessor_state=None,
         )
 
@@ -102,7 +104,10 @@ class CMAESWorkflow(ESWorkflowTemplate):
             self.env.obs_space, self.env.action_space, agent_key
         )
 
-        ec_opt_state = self.ec_optimizer.init(agent_state.params.policy_params, ec_key)
+        ec_opt_state = self.ec_optimizer.init(
+            nnx.state(nnx.merge(agent_state.model_state, copy=True).policy, nnx.Param),
+            ec_key,
+        )
 
         # remove params
         agent_state = self._replace_actor_params(agent_state, params=None)
@@ -117,7 +122,7 @@ class CMAESWorkflow(ESWorkflowTemplate):
                 agent_state=state.agent_state,
                 config=self.config,
                 key=obs_key,
-                dp_axis_name=self.dp_axis_name,
+                axis_name=self.dp_axis_name,
             )
 
             # Note: we don't count these random timesteps in state.metrics
@@ -131,9 +136,11 @@ class CMAESWorkflow(ESWorkflowTemplate):
     def _replace_actor_params(
         self, agent_state: AgentState, params: Params
     ) -> AgentState:
-        return agent_state.replace(
-            params=agent_state.params.replace(policy_params=params)
-        )
+        models = nnx.merge(agent_state.model_state, copy=True)
+        if params is None:
+            params = jax.tree.map(lambda _: None, nnx.state(models.policy, nnx.Param))
+        nnx.update(models.policy, params)
+        return agent_state.replace(model_state=nnx.unpack(models))
 
     def _get_pop_center(self, state: State) -> AgentState:
         flat_pop_center = state.ec_opt_state.mean
@@ -179,6 +186,9 @@ class SepCMAESWorkflow(CMAESWorkflow):
 
 
 def _get_std_statistics(variance):
+    if isinstance(variance, nnx.State):
+        variance = nnx.to_pure_dict(variance)
+
     def _get_stats(x):
         x = np.asarray(x)
         return dict(

@@ -1,18 +1,19 @@
+from evorl.utils import running_statistics
 import logging
 from typing import Any
 from omegaconf import DictConfig
 
 import chex
-import flax.linen as nn
+from flax import nnx
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 import optax
 
 from evorl.replay_buffers import ReplayBuffer
-from evorl.distributed import agent_gradient_update, psum, pmean
+from evorl.distributed import psum, pmean
+from evorl.distributed.gradients import pmean_nnx_loss_and_grad
 from evorl.distribution import get_tanh_norm_dist, get_categorical_dist
-from evorl.envs import AutoresetMode, Box, create_env, Space, Discrete
+from evorl.envs import Discrete, Box, AutoresetMode, create_env, Space
 from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase, metric_field
 from evorl.networks import make_policy_network, make_q_network, make_discrete_q_network
@@ -21,15 +22,12 @@ from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
     LossDict,
-    Params,
     PolicyExtraInfo,
-    PyTreeData,
     PyTreeDict,
     State,
     pytree_field,
 )
-from evorl.utils import running_statistics
-from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient, tree_get
+from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
 from evorl.agent import Agent, AgentState
@@ -39,23 +37,15 @@ logger = logging.getLogger(__name__)
 
 
 class SACTrainMetric(MetricBase):
-    # Primary losses are already averaged by pmean_loss_and_grad.
+    # Primary losses are already averaged by pmean_nnx_loss_and_grad.
     critic_loss: jax.Array
     actor_loss: jax.Array
     alpha_loss: jax.Array | None = None
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
-class SACNetworkParams(PyTreeData):
-    critic_params: Params
-    target_critic_params: Params
-    actor_params: Params
-    log_alpha: Params
-
-
 class SACAgent(Agent):
-    critic_network: nn.Module
-    actor_network: nn.Module
+    agent_network_cfg: DictConfig = pytree_field(static=True)
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     init_alpha: float = 1.0
@@ -66,29 +56,45 @@ class SACAgent(Agent):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
+        if not isinstance(action_space, Box):
+            raise TypeError(f"Unsupported action space: {action_space}")
+        if self.agent_network_cfg.get("num_critics", 2) < 2:
+            raise ValueError("num_critics must be at least 2 for twin-critic training")
         key, critic_key, actor_key = jax.random.split(key, num=3)
 
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
-        dummy_action = action_space.sample(key)[None, ...]
-
-        critic_params = self.critic_network.init(critic_key, dummy_obs, dummy_action)
-        target_critic_params = critic_params
-
-        actor_params = self.actor_network.init(actor_key, dummy_obs)
-
-        log_alpha = jnp.log(jnp.float32(self.init_alpha))
-
-        params_state = SACNetworkParams(
-            critic_params=critic_params,
-            target_critic_params=target_critic_params,
-            actor_params=actor_params,
-            log_alpha=log_alpha,
+        cfg = self.agent_network_cfg
+        policy_obs_key = cfg.get("policy_obs_key")
+        value_obs_key = cfg.get("value_obs_key")
+        actor = make_policy_network(
+            input_size=(
+                obs_space.spaces[policy_obs_key] if policy_obs_key else obs_space
+            ).shape[-1],
+            action_size=action_space.shape[0] * 2,
+            hidden_layer_sizes=tuple(cfg.actor_hidden_layer_sizes),
+            obs_key=policy_obs_key,
+            rngs=nnx.Rngs(actor_key),
+        )
+        critic = make_q_network(
+            input_size=(
+                obs_space.spaces[value_obs_key] if value_obs_key else obs_space
+            ).shape[-1],
+            action_size=action_space.shape[0],
+            n_stack=cfg.get("num_critics", 2),
+            hidden_layer_sizes=tuple(cfg.critic_hidden_layer_sizes),
+            obs_key=value_obs_key,
+            rngs=nnx.Rngs(critic_key),
+        )
+        models = nnx.Dict(
+            actor=actor,
+            critic=critic,
+            target_critic=nnx.clone(critic),
+            log_alpha=nnx.Param(jnp.log(jnp.float32(self.init_alpha))),
         )
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+                obs_space.sample(key)
             )
         else:
             obs_preprocessor_state = None
@@ -96,7 +102,7 @@ class SACAgent(Agent):
         target_entropy = -jnp.prod(jnp.array(action_space.shape, dtype=jnp.float32))
 
         return AgentState(
-            params=params_state,
+            model_state=nnx.unpack(models),
             obs_preprocessor_state=obs_preprocessor_state,
             extra_state=PyTreeDict(target_entropy=target_entropy),  # the constant
         )
@@ -108,7 +114,7 @@ class SACAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        raw_actions = self.get_models(agent_state, copy=True).actor(obs)
         actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
         actions = actions_dist.sample(seed=key)
         return actions, PyTreeDict()
@@ -120,55 +126,65 @@ class SACAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        raw_actions = self.get_models(agent_state, copy=True).actor(obs)
         actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
         actions = actions_dist.mode()
         return actions, PyTreeDict()
 
     def alpha_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        raw_actions = models.actor(obs)
         actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
         actions = actions_dist.sample(seed=key)
         actions_logp = actions_dist.log_prob(actions)
 
-        target_entropy = agent_state.extra_state.target_entropy
         # official impl:
-        alpha = jnp.exp(agent_state.params.log_alpha)
+        alpha = jnp.exp(models.log_alpha[...])
         alpha_loss = jnp.mean(
-            -alpha * jax.lax.stop_gradient(actions_logp + target_entropy)
+            -alpha
+            * jax.lax.stop_gradient(
+                actions_logp + agent_state.extra_state.target_entropy
+            )
         )
 
         # another impl: see stable-baselines3/issues/36
-        # alpha_loss = (- agent_state.params.log_alpha *
+        # alpha_loss = (- models.log_alpha[...] *
         #               jax.lax.stop_gradient(actions_logp + target_entropy)).mean()
 
         return PyTreeDict(
-            alpha_loss=alpha_loss, log_alpha=agent_state.params.log_alpha, alpha=alpha
+            alpha_loss=alpha_loss, log_alpha=models.log_alpha[...], alpha=alpha
         )
 
     def actor_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         actor_key, entropy_key = jax.random.split(key, 2)
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        alpha = jnp.exp(agent_state.params.log_alpha)
+        alpha = jnp.exp(models.log_alpha[...])
 
-        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        raw_actions = models.actor(obs)
         actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
         actions = actions_dist.sample(seed=actor_key)
         actions_logp = actions_dist.log_prob(actions)
 
         # [B, 2]
-        qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions)
+        qs = models.critic(obs, actions)
         qs_min = jnp.min(qs, axis=-1)
         actor_loss = jnp.mean(alpha * actions_logp - qs_min)
         entropy = actions_dist.entropy(seed=entropy_key).mean()
@@ -176,8 +192,12 @@ class SACAgent(Agent):
         return PyTreeDict(actor_loss=actor_loss, entropy=entropy)
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         obs = sample_batch.obs
         next_obs = sample_batch.extras.env_extras.ori_obs
         if self.normalize_obs:
@@ -188,35 +208,30 @@ class SACAgent(Agent):
 
         discounts = self.discount * (1 - sample_batch.extras.env_extras.termination)
 
-        alpha = jnp.exp(agent_state.params.log_alpha)
+        alpha = jnp.exp(models.log_alpha[...])
 
         # [B, 2]
-        qs = self.critic_network.apply(
-            agent_state.params.critic_params, obs, sample_batch.actions
-        )
+        qs = models.critic(obs, sample_batch.actions)
 
-        next_raw_actions = self.actor_network.apply(
-            agent_state.params.actor_params, next_obs
-        )
+        next_raw_actions = models.actor(next_obs)
         next_actions_dist = get_tanh_norm_dist(*jnp.split(next_raw_actions, 2, axis=-1))
         next_actions = next_actions_dist.sample(seed=key)
         next_actions_logp = next_actions_dist.log_prob(next_actions)
         # [B, 2]
-        next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, next_actions
-        )
+        next_qs = models.target_critic(next_obs, next_actions)
         qs_target = sample_batch.rewards + discounts * (
             jnp.min(next_qs, axis=-1) - alpha * next_actions_logp
         )
-        qs_target = jnp.broadcast_to(qs_target[..., None], (*qs_target.shape, 2))
+        qs_target = jax.lax.stop_gradient(
+            jnp.broadcast_to(qs_target[..., None], qs.shape)
+        )
 
         q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
         return PyTreeDict(critic_loss=q_loss)
 
 
 class SACDiscreteAgent(Agent):
-    critic_network: nn.Module
-    actor_network: nn.Module
+    agent_network_cfg: DictConfig = pytree_field(static=True)
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     init_alpha: float = 1.0
@@ -228,28 +243,45 @@ class SACDiscreteAgent(Agent):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
+        if not isinstance(action_space, Discrete):
+            raise TypeError(f"Unsupported action space: {action_space}")
+        if self.agent_network_cfg.get("num_critics", 2) < 2:
+            raise ValueError("num_critics must be at least 2 for twin-critic training")
         key, critic_key, actor_key = jax.random.split(key, num=3)
 
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
-
-        critic_params = self.critic_network.init(critic_key, dummy_obs)
-        target_critic_params = critic_params
-
-        actor_params = self.actor_network.init(actor_key, dummy_obs)
-
-        log_alpha = jnp.log(jnp.float32(self.init_alpha))
-
-        params_state = SACNetworkParams(
-            critic_params=critic_params,
-            target_critic_params=target_critic_params,
-            actor_params=actor_params,
-            log_alpha=log_alpha,
+        cfg = self.agent_network_cfg
+        policy_obs_key = cfg.get("policy_obs_key")
+        value_obs_key = cfg.get("value_obs_key")
+        actor = make_policy_network(
+            input_size=(
+                obs_space.spaces[policy_obs_key] if policy_obs_key else obs_space
+            ).shape[-1],
+            action_size=action_space.n,
+            hidden_layer_sizes=tuple(cfg.actor_hidden_layer_sizes),
+            obs_key=policy_obs_key,
+            rngs=nnx.Rngs(actor_key),
+        )
+        critic = make_discrete_q_network(
+            input_size=(
+                obs_space.spaces[value_obs_key] if value_obs_key else obs_space
+            ).shape[-1],
+            action_size=action_space.n,
+            n_stack=cfg.get("num_critics", 2),
+            hidden_layer_sizes=tuple(cfg.critic_hidden_layer_sizes),
+            obs_key=value_obs_key,
+            rngs=nnx.Rngs(critic_key),
+        )
+        models = nnx.Dict(
+            actor=actor,
+            critic=critic,
+            target_critic=nnx.clone(critic),
+            log_alpha=nnx.Param(jnp.log(jnp.float32(self.init_alpha))),
         )
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+                obs_space.sample(key)
             )
         else:
             obs_preprocessor_state = None
@@ -259,7 +291,7 @@ class SACDiscreteAgent(Agent):
         )
 
         return AgentState(
-            params=params_state,
+            model_state=nnx.unpack(models),
             obs_preprocessor_state=obs_preprocessor_state,
             extra_state=PyTreeDict(target_entropy=target_entropy),  # the constant
         )
@@ -271,7 +303,7 @@ class SACDiscreteAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        raw_actions = self.get_models(agent_state, copy=True).actor(obs)
         actions_dist = get_categorical_dist(raw_actions)
         actions = actions_dist.sample(seed=key)
         return actions, PyTreeDict()
@@ -283,48 +315,58 @@ class SACDiscreteAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        raw_actions = self.get_models(agent_state, copy=True).actor(obs)
         actions_dist = get_categorical_dist(raw_actions)
         actions = actions_dist.mode()
         return actions, PyTreeDict()
 
     def alpha_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        raw_actions = models.actor(obs)
         actions_dist = get_categorical_dist(raw_actions)
         entropy = actions_dist.entropy()
 
-        target_entropy = agent_state.extra_state.target_entropy
         # official impl:
-        alpha = jnp.exp(agent_state.params.log_alpha)
-        alpha_loss = -jnp.mean(alpha * jax.lax.stop_gradient(target_entropy - entropy))
+        alpha = jnp.exp(models.log_alpha[...])
+        alpha_loss = -jnp.mean(
+            alpha
+            * jax.lax.stop_gradient(agent_state.extra_state.target_entropy - entropy)
+        )
 
         return PyTreeDict(
             alpha_loss=alpha_loss,
         )
 
     def actor_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         actor_key, entropy_key = jax.random.split(key, 2)
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        alpha = jnp.exp(agent_state.params.log_alpha)
+        alpha = jnp.exp(models.log_alpha[...])
 
-        raw_actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        raw_actions = models.actor(obs)
         actions_dist = get_categorical_dist(raw_actions)
         entropy = actions_dist.entropy()
-        actions_prob = nn.softmax(raw_actions)
+        actions_prob = jax.nn.softmax(raw_actions)
 
         # [B, 2, n]
-        qs = self.critic_network.apply(agent_state.params.critic_params, obs)
+        qs = models.critic(obs)
         qs_min = jnp.min(qs, axis=-2)
         qs_estimate = jnp.sum(qs_min * actions_prob, axis=-1)
         actor_loss = -jnp.mean(alpha * entropy + qs_estimate)
@@ -332,8 +374,12 @@ class SACDiscreteAgent(Agent):
         return PyTreeDict(actor_loss=actor_loss, entropy=entropy.mean())
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         obs = sample_batch.obs
         next_obs = sample_batch.extras.env_extras.ori_obs
         if self.normalize_obs:
@@ -344,98 +390,33 @@ class SACDiscreteAgent(Agent):
 
         discounts = self.discount * (1 - sample_batch.extras.env_extras.termination)
 
-        alpha = jnp.exp(agent_state.params.log_alpha)
+        alpha = jnp.exp(models.log_alpha[...])
 
         # [B, 2, n]
-        qs = self.critic_network.apply(agent_state.params.critic_params, obs)
+        qs = models.critic(obs)
         qs = jnp.take_along_axis(
             qs,
             sample_batch.actions.reshape(-1, 1, 1),
             axis=-1,
         ).squeeze(-1)
 
-        next_raw_actions = self.actor_network.apply(
-            agent_state.params.actor_params, next_obs
-        )
-        next_actions_prob = nn.softmax(next_raw_actions)
-        next_actions_logp = nn.log_softmax(next_raw_actions)
+        next_raw_actions = models.actor(next_obs)
+        next_actions_prob = jax.nn.softmax(next_raw_actions)
+        next_actions_logp = jax.nn.log_softmax(next_raw_actions)
         # [B, 2, n]
-        next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs
-        )
+        next_qs = models.target_critic(next_obs)
         next_qs_min = jnp.min(next_qs, axis=-2)  # [B, n]
         next_qs_estimate = jnp.sum(
             next_actions_prob * (next_qs_min - alpha * next_actions_logp), axis=-1
         )  # [B]
 
         qs_target = sample_batch.rewards + discounts * next_qs_estimate
-        qs_target = jnp.broadcast_to(qs_target[..., None], (*qs_target.shape, 2))
+        qs_target = jax.lax.stop_gradient(
+            jnp.broadcast_to(qs_target[..., None], qs.shape)
+        )
 
         q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
         return PyTreeDict(critic_loss=q_loss, q_value=qs.mean())
-
-
-def make_mlp_sac_agent(
-    action_space: Space,
-    num_critics: int = 2,
-    critic_hidden_layer_sizes: tuple[int] = (256, 256),
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    init_alpha: float = 1.0,
-    discount: float = 0.99,
-    target_entropy_ratio: float = 0.98,
-    normalize_obs: bool = False,
-    policy_obs_key: str = "",
-    value_obs_key: str = "",
-):
-    if isinstance(action_space, Box):
-        action_size = action_space.shape[0] * 2
-        continuous_action = True
-    elif isinstance(action_space, Discrete):
-        action_size = action_space.n
-        continuous_action = False
-    else:
-        raise NotImplementedError(f"Unsupported action space: {action_space}")
-
-    actor_network = make_policy_network(
-        action_size=action_size,  # mean+std
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-        obs_key=policy_obs_key,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    if continuous_action:
-        critic_network = make_q_network(
-            n_stack=num_critics,
-            hidden_layer_sizes=critic_hidden_layer_sizes,
-            obs_key=value_obs_key,
-        )
-
-        return SACAgent(
-            critic_network=critic_network,
-            actor_network=actor_network,
-            obs_preprocessor=obs_preprocessor,
-            init_alpha=init_alpha,
-            discount=discount,
-        )
-    else:
-        critic_network = make_discrete_q_network(
-            action_size=action_size,
-            n_stack=2,
-            hidden_layer_sizes=critic_hidden_layer_sizes,
-            obs_key=value_obs_key,
-        )
-        return SACDiscreteAgent(
-            critic_network=critic_network,
-            actor_network=actor_network,
-            obs_preprocessor=obs_preprocessor,
-            init_alpha=init_alpha,
-            discount=discount,
-            target_entropy_ratio=target_entropy_ratio,
-        )
 
 
 class SACWorkflow(OffPolicyWorkflowTemplate):
@@ -452,18 +433,27 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
             record_ori_obs=True,
         )
 
-        agent = make_mlp_sac_agent(
-            action_space=env.action_space,
-            num_critics=config.agent_network.num_critics,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-            init_alpha=config.alpha,
-            discount=config.discount,
-            normalize_obs=config.normalize_obs,
-            target_entropy_ratio=config.target_entropy_ratio,
-            policy_obs_key=config.agent_network.policy_obs_key,
-            value_obs_key=config.agent_network.value_obs_key,
-        )
+        if isinstance(env.action_space, Box):
+            agent = SACAgent(
+                agent_network_cfg=config.agent_network,
+                init_alpha=config.alpha,
+                discount=config.discount,
+                obs_preprocessor=running_statistics.normalize
+                if config.normalize_obs
+                else None,
+            )
+        elif isinstance(env.action_space, Discrete):
+            agent = SACDiscreteAgent(
+                agent_network_cfg=config.agent_network,
+                init_alpha=config.alpha,
+                discount=config.discount,
+                obs_preprocessor=running_statistics.normalize
+                if config.normalize_obs
+                else None,
+                target_entropy_ratio=config.target_entropy_ratio,
+            )
+        else:
+            raise TypeError(f"Unsupported action space: {env.action_space}")
 
         # TODO: use different lr for critic and actor
         if (
@@ -510,15 +500,26 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
         self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
+        models = nnx.merge(agent_state.model_state, copy=True)
         opt_state = PyTreeDict(
             dict(
-                actor=self.optimizer.init(agent_state.params.actor_params),
-                critic=self.optimizer.init(agent_state.params.critic_params),
+                actor=nnx.unpack(
+                    nnx.Optimizer(models.actor, self.optimizer, wrt=nnx.Param)
+                ),
+                critic=nnx.unpack(
+                    nnx.Optimizer(models.critic, self.optimizer, wrt=nnx.Param)
+                ),
             )
         )
         if self.config.adaptive_alpha:
             opt_state = opt_state.replace(
-                alpha=self.optimizer.init(agent_state.params.log_alpha)
+                alpha=nnx.unpack(
+                    nnx.Optimizer(
+                        nnx.Dict(log_alpha=models.log_alpha),
+                        self.optimizer,
+                        wrt=nnx.Param,
+                    )
+                )
             )
 
         return agent_state, opt_state
@@ -552,7 +553,7 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
+                    axis_name=self.dp_axis_name,
                 )
             )
 
@@ -560,56 +561,75 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
             state.replay_buffer_state, trajectory
         )
 
-        def critic_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.critic_loss(agent_state, sample_batch, key)
+        def _update_critic(agent_state, opt_state, sample_batch, key):
+            """Apply one critic update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
 
-            loss = loss_dict.critic_loss
-            return loss, loss_dict
+            def loss_fn(models, sample_batch, key):
+                losses = self.agent.critic_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)),
+                    sample_batch,
+                    key,
+                )
+                return losses.critic_loss, losses
 
-        def actor_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("critic")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.critic, grads["critic"])
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            return value, agent_state, nnx.unpack(optimizer)
 
-            loss = loss_dict.actor_loss
-            return loss, loss_dict
+        def _update_actor(agent_state, opt_state, sample_batch, key):
+            """Apply one actor update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
 
-        def alpha_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.alpha_loss(agent_state, sample_batch, key)
+            def loss_fn(models, sample_batch, key):
+                losses = self.agent.actor_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)),
+                    sample_batch,
+                    key,
+                )
+                return losses.actor_loss, losses
 
-            loss = loss_dict.alpha_loss
-            return loss, loss_dict
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("actor")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.actor, grads["actor"])
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            return value, agent_state, nnx.unpack(optimizer)
 
-        critic_update_fn = agent_gradient_update(
-            critic_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, critic_params: agent_state.replace(
-                params=agent_state.params.replace(critic_params=critic_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.critic_params,
-        )
+        def _update_alpha(agent_state, opt_state, sample_batch, key):
+            """Apply one alpha update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
 
-        actor_update_fn = agent_gradient_update(
-            actor_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, actor_params: agent_state.replace(
-                params=agent_state.params.replace(actor_params=actor_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.actor_params,
-        )
+            def loss_fn(models, sample_batch, key):
+                losses = self.agent.alpha_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)),
+                    sample_batch,
+                    key,
+                )
+                return losses.alpha_loss, losses
 
-        alpha_update_fn = agent_gradient_update(
-            alpha_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, log_alpha: agent_state.replace(
-                params=agent_state.params.replace(log_alpha=log_alpha)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.log_alpha,
-        )
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("log_alpha")),
+            )(models, sample_batch, key)
+            alpha = nnx.Dict(log_alpha=models.log_alpha)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(alpha, grads)
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            return value, agent_state, nnx.unpack(optimizer)
 
         def _sample_and_update_fn(carry, unused_t):
             key, agent_state, opt_state = carry
@@ -631,8 +651,11 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
                     )
 
                     (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                        critic_update_fn(
-                            critic_opt_state, agent_state, sample_batch, critic_key
+                        _update_critic(
+                            agent_state,
+                            critic_opt_state,
+                            sample_batch,
+                            critic_key,
                         )
                     )
 
@@ -650,13 +673,19 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
             sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                critic_update_fn(
-                    critic_opt_state, agent_state, sample_batch, critic_key
+                _update_critic(
+                    agent_state,
+                    critic_opt_state,
+                    sample_batch,
+                    critic_key,
                 )
             )
 
-            (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
-                actor_update_fn(actor_opt_state, agent_state, sample_batch, actor_key)
+            (actor_loss, actor_loss_dict), agent_state, actor_opt_state = _update_actor(
+                agent_state,
+                actor_opt_state,
+                sample_batch,
+                actor_key,
             )
 
             opt_state = opt_state.replace(
@@ -668,15 +697,19 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
                 # critic -> actor -> alpha
                 alpha_opt_state = opt_state.alpha
                 (alpha_loss, alpha_loss_dict), agent_state, alpha_opt_state = (
-                    alpha_update_fn(
-                        alpha_opt_state, agent_state, sample_batch, alpha_key
+                    _update_alpha(
+                        agent_state,
+                        alpha_opt_state,
+                        sample_batch,
+                        alpha_key,
                     )
                 )
                 opt_state = opt_state.replace(alpha=alpha_opt_state)
 
+                log_alpha = nnx.merge(agent_state.model_state, copy=True).log_alpha[...]
                 alpha_loss_dict = alpha_loss_dict.replace(
-                    log_alpha=agent_state.params.log_alpha,
-                    alpha=jnp.exp(agent_state.params.log_alpha),
+                    log_alpha=log_alpha,
+                    alpha=jnp.exp(log_alpha),
                 )
 
                 res = (
@@ -690,16 +723,16 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
             else:
                 res = (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict)
 
-            target_critic_params = soft_target_update(
-                agent_state.params.target_critic_params,
-                agent_state.params.critic_params,
-                self.config.tau,
+            models = nnx.merge(agent_state.model_state, copy=True)
+            nnx.update(
+                models.target_critic,
+                soft_target_update(
+                    nnx.state(models.target_critic, nnx.Param),
+                    nnx.state(models.critic, nnx.Param),
+                    self.config.tau,
+                ),
             )
-            agent_state = agent_state.replace(
-                params=agent_state.params.replace(
-                    target_critic_params=target_critic_params
-                )
-            )
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
 
             return (key, agent_state, opt_state), res
 
@@ -727,7 +760,7 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
                 raw_loss_dict=PyTreeDict(
                     {**critic_loss_dict, **actor_loss_dict, **alpha_loss_dict}
                 ),
-            ).all_reduce(dp_axis_name=self.dp_axis_name)
+            ).all_reduce(axis_name=self.dp_axis_name)
         else:
             (
                 (_, agent_state, opt_state),
@@ -747,7 +780,7 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
                 actor_loss=actor_loss,
                 critic_loss=critic_loss,
                 raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-            ).all_reduce(dp_axis_name=self.dp_axis_name)
+            ).all_reduce(axis_name=self.dp_axis_name)
 
         # calculate the number of timestep
         sampled_timesteps = psum(
@@ -764,7 +797,7 @@ class SACWorkflow(OffPolicyWorkflowTemplate):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,

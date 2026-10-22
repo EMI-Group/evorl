@@ -1,3 +1,4 @@
+from flax import nnx
 import logging
 import time
 from omegaconf import DictConfig
@@ -247,7 +248,8 @@ class ERLWorkflow(ERLGAWorkflow):
 
 
 def get_ec_pop_statistics(pop):
-    pop = pop["params"]
+    if isinstance(pop, nnx.State):
+        pop = nnx.to_pure_dict(pop)
 
     def _get_stats(x):
         return dict(

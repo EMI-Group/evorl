@@ -1,17 +1,17 @@
+from evorl.utils import running_statistics
 import logging
 from typing import Any
 
 import chex
-import flax.linen as nn
+from flax import nnx
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
 from evorl.distributed import psum, pmean
-from evorl.distributed.gradients import agent_gradient_update
-from evorl.envs import AutoresetMode, Box, create_env, Space
+from evorl.distributed.gradients import pmean_nnx_loss_and_grad
+from evorl.envs import Box, AutoresetMode, create_env, Space
 from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase, metric_field
 from evorl.networks import make_policy_network, make_q_network
@@ -21,15 +21,12 @@ from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
     LossDict,
-    Params,
     PolicyExtraInfo,
-    PyTreeData,
     PyTreeDict,
     State,
     pytree_field,
 )
-from evorl.utils import running_statistics
-from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient, tree_get
+from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
 from evorl.agent import Agent, AgentState
@@ -39,27 +36,17 @@ logger = logging.getLogger(__name__)
 
 
 class DDPGTrainMetric(MetricBase):
-    # Primary losses are already averaged by pmean_loss_and_grad.
+    # Primary losses are already averaged by pmean_nnx_loss_and_grad.
     actor_loss: jax.Array
     critic_loss: jax.Array
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
-class DDPGNetworkParams(PyTreeData):
-    """Contains training state for the learner."""
-
-    actor_params: Params
-    critic_params: Params
-
-    target_actor_params: Params
-    target_critic_params: Params
-
-
 class DDPGAgent(Agent):
-    """The Agnet for DDPG."""
+    """The Agent for DDPG."""
 
-    critic_network: nn.Module
-    actor_network: nn.Module
+    agent_network_cfg: DictConfig = pytree_field(static=True)
+
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     discount: float = 1
@@ -70,34 +57,50 @@ class DDPGAgent(Agent):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
+        if not isinstance(action_space, Box):
+            raise TypeError(f"Unsupported action space: {action_space}")
         key, q_key, actor_key = jax.random.split(key, num=3)
 
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
-        dummy_action = action_space.sample(key)[None, ...]
-
-        critic_params = self.critic_network.init(q_key, dummy_obs, dummy_action)
-        target_critic_params = critic_params
-
-        actor_params = self.actor_network.init(actor_key, dummy_obs)
-        target_actor_params = actor_params
-
-        params_state = DDPGNetworkParams(
-            critic_params=critic_params,
-            actor_params=actor_params,
-            target_critic_params=target_critic_params,
-            target_actor_params=target_actor_params,
+        cfg = self.agent_network_cfg
+        value_obs_key = cfg.get("value_obs_key")
+        policy_obs_key = cfg.get("policy_obs_key")
+        critic = make_q_network(
+            input_size=(
+                obs_space.spaces[value_obs_key] if value_obs_key else obs_space
+            ).shape[-1],
+            action_size=action_space.shape[0],
+            hidden_layer_sizes=tuple(cfg.critic_hidden_layer_sizes),
+            obs_key=value_obs_key,
+            rngs=nnx.Rngs(q_key),
+        )
+        actor = make_policy_network(
+            input_size=(
+                obs_space.spaces[policy_obs_key] if policy_obs_key else obs_space
+            ).shape[-1],
+            action_size=action_space.shape[0],
+            hidden_layer_sizes=tuple(cfg.actor_hidden_layer_sizes),
+            activation_final=jax.nn.tanh,
+            obs_key=policy_obs_key,
+            rngs=nnx.Rngs(actor_key),
+        )
+        models = nnx.Dict(
+            actor=actor,
+            critic=critic,
+            target_actor=nnx.clone(actor),
+            target_critic=nnx.clone(critic),
         )
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+                obs_space.sample(key)
             )
         else:
             obs_preprocessor_state = None
 
         return AgentState(
-            params=params_state, obs_preprocessor_state=obs_preprocessor_state
+            model_state=nnx.unpack(models),
+            obs_preprocessor_state=obs_preprocessor_state,
         )
 
     def compute_actions(
@@ -107,7 +110,7 @@ class DDPGAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        actions = self.get_models(agent_state, copy=True).actor(obs)
         # add random noise
         noise = jax.random.normal(key, actions.shape) * self.exploration_epsilon
         actions += noise
@@ -122,13 +125,27 @@ class DDPGAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        actions = self.get_models(agent_state, copy=True).actor(obs)
 
         return actions, PyTreeDict()
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        """Compute the DDPG critic loss from a working agent state.
+
+        Args:
+            agent_state: Training state sharing variables with the working models.
+            sample_batch: Batch of transitions with leading sample dimension.
+            key: Random key for loss computation.
+
+        Returns:
+            A dictionary containing the critic loss and mean Q value.
+        """
+        models = self.get_models(agent_state)
         next_obs = sample_batch.extras.env_extras.ori_obs
         obs = sample_batch.obs
         actions = sample_batch.actions
@@ -139,20 +156,16 @@ class DDPGAgent(Agent):
             )
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        next_actions = self.actor_network.apply(
-            agent_state.params.target_actor_params, next_obs
-        )
+        next_actions = models.target_actor(next_obs)
 
-        next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, next_actions
-        )
+        next_qs = models.target_critic(next_obs, next_actions)
 
         discounts = self.discount * (1 - sample_batch.extras.env_extras.termination)
 
         qs_target = sample_batch.rewards + discounts * next_qs
         qs_target = jax.lax.stop_gradient(qs_target)
 
-        qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions)
+        qs = models.critic(obs, actions)
 
         # q_loss = optax.huber_loss(qs, target_qs, delta=1).mean()
         q_loss = optax.squared_error(qs, qs_target).mean()
@@ -160,59 +173,32 @@ class DDPGAgent(Agent):
         return PyTreeDict(critic_loss=q_loss, q_value=qs.mean())
 
     def actor_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        """Compute the DDPG actor loss from a working agent state.
+
+        Args:
+            agent_state: Training state sharing variables with the working models.
+            sample_batch: Batch of transitions with leading sample dimension.
+            key: Random key for loss computation.
+
+        Returns:
+            A dictionary containing the actor loss.
+        """
+        models = self.get_models(agent_state)
         obs = sample_batch.obs
 
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
         # [T*B, A]
-        actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        actions = models.actor(obs)
 
-        actor_loss = -jnp.mean(
-            self.critic_network.apply(agent_state.params.critic_params, obs, actions)
-        )
+        actor_loss = -jnp.mean(models.critic(obs, actions))
         return PyTreeDict(actor_loss=actor_loss)
-
-
-def make_mlp_ddpg_agent(
-    action_space: Space,
-    critic_hidden_layer_sizes: tuple[int] = (256, 256),
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    discount: float = 1,
-    exploration_epsilon: float = 0.5,
-    normalize_obs: bool = False,
-    policy_obs_key: str = "",
-    value_obs_key: str = "",
-):
-    assert isinstance(action_space, Box), "Only continue action space is supported."
-
-    action_size = action_space.shape[0]
-
-    critic_network = make_q_network(
-        hidden_layer_sizes=critic_hidden_layer_sizes,
-        obs_key=value_obs_key,
-    )
-    actor_network = make_policy_network(
-        action_size=action_size,
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-        activation_final=nn.tanh,
-        obs_key=policy_obs_key,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return DDPGAgent(
-        critic_network=critic_network,
-        actor_network=actor_network,
-        obs_preprocessor=obs_preprocessor,
-        discount=discount,
-        exploration_epsilon=exploration_epsilon,
-    )
 
 
 class DDPGWorkflow(OffPolicyWorkflowTemplate):
@@ -229,15 +215,13 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             record_ori_obs=True,
         )
 
-        agent = make_mlp_ddpg_agent(
-            action_space=env.action_space,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+        agent = DDPGAgent(
+            agent_network_cfg=config.agent_network,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
-            normalize_obs=config.normalize_obs,
-            policy_obs_key=config.agent_network.policy_obs_key,
-            value_obs_key=config.agent_network.value_obs_key,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         # one optimizer, two opt_states (in setup function) for both actor and critic
@@ -285,10 +269,15 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
         self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
+        models = nnx.merge(agent_state.model_state, copy=True)
         opt_state = PyTreeDict(
             dict(
-                actor=self.optimizer.init(agent_state.params.actor_params),
-                critic=self.optimizer.init(agent_state.params.critic_params),
+                actor=nnx.unpack(
+                    nnx.Optimizer(models.actor, self.optimizer, wrt=nnx.Param)
+                ),
+                critic=nnx.unpack(
+                    nnx.Optimizer(models.critic, self.optimizer, wrt=nnx.Param)
+                ),
             )
         )
         return agent_state, opt_state
@@ -322,7 +311,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
+                    axis_name=self.dp_axis_name,
                 )
             )
 
@@ -330,39 +319,53 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             state.replay_buffer_state, trajectory
         )
 
-        def critic_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.critic_loss(agent_state, sample_batch, key)
+        def _update_critic(agent_state, opt_state, sample_batch, key):
+            """Apply one critic update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
 
-            loss = loss_dict.critic_loss
-            return loss, loss_dict
+            def loss_fn(models, sample_batch, key):
+                losses = self.agent.critic_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)),
+                    sample_batch,
+                    key,
+                )
+                return losses.critic_loss, losses
 
-        def actor_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("critic")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.critic, grads["critic"])
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            return value, agent_state, nnx.unpack(optimizer)
 
-            loss = loss_dict.actor_loss
-            return loss, loss_dict
+        def _update_actor(agent_state, opt_state, sample_batch, key):
+            """Apply one actor update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
+            critic_state = nnx.clone(nnx.state(models.critic, nnx.Not(nnx.Param)))
 
-        critic_update_fn = agent_gradient_update(
-            critic_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, critic_params: agent_state.replace(
-                params=agent_state.params.replace(critic_params=critic_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.critic_params,
-        )
+            def loss_fn(models, sample_batch, key):
+                losses = self.agent.actor_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)),
+                    sample_batch,
+                    key,
+                )
+                return losses.actor_loss, losses
 
-        actor_update_fn = agent_gradient_update(
-            actor_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, actor_params: agent_state.replace(
-                params=agent_state.params.replace(actor_params=actor_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.actor_params,
-        )
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("actor")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.actor, grads["actor"])
+            nnx.update(models.critic, critic_state)
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            return value, agent_state, nnx.unpack(optimizer)
 
         def _sample_and_update_fn(carry, unused_t):
             key, agent_state, opt_state = carry
@@ -375,31 +378,39 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                critic_update_fn(
-                    opt_state.critic, agent_state, sample_batch, critic_key
+                _update_critic(
+                    agent_state,
+                    opt_state.critic,
+                    sample_batch,
+                    critic_key,
                 )
             )
 
-            (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
-                actor_update_fn(opt_state.actor, agent_state, sample_batch, actor_key)
+            (actor_loss, actor_loss_dict), agent_state, actor_opt_state = _update_actor(
+                agent_state,
+                opt_state.actor,
+                sample_batch,
+                actor_key,
             )
 
-            target_actor_params = soft_target_update(
-                agent_state.params.target_actor_params,
-                agent_state.params.actor_params,
-                self.config.tau,
+            models = nnx.merge(agent_state.model_state, copy=True)
+            nnx.update(
+                models.target_actor,
+                soft_target_update(
+                    nnx.state(models.target_actor, nnx.Param),
+                    nnx.state(models.actor, nnx.Param),
+                    self.config.tau,
+                ),
             )
-            target_critic_params = soft_target_update(
-                agent_state.params.target_critic_params,
-                agent_state.params.critic_params,
-                self.config.tau,
+            nnx.update(
+                models.target_critic,
+                soft_target_update(
+                    nnx.state(models.target_critic, nnx.Param),
+                    nnx.state(models.critic, nnx.Param),
+                    self.config.tau,
+                ),
             )
-            agent_state = agent_state.replace(
-                params=agent_state.params.replace(
-                    target_actor_params=target_actor_params,
-                    target_critic_params=target_critic_params,
-                )
-            )
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
 
             opt_state = PyTreeDict(actor=actor_opt_state, critic=critic_opt_state)
 
@@ -427,7 +438,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             actor_loss=actor_loss,
             critic_loss=critic_loss,
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         # calculate the number of timestep
         sampled_timesteps = psum(
@@ -443,7 +454,7 @@ class DDPGWorkflow(OffPolicyWorkflowTemplate):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,

@@ -42,7 +42,7 @@ def test_ppo_nested_host_environments(host_envs):
         evaluate = jax.jit(jax.vmap(jax.vmap(workflow.evaluate)))
         state = setup(keys)
         assert state.env_state.obs.shape == (2, 2, 1, 4)
-        before = state.agent_state.params
+        before = state.agent_state.model_state
         metrics, state = step(state)
         jax.block_until_ready(state)
         assert state.metrics.iterations.shape == (2, 2)
@@ -51,7 +51,7 @@ def test_ppo_nested_host_environments(host_envs):
             np.any(np.asarray(a) != np.asarray(b))
             for a, b in zip(
                 jax.tree.leaves(before),
-                jax.tree.leaves(state.agent_state.params),
+                jax.tree.leaves(state.agent_state.model_state),
                 strict=True,
             )
         )

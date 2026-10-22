@@ -1,11 +1,10 @@
 from omegaconf import DictConfig
-from collections.abc import Sequence
 from typing import Self
 
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import flax.linen as nn
+from flax import nnx
 
 from evorl.types import State, Params
 from evorl.envs import AutoresetMode, create_env, Space, Box
@@ -14,69 +13,43 @@ from evorl.sample_batch import SampleBatch
 from evorl.agent import AgentState
 from evorl.ec.optimizers import ARS, ECState
 from evorl.utils import running_statistics
-from evorl.networks import make_mlp, ActivationFn
+from evorl.networks import make_mlp
 
 from evorl.algorithms.ec.so.es_workflow import ESWorkflowTemplate
 from evorl.algorithms.ec.obs_utils import init_obs_preprocessor
 from evorl.algorithms.ec.ec_agent import DeterministicECAgent
 
 
-def make_policy_network(
-    action_size: int,
-    hidden_layer_sizes: Sequence[int] = (256, 256),
-    use_bias: bool = True,
-    activation: ActivationFn = nn.relu,
-    activation_final: ActivationFn | None = None,
-    norm_layer_type: str = "none",
-) -> nn.Module:
-    """Creates a policy network."""
+class ARSAgent(DeterministicECAgent):
+    """ARS uses zero initial weights and clips actions instead of applying tanh."""
 
-    class Policy(nn.Module):
-        @nn.compact
-        def __call__(self, x):
-            policy_model = make_mlp(
-                layer_sizes=tuple(hidden_layer_sizes) + (action_size,),
-                activation=activation,
-                # kernel_init=jax.nn.initializers.lecun_uniform(),
-                kernel_init=jax.nn.initializers.zeros,
-                activation_final=activation_final,
-                use_bias=use_bias,
-                norm_layer_type=norm_layer_type,
-            )
-            actions = policy_model(x)
-            return jnp.clip(actions, -1.0, 1.0)
+    def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
+        assert isinstance(action_space, Box), (
+            "Only continuous action space is supported."
+        )
+        cfg = self.agent_network_cfg
+        policy = make_mlp(
+            input_size=obs_space.shape[-1],
+            layer_sizes=(*cfg.actor_hidden_layer_sizes, action_space.shape[0]),
+            kernel_init=jax.nn.initializers.zeros,
+            use_bias=cfg.use_bias,
+            norm_layer_type=cfg.norm_layer_type,
+            rngs=nnx.Rngs(key),
+        )
+        return AgentState(
+            model_state=nnx.unpack(nnx.Dict(policy=policy)),
+            obs_preprocessor_state=(
+                running_statistics.init_state(obs_space.sample(key))
+                if self.normalize_obs
+                else None
+            ),
+        )
 
-    return Policy()
-
-
-def make_deterministic_ec_agent(
-    action_space: Space,
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    use_bias: bool = True,
-    norm_layer_type: str = "none",
-    normalize_obs: bool = False,
-):
-    assert isinstance(action_space, Box), "Only continue action space is supported."
-
-    action_size = action_space.shape[0]
-
-    policy_network = make_policy_network(
-        action_size=action_size,
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-        use_bias=use_bias,
-        activation_final=None,
-        norm_layer_type=norm_layer_type,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return DeterministicECAgent(
-        policy_network=policy_network,
-        obs_preprocessor=obs_preprocessor,
-    )
+    def compute_actions(
+        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+    ):
+        actions, extras = super().compute_actions(agent_state, sample_batch, key)
+        return jnp.clip(actions, -1.0, 1.0), extras
 
 
 class ARSWorkflow(ESWorkflowTemplate):
@@ -92,12 +65,11 @@ class ARSWorkflow(ESWorkflowTemplate):
             autoreset_mode=AutoresetMode.DISABLED,
         )
 
-        agent = make_deterministic_ec_agent(
-            action_space=env.action_space,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-            use_bias=config.agent_network.use_bias,
-            normalize_obs=config.normalize_obs,
-            norm_layer_type=config.agent_network.norm_layer_type,
+        agent = ARSAgent(
+            agent_network_cfg=config.agent_network,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         ec_optimizer = ARS(
@@ -143,7 +115,7 @@ class ARSWorkflow(ESWorkflowTemplate):
         )
 
         agent_state_vmap_axes = AgentState(
-            params=0,
+            model_state=nnx.StateAxes({nnx.Param: 0, ...: None}),
             obs_preprocessor_state=None,
         )
 
@@ -163,7 +135,9 @@ class ARSWorkflow(ESWorkflowTemplate):
             self.env.obs_space, self.env.action_space, agent_key
         )
 
-        init_actor_params = agent_state.params.policy_params
+        init_actor_params = nnx.state(
+            nnx.merge(agent_state.model_state, copy=True).policy, nnx.Param
+        )
         ec_opt_state = self.ec_optimizer.init(init_actor_params, ec_key)
 
         # remove params
@@ -179,7 +153,7 @@ class ARSWorkflow(ESWorkflowTemplate):
                 agent_state=state.agent_state,
                 config=self.config,
                 key=obs_key,
-                dp_axis_name=self.dp_axis_name,
+                axis_name=self.dp_axis_name,
             )
 
             # Note: we don't count these random timesteps in state.metrics
@@ -193,9 +167,11 @@ class ARSWorkflow(ESWorkflowTemplate):
     def _replace_actor_params(
         self, agent_state: AgentState, params: Params
     ) -> AgentState:
-        return agent_state.replace(
-            params=agent_state.params.replace(policy_params=params)
-        )
+        models = nnx.merge(agent_state.model_state, copy=True)
+        if params is None:
+            params = jax.tree.map(lambda _: None, nnx.state(models.policy, nnx.Param))
+        nnx.update(models.policy, params)
+        return agent_state.replace(model_state=nnx.unpack(models))
 
     def _get_pop_center(self, state: State) -> AgentState:
         pop_center = state.ec_opt_state.mean
@@ -210,7 +186,7 @@ class ARSWorkflow(ESWorkflowTemplate):
                 agent_state.obs_preprocessor_state,
                 trajectory.obs,
                 weights=1 - trajectory.dones,
-                dp_axis_name=self.dp_axis_name,
+                axis_name=self.dp_axis_name,
             )
 
         elif self.config.normalize_obs_mode == "RS":
@@ -220,7 +196,7 @@ class ARSWorkflow(ESWorkflowTemplate):
                 obs_preprocessor_state,
                 trajectory.obs,
                 weights=1 - trajectory.dones,
-                dp_axis_name=self.dp_axis_name,
+                axis_name=self.dp_axis_name,
             )
         else:
             obs_preprocessor_state = agent_state.obs_preprocessor_state

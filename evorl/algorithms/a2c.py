@@ -1,17 +1,18 @@
+from evorl.utils import running_statistics
 import logging
 import math
 from typing import Any
 
-import flax.linen as nn
+from flax import nnx
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
-from evorl.distributed import agent_gradient_update, psum
+from evorl.distributed import pmean_nnx_loss_and_grad, psum
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import AutoresetMode, create_env, Space, Box, Discrete
+from evorl.envs import Discrete, Box, AutoresetMode, create_env, Space
 from evorl.evaluators import Evaluator
 from evorl.metrics import TrainMetric, MetricBase
 from evorl.networks import make_policy_network, make_v_network
@@ -21,15 +22,12 @@ from evorl.types import (
     MISSING_REWARD,
     Action,
     LossDict,
-    Params,
     PolicyExtraInfo,
-    PyTreeData,
     PyTreeDict,
     State,
     pytree_field,
 )
-from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_get, tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient
 from evorl.utils.rl_toolkits import (
     average_episode_discount_return,
     compute_gae,
@@ -44,17 +42,9 @@ from evorl.agent import Agent, AgentState
 logger = logging.getLogger(__name__)
 
 
-class A2CNetworkParams(PyTreeData):
-    """Contains training state for the learner."""
-
-    policy_params: Params
-    value_params: Params
-
-
 class A2CAgent(Agent):
     continuous_action: bool
-    policy_network: nn.Module  # nn.Module is ok
-    value_network: nn.Module
+    agent_network_cfg: DictConfig = pytree_field(static=True)
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     @property
@@ -62,28 +52,45 @@ class A2CAgent(Agent):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
+        if not isinstance(action_space, (Box, Discrete)):
+            raise TypeError(f"Unsupported action space: {action_space}")
         policy_key, value_key = jax.random.split(key, 2)
 
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
-
-        policy_params = self.policy_network.init(policy_key, dummy_obs)
-
-        value_params = self.value_network.init(value_key, dummy_obs)
-
-        params_state = A2CNetworkParams(
-            policy_params=policy_params, value_params=value_params
+        network_cfg = self.agent_network_cfg
+        policy_obs_key = network_cfg.get("policy_obs_key")
+        value_obs_key = network_cfg.get("value_obs_key")
+        policy_space = obs_space.spaces[policy_obs_key] if policy_obs_key else obs_space
+        value_space = obs_space.spaces[value_obs_key] if value_obs_key else obs_space
+        action_size = (
+            action_space.shape[0] * 2 if self.continuous_action else action_space.n
+        )
+        models = nnx.Dict(
+            policy=make_policy_network(
+                input_size=policy_space.shape[-1],
+                action_size=action_size,
+                hidden_layer_sizes=tuple(network_cfg.actor_hidden_layer_sizes),
+                obs_key=policy_obs_key,
+                rngs=nnx.Rngs(policy_key),
+            ),
+            value=make_v_network(
+                input_size=value_space.shape[-1],
+                hidden_layer_sizes=tuple(network_cfg.critic_hidden_layer_sizes),
+                obs_key=value_obs_key,
+                rngs=nnx.Rngs(value_key),
+            ),
         )
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+                obs_space.sample(key)
             )
         else:
             obs_preprocessor_state = None
 
         return AgentState(
-            params=params_state, obs_preprocessor_state=obs_preprocessor_state
+            model_state=nnx.unpack(models),
+            obs_preprocessor_state=obs_preprocessor_state,
         )
 
     def compute_actions(
@@ -93,7 +100,7 @@ class A2CAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
+        raw_actions = self.get_models(agent_state, copy=True).policy(obs)
 
         if self.continuous_action:
             actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
@@ -116,7 +123,7 @@ class A2CAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
+        raw_actions = self.get_models(agent_state, copy=True).policy(obs)
 
         if self.continuous_action:
             actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
@@ -128,8 +135,12 @@ class A2CAgent(Agent):
         return actions, PyTreeDict()
 
     def loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         obs = sample_batch.obs
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
@@ -138,7 +149,7 @@ class A2CAgent(Agent):
         mask = jnp.logical_not(sample_batch.extras.env_extras.autoreset)
 
         # ======= critic =======
-        vs = self.value_network.apply(agent_state.params.value_params, obs)
+        vs = models.value(obs)
 
         v_targets = sample_batch.extras.v_targets
 
@@ -147,7 +158,7 @@ class A2CAgent(Agent):
         # ====== actor =======
 
         # [T*B, A]
-        raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
+        raw_actions = models.policy(obs)
 
         if self.continuous_action:
             actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
@@ -180,47 +191,7 @@ class A2CAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        return self.value_network.apply(agent_state.params.value_params, obs)
-
-
-def make_mlp_a2c_agent(
-    action_space: Space,
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    critic_hidden_layer_sizes: tuple[int] = (256, 256),
-    normalize_obs: bool = False,
-    policy_obs_key: str = "",
-    value_obs_key: str = "",
-) -> A2CAgent:
-    if isinstance(action_space, Box):
-        action_size = action_space.shape[0] * 2
-        continuous_action = True
-    elif isinstance(action_space, Discrete):
-        action_size = action_space.n
-        continuous_action = False
-    else:
-        raise NotImplementedError(f"Unsupported action space: {action_space}")
-
-    policy_network = make_policy_network(
-        action_size=action_size,
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-        obs_key=policy_obs_key,
-    )
-
-    value_network = make_v_network(
-        hidden_layer_sizes=critic_hidden_layer_sizes, obs_key=value_obs_key
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return A2CAgent(
-        policy_network=policy_network,
-        value_network=value_network,
-        obs_preprocessor=obs_preprocessor,
-        continuous_action=continuous_action,
-    )
+        return self.get_models(agent_state, copy=True).value(obs)
 
 
 class A2CWorkflow(OnPolicyWorkflow):
@@ -256,13 +227,12 @@ class A2CWorkflow(OnPolicyWorkflow):
             autoreset_mode=AutoresetMode.ENVPOOL,
         )
 
-        agent = make_mlp_a2c_agent(
-            action_space=env.action_space,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            normalize_obs=config.normalize_obs,
-            policy_obs_key=config.agent_network.policy_obs_key,
-            value_obs_key=config.agent_network.value_obs_key,
+        agent = A2CAgent(
+            agent_network_cfg=config.agent_network,
+            continuous_action=isinstance(env.action_space, Box),
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         if (
@@ -314,14 +284,14 @@ class A2CWorkflow(OnPolicyWorkflow):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
+                    axis_name=self.dp_axis_name,
                 )
             )
 
         train_episode_return = average_episode_discount_return(
             trajectory.extras.env_extras.episode_return,
             trajectory.dones,
-            dp_axis_name=self.dp_axis_name,
+            axis_name=self.dp_axis_name,
         )
 
         # ======== compute GAE =======
@@ -347,9 +317,11 @@ class A2CWorkflow(OnPolicyWorkflow):
         trajectory = tree_stop_gradient(flatten_rollout_trajectory(trajectory))
         # ============================
 
-        def loss_fn(agent_state, sample_batch, key):
+        def loss_fn(models, agent_state, sample_batch, key):
             # learn all data from trajectory
-            loss_dict = self.agent.loss(agent_state, sample_batch, key)
+            loss_dict = self.agent.loss(
+                agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+            )
             loss_weights = self.config.loss_weights
             loss = jnp.zeros(())
             for loss_key in loss_weights:
@@ -357,13 +329,18 @@ class A2CWorkflow(OnPolicyWorkflow):
 
             return loss, loss_dict
 
-        update_fn = agent_gradient_update(
-            loss_fn, self.optimizer, dp_axis_name=self.dp_axis_name, has_aux=True
+        loss_and_grad = pmean_nnx_loss_and_grad(
+            loss_fn, self.dp_axis_name, has_aux=True
         )
 
-        (loss, loss_dict), agent_state, opt_state = update_fn(
-            state.opt_state, agent_state, trajectory, learn_key
+        models = nnx.merge(agent_state.model_state, copy=True)
+        optimizer = nnx.merge(state.opt_state, copy=True)
+        (loss, loss_dict), grads = loss_and_grad(
+            models, agent_state, trajectory, learn_key
         )
+        optimizer.update(models, grads)
+        agent_state = agent_state.replace(model_state=nnx.unpack(models))
+        opt_state = nnx.unpack(optimizer)
 
         # ======== update metrics ========
 
@@ -379,13 +356,13 @@ class A2CWorkflow(OnPolicyWorkflow):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         train_metrics = TrainMetric(
             train_episode_return=train_episode_return,
             loss=loss,
             raw_loss_dict=loss_dict,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,

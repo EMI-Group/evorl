@@ -7,6 +7,7 @@ import math
 import chex
 import jax
 import optax
+from flax import nnx
 from omegaconf import DictConfig, OmegaConf
 from typing import Self
 
@@ -255,7 +256,13 @@ class OnPolicyWorkflow(RLWorkflow):
             Tuple of (agent_state, opt_state)
         """
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
-        opt_state = self.optimizer.init(agent_state.params)
+        opt_state = nnx.unpack(
+            nnx.Optimizer(
+                nnx.merge(agent_state.model_state, copy=True),
+                self.optimizer,
+                wrt=nnx.Param,
+            )
+        )
         return agent_state, opt_state
 
     def _setup_workflow_metrics(self) -> MetricBase:
@@ -315,7 +322,7 @@ class OnPolicyWorkflow(RLWorkflow):
         eval_metrics = EvaluateMetric(
             episode_returns=raw_eval_metrics.episode_returns.mean(),
             episode_lengths=raw_eval_metrics.episode_lengths.mean(),
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         state = state.replace(key=key)
         return eval_metrics, state
@@ -412,7 +419,13 @@ class OffPolicyWorkflow(RLWorkflow):
             Tuple of (agent_state, opt_state).
         """
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
-        opt_state = self.optimizer.init(agent_state.params)
+        opt_state = nnx.unpack(
+            nnx.Optimizer(
+                nnx.merge(agent_state.model_state, copy=True),
+                self.optimizer,
+                wrt=nnx.Param,
+            )
+        )
         return agent_state, opt_state
 
     def _setup_workflow_metrics(self) -> MetricBase:
@@ -511,7 +524,7 @@ class OffPolicyWorkflow(RLWorkflow):
         eval_metrics = EvaluateMetric(
             episode_returns=raw_eval_metrics.episode_returns.mean(),
             episode_lengths=raw_eval_metrics.episode_lengths.mean(),
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         state = state.replace(key=key)
         return eval_metrics, state

@@ -1,3 +1,4 @@
+from evorl.networks.utils import model_state_axes
 import copy
 import logging
 import math
@@ -364,12 +365,22 @@ class ECWorkflowTemplate(ECWorkflow):
         )
 
         pop_agent_state = self._replace_actor_params(agent_state, eval_pop)
+        agent_state_axes = self.agent_state_vmap_axes
+        if isinstance(agent_state_axes, AgentState) and not (
+            agent_state_axes.model_state is None
+            or isinstance(agent_state_axes.model_state, int)
+        ):
+            agent_state_axes = agent_state_axes.replace(
+                model_state=model_state_axes(
+                    pop_agent_state.model_state, agent_state_axes.model_state
+                )
+            )
 
         if isinstance(self.ec_evaluator, EpisodeCollector):
             # trajectory: [#pop, T, #episodes]
             rollout_metrics, trajectory = jax.vmap(
                 self.ec_evaluator.rollout,
-                in_axes=(self.agent_state_vmap_axes, 0, None),
+                in_axes=(agent_state_axes, 0, None),
             )(
                 pop_agent_state,
                 jax.random.split(rollout_key, num=slice_size),
@@ -383,7 +394,7 @@ class ECWorkflowTemplate(ECWorkflow):
         elif isinstance(self.ec_evaluator, Evaluator):
             rollout_metrics = jax.vmap(
                 self.ec_evaluator.evaluate,
-                in_axes=(self.agent_state_vmap_axes, 0, None),
+                in_axes=(agent_state_axes, 0, None),
             )(
                 pop_agent_state,
                 jax.random.split(rollout_key, num=slice_size),
@@ -460,12 +471,22 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
         )
 
         pop_agent_state = self._replace_actor_params(agent_state, eval_pop)
+        agent_state_axes = self.agent_state_vmap_axes
+        if isinstance(agent_state_axes, AgentState) and not (
+            agent_state_axes.model_state is None
+            or isinstance(agent_state_axes.model_state, int)
+        ):
+            agent_state_axes = agent_state_axes.replace(
+                model_state=model_state_axes(
+                    pop_agent_state.model_state, agent_state_axes.model_state
+                )
+            )
 
         if isinstance(self.ec_evaluator, EpisodeCollector):
             # trajectory: [#pop, T, #episodes]
             rollout_metrics, trajectory = jax.vmap(
                 self.ec_evaluator.rollout,
-                in_axes=(self.agent_state_vmap_axes, 0, None),
+                in_axes=(agent_state_axes, 0, None),
             )(
                 pop_agent_state,
                 jax.random.split(rollout_key, num=slice_size),
@@ -479,7 +500,7 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
         elif isinstance(self.ec_evaluator, Evaluator):
             rollout_metrics = jax.vmap(
                 self.ec_evaluator.evaluate,
-                in_axes=(self.agent_state_vmap_axes, 0, None),
+                in_axes=(agent_state_axes, 0, None),
             )(
                 pop_agent_state,
                 jax.random.split(rollout_key, num=slice_size),

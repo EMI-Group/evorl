@@ -4,6 +4,8 @@ from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from flax import nnx
+import chex
 import jax
 import numpy as np
 import pytest
@@ -143,5 +145,60 @@ def test_nsga2_trains_with_real_brax_vector_rewards():
         assert int(state.metrics.iterations) == 2
         assert int(state.metrics.sampled_episodes) == 8
         assert np.all(np.isfinite(state.ec_opt_state.fitnesses))
+    finally:
+        workflow.close()
+
+
+@pytest.mark.parametrize("algorithm", ["openes", "ars", "cmaes", "nsga2"])
+def test_ec_population_keeps_spectral_variables_shared_and_out_of_genome(
+    algorithm, jit
+):
+
+    root = Path(__file__).resolve().parents[2]
+    config = OmegaConf.merge(
+        OmegaConf.load(root / "configs/config.yaml"),
+        OmegaConf.load(root / f"configs/agent/ec/{algorithm}.yaml"),
+        dict(
+            env=dict(max_episode_steps=2),
+            pop_size=4,
+            num_elites=2,
+            num_envs=2,
+            episodes_for_fitness=2,
+            num_eval_envs=2,
+            eval_episodes=2,
+            normalize_obs=False,
+            agent_network=dict(
+                actor_hidden_layer_sizes=[2], norm_layer_type="spectral_norm"
+            ),
+        ),
+    )
+    base = get_class(config.workflow_cls)
+    cls = type("SpectralECWorkflow", (base,), {})
+    env_cls = VectorRewardEnv if algorithm == "nsga2" else ToyEnv
+    with patch(
+        f"{base.__module__}.create_env",
+        side_effect=lambda _, parallel, **kw: env_cls(parallel),
+    ):
+        workflow = cls.build_from_config(config, jit=jit)
+    try:
+        state = workflow.setup(jax.random.key(3))
+        policy = nnx.merge(state.agent_state.model_state, copy=True).policy
+        assert not jax.tree.leaves(nnx.state(policy, nnx.Param))
+        auxiliary = nnx.clone(nnx.state(policy, nnx.Not(nnx.Param)))
+        assert jax.tree.leaves(auxiliary)
+        metrics, updated = workflow.step(state)
+        jax.block_until_ready(updated)
+        assert np.all(np.isfinite(metrics.objectives))
+        chex.assert_trees_all_equal(
+            auxiliary,
+            nnx.state(
+                nnx.merge(updated.agent_state.model_state, copy=True).policy,
+                nnx.Not(nnx.Param),
+            ),
+        )
+        population, _ = workflow.ec_optimizer.ask(updated.ec_opt_state)
+        assert all(
+            isinstance(value, nnx.Param) for _, value in nnx.to_flat_state(population)
+        )
     finally:
         workflow.close()

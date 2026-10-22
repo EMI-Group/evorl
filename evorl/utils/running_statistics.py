@@ -53,7 +53,7 @@ def _validate_batch_shapes(
     Checks that non-batch dimensions for all leaves in the batch are the same
     as in the reference sample.
 
-    Arguments:
+    Args:
       batch: the nested batch of data to be verified.
       reference_sample: the nested array to check non-batch dimensions.
       batch_dims: a Tuple of indices of batch dimensions in the batch shape.
@@ -76,7 +76,7 @@ def update(
     weights: jax.Array | None = None,
     std_min_value: float = 1e-6,
     std_max_value: float = 1e6,
-    dp_axis_name: str | None = None,
+    axis_name: str | None = None,
     validate_shapes: bool = True,
 ) -> RunningStatisticsState:
     """Updates the running statistics with the given batch of data.
@@ -90,7 +90,7 @@ def update(
     To improve precision, consider setting jax_enable_x64 to True, see
     https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#double-64bit-precision
 
-    Arguments:
+    Args:
       state: The running statistics before the update.
       batch: The data to be used to update the running statistics.
       weights: Weights of the batch data. Should match the batch dimensions.
@@ -98,7 +98,8 @@ def update(
         corresponding data point twice.
       std_min_value: Minimum value for the standard deviation.
       std_max_value: Maximum value for the standard deviation.
-      dp_axis_name: Name of the pmapped axis, if any.
+      axis_name: Manual `shard_map` axis for reducing statistics, or `None`
+        for local statistics.
       validate_shapes: If true, the shapes of all leaves of the batch will be
         validated. Enabled by default. Doesn't impact performance when jitted.
 
@@ -116,8 +117,8 @@ def update(
         step_increment = jnp.prod(jnp.array(batch_dims))
     else:
         step_increment = jnp.sum(weights)
-    if dp_axis_name is not None:
-        step_increment = jax.lax.psum(step_increment, axis_name=dp_axis_name)
+    if axis_name is not None:
+        step_increment = jax.lax.psum(step_increment, axis_name=axis_name)
     count = state.count + step_increment
 
     # Validation is important. If the shapes don't match exactly, but are
@@ -140,15 +141,15 @@ def update(
             )
             diff_to_old_mean = diff_to_old_mean * expanded_weights
         mean_update = jnp.sum(diff_to_old_mean, axis=batch_axis) / count
-        if dp_axis_name is not None:
-            mean_update = jax.lax.psum(mean_update, axis_name=dp_axis_name)
+        if axis_name is not None:
+            mean_update = jax.lax.psum(mean_update, axis_name=axis_name)
         mean = mean + mean_update
 
         diff_to_new_mean = batch - mean
         variance_update = diff_to_old_mean * diff_to_new_mean
         variance_update = jnp.sum(variance_update, axis=batch_axis)
-        if dp_axis_name is not None:
-            variance_update = jax.lax.psum(variance_update, axis_name=dp_axis_name)
+        if axis_name is not None:
+            variance_update = jax.lax.psum(variance_update, axis_name=axis_name)
         summed_variance = summed_variance + variance_update
         return mean, summed_variance
 

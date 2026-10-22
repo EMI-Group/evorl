@@ -1,3 +1,5 @@
+from evorl.utils import running_statistics
+from flax import nnx
 import logging
 from omegaconf import DictConfig
 from typing import Self
@@ -19,7 +21,7 @@ from evorl.ec.optimizers.openes import compute_centered_ranks, OpenESState
 from evorl.ec.optimizers.utils import weight_sum
 
 from evorl.algorithms.ec.so.openes import OpenESWorkflow
-from evorl.algorithms.ec.ec_agent import make_deterministic_ec_agent
+from evorl.algorithms.ec.ec_agent import DeterministicECAgent
 
 
 logger = logging.getLogger(__name__)
@@ -124,12 +126,11 @@ class ParamOpenESWorkflow(OpenESWorkflow):
             autoreset_mode=AutoresetMode.DISABLED,
         )
 
-        agent = make_deterministic_ec_agent(
-            action_space=env.action_space,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-            use_bias=config.agent_network.use_bias,
-            normalize_obs=config.normalize_obs,
-            norm_layer_type=config.agent_network.norm_layer_type,
+        agent = DeterministicECAgent(
+            agent_network_cfg=config.agent_network,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         ec_optimizer = OpenES(
@@ -166,7 +167,7 @@ class ParamOpenESWorkflow(OpenESWorkflow):
         )
 
         agent_state_vmap_axes = AgentState(
-            params=0,
+            model_state=nnx.StateAxes({nnx.Param: 0, ...: None}),
             obs_preprocessor_state=None,
         )
 

@@ -1,19 +1,20 @@
+from evorl.utils import running_statistics
 import logging
 import math
 from functools import partial
 from typing import Any
 
 import chex
-import flax.linen as nn
+from flax import nnx
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
-from evorl.distributed import agent_gradient_update, psum
+from evorl.distributed import pmean_nnx_loss_and_grad, psum
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
-from evorl.envs import AutoresetMode, create_env, Space, Box, Discrete
+from evorl.envs import Discrete, Box, AutoresetMode, create_env, Space
 from evorl.evaluators import Evaluator
 from evorl.metrics import TrainMetric, MetricBase
 from evorl.networks import make_policy_network, make_v_network
@@ -23,15 +24,12 @@ from evorl.types import (
     MISSING_REWARD,
     Action,
     LossDict,
-    Params,
     PolicyExtraInfo,
-    PyTreeData,
     PyTreeDict,
     State,
     pytree_field,
 )
-from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean, tree_get
+from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean
 from evorl.utils.rl_toolkits import average_episode_discount_return, approximate_kl
 from evorl.workflows import OnPolicyWorkflow
 from evorl.agent import Agent, AgentState
@@ -41,21 +39,9 @@ from evorl.recorders import add_prefix
 logger = logging.getLogger(__name__)
 
 
-class IMPALANetworkParams(PyTreeData):
-    """Contains training state for the learner."""
-
-    policy_params: Params
-    value_params: Params
-
-
-# class IMPALATrainMetric(TrainMetric):
-#     rho: jax.Array = jnp.zeros((), dtype=jnp.float32)
-
-
 class IMPALAAgent(Agent):
     continuous_action: bool
-    policy_network: nn.Module
-    value_network: nn.Module
+    agent_network_cfg: DictConfig = pytree_field(static=True)
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     discount: float = 0.99
@@ -70,28 +56,45 @@ class IMPALAAgent(Agent):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
+        if not isinstance(action_space, (Box, Discrete)):
+            raise TypeError(f"Unsupported action space: {action_space}")
         policy_key, value_key = jax.random.split(key, 2)
 
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
-
-        policy_params = self.policy_network.init(policy_key, dummy_obs)
-
-        value_params = self.value_network.init(value_key, dummy_obs)
-
-        params_state = IMPALANetworkParams(
-            policy_params=policy_params, value_params=value_params
+        network_cfg = self.agent_network_cfg
+        policy_obs_key = network_cfg.get("policy_obs_key")
+        value_obs_key = network_cfg.get("value_obs_key")
+        policy_space = obs_space.spaces[policy_obs_key] if policy_obs_key else obs_space
+        value_space = obs_space.spaces[value_obs_key] if value_obs_key else obs_space
+        action_size = (
+            action_space.shape[0] * 2 if self.continuous_action else action_space.n
+        )
+        models = nnx.Dict(
+            policy=make_policy_network(
+                input_size=policy_space.shape[-1],
+                action_size=action_size,
+                hidden_layer_sizes=tuple(network_cfg.actor_hidden_layer_sizes),
+                obs_key=policy_obs_key,
+                rngs=nnx.Rngs(policy_key),
+            ),
+            value=make_v_network(
+                input_size=value_space.shape[-1],
+                hidden_layer_sizes=tuple(network_cfg.critic_hidden_layer_sizes),
+                obs_key=value_obs_key,
+                rngs=nnx.Rngs(value_key),
+            ),
         )
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+                obs_space.sample(key)
             )
         else:
             obs_preprocessor_state = None
 
         return AgentState(
-            params=params_state, obs_preprocessor_state=obs_preprocessor_state
+            model_state=nnx.unpack(models),
+            obs_preprocessor_state=obs_preprocessor_state,
         )
 
     def compute_actions(
@@ -101,7 +104,7 @@ class IMPALAAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
+        raw_actions = self.get_models(agent_state, copy=True).policy(obs)
 
         if self.continuous_action:
             actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
@@ -124,7 +127,7 @@ class IMPALAAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
+        raw_actions = self.get_models(agent_state, copy=True).policy(obs)
 
         if self.continuous_action:
             actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
@@ -136,7 +139,10 @@ class IMPALAAgent(Agent):
         return actions, PyTreeDict()
 
     def loss(
-        self, agent_state: AgentState, trajectory: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        trajectory: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
         """IMPALA loss.
 
@@ -145,6 +151,7 @@ class IMPALAAgent(Agent):
                 a sequence of transitions, not shuffled timesteps
 
         """
+        models = self.get_models(agent_state)
         # mask invalid transitions at autoreset
         mask = jnp.logical_not(trajectory.extras.env_extras.autoreset)
 
@@ -157,13 +164,15 @@ class IMPALAAgent(Agent):
         if self.normalize_obs:
             _obs = self.obs_preprocessor(_obs, agent_state.obs_preprocessor_state)
 
-        vs = self.value_network.apply(agent_state.params.value_params, _obs)
+        vs = models.value(_obs)
+
+        obs = jtu.tree_map(lambda x: x[:-1], _obs)
 
         behavior_actions_logp = trajectory.extras.policy_extras.logp
         behavior_actions = trajectory.actions
 
         # [T, B, A]
-        raw_actions = self.policy_network.apply(agent_state.params.policy_params, obs)
+        raw_actions = models.policy(obs)
 
         if self.continuous_action:
             actions_dist = get_tanh_norm_dist(*jnp.split(raw_actions, 2, axis=-1))
@@ -233,59 +242,6 @@ class IMPALAAgent(Agent):
         )
 
 
-def make_mlp_impala_agent(
-    action_space: Space,
-    discount: float = 0.99,
-    vtrace_lambda: float = 1.0,
-    clip_rho_threshold: float = 1.0,
-    clip_c_threshold: float = 1.0,
-    clip_pg_rho_threshold: float = 1.0,
-    adv_mode: str = "official",
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    critic_hidden_layer_sizes: tuple[int] = (256, 256),
-    normalize_obs: bool = False,
-    policy_obs_key: str = "",
-    value_obs_key: str = "",
-):
-    if isinstance(action_space, Box):
-        action_size = action_space.shape[0] * 2
-        continuous_action = True
-    elif isinstance(action_space, Discrete):
-        action_size = action_space.n
-        continuous_action = False
-    else:
-        raise NotImplementedError(f"Unsupported action space: {action_space}")
-
-    policy_network = make_policy_network(
-        action_size=action_size,
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-        obs_key=policy_obs_key,
-    )
-
-    value_network = make_v_network(
-        hidden_layer_sizes=critic_hidden_layer_sizes,
-        obs_key=value_obs_key,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return IMPALAAgent(
-        continuous_action=continuous_action,
-        policy_network=policy_network,
-        value_network=value_network,
-        obs_preprocessor=obs_preprocessor,
-        discount=discount,
-        vtrace_lambda=vtrace_lambda,
-        clip_rho_threshold=clip_rho_threshold,
-        clip_c_threshold=clip_c_threshold,
-        clip_pg_rho_threshold=clip_pg_rho_threshold,
-        adv_mode=adv_mode,
-    )
-
-
 class IMPALAWorkflow(OnPolicyWorkflow):
     """Syncrhonous version of IMPALA (A2C|PPO w/ V-Trace)."""
 
@@ -328,19 +284,18 @@ class IMPALAWorkflow(OnPolicyWorkflow):
         )
 
         # Maybe need a discount array for different agents
-        agent = make_mlp_impala_agent(
-            action_space=env.action_space,
+        agent = IMPALAAgent(
+            agent_network_cfg=config.agent_network,
+            continuous_action=isinstance(env.action_space, Box),
             discount=config.discount,
             vtrace_lambda=config.vtrace_lambda,
             clip_rho_threshold=config.clip_rho_threshold,
             clip_c_threshold=config.clip_c_threshold,
             clip_pg_rho_threshold=config.clip_pg_rho_threshold,
             adv_mode=config.adv_mode,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            normalize_obs=config.normalize_obs,
-            policy_obs_key=config.agent_network.policy_obs_key,
-            value_obs_key=config.agent_network.value_obs_key,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         if (
@@ -391,21 +346,23 @@ class IMPALAWorkflow(OnPolicyWorkflow):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
+                    axis_name=self.dp_axis_name,
                 )
             )
 
         train_episode_return = average_episode_discount_return(
             trajectory.extras.env_extras.episode_return,
             trajectory.dones,
-            dp_axis_name=self.dp_axis_name,
+            axis_name=self.dp_axis_name,
         )
 
         trajectory = tree_stop_gradient(trajectory)
 
-        def loss_fn(agent_state, sample_batch, key):
+        def loss_fn(models, agent_state, sample_batch, key):
             # learn all data from trajectory
-            loss_dict = self.agent.loss(agent_state, sample_batch, key)
+            loss_dict = self.agent.loss(
+                agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+            )
             loss_weights = self.config.loss_weights
             loss = jnp.zeros(())
             for loss_key in loss_weights:
@@ -413,8 +370,8 @@ class IMPALAWorkflow(OnPolicyWorkflow):
 
             return loss, loss_dict
 
-        update_fn = agent_gradient_update(
-            loss_fn, self.optimizer, dp_axis_name=self.dp_axis_name, has_aux=True
+        loss_and_grad = pmean_nnx_loss_and_grad(
+            loss_fn, self.dp_axis_name, has_aux=True
         )
 
         # minibatch_size: num of envs in one batch
@@ -434,9 +391,14 @@ class IMPALAWorkflow(OnPolicyWorkflow):
             opt_state, agent_state, key = carry
             key, learn_key = jax.random.split(key)
 
-            (loss, loss_dict), agent_state, opt_state = update_fn(
-                opt_state, agent_state, trajectory, learn_key
+            models = nnx.merge(agent_state.model_state, copy=True)
+            optimizer = nnx.merge(opt_state, copy=True)
+            (loss, loss_dict), grads = loss_and_grad(
+                models, agent_state, trajectory, learn_key
             )
+            optimizer.update(models, grads)
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            opt_state = nnx.unpack(optimizer)
 
             return (opt_state, agent_state, key), (loss, loss_dict)
 
@@ -480,13 +442,13 @@ class IMPALAWorkflow(OnPolicyWorkflow):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         train_metrics = TrainMetric(
             train_episode_return=train_episode_return,
             loss=loss,
             raw_loss_dict=loss_dict,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,

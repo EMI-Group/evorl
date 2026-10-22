@@ -8,7 +8,6 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from evorl.agent import AgentStateAxis
 from evorl.metrics import MetricBase, WorkflowMetric, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
@@ -17,7 +16,7 @@ from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.sample_batch import SampleBatch
 from evorl.replay_buffers import AbstractReplayBuffer, ReplayBufferState
-from evorl.agent import Agent, AgentState, RandomAgent
+from evorl.agent import AgentStateAxis, Agent, AgentState, RandomAgent
 from evorl.envs import create_env, AutoresetMode, BaseEnv
 from evorl.workflows import Workflow
 from evorl.rollout import rollout

@@ -5,10 +5,16 @@ buffer type and execution mode has its own test node and assertion traceback.
 
 | Location | Coverage |
 | --- | --- |
+| `networks/` | Native NNX MLP/CNN shapes, ensembles, normalization state, gradients and target updates |
+| `agents/` | Configuration-driven NNX initialization, selected-network and joint updates versus JAX/Optax references, input/target isolation, nested populations and dynamic PBT hyperparameters |
+| `agents/test_impala.py` | V-trace clipping against a NumPy recurrence and on-policy GAE equivalence, including termination and truncation |
+| `workflows/test_offpolicy.py` | Full TD3/TD7/DDPG/SAC/DQN updates versus explicit parameter gradients, update schedules, target copies and forward-variable propagation through state-based losses |
+| `workflows/test_erl.py` | Population actors with shared or independent critics and temporary actor optimizer state |
+| `workflows/test_pop_td3.py` | Independent TD3 members, shared replay, observation statistics and optimizer update counts |
 | `distributed/` | Mean loss/gradients, local auxiliary outputs, optimizer updates, collectives, local maps and VMA casts |
 | `replay_buffers/` | Independent device-local rings, masked/empty writes, wraparound, sampling and priorities |
 | `workflows/test_rl.py` | Real RL/OpenES/Random workflow setup, step, evaluation, keys and state layouts |
-| `workflows/test_pbt.py` | Independent PBT members, dynamic rollout termination and shared replay initialization |
+| `workflows/test_pbt.py` | Independent PBT members, optimizer learning-rate mutation, dynamic rollout termination and shared read-only replay training |
 | `workflows/test_execution.py` | Template state layouts, population selection/transfer and per-member statistics |
 | Other `workflows/` tests | Training budgets, final evaluation/checkpoints, warmup and EC accounting |
 | `helpers/` | Reusable toy environment and compiled-communication inspection |
@@ -44,7 +50,7 @@ Install the development dependencies with `uv pip install -e ".[dev]"`.
 Run the distributed and workflow suite from the repository root:
 
 ```shell
-python -m pytest tests/ec tests/distributed tests/replay_buffers tests/workflows -m "not four_devices"
+python -m pytest tests/networks tests/agents tests/ec tests/distributed tests/replay_buffers tests/workflows -m "not four_devices"
 ```
 
 Tests default to CPU with two logical devices. `conftest.py` configures the device

@@ -8,7 +8,10 @@ from .comm import (
     psum,
     all_gather,
 )
-from .gradients import agent_gradient_update, gradient_update
+from .gradients import (
+    gradient_update,
+    pmean_nnx_loss_and_grad,
+)
 from .sharding import shmap_vmap, shmap_map, tree_scatter_set
 
 DP_AXIS_NAME = "DP"
@@ -28,8 +31,8 @@ __all__ = [
     "pmin",
     "psum",
     "all_gather",
-    "agent_gradient_update",
     "gradient_update",
+    "pmean_nnx_loss_and_grad",
     "shmap_vmap",
     "shmap_map",
     "tree_scatter_set",

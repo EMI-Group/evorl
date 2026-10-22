@@ -3,6 +3,7 @@ import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+from flax import nnx
 
 from evorl.sample_batch import SampleBatch
 from evorl.types import MISSING_REWARD
@@ -171,7 +172,7 @@ def shuffle_sample_batch(sample_batch: SampleBatch, key: jax.Array):
 
 
 def soft_target_update(target_params, source_params, tau: float):
-    """Perform soft update on target network.
+    """Interpolate target parameters, retaining non-parameter NNX state.
 
     Args:
         target_params: Target network parameters.
@@ -181,6 +182,15 @@ def soft_target_update(target_params, source_params, tau: float):
     Returns:
         Updated target network parameters.
     """
+    if isinstance(target_params, nnx.State):
+        target_trainable, target_state = nnx.split_state(target_params, nnx.Param, ...)
+        source_trainable = nnx.filter_state(source_params, nnx.Param)
+        updated = jtu.tree_map(
+            lambda target, source: tau * source + (1 - tau) * target,
+            target_trainable,
+            source_trainable,
+        )
+        return nnx.merge_state(updated, target_state)
     return jtu.tree_map(
         lambda target, source: tau * source + (1 - tau) * target,
         target_params,
@@ -201,7 +211,7 @@ def flatten_pop_rollout_episode(trajectory: SampleBatch):
 def average_episode_discount_return(
     episode_discount_return: jax.Array,
     dones: jax.Array,
-    dp_axis_name: str | None = None,
+    axis_name: str | None = None,
 ) -> jax.Array:
     """Estimate the average episode return from a segmented trajectory.
 
@@ -217,11 +227,11 @@ def average_episode_discount_return(
         axis=tuple(range(dones.ndim))
     )
 
-    if dp_axis_name is not None:
+    if axis_name is not None:
         episode_discount_return_sum = jax.lax.psum(
-            episode_discount_return_sum, dp_axis_name
+            episode_discount_return_sum, axis_name
         )
-        cnt = jax.lax.psum(cnt, dp_axis_name)
+        cnt = jax.lax.psum(cnt, axis_name)
 
     return jnp.where(
         jnp.isclose(cnt, 0),

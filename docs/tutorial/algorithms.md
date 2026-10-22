@@ -10,6 +10,26 @@ Currently, EvoRL supports various training pipelines (workflows):
 
 This document introduces these types of algorithms implemented in EvoRL. All algorithms are defined in [`evorl.algorithms`](#evorl.algorithms).
 
+Policy and value networks use Flax NNX. Workflow builders create agents directly
+from YAML configuration and select observation preprocessing. Agents hold fixed
+`agent_network_cfg` configuration and create networks in `init()` from the spaces
+and random key.
+`AgentState.model_state` stores the complete NNX `GraphState`, including
+parameters and auxiliary variables. Training restores local models and
+optimizers, updates the selected parameters, and returns new state snapshots.
+Rollout and evaluation retain their explicit-state interfaces. Evolutionary
+operators act only on `nnx.Param` variables.
+Linen checkpoints are incompatible with the new parameter layout.
+
+Agent loss methods take `AgentState` and return a loss dictionary. Workflows
+differentiate working NNX models and pass a temporary state containing
+`nnx.unpack(models)` to the loss. `Agent.get_models()` restores models sharing
+those working variables, so forward-pass updates such as spectral normalization
+are retained. Workflows create an isolated model copy before training and save
+the updated snapshot afterward; rollout and evaluation use `copy=True`.
+See [Agent state and NNX training](../dev/contributing.md#agent-state-and-nnx-training)
+for the TD3 update sequence and variable-sharing contract.
+
 ## RL Algorithms
 
 Supported RL Algorithms:

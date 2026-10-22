@@ -1,23 +1,27 @@
 """Regression checks shared by the minimum and latest JAX environments."""
 
+from functools import partial
+from tests.helpers.agents import build_agent
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
 import pytest
+from flax import nnx
 from evorl.algorithms.td7 import avg_l1_norm
 from evorl.distributed import get_process_id, is_dist_initialized
 from evorl.networks.linear import MLP
 
 
-def test_linen_functional_training_step():
-    model = MLP(layer_sizes=(8, 2))
+def test_nnx_functional_training_step():
+    model = MLP(3, (8, 2), rngs=nnx.Rngs(0))
     inputs = jnp.ones((4, 3))
-    params = model.init(jax.random.key(0), inputs)
+    graphdef, params = nnx.split(model)
     optimizer = optax.adam(1e-2)
 
     def loss(params):
-        return jnp.mean(model.apply(params, inputs) ** 2)
+        return jnp.mean(nnx.merge(graphdef, params, copy=True)(inputs) ** 2)
 
     @jax.jit
     def step(params, opt_state):
@@ -46,39 +50,35 @@ def test_single_process_distributed_status():
     "norm", ["none", "layer_norm", "static_layer_norm", "spectral_norm"]
 )
 @pytest.mark.parametrize("vmapped", [False, True])
-def test_linen_normalization_state_and_gradients(norm, vmapped):
+def test_nnx_normalization_state_and_gradients(norm, vmapped):
     from evorl.networks.linear import make_mlp, make_vmap_mlp
+    from evorl.networks.spectral_norm import SingularVector
 
-    factory = make_vmap_mlp if vmapped else make_mlp
-    model = factory((8, 2), norm_layer_type=norm)
+    model = (
+        make_vmap_mlp(5, (8, 2), 3, norm_layer_type=norm, rngs=nnx.Rngs(0))
+        if vmapped
+        else make_mlp(5, (8, 2), norm_layer_type=norm, rngs=nnx.Rngs(0))
+    )
     inputs = jnp.ones((3, 4, 5) if vmapped else (4, 5))
-    params_key, state_key = jax.random.split(jax.random.key(0))
-    variables = model.init({"params": params_key, "sing_vec": state_key}, inputs)
+    graphdef, params, other = nnx.split(model, nnx.Param, ...)
 
     @jax.jit
-    def step(variables):
+    def step(params, other):
         def loss(params):
-            output, new_state = model.apply(
-                {**variables, "params": params},
-                inputs,
-                rngs={"sing_vec": state_key},
-                mutable=["sing_vec"],
-            )
-            return jnp.mean(output**2), (output, new_state)
+            local = nnx.merge(graphdef, params, other, copy=True)
+            output = local(inputs)
+            return jnp.mean(output**2), (output, nnx.state(local, SingularVector))
 
-        (value, (output, new_state)), grads = jax.value_and_grad(loss, has_aux=True)(
-            variables["params"]
-        )
-        return value, output, new_state, grads
+        return jax.value_and_grad(loss, has_aux=True)(params)
 
-    value, output, new_state, grads = step(variables)
+    (value, (output, new_state)), grads = step(params, other)
     assert jnp.isfinite(value)
     assert output.shape == ((4, 3, 2) if vmapped else (4, 2))
     assert all(jnp.all(jnp.isfinite(x)) for x in jax.tree.leaves(grads))
     if norm == "spectral_norm":
-        assert "sing_vec" in new_state
+        assert jax.tree.leaves(new_state)
         if vmapped:
-            assert all(x.shape[0] == 3 for x in jax.tree.leaves(new_state["sing_vec"]))
+            assert all(x.shape[0] == 3 for x in jax.tree.leaves(new_state))
 
 
 @pytest.mark.parametrize("optimizer_name", ["adam", "sgd", "rmsprop"])
@@ -127,12 +127,12 @@ def test_pmap_method_axis_name():
     "name", ["dqn", "a2c", "ppo", "sac", "sac_discrete", "td3", "td7"]
 )
 def test_agents_initialize_and_sample_with_typed_keys(name):
-    from evorl.algorithms.a2c import make_mlp_a2c_agent
-    from evorl.algorithms.dqn import make_mlp_discrete_dqn_agent
-    from evorl.algorithms.ppo import make_mlp_ppo_agent
-    from evorl.algorithms.sac import make_mlp_sac_agent
-    from evorl.algorithms.td3 import make_mlp_td3_agent
-    from evorl.algorithms.td7 import make_td7_agent
+    from evorl.algorithms.a2c import A2CAgent
+    from evorl.algorithms.dqn import DQNAgent
+    from evorl.algorithms.ppo import PPOAgent
+    from evorl.algorithms.sac import SACAgent
+    from evorl.algorithms.td3 import TD3Agent
+    from evorl.algorithms.td7 import TD7Agent
     from evorl.envs import Box, Discrete
     from evorl.sample_batch import SampleBatch
 
@@ -144,18 +144,24 @@ def test_agents_initialize_and_sample_with_typed_keys(name):
     )
     sizes = {"actor_hidden_layer_sizes": (8,), "critic_hidden_layer_sizes": (8,)}
     factories = {
-        "a2c": make_mlp_a2c_agent,
-        "ppo": make_mlp_ppo_agent,
-        "sac": make_mlp_sac_agent,
-        "sac_discrete": make_mlp_sac_agent,
-        "td3": make_mlp_td3_agent,
+        "a2c": partial(build_agent, A2CAgent),
+        "ppo": partial(build_agent, PPOAgent),
+        "sac": partial(build_agent, SACAgent),
+        "sac_discrete": partial(build_agent, SACAgent),
+        "td3": partial(build_agent, TD3Agent),
     }
     if name == "dqn":
-        agent = make_mlp_discrete_dqn_agent(
-            action_space, q_hidden_layer_sizes=(8,), normalize_obs=True
+        agent = build_agent(
+            DQNAgent,
+            obs_space,
+            action_space,
+            q_hidden_layer_sizes=(8,),
+            normalize_obs=True,
         )
     elif name == "td7":
-        agent = make_td7_agent(
+        agent = build_agent(
+            TD7Agent,
+            obs_space,
             action_space,
             **sizes,
             z_s_dim=4,
@@ -167,9 +173,9 @@ def test_agents_initialize_and_sample_with_typed_keys(name):
             normalize_obs=True,
         )
     else:
-        agent = factories[name](action_space, **sizes, normalize_obs=True)
+        agent = factories[name](obs_space, action_space, **sizes, normalize_obs=True)
     init_key, action_key = jax.random.split(jax.random.key(0))
-    state = jax.jit(agent.init)(obs_space, action_space, init_key)
+    state = jax.jit(lambda key: agent.init(obs_space, action_space, key))(init_key)
     batch = SampleBatch(obs=jnp.ones((4, 3)))
     actions, _ = jax.jit(agent.compute_actions)(state, batch, action_key)
     evaluated, _ = jax.jit(agent.evaluate_actions)(state, batch, action_key)

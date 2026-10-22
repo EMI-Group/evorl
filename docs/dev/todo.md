@@ -1,5 +1,10 @@
 # 开发待办
 
+- [ ] 拆开 PopEpisodicTD3 与 CEMRL 的工作流继承关系。
+  独立 TD3 种群不再依赖 CEMRL 模板、跳过父类构造函数或保留无用的 `ec_opt_state`、`num_learning_offspring`。
+- [ ] 拆开 CEMRL 与 ERL 的 actor 参数导入策略。
+  清理 `cemrl_replace_td3_actor_params` 对 ERL 实现的别名复用，各自明确 target actor 和网络辅助状态的恢复规则。
+
 - [x] 清理算法构建环境时重复传入的 `episode_length`。
   RL、EC、ERL、PBT 和 contrib 算法统一使用 `create_env()` 从环境配置的 `max_episode_steps` 获取默认上限；评估器自身的 `max_episode_steps` 参数保留。
 - [x] PRNGKey 改为新 API（`jax.random.key` / typed keys）。

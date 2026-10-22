@@ -1,5 +1,6 @@
 import chex
 import jax
+from flax import nnx
 
 from evorl.types import PyTreeDict, State
 
@@ -40,10 +41,10 @@ class PBTParamSACWorkflow(PBTOffpolicyWorkflowTemplate):
         self, workflow_state: State, hyperparams: PyTreeDict[str, jax.typing.ArrayLike]
     ):
         agent_state = workflow_state.agent_state
+        models = nnx.merge(agent_state.model_state, copy=True)
+        models.log_alpha[...] = hyperparams.log_alpha
         agent_state = agent_state.replace(
-            params=agent_state.params.replace(
-                log_alpha=hyperparams.log_alpha,
-            ),
+            model_state=nnx.unpack(models),
             extra_state=agent_state.extra_state.replace(
                 discount_g=hyperparams.discount_g,
             ),

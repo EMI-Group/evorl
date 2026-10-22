@@ -1,17 +1,17 @@
+from evorl.utils import running_statistics
 import logging
 from typing import Any
 
 import chex
-import flax.linen as nn
+from flax import nnx
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
 from evorl.distributed import psum, pmean
-from evorl.distributed.gradients import agent_gradient_update
-from evorl.envs import AutoresetMode, Box, create_env, Space
+from evorl.distributed.gradients import pmean_nnx_loss_and_grad
+from evorl.envs import Box, AutoresetMode, create_env, Space
 from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase, metric_field
 from evorl.networks import make_policy_network, make_q_network
@@ -21,15 +21,12 @@ from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
     LossDict,
-    Params,
     PolicyExtraInfo,
-    PyTreeData,
     PyTreeDict,
     State,
     pytree_field,
 )
-from evorl.utils import running_statistics
-from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient, tree_get
+from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 from evorl.agent import Agent, AgentState
 
@@ -39,26 +36,17 @@ logger = logging.getLogger(__name__)
 
 
 class TD3TrainMetric(MetricBase):
-    # Primary losses are already averaged by pmean_loss_and_grad.
+    # Primary losses are already averaged by pmean_nnx_loss_and_grad.
     critic_loss: jax.Array
     actor_loss: jax.Array
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
 
-class TD3NetworkParams(PyTreeData):
-    """Contains training state for the learner."""
-
-    actor_params: Params
-    critic_params: Params
-    target_actor_params: Params
-    target_critic_params: Params
-
-
 class TD3Agent(Agent):
-    """The Agnet for TD3."""
+    """The Agent for TD3."""
 
-    critic_network: nn.Module
-    actor_network: nn.Module
+    agent_network_cfg: DictConfig = pytree_field(static=True)
+
     obs_preprocessor: Any = pytree_field(default=None, static=True)
 
     discount: float = 0.99
@@ -72,34 +60,54 @@ class TD3Agent(Agent):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
+        if not isinstance(action_space, Box):
+            raise TypeError(f"Unsupported action space: {action_space}")
+        if self.agent_network_cfg.get("num_critics", 2) < 2:
+            raise ValueError("num_critics must be at least 2 for twin-critic training")
         key, q_key, actor_key = jax.random.split(key, num=3)
 
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
-        dummy_action = action_space.sample(key)[None, ...]
-
-        critic_params = self.critic_network.init(q_key, dummy_obs, dummy_action)
-        target_critic_params = critic_params
-
-        actor_params = self.actor_network.init(actor_key, dummy_obs)
-        target_actor_params = actor_params
-
-        params_state = TD3NetworkParams(
-            critic_params=critic_params,
-            actor_params=actor_params,
-            target_critic_params=target_critic_params,
-            target_actor_params=target_actor_params,
+        cfg = self.agent_network_cfg
+        value_obs_key = cfg.get("value_obs_key")
+        policy_obs_key = cfg.get("policy_obs_key")
+        critic = make_q_network(
+            input_size=(
+                obs_space.spaces[value_obs_key] if value_obs_key else obs_space
+            ).shape[-1],
+            action_size=action_space.shape[0],
+            hidden_layer_sizes=tuple(cfg.critic_hidden_layer_sizes),
+            obs_key=value_obs_key,
+            norm_layer_type=cfg.get("norm_layer_type", "none"),
+            n_stack=cfg.num_critics,
+            rngs=nnx.Rngs(q_key),
+        )
+        actor = make_policy_network(
+            input_size=(
+                obs_space.spaces[policy_obs_key] if policy_obs_key else obs_space
+            ).shape[-1],
+            action_size=action_space.shape[0],
+            hidden_layer_sizes=tuple(cfg.actor_hidden_layer_sizes),
+            activation_final=jax.nn.tanh,
+            obs_key=policy_obs_key,
+            norm_layer_type=cfg.get("norm_layer_type", "none"),
+            rngs=nnx.Rngs(actor_key),
+        )
+        models = nnx.Dict(
+            actor=actor,
+            critic=critic,
+            target_actor=nnx.clone(actor),
+            target_critic=nnx.clone(critic),
         )
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+                obs_space.sample(key)
             )
         else:
             obs_preprocessor_state = None
 
         return AgentState(
-            params=params_state,
+            model_state=nnx.unpack(models),
             obs_preprocessor_state=obs_preprocessor_state,
         )
 
@@ -112,7 +120,7 @@ class TD3Agent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        actions = self.get_models(agent_state, copy=True).actor(obs)
         # add random noise
         noise = jax.random.normal(key, actions.shape) * self.exploration_epsilon
         actions += noise
@@ -129,24 +137,27 @@ class TD3Agent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        actions = self.get_models(agent_state, copy=True).actor(obs)
 
         return actions, PyTreeDict()
 
     def critic_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
-        """Critic loss in TD3.
+        """Compute the TD3 critic loss from a working agent state.
 
         Args:
-            sample_barch: [B, ...]
+            agent_state: Training state sharing variables with the working models.
+            sample_batch: Batch of transitions with leading sample dimension.
+            key: Random key for loss computation.
 
-        Return: LossDict[
-            actor_loss
-            critic_loss
-            actor_entropy_loss
-        ]
+        Returns:
+            A dictionary containing the critic loss and mean Q value.
         """
+        models = self.get_models(agent_state)
         next_obs = sample_batch.extras.env_extras.ori_obs
         obs = sample_batch.obs
         actions = sample_batch.actions
@@ -157,9 +168,7 @@ class TD3Agent(Agent):
             )
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        next_actions = self.actor_network.apply(
-            agent_state.params.target_actor_params, next_obs
-        )
+        next_actions = models.target_actor(next_obs)
         next_actions += jnp.clip(
             jax.random.normal(key, actions.shape) * self.policy_noise,
             -self.clip_policy_noise,
@@ -169,18 +178,16 @@ class TD3Agent(Agent):
         next_actions = jnp.clip(next_actions, -1.0, 1.0)
 
         # [B, num_critics]
-        next_qs = self.critic_network.apply(
-            agent_state.params.target_critic_params, next_obs, next_actions
-        )
+        next_qs = models.target_critic(next_obs, next_actions)
         next_qs_min = next_qs.min(-1)
 
         discounts = self.discount * (1 - sample_batch.extras.env_extras.termination)
 
         qs_target = sample_batch.rewards + discounts * next_qs_min
-        qs_target = jnp.broadcast_to(qs_target[..., None], (*qs_target.shape, 2))
-        qs_target = jax.lax.stop_gradient(qs_target)
-
-        qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions)
+        qs = models.critic(obs, actions)
+        qs_target = jax.lax.stop_gradient(
+            jnp.broadcast_to(qs_target[..., None], qs.shape)
+        )
 
         # q_loss = optax.huber_loss(qs, qs_target).sum(-1).mean()
         q_loss = optax.squared_error(qs, qs_target).sum(-1).mean()
@@ -188,19 +195,22 @@ class TD3Agent(Agent):
         return PyTreeDict(critic_loss=q_loss, q_value=qs.mean())
 
     def actor_loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
-        """Actor loss in TD3.
+        """Compute the TD3 actor loss from a working agent state.
 
         Args:
-            sample_barch: [B, ...]
+            agent_state: Training state sharing variables with the working models.
+            sample_batch: Batch of transitions with leading sample dimension.
+            key: Random key for loss computation.
 
-        Return: LossDict[
-            actor_loss
-            critic_loss
-            actor_entropy_loss
-        ]
+        Returns:
+            A dictionary containing the actor loss.
         """
+        models = self.get_models(agent_state)
         obs = sample_batch.obs
 
         if self.normalize_obs:
@@ -208,10 +218,10 @@ class TD3Agent(Agent):
 
         # [T*B, A]
         # Note: when calculating the actor loss, we don't clip the actions to the action space, following the impl of SB3 and CleanRL
-        actions = self.actor_network.apply(agent_state.params.actor_params, obs)
+        actions = models.actor(obs)
 
         # TODO: handle redundant computation
-        qs = self.critic_network.apply(agent_state.params.critic_params, obs, actions)
+        qs = models.critic(obs, actions)
 
         if self.critics_in_actor_loss == "first":
             actor_loss = -jnp.mean(qs[..., 0])
@@ -220,60 +230,10 @@ class TD3Agent(Agent):
             actor_loss = -jnp.mean(qs.min(-1))
         else:
             raise ValueError(
-                f"Invalid value for critics_in_actor_loss: {self.critics_in_actor_loss}, should be 'first' or 'mean'"
+                f"Invalid value for critics_in_actor_loss: {self.critics_in_actor_loss}, should be 'first' or 'min'"
             )
 
         return PyTreeDict(actor_loss=actor_loss)
-
-
-def make_mlp_td3_agent(
-    action_space: Space,
-    norm_layer_type: str = "none",
-    num_critics: int = 2,
-    critic_hidden_layer_sizes: tuple[int] = (256, 256),
-    actor_hidden_layer_sizes: tuple[int] = (256, 256),
-    discount: float = 0.99,
-    exploration_epsilon: float = 0.5,
-    policy_noise: float = 0.2,
-    clip_policy_noise: float = 0.5,
-    critics_in_actor_loss: str = "first",  #  or "min"
-    normalize_obs: bool = False,
-    policy_obs_key: str = "",
-    value_obs_key: str = "",
-):
-    assert isinstance(action_space, Box), "Only continue action space is supported."
-
-    action_size = action_space.shape[0]
-
-    critic_network = make_q_network(
-        n_stack=num_critics,
-        hidden_layer_sizes=critic_hidden_layer_sizes,
-        norm_layer_type=norm_layer_type,
-        obs_key=value_obs_key,
-    )
-    actor_network = make_policy_network(
-        action_size=action_size,
-        hidden_layer_sizes=actor_hidden_layer_sizes,
-        activation_final=nn.tanh,
-        norm_layer_type=norm_layer_type,
-        obs_key=policy_obs_key,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return TD3Agent(
-        critic_network=critic_network,
-        actor_network=actor_network,
-        obs_preprocessor=obs_preprocessor,
-        discount=discount,
-        exploration_epsilon=exploration_epsilon,
-        policy_noise=policy_noise,
-        clip_policy_noise=clip_policy_noise,
-        critics_in_actor_loss=critics_in_actor_loss,
-    )
 
 
 class TD3Workflow(OffPolicyWorkflowTemplate):
@@ -290,20 +250,16 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             record_ori_obs=True,
         )
 
-        agent = make_mlp_td3_agent(
-            action_space=env.action_space,
-            norm_layer_type=config.agent_network.norm_layer_type,
-            num_critics=config.agent_network.num_critics,
-            critic_hidden_layer_sizes=config.agent_network.critic_hidden_layer_sizes,
-            actor_hidden_layer_sizes=config.agent_network.actor_hidden_layer_sizes,
+        agent = TD3Agent(
+            agent_network_cfg=config.agent_network,
             discount=config.discount,
             exploration_epsilon=config.exploration_epsilon,
             policy_noise=config.policy_noise,
             clip_policy_noise=config.clip_policy_noise,
             critics_in_actor_loss=config.critics_in_actor_loss,
-            normalize_obs=config.normalize_obs,
-            policy_obs_key=config.agent_network.policy_obs_key,
-            value_obs_key=config.agent_network.value_obs_key,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         # one optimizer, two opt_states (in setup function) for both actor and critic
@@ -351,9 +307,14 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
         self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
+        models = nnx.merge(agent_state.model_state, copy=True)
         opt_state = PyTreeDict(
-            actor=self.optimizer.init(agent_state.params.actor_params),
-            critic=self.optimizer.init(agent_state.params.critic_params),
+            actor=nnx.unpack(
+                nnx.Optimizer(models.actor, self.optimizer, wrt=nnx.Param)
+            ),
+            critic=nnx.unpack(
+                nnx.Optimizer(models.critic, self.optimizer, wrt=nnx.Param)
+            ),
         )
         return agent_state, opt_state
 
@@ -386,7 +347,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
+                    axis_name=self.dp_axis_name,
                 )
             )
 
@@ -394,39 +355,54 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             state.replay_buffer_state, trajectory
         )
 
-        def critic_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.critic_loss(agent_state, sample_batch, key)
+        def _update_critic(agent_state, opt_state, sample_batch, key):
+            """Apply one critic update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
 
-            loss = loss_dict.critic_loss
-            return loss, loss_dict
+            def loss_fn(models, sample_batch, key):
+                losses = self.agent.critic_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)),
+                    sample_batch,
+                    key,
+                )
+                return losses.critic_loss, losses
 
-        def actor_loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.actor_loss(agent_state, sample_batch, key)
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("critic")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.critic, grads["critic"])
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            return value, agent_state, nnx.unpack(optimizer)
 
-            loss = loss_dict.actor_loss
-            return loss, loss_dict
+        def _update_actor(agent_state, opt_state, sample_batch, key):
+            """Apply one actor update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
+            critic_state = nnx.clone(nnx.state(models.critic, nnx.Not(nnx.Param)))
 
-        critic_update_fn = agent_gradient_update(
-            critic_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, critic_params: agent_state.replace(
-                params=agent_state.params.replace(critic_params=critic_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.critic_params,
-        )
+            def loss_fn(models, sample_batch, key):
+                losses = self.agent.actor_loss(
+                    agent_state.replace(model_state=nnx.unpack(models)),
+                    sample_batch,
+                    key,
+                )
+                return losses.actor_loss, losses
 
-        actor_update_fn = agent_gradient_update(
-            actor_loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, actor_params: agent_state.replace(
-                params=agent_state.params.replace(actor_params=actor_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.actor_params,
-        )
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("actor")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.actor, grads["actor"])
+            # The actor update only retains the actor's auxiliary variables.
+            nnx.update(models.critic, critic_state)
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            return value, agent_state, nnx.unpack(optimizer)
 
         def _sample_and_update_fn(carry, unused_t):
             key, agent_state, opt_state = carry
@@ -448,8 +424,11 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
                     )
 
                     (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                        critic_update_fn(
-                            critic_opt_state, agent_state, sample_batch, critic_key
+                        _update_critic(
+                            agent_state,
+                            critic_opt_state,
+                            sample_batch,
+                            critic_key,
                         )
                     )
 
@@ -467,30 +446,40 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
             (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                critic_update_fn(
-                    critic_opt_state, agent_state, sample_batch, critic_key
+                _update_critic(
+                    agent_state,
+                    critic_opt_state,
+                    sample_batch,
+                    critic_key,
                 )
             )
 
-            (actor_loss, actor_loss_dict), agent_state, actor_opt_state = (
-                actor_update_fn(actor_opt_state, agent_state, sample_batch, actor_key)
+            (actor_loss, actor_loss_dict), agent_state, actor_opt_state = _update_actor(
+                agent_state,
+                actor_opt_state,
+                sample_batch,
+                actor_key,
             )
 
-            target_actor_params = soft_target_update(
-                agent_state.params.target_actor_params,
-                agent_state.params.actor_params,
-                self.config.tau,
+            models = nnx.merge(agent_state.model_state, copy=True)
+            nnx.update(
+                models.target_actor,
+                soft_target_update(
+                    nnx.state(models.target_actor, nnx.Param),
+                    nnx.state(models.actor, nnx.Param),
+                    self.config.tau,
+                ),
             )
-            target_critic_params = soft_target_update(
-                agent_state.params.target_critic_params,
-                agent_state.params.critic_params,
-                self.config.tau,
+            nnx.update(
+                models.target_critic,
+                soft_target_update(
+                    nnx.state(models.target_critic, nnx.Param),
+                    nnx.state(models.critic, nnx.Param),
+                    self.config.tau,
+                ),
             )
             agent_state = agent_state.replace(
-                params=agent_state.params.replace(
-                    target_actor_params=target_actor_params,
-                    target_critic_params=target_critic_params,
-                )
+                model_state=nnx.unpack(models),
             )
 
             opt_state = opt_state.replace(
@@ -521,7 +510,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             actor_loss=actor_loss,
             critic_loss=critic_loss,
             raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         # calculate the number of timestep
         sampled_timesteps = psum(
@@ -538,7 +527,7 @@ class TD3Workflow(OffPolicyWorkflowTemplate):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,

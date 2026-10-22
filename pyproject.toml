@@ -74,7 +74,7 @@ dependencies = [
     "brax",
     "chex",
     "distrax>=0.1.9",
-    "flax",
+    "flax>=0.12.8",
     "tfp-nightly[jax]",
     "gymnasium>=1.1.0",
     "hydra-core",

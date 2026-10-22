@@ -47,7 +47,7 @@ def setup_components(dp_mesh):
         "dp_axis_name": "DP",
         "env": _SetupEnv(),
         "_setup_agent_and_optimizer": lambda key: (
-            AgentState(params=PyTreeDict(w=jnp.ones(3))),
+            AgentState(model_state=PyTreeDict(w=jnp.ones(3))),
             PyTreeDict(m=jnp.zeros(3)),
         ),
         "_setup_workflow_metrics": WorkflowMetric,
@@ -65,7 +65,7 @@ def test_onpolicy_setup_concatenates_local_environments(setup_components):
     assert all(
         shard.data.shape == (2, 3) for shard in state.env_state.obs.addressable_shards
     )
-    assert state.agent_state.params.w.shape == (3,)
+    assert state.agent_state.model_state.w.shape == (3,)
 
 
 def test_offpolicy_setup_keeps_independent_ring_metadata(setup_components):
@@ -93,7 +93,7 @@ def test_offpolicy_setup_keeps_independent_ring_metadata(setup_components):
     assert state.env_state.obs.shape == (4, 3)
     np.testing.assert_array_equal(state.replay_buffer_state.buffer_size, np.ones(2))
     assert state.replay_buffer_state.data.shape == (8, 3)
-    assert state.agent_state.params.w.shape == (3,)
+    assert state.agent_state.model_state.w.shape == (3,)
     assert state.metrics.sampled_timesteps.shape == ()
     assert int(state.metrics.sampled_timesteps) == 2
 
@@ -112,7 +112,7 @@ def test_random_setup_replicates_the_root_key(setup_components, dp_mesh):
         dp_axis_name="DP",
         evaluator=SimpleNamespace(env=setup_components["env"]),
         agent=SimpleNamespace(
-            init=lambda *args: AgentState(params=PyTreeDict(w=jnp.ones(3)))
+            init=lambda *args: AgentState(model_state=PyTreeDict(w=jnp.ones(3)))
         ),
     )
     state = RandomAgentWorkflow.setup(self, jax.random.key(3))
@@ -128,15 +128,17 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
             return State(
                 key=key,
                 agent_state=AgentState(
-                    params=PyTreeDict(w=jax.random.normal(key, (3,)))
+                    model_state=PyTreeDict(w=jax.random.normal(key, (3,)))
                 ),
                 metrics=WorkflowMetric(),
             )
 
         def step(self, state):
-            return PyTreeDict(loss=state.agent_state.params.w.sum()), state.replace(
+            return PyTreeDict(
+                loss=state.agent_state.model_state.w.sum()
+            ), state.replace(
                 agent_state=state.agent_state.replace(
-                    params=PyTreeDict(w=state.agent_state.params.w + 1)
+                    model_state=PyTreeDict(w=state.agent_state.model_state.w + 1)
                 ),
                 metrics=state.metrics.replace(
                     sampled_timesteps=state.metrics.sampled_timesteps + 1
@@ -145,7 +147,7 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
 
         def evaluate(self, state):
             return EvaluateMetric(
-                episode_returns=state.agent_state.params.w.sum(),
+                episode_returns=state.agent_state.model_state.w.sum(),
                 episode_lengths=jnp.float32(1),
             ), state
 
@@ -161,8 +163,8 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
         def apply_hyperparams_to_workflow_state(self, state, hp):
             return state.replace(
                 agent_state=state.agent_state.replace(
-                    params=PyTreeDict(
-                        w=state.agent_state.params.w + 0 * hp.actor_loss_weight
+                    model_state=PyTreeDict(
+                        w=state.agent_state.model_state.w + 0 * hp.actor_loss_weight
                     )
                 )
             )
@@ -206,7 +208,7 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
         def step(self, state):
             metrics, state = super().step(state)
             return metrics.replace(
-                trajectory=SampleBatch(obs=state.agent_state.params.w[None])
+                trajectory=SampleBatch(obs=state.agent_state.model_state.w[None])
             ), state
 
     class OffHarness(PBTOffpolicyWorkflowTemplate):
@@ -221,7 +223,7 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
 
     evaluator = SimpleNamespace(
         evaluate=lambda agent_state, key, num_episodes: EvaluateMetric(
-            episode_returns=agent_state.params.w.sum()[None],
+            episode_returns=agent_state.model_state.w.sum()[None],
             episode_lengths=jnp.ones(1),
         )
     )
@@ -238,7 +240,7 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
         metrics, state = jax.jit(wf.step)(state)
     metrics, state = jax.jit(wf.evaluate)(state)
     assert state.pop.actor_loss_weight.sharding.spec == jax.P(META_POP_AXIS_NAME)
-    assert state.pop_workflow_state.agent_state.params.w.sharding.spec == jax.P(
+    assert state.pop_workflow_state.agent_state.model_state.w.sharding.spec == jax.P(
         META_POP_AXIS_NAME, None
     )
     assert metrics.pop_episode_returns.shape == (4,)

@@ -98,6 +98,8 @@ jobs:
             "$GITHUB_WORKSPACE/tests/test_space.py" \
             "$GITHUB_WORKSPACE/tests/test_distribution.py" \
             "$GITHUB_WORKSPACE/tests/ec" \
+            "$GITHUB_WORKSPACE/tests/networks" \
+            "$GITHUB_WORKSPACE/tests/agents" \
             "$GITHUB_WORKSPACE/tests/test_toolkits.py" \
             "$GITHUB_WORKSPACE/tests/test_recorders.py" \
             "$GITHUB_WORKSPACE/tests/test_accelerator_utils.py" \

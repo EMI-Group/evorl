@@ -1,10 +1,10 @@
 from abc import ABCMeta, abstractmethod
-from collections.abc import Mapping
 from typing import Any, Protocol
 
 import jax
 import jax.tree_util as jtu
 import chex
+from flax import nnx
 from evorl.utils.jax_utils import rng_split_by_shape
 
 from evorl.envs import Space, is_leaf_space
@@ -13,7 +13,6 @@ from evorl.types import (
     Action,
     Axis,
     LossDict,
-    Params,
     PolicyExtraInfo,
     PyTreeData,
     PyTreeNode,
@@ -25,13 +24,15 @@ class AgentState(PyTreeData):
     """State of the agent.
 
     Attributes:
-        params: The network parameters of the agent.
+        model_state: Complete NNX network graph and variables. The graph is
+            static PyTree metadata; parameters and other variables are leaves.
         obs_preprocessor_state: The state of the observation preprocessor.
         action_postprocessor_state: The state of the action postprocessor.
-        extra_state: Extra state of the agent.
+        extra_state: Other dynamic algorithm data, including tunable
+            hyperparameters. Network auxiliary variables belong in `model_state`.
     """
 
-    params: Mapping[str, Params]
+    model_state: nnx.GraphState | None = None
     obs_preprocessor_state: Any = None
     # TODO: define the action_postprocessor_state
     action_postprocessor_state: Any = None
@@ -49,9 +50,11 @@ class ObsPreprocessorFn(Protocol):
 
 
 class LossFn(Protocol):
-    """The type of the agent's loss function.
+    """Compute loss metrics from an agent's working training state.
 
-    In some case, a single loss function is not enough. For example, DDPG has two loss functions: actor_loss and critic_loss.
+    Model auxiliary variables may change during the forward pass. The working
+    state shares those variables with the models managed by the NNX gradient
+    transform; the workflow saves their updated snapshot after training.
     """
 
     def __call__(
@@ -74,14 +77,42 @@ class Agent(PyTreeNode, metaclass=ABCMeta):
 
     The responsibilities of an Agent:
 
-    - Store models like actor and critic.
+    - Keep fixed network and algorithm configuration, and create NNX networks
+      in `init()`. Complete network snapshots live in `AgentState`.
     - Interact with environment by `compute_actions()` or `evaluate_actions()`.
     - Compute algorithm-specific losses (optional).
     """
 
+    def get_models(self, agent_state: AgentState, *, copy: bool = False) -> nnx.Module:
+        """Restore the NNX models represented by an agent state.
+
+        Losses share variables with the working models passed through
+        `nnx.value_and_grad`. Their temporary `AgentState` is created with
+        `nnx.unpack(models)`, so forward-pass state updates reach those models
+        without an additional return value. Workflows first restore an isolated
+        copy of the input models and save it after the optimizer update.
+
+        Sharing applies to existing variable values, updated with `variable[...]`.
+        Module attribute replacement and structural changes are not shared.
+
+        Args:
+            agent_state: State containing a complete NNX network snapshot.
+            copy: Whether to copy variable objects. Use `True` for an isolated
+                model, including rollout and evaluation calls that must preserve
+                their input state. The default shares variables for training.
+
+        Returns:
+            Restored NNX models, with shared or copied variable objects.
+        """
+        return nnx.merge(agent_state.model_state, copy=copy)
+
     @abstractmethod
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
-        pass
+        """Create a new state from fixed configuration without modifying self.
+
+        Capture the spaces when jitting initialization so dimensions such as
+        the number of discrete actions remain concrete during construction.
+        """
 
     @abstractmethod
     def compute_actions(
@@ -129,7 +160,7 @@ class RandomAgent(Agent):
             action_space=action_space,
             obs_space=obs_space,
         )
-        return AgentState(params={}, extra_state=extra_state)
+        return AgentState(extra_state=extra_state)
 
     def compute_actions(
         self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array

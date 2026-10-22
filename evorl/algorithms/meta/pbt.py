@@ -3,10 +3,9 @@ import logging
 import jax
 import chex
 import optax
-from optax.schedules import InjectStatefulHyperparamsState
+from flax import nnx
 
 from evorl.types import PyTreeDict, State
-from evorl.utils.jax_utils import tree_deepcopy
 
 from .pbt_workflow import PBTWorkflowTemplate, PBTOptState
 from .pbt_utils import log_uniform_init
@@ -39,9 +38,6 @@ class PBTWorkflow(PBTWorkflowTemplate):
     def apply_hyperparams_to_workflow_state(
         self, workflow_state: State, hyperparams: PyTreeDict[str, jax.typing.ArrayLike]
     ) -> State:
-        opt_state = workflow_state.opt_state
-        assert isinstance(opt_state, InjectStatefulHyperparamsState)
-        # InjectStatefulHyperparamsState is NamedTuple, which is not immutable.
-        opt_state = tree_deepcopy(opt_state)
-        opt_state.hyperparams["learning_rate"] = hyperparams.lr
-        return workflow_state.replace(opt_state=opt_state)
+        optimizer = nnx.merge(workflow_state.opt_state, copy=True)
+        optimizer.opt_state.hyperparams["learning_rate"][...] = hyperparams.lr
+        return workflow_state.replace(opt_state=nnx.unpack(optimizer))

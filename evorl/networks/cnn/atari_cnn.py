@@ -1,123 +1,154 @@
-import math
-from collections.abc import Sequence
+"""NNX convolutional networks for Atari image observations."""
 
-import flax.linen as nn
+import math
+
 import jax
 import jax.numpy as jnp
-from flax.linen.initializers import constant, orthogonal
+from flax import nnx
 
 
-class CNN_QNetwork(nn.Module):
-    """A simple CNN network for Q-learning on Atari Games."""
+class CNN_QNetwork(nnx.Module):
+    """Atari Q network with optional uint8 NCHW input preprocessing.
 
-    action_dim: int
-    normalize: bool = False  # for native Atari envs
+    Args:
+        obs_shape: Shape of one observation, excluding batch dimensions. It is
+            NCHW without N when `normalize=True`, otherwise HWC.
+        action_dim: Number of discrete actions.
+        normalize: Whether to convert CHW bytes to HWC floats in `[0, 1]`.
+        rngs: Random streams for parameter initialization.
+    """
 
-    @nn.compact
-    def __call__(self, x):
+    def __init__(
+        self,
+        obs_shape: tuple[int, int, int],
+        action_dim: int,
+        normalize: bool = False,
+        *,
+        rngs: nnx.Rngs,
+    ):
+        self.normalize = normalize
+        height, width, channels = (
+            (obs_shape[1], obs_shape[2], obs_shape[0]) if normalize else obs_shape
+        )
+        self.conv1 = nnx.Conv(
+            channels, 32, (8, 8), strides=4, padding="VALID", rngs=rngs
+        )
+        self.conv2 = nnx.Conv(32, 64, (4, 4), strides=2, padding="VALID", rngs=rngs)
+        self.conv3 = nnx.Conv(64, 64, (3, 3), padding="VALID", rngs=rngs)
+        for kernel, stride in ((8, 4), (4, 2), (3, 1)):
+            height, width = (
+                (height - kernel) // stride + 1,
+                (width - kernel) // stride + 1,
+            )
+        if height <= 0 or width <= 0:
+            raise ValueError("Observation is too small for the Atari convolution stack")
+        self.hidden = nnx.Linear(height * width * 64, 512, rngs=rngs)
+        self.output = nnx.Linear(512, action_dim, rngs=rngs)
+
+    def __call__(self, x: jax.Array) -> jax.Array:
         if self.normalize:
-            x = jnp.transpose(x, (0, 2, 3, 1))
-            x = x / (255.0)
-        x = nn.Conv(32, kernel_size=(8, 8), strides=(4, 4), padding="VALID")(x)
-        x = nn.relu(x)
-        x = nn.Conv(64, kernel_size=(4, 4), strides=(2, 2), padding="VALID")(x)
-        x = nn.relu(x)
-        x = nn.Conv(64, kernel_size=(3, 3), strides=(1, 1), padding="VALID")(x)
-        x = nn.relu(x)
-        x = x.reshape((x.shape[0], -1))
-        x = nn.Dense(512)(x)
-        x = nn.relu(x)
-        x = nn.Dense(self.action_dim)(x)
-        return x
+            x = jnp.moveaxis(x, -3, -1).astype(jnp.float32) / 255.0
+        x = jax.nn.relu(self.conv1(x))
+        x = jax.nn.relu(self.conv2(x))
+        x = jax.nn.relu(self.conv3(x))
+        x = x.reshape((*x.shape[:-3], -1))
+        return self.output(jax.nn.relu(self.hidden(x)))
 
 
-class CNN_AgentStem(nn.Module):
-    """A simple CNN backbone used for the agent and the critic."""
+class CNN_AgentStem(nnx.Module):
+    """Shared Atari encoder for policy and value heads.
 
-    last_hidden_size: int = 512
-    normalize: bool = False
+    `normalize=False` preserves the original interface: inputs are CHW bytes
+    requiring preprocessing. `normalize=True` accepts already normalized HWC
+    observations. Arbitrary leading batch dimensions are preserved.
+    """
 
-    @nn.compact
-    def __call__(self, x):
-        if not self.normalize:
-            x = jnp.transpose(x, (0, 2, 3, 1))
-            x = x / (255.0)
-        x = nn.Conv(
+    def __init__(
+        self,
+        obs_shape: tuple[int, int, int],
+        last_hidden_size: int = 512,
+        normalize: bool = False,
+        *,
+        rngs: nnx.Rngs,
+    ):
+        self.normalize = normalize
+        height, width, channels = (
+            obs_shape if normalize else (obs_shape[1], obs_shape[2], obs_shape[0])
+        )
+        kernel_init = jax.nn.initializers.orthogonal(math.sqrt(2))
+        self.conv1 = nnx.Conv(
+            channels,
             32,
-            kernel_size=(8, 8),
-            strides=(4, 4),
+            (8, 8),
+            strides=4,
             padding="VALID",
-            kernel_init=orthogonal(math.sqrt(2)),
-            bias_init=constant(0.0),
-        )(x)
-        x = nn.relu(x)
-        x = nn.Conv(
+            kernel_init=kernel_init,
+            rngs=rngs,
+        )
+        self.conv2 = nnx.Conv(
+            32,
             64,
-            kernel_size=(4, 4),
-            strides=(2, 2),
+            (4, 4),
+            strides=2,
             padding="VALID",
-            kernel_init=orthogonal(math.sqrt(2)),
-            bias_init=constant(0.0),
-        )(x)
-        x = nn.relu(x)
-        x = nn.Conv(
-            64,
-            kernel_size=(3, 3),
-            strides=(1, 1),
-            padding="VALID",
-            kernel_init=orthogonal(math.sqrt(2)),
-            bias_init=constant(0.0),
-        )(x)
-        x = nn.relu(x)
-        # flatten to 1d
-        x = x.reshape((x.shape[0], -1))
-        x = nn.Dense(
-            self.last_hidden_size,
-            kernel_init=orthogonal(math.sqrt(2)),
-            bias_init=constant(0.0),
-        )(x)
-        x = nn.relu(x)
-        return x
+            kernel_init=kernel_init,
+            rngs=rngs,
+        )
+        self.conv3 = nnx.Conv(
+            64, 64, (3, 3), padding="VALID", kernel_init=kernel_init, rngs=rngs
+        )
+        for kernel, stride in ((8, 4), (4, 2), (3, 1)):
+            height, width = (
+                (height - kernel) // stride + 1,
+                (width - kernel) // stride + 1,
+            )
+        if height <= 0 or width <= 0:
+            raise ValueError("Observation is too small for the Atari convolution stack")
+        self.hidden = nnx.Linear(
+            height * width * 64, last_hidden_size, kernel_init=kernel_init, rngs=rngs
+        )
+
+    def __call__(self, x: jax.Array) -> jax.Array:
+        if not self.normalize:
+            x = jnp.moveaxis(x, -3, -1).astype(jnp.float32) / 255.0
+        x = jax.nn.relu(self.conv1(x))
+        x = jax.nn.relu(self.conv2(x))
+        x = jax.nn.relu(self.conv3(x))
+        x = x.reshape((*x.shape[:-3], -1))
+        return jax.nn.relu(self.hidden(x))
 
 
-class Critic(nn.Module):
-    """Lineat Critic Head."""
+class Critic(nnx.Linear):
+    """Scalar value head on top of an encoder."""
 
-    @nn.compact
-    def __call__(self, x):
-        return nn.Dense(1, kernel_init=orthogonal(1), bias_init=constant(0.0))(x)
+    def __init__(self, input_size: int, *, rngs: nnx.Rngs):
+        super().__init__(
+            input_size, 1, kernel_init=jax.nn.initializers.orthogonal(1), rngs=rngs
+        )
 
 
-class Actor(nn.Module):
-    """Linear Actor Head."""
+class Actor(nnx.Linear):
+    """Discrete-action policy head on top of an encoder."""
 
-    action_dim: Sequence[int]
-
-    @nn.compact
-    def __call__(self, x):
-        return nn.Dense(
-            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(x)
+    def __init__(self, input_size: int, action_dim: int, *, rngs: nnx.Rngs):
+        super().__init__(
+            input_size,
+            action_dim,
+            kernel_init=jax.nn.initializers.orthogonal(0.01),
+            rngs=rngs,
+        )
 
 
 def make_cnn_agent(
-    obs_shape: tuple[int],
+    obs_shape: tuple[int, int, int],
     action_size: int,
     hidden_size: int = 512,
-):
-    stem = CNN_AgentStem(last_hidden_size=hidden_size)
-    actor_header = Actor(action_dim=action_size)
-    critic_header = Critic()
-
-    dummy_obs = jnp.zeros((1, *obs_shape))
-    # dummy_action = jnp.zeros((1, action_size))
-
-    def agent_init_fn(rng):
-        stem_key, actor_key, critic_key = jax.random.split(rng, num=3)
-        dummy_hidden, stem_params = stem.init_with_output(stem_key, dummy_obs)
-        actor_params = actor_header.init(actor_key, dummy_hidden)
-        critic_params = critic_header.init(critic_key, dummy_hidden)
-
-        return stem_params, actor_params, critic_params
-
-    return (stem, actor_header, critic_header), agent_init_fn
+    *,
+    rngs: nnx.Rngs,
+) -> tuple[CNN_AgentStem, Actor, Critic]:
+    """Construct a shared Atari stem and separately addressable policy/value heads."""
+    return (
+        CNN_AgentStem(obs_shape, last_hidden_size=hidden_size, rngs=rngs),
+        Actor(hidden_size, action_dim=action_size, rngs=rngs),
+        Critic(hidden_size, rngs=rngs),
+    )

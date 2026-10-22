@@ -51,7 +51,7 @@ def test_independent_masked_rings(buffer_type, jit, dp_mesh):
             self.config = SimpleNamespace()
 
         def _setup_agent_and_optimizer(self, key):
-            return AgentState(params=jnp.zeros(1)), jnp.zeros(1)
+            return AgentState(model_state=jnp.zeros(1)), jnp.zeros(1)
 
         def _setup_replaybuffer(self, key):
             # Defined unused entries let us compare the entire ring after writes.

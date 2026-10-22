@@ -1,3 +1,4 @@
+from evorl.utils import running_statistics
 import logging
 import math
 from typing import Any
@@ -5,16 +6,15 @@ from typing import Any
 import chex
 import distrax
 
-import flax.linen as nn
+from flax import nnx
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
 from evorl.replay_buffers import ReplayBuffer
 from evorl.distributed import psum, pmean
-from evorl.distributed.gradients import agent_gradient_update
+from evorl.distributed.gradients import pmean_nnx_loss_and_grad
 from evorl.envs import AutoresetMode, Discrete, create_env, Space
 from evorl.evaluators import Evaluator
 from evorl.metrics import MetricBase, WorkflowMetric, metric_field
@@ -24,15 +24,12 @@ from evorl.sample_batch import SampleBatch
 from evorl.types import (
     Action,
     LossDict,
-    Params,
     PolicyExtraInfo,
-    PyTreeData,
     PyTreeDict,
     State,
     pytree_field,
 )
-from evorl.utils import running_statistics
-from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient, tree_get
+from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
 from evorl.agent import Agent, AgentState
@@ -41,14 +38,8 @@ from .offpolicy_utils import OffPolicyWorkflowTemplate, clean_trajectory
 logger = logging.getLogger(__name__)
 
 
-class DQNNetworkParams(PyTreeData):
-    q_params: Params
-    target_q_params: Params
-    exploration_epsilon: float
-
-
 class DQNTrainMetric(MetricBase):
-    # The primary loss is already averaged by pmean_loss_and_grad.
+    # The primary loss is already averaged by pmean_nnx_loss_and_grad.
     loss: jax.Array = metric_field(default_factory=lambda: jnp.zeros(()))
     raw_loss_dict: LossDict = metric_field(default_factory=PyTreeDict, reduce_fn=pmean)
 
@@ -58,7 +49,7 @@ class DQNWorkflowMetric(WorkflowMetric):
 
 
 class DQNAgent(Agent):
-    q_network: nn.Module
+    agent_network_cfg: DictConfig = pytree_field(static=True)
     obs_preprocessor: Any = pytree_field(default=None, static=True)
     discount: float = 0.99
     target_type: str = "DDQN"
@@ -68,27 +59,34 @@ class DQNAgent(Agent):
         return self.obs_preprocessor is not None
 
     def init(self, obs_space: Space, action_space: Space, key: jax.Array) -> AgentState:
-        dummy_obs = jtu.tree_map(lambda x: x[None, ...], obs_space.sample(key))
+        if not isinstance(action_space, Discrete):
+            raise TypeError(f"Unsupported action space: {action_space}")
 
-        q_params = self.q_network.init(key, dummy_obs)
-        target_q_params = q_params
-
-        params_states = DQNNetworkParams(
-            q_params=q_params,
-            target_q_params=target_q_params,
-            exploration_epsilon=jnp.zeros(()),  # handle at workflow
+        cfg = self.agent_network_cfg
+        value_obs_key = cfg.get("value_obs_key")
+        q = make_discrete_q_network(
+            input_size=(
+                obs_space.spaces[value_obs_key] if value_obs_key else obs_space
+            ).shape[-1],
+            action_size=action_space.n,
+            hidden_layer_sizes=tuple(cfg.q_hidden_layer_sizes),
+            obs_key=value_obs_key,
+            rngs=nnx.Rngs(key),
         )
+        models = nnx.Dict(q=q, target_q=nnx.clone(q))
 
         if self.normalize_obs:
             # Note: statistics are broadcasted to [T*B]
             obs_preprocessor_state = running_statistics.init_state(
-                tree_get(dummy_obs, 0)
+                obs_space.sample(key)
             )
         else:
             obs_preprocessor_state = None
 
         return AgentState(
-            params=params_states, obs_preprocessor_state=obs_preprocessor_state
+            model_state=nnx.unpack(models),
+            obs_preprocessor_state=obs_preprocessor_state,
+            extra_state=PyTreeDict(exploration_epsilon=jnp.zeros(())),
         )
 
     def compute_actions(
@@ -98,9 +96,9 @@ class DQNAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        qs = self.q_network.apply(agent_state.params.q_params, obs)
+        qs = self.get_models(agent_state, copy=True).q(obs)
         actions_dist = distrax.EpsilonGreedy(
-            qs, epsilon=agent_state.params.exploration_epsilon
+            qs, epsilon=agent_state.extra_state.exploration_epsilon
         )
         # [B]: int from 0~(n-1)
         actions = actions_dist.sample(seed=key)
@@ -114,18 +112,22 @@ class DQNAgent(Agent):
         if self.normalize_obs:
             obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
 
-        qs = self.q_network.apply(agent_state.params.q_params, sample_batch.obs)
+        qs = self.get_models(agent_state, copy=True).q(obs)
 
         actions_dist = distrax.EpsilonGreedy(
-            qs, epsilon=agent_state.params.exploration_epsilon
+            qs, epsilon=agent_state.extra_state.exploration_epsilon
         )
         actions = actions_dist.mode()
 
         return actions, PyTreeDict()
 
     def loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
     ) -> LossDict:
+        models = self.get_models(agent_state)
         obs = sample_batch.obs
         actions = sample_batch.actions
         rewards = sample_batch.rewards
@@ -139,17 +141,15 @@ class DQNAgent(Agent):
 
         discounts = self.discount * (1 - sample_batch.extras.env_extras.termination)
 
-        qs = self.q_network.apply(agent_state.params.q_params, obs)
+        qs = models.q(obs)
         # [B,n]->[B]
         qs = jnp.take_along_axis(qs, actions[..., None], axis=-1).squeeze(-1)
 
         # DQN_target: [B,n]
-        next_qs = self.q_network.apply(agent_state.params.target_q_params, next_obs)
+        next_qs = models.target_q(next_obs)
 
         if self.target_type == "DDQN":
-            next_actions = self.q_network.apply(
-                agent_state.params.q_params, next_obs
-            ).argmax(axis=-1, keepdims=True)  # [B,1]
+            next_actions = models.q(next_obs).argmax(axis=-1, keepdims=True)  # [B,1]
             next_qs = jnp.take_along_axis(next_qs, next_actions, axis=-1).squeeze(-1)
         elif self.target_type == "DQN":
             next_qs = next_qs.max(axis=-1)  # [B,n]->[B]
@@ -161,38 +161,6 @@ class DQNAgent(Agent):
         q_loss = optax.squared_error(qs, qs_target).mean()
 
         return PyTreeDict(q_loss=q_loss, q_value=qs.mean())
-
-
-def make_mlp_discrete_dqn_agent(
-    action_space: Space,
-    discount: float = 0.99,
-    target_type: str = "DDQN",
-    q_hidden_layer_sizes: tuple[int] = (256, 256),
-    normalize_obs: bool = False,
-    value_obs_key: str = "",
-):
-    assert isinstance(action_space, Discrete), (
-        "Only Discrete action space is supported."
-    )
-
-    action_size = action_space.n
-    q_network = make_discrete_q_network(
-        action_size=action_size,
-        hidden_layer_sizes=q_hidden_layer_sizes,
-        obs_key=value_obs_key,
-    )
-
-    if normalize_obs:
-        obs_preprocessor = running_statistics.normalize
-    else:
-        obs_preprocessor = None
-
-    return DQNAgent(
-        q_network=q_network,
-        obs_preprocessor=obs_preprocessor,
-        discount=discount,
-        target_type=target_type,
-    )
 
 
 class DQNWorkflow(OffPolicyWorkflowTemplate):
@@ -213,13 +181,13 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             "Only Discrete action space is supported."
         )
 
-        agent = make_mlp_discrete_dqn_agent(
-            action_space=env.action_space,
+        agent = DQNAgent(
+            agent_network_cfg=config.agent_network,
             discount=config.discount,
             target_type=config.target_type,
-            q_hidden_layer_sizes=config.agent_network.q_hidden_layer_sizes,
-            normalize_obs=config.normalize_obs,
-            value_obs_key=config.agent_network.value_obs_key,
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
         )
 
         if (
@@ -287,10 +255,11 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
         self, key: jax.Array
     ) -> tuple[AgentState, chex.ArrayTree]:
         agent_state = self.agent.init(self.env.obs_space, self.env.action_space, key)
-        opt_state = self.optimizer.init(agent_state.params.q_params)
+        models = nnx.merge(agent_state.model_state, copy=True)
+        opt_state = nnx.unpack(nnx.Optimizer(models.q, self.optimizer, wrt=nnx.Param))
 
         agent_state = agent_state.replace(
-            params=agent_state.params.replace(
+            extra_state=agent_state.extra_state.replace(
                 exploration_epsilon=self.epsilon_scheduler(0)
             )
         )
@@ -327,7 +296,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
                 obs_preprocessor_state=running_statistics.update(
                     agent_state.obs_preprocessor_state,
                     trajectory.obs,
-                    dp_axis_name=self.dp_axis_name,
+                    axis_name=self.dp_axis_name,
                 )
             )
 
@@ -335,22 +304,30 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             state.replay_buffer_state, trajectory
         )
 
-        def loss_fn(agent_state, sample_batch, key):
-            loss_dict = self.agent.loss(agent_state, sample_batch, key)
-            return loss_dict.q_loss, loss_dict
-
-        q_update_fn = agent_gradient_update(
-            loss_fn,
-            self.optimizer,
-            dp_axis_name=self.dp_axis_name,
-            has_aux=True,
-            attach_fn=lambda agent_state, q_params: agent_state.replace(
-                params=agent_state.params.replace(q_params=q_params)
-            ),
-            detach_fn=lambda agent_state: agent_state.params.q_params,
-        )
-
         workflow_metrics = state.metrics
+
+        def _update_q(agent_state, opt_state, sample_batch, key):
+            """Apply one q update and return new model and optimizer snapshots."""
+            models = nnx.merge(agent_state.model_state, copy=True)
+
+            def loss_fn(models, sample_batch, key):
+                losses = self.agent.loss(
+                    agent_state.replace(model_state=nnx.unpack(models)),
+                    sample_batch,
+                    key,
+                )
+                return losses.q_loss, losses
+
+            value, grads = pmean_nnx_loss_and_grad(
+                loss_fn,
+                self.dp_axis_name,
+                has_aux=True,
+                wrt=nnx.All(nnx.Param, nnx.PathContains("q")),
+            )(models, sample_batch, key)
+            optimizer = nnx.merge(opt_state, copy=True)
+            optimizer.update(models.q, grads["q"])
+            agent_state = agent_state.replace(model_state=nnx.unpack(models))
+            return value, agent_state, nnx.unpack(optimizer)
 
         def _sample_and_update_fn(carry, unused_t):
             key, agent_state, opt_state, wf_metrics = carry
@@ -359,8 +336,11 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
 
             sample_batch = self.replay_buffer.sample(replay_buffer_state, rb_key)
 
-            (q_loss, loss_dict), agent_state, opt_state = q_update_fn(
-                opt_state, agent_state, sample_batch, q_key
+            (q_loss, loss_dict), agent_state, opt_state = _update_q(
+                agent_state,
+                opt_state,
+                sample_batch,
+                q_key,
             )
 
             wf_metrics = wf_metrics.replace(
@@ -368,14 +348,16 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             )
 
             def _soft_update_q(agent_state):
-                target_q_params = soft_target_update(
-                    agent_state.params.target_q_params,
-                    agent_state.params.q_params,
-                    self.config.tau,
+                models = nnx.merge(agent_state.model_state, copy=True)
+                nnx.update(
+                    models.target_q,
+                    soft_target_update(
+                        nnx.state(models.target_q, nnx.Param),
+                        nnx.state(models.q, nnx.Param),
+                        self.config.tau,
+                    ),
                 )
-                return agent_state.replace(
-                    params=agent_state.params.replace(target_q_params=target_q_params)
-                )
+                return agent_state.replace(model_state=nnx.unpack(models))
 
             agent_state = jax.lax.cond(
                 wf_metrics.training_updates % self.config.target_network_update_freq
@@ -386,7 +368,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             )
 
             agent_state = agent_state.replace(
-                params=agent_state.params.replace(
+                extra_state=agent_state.extra_state.replace(
                     exploration_epsilon=self.epsilon_scheduler(
                         wf_metrics.training_updates
                     )
@@ -407,7 +389,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
         train_metrics = DQNTrainMetric(
             loss=q_loss,
             raw_loss_dict=loss_dict,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         # calculate the number of timestep
         sampled_timesteps = psum(
@@ -422,7 +404,7 @@ class DQNWorkflow(OffPolicyWorkflowTemplate):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
             sampled_episodes=state.metrics.sampled_episodes + sampled_epsiodes,
             iterations=state.metrics.iterations + 1,
-        ).all_reduce(dp_axis_name=self.dp_axis_name)
+        ).all_reduce(axis_name=self.dp_axis_name)
 
         return train_metrics, state.replace(
             key=key,
