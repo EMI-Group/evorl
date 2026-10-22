@@ -25,8 +25,9 @@ class NSGA2State(PyTreeData):
 class NSGA2(EvoOptimizer):
     """NSGA-II with bounded SBX crossover and polynomial mutation.
 
-    Every objective is maximized. `ask` first returns a uniformly initialized
-    population, then offspring selected by rank and crowding tournaments.
+    At least two objectives are required and every objective is maximized.
+    `ask` first returns a uniformly initialized population, then offspring
+    selected by rank and crowding tournaments.
     `tell` keeps the best `pop_size` parents and offspring together.
 
     Reference: Deb et al., "A fast and elitist multiobjective genetic
@@ -46,8 +47,8 @@ class NSGA2(EvoOptimizer):
     def __post_init__(self):
         if self.pop_size < 2:
             raise ValueError("pop_size must be at least 2")
-        if self.num_objectives < 1:
-            raise ValueError("num_objectives must be positive")
+        if self.num_objectives < 2:
+            raise ValueError("num_objectives must be at least two")
         if (
             not math.isfinite(self.lb)
             or not math.isfinite(self.ub)

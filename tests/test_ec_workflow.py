@@ -114,7 +114,7 @@ def test_nsga2_infers_native_reward_shape_without_reward_keys(num_objectives):
     workflow_cls = type("VectorNSGA2Workflow", (base,), {})
     env = ToyEnv(2) if num_objectives is None else VectorRewardEnv(2, num_objectives)
     with patch(f"{base.__module__}.create_env", return_value=env):
-        if num_objectives is None:
+        if num_objectives is None or num_objectives < 2:
             with pytest.raises(ValueError, match="requires vector rewards"):
                 workflow_cls.build_from_config(config)
             return

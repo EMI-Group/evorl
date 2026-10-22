@@ -21,10 +21,11 @@ from ..ec_agent import make_deterministic_ec_agent
 class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
     """Optimize a continuous-action policy using single-agent vector rewards.
 
-    Environments return rewards of shape `(num_envs, num_objectives)`. The
-    objective count is inferred without executing a reset. `env.reward_keys`
-    is optional and provides metric names when an environment uses it to
-    select reward components. Every objective is maximized.
+    Environments return rewards of shape `(num_envs, num_objectives)` with at
+    least two objectives. The objective count is inferred without executing a
+    reset. `env.reward_keys` is optional and provides metric names when an
+    environment uses it to select reward components. Every objective is
+    maximized.
     """
 
     @classmethod
@@ -51,9 +52,10 @@ class NSGA2Workflow(MultiObjectiveECWorkflowTemplate):
         # dummy agent_state
         agent_key = jax.random.key(config.seed)
         reward = jax.eval_shape(env.reset, agent_key).reward
-        if len(reward.shape) != 2 or reward.shape[1] < 1:
+        if len(reward.shape) != 2 or reward.shape[1] < 2:
             raise ValueError(
-                "NSGA2 requires vector rewards with shape (num_envs, num_objectives)."
+                "NSGA2 requires vector rewards with shape (num_envs, num_objectives) "
+                "and at least two objectives."
             )
         agent_state = agent.init(env.obs_space, env.action_space, agent_key)
         param_vec_spec = ParamVectorSpec(agent_state.params.policy_params)

@@ -14,36 +14,6 @@ from evorl.utils.ec_utils import ParamVectorSpec
 from tests.helpers.sharding import compiled_collectives
 
 
-def reference_ranks(fitnesses):
-    """Peel fronts in NumPy independently of the JAX implementation."""
-    remaining = list(range(len(fitnesses)))
-    ranks = np.full(len(fitnesses), -1)
-    rank = 0
-    while remaining:
-        front = [
-            i
-            for i in remaining
-            if not any(
-                np.all(fitnesses[j] >= fitnesses[i])
-                and np.any(fitnesses[j] > fitnesses[i])
-                for j in remaining
-            )
-        ]
-        ranks[front] = rank
-        remaining = [i for i in remaining if i not in front]
-        rank += 1
-    return ranks
-
-
-@pytest.mark.parametrize("objectives", [1, 2, 3])
-def test_non_dominated_sort_matches_front_peeling(objectives, jit):
-    fitnesses = np.random.default_rng(42).integers(-3, 4, (32, objectives))
-    sort = jax.jit(non_dominated_sort) if jit else non_dominated_sort
-    np.testing.assert_array_equal(
-        sort(jnp.asarray(fitnesses)), reference_ranks(fitnesses)
-    )
-
-
 def test_crowding_distance_normalizes_each_front_and_ignores_constant_objectives():
     fitnesses = jnp.array([[0, 3], [1, 2], [3, 0], [-1, -1], [-1, -1]], jnp.float32)
     ranks = non_dominated_sort(fitnesses)
@@ -52,6 +22,16 @@ def test_crowding_distance_normalizes_each_front_and_ignores_constant_objectives
     np.testing.assert_array_equal(distance, [jnp.inf, 2, jnp.inf, 0, 0])
     extended = jnp.concatenate((fitnesses, jnp.zeros((5, 1))), axis=1)
     np.testing.assert_array_equal(crowding_distance(extended, ranks), distance)
+
+
+@pytest.mark.parametrize("num_objectives", [0, 1])
+def test_nsga2_rejects_fewer_than_two_objectives(num_objectives):
+    with pytest.raises(ValueError, match="at least two"):
+        NSGA2(
+            pop_size=4,
+            num_objectives=num_objectives,
+            param_vec_spec=ParamVectorSpec(jnp.zeros(2)),
+        )
 
 
 @pytest.mark.parametrize("optimizer_cls", [CMAES, SepCMAES])

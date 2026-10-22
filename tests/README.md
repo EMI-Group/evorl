@@ -14,6 +14,7 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `helpers/` | Reusable toy environment and compiled-communication inspection |
 | `test_env_factory.py` | YAML argument forwarding, episode-limit defaults and explicit override precedence across environment factories |
 | `test_ec_optimizers.py` | Native CMA-ES reference updates and convergence, NSGA-II Pareto ranks/crowding/elitism and ZDT1 progress, bounded variation and nested `vmap` |
+| `test_non_dominated_sort.py` | All sorting modes in eager/JIT, independent Pareto ranks, duplicate/tied values, nested `vmap`, backend dispatch, partial batches, replicated execution without collectives and linear scratch memory growth |
 | `test_ec_workflow.py` | Native CMA-ES, SepCMA-ES and NSGA-II setup, training, recording and final checkpoint in eager/JIT and single/multiple device modes |
 | `test_evox.py` | Optional PyTorch EvoX: FakeTensor templates with real fixed tensors, native first-call initialization and iteration budgets, direct checkpoint resume, DLPack, state/RNG isolation, 64-bit rejection, independent JAX/Torch compilation, scalar/vector rewards, evaluation counts, int32 RVEA equivalence and full Brax training/checkpoint resume |
 | `test_torch_utils.py` | Optional PyTorch: DLPack conversion and storage isolation/sharing, dtype/device preservation, CPU/GPU device mapping, local hardware indices, RNG replay and restoration on success/failure |

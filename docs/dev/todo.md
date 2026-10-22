@@ -19,5 +19,5 @@
   CMA-ES、SepCMA-ES 和 NSGA-II 直接实现 `EvoOptimizer`；旧 EvoX 算法、适配器与配置已删除。测试覆盖原生更新、ZDT1 优化、nested vmap、单/多设备 workflow，以及真实 Brax Ant 多目标奖励的两代优化。
 - [x] 修复 CMA-ES 正权重配置约束与 EC 训练返回值。
   按论文附录 C 保留种群相关对数权重，限制 `1 <= num_elites <= pop_size // 2`；白化改用矩阵—向量乘法。ES 与 NSGA-II 的 `learn()` 返回最终状态，测试同时覆盖已完成训练的空循环。
-- [ ] 优化 `non_dominated_sort` 的大种群性能。
-  这是暂缓的性能优化，当前保留已验证的稠密支配矩阵与分层实现。
+- [x] 优化 `non_dominated_sort` 的大种群性能。
+  纯 JAX 实现分块排序、双目标 sweep 和 ENS-SS/BS；`auto` 在 CPU 上按目标数选择 sweep 或 ENS-BS，其他后端使用分块算法，避免保留完整支配矩阵。入口要求至少两个目标，旧实现注释保留用于对照。

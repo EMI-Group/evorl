@@ -44,6 +44,19 @@ Workflows for multi-objective EC derive from [`MultiObjectiveECWorkflowTemplate`
 
 CMA-ES, SepCMA-ES and NSGA-II implement `EvoOptimizer` directly and maximize fitness without EvoX. NSGA-II maximizes every reward objective; use negative rewards for quantities to minimize. Its variation uses bounded simulated binary crossover and polynomial mutation.
 
+Native NSGA-II requires at least two reward objectives. Its
+[`non_dominated_sort`](#evorl.ec.operators.selection.non_dominated.non_dominated_sort)
+defaults to `mode="auto"`: CPU uses `sweep` for two objectives and `ens_bs` for
+more objectives; GPU and other accelerator backends use `blocked`. The explicit
+modes are `sweep`, `ens_ss`, `ens_bs`, and `blocked`. ENS-SS checks fronts
+sequentially; ENS-BS locates a front by binary search. All modes support JIT and
+nested `vmap`. Mark `mode` static when supplying it as a JIT argument:
+
+```python
+sort = jax.jit(non_dominated_sort, static_argnames=("mode",))
+ranks = sort(fitnesses, mode="auto")
+```
+
 The CMA-ES variants use the positive logarithmic recombination weights from Appendix C of [Hansen's tutorial](https://arxiv.org/abs/1604.00772). Set `num_elites` between 1 and `pop_size // 2`; the supplied configs select half the population. The initial search center is the policy initialized during workflow setup. ES and NSGA-II workflows return the final state from `learn()`, including when the requested iterations are already complete.
 
 ### Optional PyTorch EvoX integration
