@@ -104,7 +104,7 @@ def test_nested_vmap_with_different_front_depths(mode, objectives):
     batches[0, 1] = 1
     batches[1, 0, :, 0] = np.arange(9)
     batches[1, 0, :, 1] = -np.arange(9)
-    sort = partial(nds.non_dominated_sort, mode=mode)
+    sort = partial(nds.non_dominated_sort, mode=mode, block_size=3)
     actual = jax.jit(jax.vmap(jax.vmap(sort)))(jnp.asarray(batches))
     expected = np.stack(
         [np.stack([reference_ranks(x) for x in row]) for row in batches]
@@ -121,6 +121,45 @@ def test_blocked_sort_handles_partial_blocks_and_ready_batches(size):
     sort = jax.jit(partial(nds.non_dominated_sort, mode="blocked"))
     np.testing.assert_array_equal(
         sort(jnp.asarray(fitnesses[order])), 1 - levels[order]
+    )
+
+
+@pytest.mark.parametrize("block_size", [1, 3, 16, 64, 128, 256])
+def test_block_size_and_input_order_preserve_duplicate_and_tied_ranks(block_size, jit):
+    base = np.array(
+        [[3, 3], [3, 3], [3, 2], [2, 3], [2, 2], [2, 2], [1, 3], [0, 0]],
+        np.float32,
+    )
+    fitnesses = np.tile(base, (17, 1))
+    expected = np.tile(reference_ranks(base), 17)
+    permutation = np.random.default_rng(13).permutation(len(fitnesses))
+    sort = (
+        jax.jit(nds.non_dominated_sort, static_argnames=("mode", "block_size"))
+        if jit
+        else nds.non_dominated_sort
+    )
+    for order in [np.arange(len(fitnesses)), permutation]:
+        actual = sort(
+            jnp.asarray(fitnesses[order]), mode="blocked", block_size=block_size
+        )
+        np.testing.assert_array_equal(actual, expected[order])
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("block_size", [0, -1])
+def test_rejects_nonpositive_block_sizes(mode, block_size):
+    sort = jax.jit(nds.non_dominated_sort, static_argnames=("mode", "block_size"))
+    with pytest.raises(ValueError, match="block_size must be positive"):
+        sort(jnp.ones((0, 2)), mode=mode, block_size=block_size)
+
+
+def test_block_size_requires_a_static_integer():
+    sort = jax.jit(nds.non_dominated_sort, static_argnames=("mode", "block_size"))
+    with pytest.raises(TypeError, match="integer"):
+        sort(jnp.ones((4, 2)), mode="blocked", block_size=1.5)
+    np.testing.assert_array_equal(
+        sort(jnp.ones((4, 2)), mode="blocked", block_size=np.int64(3)),
+        np.zeros(4, np.int32),
     )
 
 
@@ -160,30 +199,49 @@ def test_auto_uses_actual_execution_backend(objectives):
         patch.object(
             nds, "_ens_sort", lambda x, *, binary: x[:, 0].astype(jnp.int32) + 1
         ),
-        patch.object(nds, "_blocked_sort", lambda x: x[:, 0].astype(jnp.int32) + 2),
+        patch.object(
+            nds,
+            "_blocked_sort",
+            lambda x, *, block_size: x[:, 0].astype(jnp.int32) + block_size,
+        ),
     ):
-        sort = jax.jit(lambda x: nds.non_dominated_sort(x))
+        sort = jax.jit(lambda x: nds.non_dominated_sort(x, block_size=17))
         for device in devices:
             fitnesses = jax.device_put(np.ones((4, objectives), np.float32), device)
-            expected = (1 if objectives == 2 else 2) if device.platform == "cpu" else 3
+            expected = (1 if objectives == 2 else 2) if device.platform == "cpu" else 18
             np.testing.assert_array_equal(sort(fitnesses), np.full(4, expected))
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_replicated_sort_has_no_collectives(mode, mesh_factory):
+@pytest.mark.parametrize("nested", [False, True], ids=["single", "nested_vmap"])
+def test_replicated_sort_has_no_collectives(mode, nested, mesh_factory):
     mesh = mesh_factory(shape=(min(2, jax.local_device_count()),))
-    fitnesses = jnp.array([[3, 3], [3, 2], [2, 3], [2, 2], [2, 2], [0, 0]])
+    fitnesses = np.array([[3, 3], [3, 2], [2, 3], [2, 2], [2, 2], [0, 0]])
+    sort_fn = partial(nds.non_dominated_sort, mode=mode, block_size=3)
+    if nested:
+        chain = np.repeat(np.arange(6)[:, None], 2, axis=1)
+        antichain = chain * np.array([1, -1])
+        identical = np.ones_like(chain)
+        fitnesses = np.stack((fitnesses, chain, antichain, identical)).reshape(
+            2, 2, 6, 2
+        )
+        expected = np.stack(
+            [np.stack([reference_ranks(x) for x in row]) for row in fitnesses]
+        )
+        sort_fn = jax.vmap(jax.vmap(sort_fn))
+    else:
+        expected = reference_ranks(fitnesses)
     with jax.set_mesh(mesh):
         fitnesses = jax.device_put(fitnesses, jax.P())
         sort = jax.jit(
             jax.shard_map(
-                partial(nds.non_dominated_sort, mode=mode),
+                sort_fn,
                 in_specs=jax.P(),
                 out_specs=jax.P(),
             )
         )
         executable = sort.lower(fitnesses).compile()
-        np.testing.assert_array_equal(executable(fitnesses), [0, 1, 1, 2, 2, 3])
+        np.testing.assert_array_equal(executable(fitnesses), expected)
     assert not compiled_collectives(executable.as_text())
 
 

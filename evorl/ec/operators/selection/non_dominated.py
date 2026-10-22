@@ -1,4 +1,5 @@
 from functools import partial
+import operator
 from typing import Literal
 
 import jax
@@ -8,6 +9,8 @@ import jax.numpy as jnp
 def non_dominated_sort(
     fitnesses: jax.Array,
     mode: Literal["auto", "blocked", "sweep", "ens_ss", "ens_bs"] = "auto",
+    *,
+    block_size: int = 128,
 ) -> jax.Array:
     """Assign zero-based Pareto ranks, maximizing at least two objectives.
 
@@ -16,10 +19,11 @@ def non_dominated_sort(
     ranks. Rank zero is the nondominated front; removing it exposes rank one,
     and so on.
 
-    All modes support JIT and nested `vmap`. When passing `mode` to `jax.jit`,
-    mark it static with `static_argnames=("mode",)`. Automatic backend selection
-    uses the compilation platform, including when inputs are explicitly placed
-    on a CPU while the default backend is a GPU. No host callback is used.
+    All modes support JIT and nested `vmap`. Mark `mode` and `block_size` static
+    when passing them as JIT arguments. Changing either creates a separately
+    compiled variant. Automatic backend selection uses the compilation platform,
+    including when inputs are explicitly placed on a CPU while the default
+    backend is a GPU. No host callback is used.
 
     Args:
         fitnesses: Real objective values with shape `(population, objectives)`
@@ -30,17 +34,26 @@ def non_dominated_sort(
             backends. `sweep` is a two-objective scan with binary searches over
             front boundaries. `ens_ss` and `ens_bs` use Efficient Nondominated
             Sorting with sequential or binary front search. `blocked` processes
-            ready points in batches of at most 128 without a dense dominance
+            ready points in bounded batches without retaining a full dominance
             matrix; it supports any objective count of at least two.
+        block_size: Positive static integer limiting the number of ready points
+            processed per batch. Only used by `blocked`, including when `auto`
+            selects it; ignored by sweep and ENS. The effective size is capped
+            at the population size. Arbitrary positive integers are supported,
+            not only powers of two. Larger blocks use more scratch memory and
+            may reduce batch count, but can waste work when few points are ready.
+            The default 128 is a memory/performance compromise, not a hardware
+            workgroup size or a universally optimal value.
 
     Returns:
         An `int32` array of shape `(population,)` with the Pareto ranks in the
         original input order.
 
     Raises:
+        TypeError: If `block_size` cannot be interpreted as an integer.
         ValueError: If the input is not two-dimensional, has fewer than two
             objectives, the mode is unknown, or `sweep` receives more than two
-            objectives.
+            objectives, or `block_size` is not positive.
     """
     fitnesses = jnp.asarray(fitnesses)
     if fitnesses.ndim != 2 or fitnesses.shape[1] < 2:
@@ -49,6 +62,9 @@ def non_dominated_sort(
         raise ValueError(f"Unknown nondominated sorting mode: {mode!r}")
     if mode == "sweep" and fitnesses.shape[1] != 2:
         raise ValueError("sweep requires exactly two objectives")
+    block_size = operator.index(block_size)
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
     if fitnesses.shape[0] == 0:
         return jnp.empty((0,), dtype=jnp.int32)
 
@@ -57,20 +73,22 @@ def non_dominated_sort(
             _sweep_sort if fitnesses.shape[1] == 2 else partial(_ens_sort, binary=True)
         )
         return jax.lax.platform_dependent(
-            fitnesses, cpu=cpu_sort, default=_blocked_sort
+            fitnesses,
+            cpu=cpu_sort,
+            default=partial(_blocked_sort, block_size=block_size),
         )
     if mode == "blocked":
-        return _blocked_sort(fitnesses)
+        return _blocked_sort(fitnesses, block_size=block_size)
     if mode == "sweep":
         return _sweep_sort(fitnesses)
     return _ens_sort(fitnesses, binary=mode == "ens_bs")
 
 
-def _blocked_sort(fitnesses: jax.Array) -> jax.Array:
+def _blocked_sort(fitnesses: jax.Array, *, block_size: int) -> jax.Array:
     """Rank points by processing their dominance dependencies in bounded batches.
 
-    First count incoming dominance edges in blocks. Then process up to 128
-    points whose dominators have all been processed, recomputing only those
+    First count incoming dominance edges in blocks. Then process up to
+    `block_size` points whose dominators have all been processed, recomputing those
     outgoing rows. Propagate the maximum predecessor rank plus one to each
     dominated point. No edges remain when every rank is final; the last ready
     points need no further processing.
@@ -81,12 +99,13 @@ def _blocked_sort(fitnesses: jax.Array) -> jax.Array:
 
     Args:
         fitnesses: Nonempty objective array of shape `(population, objectives)`.
+        block_size: Positive static integer bounding the comparison block height.
 
     Returns:
         The Pareto ranks as an `int32` array of shape `(population,)`.
     """
     size = fitnesses.shape[0]
-    block_size = min(128, size)
+    block_size = min(block_size, size)
     offsets = jnp.arange(block_size, dtype=jnp.int32)
 
     def outgoing(indices):
