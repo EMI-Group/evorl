@@ -69,12 +69,6 @@ autodoc2_hidden_objects = [
 autodoc2_hidden_regexes = [
     r"evorl\..*logger$",
 ]
-# package with unstable API:
-autodoc2_skip_module_regexes = [
-    r"evorl\.rollout_ma",
-    r"evorl\.multi_agent_rollout",
-    r"evorl\.envs\.multi_agent_env",
-]
 autodoc2_sort_names = True
 
 viewcode_line_numbers = True

@@ -94,7 +94,16 @@ pip install "evorl-jax[jaxmarl]"
 pip install "evorl-jax[envpool]"
 # Gymnasium Envs:
 pip install "evorl-jax[gymnasium]"
+# MO-Gymnasium Envs:
+pip install "evorl-jax[mo-gymnasium]"
 ```
+
+MO-Gymnasium uses the same ordered host callbacks as Gymnasium and preserves
+vector rewards, including a single objective as shape `(1,)`. Use
+`env=mo_gymnasium/deep-sea-treasure-v0` or
+`env=mo_gymnasium/mo-mountaincarcontinuous-v0`. Its extra currently requires
+Gymnasium `<1.4`: MO-Gymnasium 1.3.2's async worker is incompatible with
+Gymnasium 1.4's added worker argument. Ordinary Gymnasium has no such upper bound.
 
 ### Multi-objective rewards
 
@@ -176,8 +185,10 @@ installed JaxRobotarium environments are not included in this adapter.
 | [Jumanji](https://github.com/instadeepai/jumanji)                         | Games and combinatorial optimization   |
 | [EnvPool](https://github.com/sail-sg/envpool)                             | High-performance CPU-based environments |
 | [Gymnasium](https://github.com/Farama-Foundation/Gymnasium)               | Standard CPU-based environments        |
+| [MO-Gymnasium](https://github.com/Farama-Foundation/MO-Gymnasium)         | CPU environments with vector rewards   |
 | [Gymnax (best effort)](https://github.com/RobertTLange/gymnax)             | Classic control, bsuite and MinAtar     |
 | [JaxMARL (best effort)](https://github.com/FLAIROx/JaxMARL)                | Multi-agent environments               |
+| EvoRL toy environments (`evorl/envs/toy/`)                              | Small JAX benchmarks for tests and examples |
 
 ```{attention}
 Users with NVIDIA Ampere architecture GPUs (e.g., RTX 30 and 40 series) may experience reproducibility issues in `mujoco_playground` due to JAX’s default use of TF32 for matrix multiplications. See [Reproducibility / GPU Precision Issues](https://github.com/google-deepmind/mujoco_playground?tab=readme-ov-file#reproducibility--gpu-precision-issues)

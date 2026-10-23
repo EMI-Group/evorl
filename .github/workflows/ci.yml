@@ -100,6 +100,8 @@ jobs:
             "$GITHUB_WORKSPACE/tests/ec" \
             "$GITHUB_WORKSPACE/tests/networks" \
             "$GITHUB_WORKSPACE/tests/agents" \
+            "$GITHUB_WORKSPACE/tests/rollout" \
+            "$GITHUB_WORKSPACE/tests/evaluators" \
             "$GITHUB_WORKSPACE/tests/test_toolkits.py" \
             "$GITHUB_WORKSPACE/tests/test_metrics.py" \
             "$GITHUB_WORKSPACE/tests/test_recorders.py" \

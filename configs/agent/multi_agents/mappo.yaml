@@ -1,0 +1,7 @@
+# @package _global_
+
+defaults:
+  - /agent/multi_agents/ippo
+  - _self_
+
+workflow_cls: evorl.algorithms.multi_agents.mappo.MAPPOWorkflow

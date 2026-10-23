@@ -1,6 +1,7 @@
 from enum import Enum
 
 import jax
+from evorl.distributed.sharding import mark_varying
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from evorl.types import Action
@@ -108,7 +109,9 @@ class EpisodeWrapper(Wrapper):
             # at the last step, we set truncation=0
             truncation=jtu.tree_map(
                 lambda terminated, truncated: jnp.where(
-                    steps >= self.episode_length, 1 - terminated, truncated
+                    steps >= self.episode_length,
+                    jnp.logical_not(terminated).astype(truncated.dtype),
+                    truncated,
                 ),
                 termination,
                 truncation,
@@ -245,10 +248,13 @@ class VmapAutoResetWrapper(Wrapper):
                 info=state.info.replace(global_obs=reset_state.info.global_obs)
             )
 
-        return state
+        return mark_varying(state, jax.sharding.get_abstract_mesh().manual_axes)
 
     def _maybe_reset(self, state: EnvState) -> EnvState:
         """Overwrite the state and timestep appropriately if the episode terminates."""
+        # Native resets can return constant fields. Match both branch types in
+        # Manual mode; these casts preserve values and do not communicate.
+        state = mark_varying(state, jax.sharding.get_abstract_mesh().manual_axes)
         return jax.lax.cond(
             get_episode_done(state.done),
             self._auto_reset,

@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from .distributed import pmean
-from .types import LossDict, PyTreeData, PyTreeDict
+from .types import AgentMapping, LossDict, PyTreeData, PyTreeDict
 
 
 def metric_field(
@@ -103,12 +103,13 @@ class EvaluateMetric(MetricBase):
 
     Attributes:
         episode_returns: Returns with shape `(num_episodes,)` for scalar rewards
-            or `(num_episodes, num_objectives)` for vector rewards.
+            or `(num_episodes, num_objectives)` for vector rewards. Multi-agent
+            evaluation keeps a mapping of per-agent return arrays.
         episode_lengths: Episode lengths with shape `(num_episodes,)`,
             independent of the number of reward objectives.
     """
 
-    episode_returns: jax.Array = metric_field(reduce_fn=pmean)
+    episode_returns: jax.Array | AgentMapping[jax.Array] = metric_field(reduce_fn=pmean)
     episode_lengths: jax.Array = metric_field(reduce_fn=pmean)
 
 

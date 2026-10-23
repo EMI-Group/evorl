@@ -1,0 +1,31 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.multi_agents.maddpg.MADDPGWorkflow
+
+num_envs: 16
+rollout_length: 1
+total_timesteps: 1000000
+normalize_obs: false
+random_timesteps: 4096
+learning_start_timesteps: 4096
+replay_buffer_capacity: 1000000
+batch_size: 256
+num_updates_per_iter: 1
+discount: 0.99
+tau: 0.005
+exploration_noise: 0.1
+fold_iters: 16
+save_replay_buffer: false
+
+optimizer:
+  lr: 0.001
+  grad_clip_norm: 0.5
+
+agent_network:
+  actor_hidden_layer_sizes: [64, 64]
+  critic_hidden_layer_sizes: [64, 64]
+  norm_layer_type: none
+
+num_eval_envs: 16
+eval_episodes: 32
+eval_interval: 1000

@@ -69,36 +69,33 @@ class GymnasiumAdapter(EnvAdapter):
         self.vecenv_kwargs = vecenv_kwargs
         self.env_specs = env_kwargs
 
-        def _env_fn(num_envs):
-            env = gymnasium.make_vec(
-                self.env_name,
-                num_envs=num_envs,
-                max_episode_steps=self.max_episode_steps,
-                vectorization_mode=gymnasium.VectorizeMode.ASYNC,
-                vector_kwargs=self.vecenv_kwargs,
-                **self.env_specs,
+        self.env = self._create_vector_env(num_envs)
+        try:
+            check_host_env_spaces(
+                self.env.single_observation_space, self.env.single_action_space
             )
-            try:
-                check_host_env_spaces(
-                    env.single_observation_space, env.single_action_space
+            if self.env.metadata["autoreset_mode"] not in (
+                gymnasium.vector.AutoresetMode.NEXT_STEP,
+                gymnasium.vector.AutoresetMode.SAME_STEP,
+            ):
+                raise NotImplementedError(
+                    "Gymnasium adapter requires next-step or same-step autoreset."
                 )
-                if env.metadata["autoreset_mode"] not in (
-                    gymnasium.vector.AutoresetMode.NEXT_STEP,
-                    gymnasium.vector.AutoresetMode.SAME_STEP,
-                ):
-                    raise NotImplementedError(
-                        "Gymnasium adapter requires next-step or same-step autoreset."
-                    )
-            except Exception:
-                env.close()
-                raise
-            return env
+            self.autoreset_mode = self.env.metadata["autoreset_mode"]
+            self.setup_env_callback()
+        except Exception:
+            self.env.close()
+            raise
 
-        self._env_fn = _env_fn
-        self.env = _env_fn(num_envs)
-        self.autoreset_mode = self.env.metadata["autoreset_mode"]
-
-        self.setup_env_callback()
+    def _create_vector_env(self, num_envs):
+        return gymnasium.make_vec(
+            self.env_name,
+            num_envs=num_envs,
+            max_episode_steps=self.max_episode_steps,
+            vectorization_mode=gymnasium.VectorizeMode.ASYNC,
+            vector_kwargs=self.vecenv_kwargs,
+            **self.env_specs,
+        )
 
     def setup_env_callback(self):
         dummy_obs, _ = self.env.reset()
@@ -123,13 +120,18 @@ class GymnasiumAdapter(EnvAdapter):
         step_spec = _to_jax_spec(
             self.env.step(dummy_actions)[:-1] + (dummy_step_info, dummy_token)
         )
+        self.reward_shape = step_spec[1].shape[1:]
+        if len(self.reward_shape) > 1:
+            raise ValueError(
+                "Rewards must be scalars or one-dimensional objective arrays."
+            )
 
         def _reset(key):
             batch_shape = key.shape[:-1]
             num_envs = math.prod(batch_shape) * self.num_envs
 
             self.env.close()
-            self.env = self._env_fn(num_envs)
+            self.env = self._create_vector_env(num_envs)
 
             assert self.env.num_envs == num_envs
 
@@ -201,12 +203,12 @@ class GymnasiumAdapter(EnvAdapter):
         if self.autoreset_mode == gymnasium.vector.AutoresetMode.NEXT_STEP:
             info.autoreset = jnp.zeros((self.num_envs,))
         if self.record_episode_return:
-            info.episode_return = jnp.zeros((self.num_envs,))
+            info.episode_return = jnp.zeros((self.num_envs, *self.reward_shape))
 
         return EnvState(
             env_state=None,
             obs=obs,
-            reward=jnp.zeros((self.num_envs,)),
+            reward=jnp.zeros((self.num_envs, *self.reward_shape)),
             done=jnp.zeros((self.num_envs,)),
             info=info,
             _internal=PyTreeDict(callback_token=token),
@@ -242,11 +244,16 @@ class GymnasiumAdapter(EnvAdapter):
 
         if self.record_episode_return:
             episode_return = state.info.episode_return
+            reward_steps = state.info.steps
+            active = 1 - autorest
+            if self.reward_shape:
+                reward_steps = reward_steps[..., None]
+                active = active[..., None]
             if self.discount == 1.0:
                 episode_return += reward
             else:
-                episode_return += jnp.power(self.discount, state.info.steps) * reward
-            info.episode_return = episode_return * (1 - autorest)
+                episode_return += jnp.power(self.discount, reward_steps) * reward
+            info.episode_return = episode_return * active
 
         return state.replace(
             obs=obs,
@@ -262,7 +269,10 @@ class GymnasiumAdapter(EnvAdapter):
 
         steps = state.info.steps * (1 - prev_done).astype(jnp.int32)
         if self.record_episode_return:
-            episode_return = state.info.episode_return * (1 - prev_done)
+            active = 1 - prev_done
+            if self.reward_shape:
+                active = active[..., None]
+            episode_return = state.info.episode_return * active
 
         obs, reward, termination, truncation, info, token = _to_jax(
             self._step(state._internal.callback_token, action)
@@ -280,7 +290,8 @@ class GymnasiumAdapter(EnvAdapter):
             if self.discount == 1.0:
                 episode_return += reward
             else:
-                episode_return += jnp.power(self.discount, steps - 1) * reward
+                reward_steps = steps[..., None] if self.reward_shape else steps
+                episode_return += jnp.power(self.discount, reward_steps - 1) * reward
             info.episode_return = episode_return
 
         return state.replace(

@@ -46,6 +46,107 @@ Supported RL Algorithms:
 | SAC       | [`SACWorkflow`](#evorl.algorithms.sac.SACWorkflow)                          | Stochastic    | Discrete & Continuous  |
 | TD7       | [`TD7Workflow`](#evorl.algorithms.td7.TD7Workflow)                          | Deterministic | Continuous             |
 
+## Multi-agent RL
+
+MARL workflows use EvoRL's `MultiAgentEnv` API: simultaneous agent-keyed
+observations, actions, rewards and done flags. Each agent has its own networks
+and optimizer state. Rewards are preserved per agent; environment interaction
+counts measure joint environment steps rather than multiplying by agent count.
+
+| Algorithm | Workflow | Critic inputs | Actions |
+| --- | --- | --- | --- |
+| IPPO | `evorl.algorithms.multi_agents.ippo.IPPOWorkflow` | Local observation | Discrete with masks, continuous Box |
+| MAPPO | `evorl.algorithms.multi_agents.mappo.MAPPOWorkflow` | Global state and local observation | Discrete with masks, continuous Box |
+| MADDPG | `evorl.algorithms.multi_agents.maddpg.MADDPGWorkflow` | Global state and joint actions | Continuous Box |
+| MATD3 | `evorl.algorithms.multi_agents.matd3.MATD3Workflow` | Global state and joint actions, twin critics | Continuous Box |
+
+When an environment provides no `info.global_obs`, centralized critics use
+concatenated local observations. Actors always use local observations.
+Structured numeric observations are flattened, excluding `action_mask`.
+Continuous actions are scaled to each agent's finite Box bounds. Per-agent
+termination stops bootstrap; time truncation bootstraps from the original
+terminal observation. Inactive-agent transitions are masked out of losses.
+MADDPG/MATD3 exploration and target-smoothing noise use normalized `[-1, 1]`
+action coordinates before scaling to the environment bounds.
+
+These are feedforward, separate-policy implementations. Recurrent policies,
+parameter sharing, PopArt/value normalization and the discrete-action
+Gumbel-softmax MADDPG extension are not implemented. The configurations provide
+starting points rather than tuned reproductions of the papers' benchmarks.
+
+For example, train MAPPO on discrete MPE or MATD3 on continuous MPE:
+
+```shell
+python scripts/train.py agent=exp/multi_agents/mappo-mpe-spread
+python scripts/train.py agent=exp/multi_agents/matd3-mpe-spread
+```
+
+Algorithm equations and implementation details were checked against
+[IPPO](https://arxiv.org/abs/2011.09533),
+[MAPPO](https://arxiv.org/abs/2103.01955),
+[MADDPG](https://arxiv.org/abs/1706.02275) and
+[MATD3](https://arxiv.org/abs/1910.01465).
+Implementation references include
+[JaxMARL IPPO](https://github.com/FLAIROx/JaxMARL/blob/main/baselines/IPPO/ippo_ff_mpe.py),
+[official MAPPO](https://github.com/marlbenchmark/on-policy),
+[official MADDPG](https://github.com/openai/maddpg), and
+[official MATD3](https://github.com/JohannesAck/MATD3implementation).
+
+## Multi-objective RL
+
+These single-agent workflows learn from vector rewards and nonnegative linear
+preferences whose weights sum to one. All objectives are maximized; represent
+costs with negative rewards. Observations currently use a flat `Box` space.
+
+| Algorithm | Workflow | Actions |
+| --- | --- | --- |
+| EnvelopeQ (Envelope Q-learning) | `evorl.algorithms.multi_objective.envelope_q.EnvelopeQWorkflow` | Discrete |
+| CAPQL | `evorl.algorithms.multi_objective.capql.CAPQLWorkflow` | Finite continuous Box |
+
+Both use static agents and complete NNX model snapshots in `AgentState`.
+Networks receive observations and preference weights; critics return a vector
+instead of collapsing rewards into a scalar. Replay preserves reward vectors,
+original terminal observations and behavior preferences. EnvelopeQ samples one
+behavior preference per episode and relabels replay with additional preferences.
+CAPQL samples behavior preferences each step, as in the authors' implementation.
+It uses EvoRL's existing TanhNormal policy and a fixed entropy coefficient.
+
+Set `eval_preferences` to a list of normalized weight vectors. With `null`,
+evaluation uses each coordinate preference and the balanced preference.
+Evaluation reports arrays of preferences, vector returns, scalarized returns
+and episode lengths separately. To call a trained policy directly, replace
+`agent_state.extra_state.preferences` or supply `SampleBatch.extras.preferences`.
+Preference coordinates are never observation-normalized.
+
+```shell
+python scripts/train.py agent=exp/multi_objective/envelope_q-deep-sea-treasure
+python scripts/train.py agent=exp/multi_objective/capql-brax-ant
+python scripts/train.py agent=exp/multi_objective/capql-playground-cartpole
+python scripts/train.py agent=exp/multi_objective/envelope_q-mo-deep-sea-treasure
+python scripts/train.py agent=exp/multi_objective/capql-mo-mountaincar
+```
+
+The EnvelopeQ example includes a native JAX Deep Sea Treasure benchmark with the
+classic convex treasure map and standard EvoRL episode/autoreset wrappers.
+It lives in `evorl/envs/toy/` for tests and examples, without additional
+environment dependencies. The continuous examples reuse
+the Brax and MuJoCo Playground vector-reward configurations.
+The MO-Gymnasium examples require `pip install -e ".[mo-gymnasium]"`; their
+environments run on the CPU while JAX policy evaluation and training can use a GPU.
+
+EnvelopeQ follows the vector squared-L2 and projected absolute-error losses in
+Eq. 6/7 of the [original paper](https://proceedings.neurips.cc/paper/2019/hash/4a46fbfca3f1465a27b210f4bdfe6ab3-Abstract.html).
+The [released implementation](https://github.com/RunzheYang/MORL) and
+[MORL-Baselines](https://github.com/LucasAlegre/morl-baselines) instead square
+the projected error. This implementation uses uniform replay and online
+selection/target-network evaluation for the envelope Bellman target.
+CAPQL follows the vector entropy augmentation and coordinatewise twin-critic
+minimum in Algorithm 1 of the
+[paper](https://cs.uwaterloo.ca/~y328yu/publication/lu-hy-23/lu-hy-23.pdf),
+checked against the [authors' code](https://github.com/haoyelu/CAPQL) and
+MORL-Baselines. Configurations are starting points, not tuned benchmark
+reproductions.
+
 ## EC Algorithms
 
 EC Algorithms are defines in the subpackage `evorl.algorithms.ec`.

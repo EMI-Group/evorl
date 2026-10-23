@@ -6,19 +6,27 @@ buffer type and execution mode has its own test node and assertion traceback.
 | Location | Coverage |
 | --- | --- |
 | `networks/` | Native NNX MLP/CNN shapes, ensembles, normalization state, gradients and target updates |
+| `networks/test_vector_q.py` | Scalar versus explicit objective axes, vector twin critics, gradients and nested batches |
 | `agents/` | Configuration-driven NNX initialization, selected-network and joint updates versus JAX/Optax references, input/target isolation, nested populations and dynamic PBT hyperparameters |
 | `agents/test_impala.py` | V-trace clipping against a NumPy recurrence and on-policy GAE equivalence, including termination and truncation |
+| `agents/test_multi_agent.py` | Per-agent GAE/targets, centralized deterministic policy gradients, legal-action masks and global masked gradient weighting |
+| `rollout/test_multi_agent.py` | Joint trajectories, per-agent activity, autoreset boundaries and terminal/global observations |
+| `evaluators/test_multi_agent_evaluator.py` | Per-agent termination masks, truncation, discounted returns, episode batching and nested `vmap` |
+| `agents/test_multi_objective.py` | EnvelopeQ selection/homotopy losses, CAPQL vector Bellman targets, density Jacobians and actor gradients against independent calculations |
+| `workflows/test_multi_objective.py` | Preference persistence/resampling, replay, vector evaluation, checkpoints, opposing-preference learning, nested populations, two-device execution and real Deep Sea Treasure/Brax/Playground tasks |
+| `workflows/test_multi_agent.py` | IPPO/MAPPO/MADDPG/MATD3 training, delayed target updates, joint replay, termination/truncation, budgets/logging, input isolation, nested populations, two-device execution and real JaxMARL/Jumanji tasks |
 | `workflows/test_offpolicy.py` | Full TD3/TD7/DDPG/SAC/DQN updates versus explicit parameter gradients, update schedules, target copies and forward-variable propagation through state-based losses |
 | `workflows/test_erl.py` | Population actors with shared or independent critics and temporary actor optimizer state |
 | `workflows/test_pop_td3.py` | Independent TD3 members, shared replay, observation statistics and optimizer update counts |
 | `distributed/` | Mean loss/gradients, local auxiliary outputs, optimizer updates, collectives, local maps and VMA casts |
-| `replay_buffers/` | Independent device-local rings, masked/empty writes, wraparound, sampling and priorities |
+| `replay_buffers/` | Independent device-local rings, masked/empty writes, wraparound, priorities and sampling with NaNs in unwritten storage |
 | `workflows/test_rl.py` | Real RL/OpenES/Random workflow setup, step, evaluation, keys and state layouts |
 | `workflows/test_pbt.py` | Independent PBT members, optimizer learning-rate mutation, dynamic rollout termination and shared read-only replay training |
 | `workflows/test_execution.py` | Template state layouts, population selection/transfer and per-member statistics |
 | Other `workflows/` tests | Training budgets, final evaluation/checkpoints, warmup and EC accounting |
 | `helpers/` | Reusable toy environment and compiled-communication inspection |
 | `test_env_factory.py` | YAML argument forwarding, episode-limit defaults and explicit override precedence across environment factories |
+| `test_deep_sea_treasure.py` | All ten classic treasure paths, rock/boundary collisions and nested autoreset with vector rewards |
 | `ec/test_operators.py` | MLP mutation counts/bounds, parent-row inheritance, LayerNorm preservation and population keys |
 | `ec/test_optimizers.py` | CMA-ES reference equations/convergence, NSGA-II elitism/ZDT1, nested `vmap` and replicated execution |
 | `ec/test_non_dominated_sort.py` | Independent Pareto references, all sorting modes, ties, nested batches, backend dispatch and linear scratch memory |
@@ -30,6 +38,8 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `test_torch_utils.py` | Optional PyTorch: DLPack conversion and storage isolation/sharing, dtype/device preservation, CPU/GPU device mapping, local hardware indices, RNG replay and restoration on success/failure |
 | `test_host_envs.py` | Ordered host effects across resets, constant actions, nested `vmap`, autoreset modes and Atari RGB/RAM configuration |
 | `test_host_env_shapes.py` | Scalar/matrix actions, array/nested Dict observations, terminal observations, nested `vmap` and unsupported spaces/modes |
+| `test_mo_gymnasium_env.py` | Scalar and vector rewards (including one objective), discounted returns, staggered autoresets, nested Dict terminal observations, real Deep Sea Treasure and nested host evaluation |
+| `workflows/test_mo_gymnasium.py` | Real EnvelopeQ and CAPQL training/evaluation with MO-Gymnasium, including nested independent populations |
 | `test_envpool_catalog.py` / `test_gymnasium_catalog.py` | Configured task shapes/dtypes under JIT, including nested EnvPool populations |
 | `test_host_env_stress.py` | Opt-in nested batches with up to 65,536 EnvPool or 16 Gymnasium environments |
 | `workflows/test_host_envs.py` | Real PPO training/evaluation and nested PBT/OpenES populations with both host backends |
@@ -51,7 +61,7 @@ Install the development dependencies with `uv pip install -e ".[dev]"`.
 Run the distributed and workflow suite from the repository root:
 
 ```shell
-python -m pytest tests/networks tests/agents tests/ec tests/distributed tests/replay_buffers tests/workflows -m "not four_devices"
+python -m pytest tests/networks tests/agents tests/ec tests/rollout tests/evaluators tests/distributed tests/replay_buffers tests/workflows -m "not four_devices"
 ```
 
 Tests default to CPU with two logical devices. `conftest.py` configures the device
@@ -61,6 +71,10 @@ two-axis VMA test needs a separate process with four devices:
 ```shell
 python -m pytest tests/distributed --cpu-devices=4 -m four_devices
 ```
+
+Use `JAX_DEBUG_NANS=true` for targeted numerical debugging. It is not enabled
+globally because unwritten replay storage from `jnp.empty` may legitimately
+contain NaNs; sampling tests check that these entries are never read.
 
 Run host workflows on one CPU device or a GPU, with optional large batches:
 

@@ -28,6 +28,7 @@ from evorl.types import PyTreeDict
         ("evorl.algorithms.erl.cemrl_td3.cemrl_origin", "WorkflowMetric"),
         ("evorl.algorithms.erl.cemrl_td3.cemrl_origin", "CEMRLTrainMetric"),
         ("evorl.algorithms.erl.erl_td3.erl_origin", "ERLTrainMetric"),
+        ("evorl.algorithms.multi_objective.common", "MultiObjectiveWorkflowMetric"),
         ("evorl.replay_buffers.replay_buffer", "ReplayBufferState"),
         (
             "evorl.replay_buffers.prioritized_replay_buffer",

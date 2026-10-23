@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - /agent/multi_agents/maddpg
+  - override /env: jaxmarl/mpe/mpe-simple-spread-v3
+  - _self_
+
+env:
+  action_type: Continuous

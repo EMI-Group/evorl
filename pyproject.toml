@@ -110,6 +110,8 @@ jumanji = ["jumanji>=1.1.2"]
 jaxmarl = ["jaxmarl>=0.2.0"]
 envpool = ["envpool"]
 gymnasium = ["gymnasium[atari,mujoco,classic-control,box2d]>=1.1.0"]
+# MO-Gymnasium 1.3.2's worker predates Gymnasium 1.4's semaphore argument.
+mo-gymnasium = ["mo-gymnasium>=1.3.2", "gymnasium>=1.1.0,<1.4"]
 dev = [
     "furo",
     "myst-parser",

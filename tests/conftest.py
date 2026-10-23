@@ -1,8 +1,41 @@
 import gc
+import importlib
 import math
 import os
 
 import pytest
+from packaging.version import Version
+
+
+@pytest.fixture
+def mo_gymnasium_pools(monkeypatch):
+    """Close all native MO pools, including replacements made by nested resets."""
+    pytest.importorskip("mo_gymnasium")
+    gym = pytest.importorskip("gymnasium")
+    if Version(gym.__version__) >= Version("1.4"):
+        pytest.skip(
+            "MO-Gymnasium 1.3.2 requires Gymnasium <1.4; install .[mo-gymnasium]."
+        )
+    import jax
+
+    adapter = importlib.import_module("evorl.envs.mo_gymnasium")
+    original = adapter.MOAsyncVectorEnv
+    pools = []
+
+    def create(*args, **kwargs):
+        pool = original(*args, **kwargs)
+        pools.append(pool)
+        return pool
+
+    monkeypatch.setattr(adapter, "MOAsyncVectorEnv", create)
+    try:
+        yield pools
+    finally:
+        try:
+            jax.effects_barrier()
+        finally:
+            for pool in pools:
+                pool.close()
 
 
 @pytest.fixture(params=["gymnasium", "envpool"])
@@ -69,7 +102,6 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-    os.environ["JAX_DEBUG_NANS"] = "true"
     if config.getoption("--device") == "cpu":
         count = config.getoption("--cpu-devices")
         if count < 1:

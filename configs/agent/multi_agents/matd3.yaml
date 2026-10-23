@@ -1,0 +1,11 @@
+# @package _global_
+
+defaults:
+  - /agent/multi_agents/maddpg
+  - _self_
+
+workflow_cls: evorl.algorithms.multi_agents.matd3.MATD3Workflow
+
+policy_delay: 2
+policy_noise: 0.2
+clip_policy_noise: 0.5

@@ -1,0 +1,6 @@
+# @package _global_
+
+defaults:
+  - /agent/multi_agents/ippo
+  - override /env: jaxmarl/mpe/mpe-simple-spread-v3
+  - _self_

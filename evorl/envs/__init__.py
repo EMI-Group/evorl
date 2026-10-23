@@ -10,6 +10,7 @@ from .mujoco_playground import (
     create_wrapped_mujoco_playground_env,
 )
 from .gymnasium import create_gymnasium_env
+from .toy import create_wrapped_deep_sea_treasure
 
 
 def create_env(env_cfg, **kwargs) -> BaseEnv:
@@ -36,6 +37,8 @@ def create_env(env_cfg, **kwargs) -> BaseEnv:
         kwargs.setdefault("episode_length", env_cfg.max_episode_steps)
 
     match env_type:
+        case "toy":
+            env = create_wrapped_deep_sea_treasure(env_name, **kwargs)
         case "brax":
             env = create_wrapped_brax_env(env_name, **kwargs)
         case "playground":
@@ -50,6 +53,8 @@ def create_env(env_cfg, **kwargs) -> BaseEnv:
             env = create_envpool_env(env_name, **kwargs)
         case "gymnasium":
             env = create_gymnasium_env(env_name, **kwargs)
+        case "mo_gymnasium":
+            env = create_mo_gymnasium_env(env_name, **kwargs)
         case _:
             raise ValueError(f"env_type {env_type} not supported")
 
@@ -95,3 +100,8 @@ if importlib.util.find_spec("envpool") is not None:
     from .envpool import create_envpool_env
 
     __all__.extend(["create_envpool_env"])
+
+if importlib.util.find_spec("mo_gymnasium") is not None:
+    from .mo_gymnasium import create_mo_gymnasium_env
+
+    __all__.extend(["create_mo_gymnasium_env"])

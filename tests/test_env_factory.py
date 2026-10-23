@@ -36,6 +36,7 @@ from evorl import envs
         ),
         ("envpool", "create_envpool_env", "num_threads", 2, 4),
         ("gymnasium", "create_gymnasium_env", "obs_type", "rgb", "ram"),
+        ("mo_gymnasium", "create_mo_gymnasium_env", "float_state", False, True),
     ],
 )
 @pytest.mark.parametrize("explicit", [False, True], ids=["yaml", "override"])

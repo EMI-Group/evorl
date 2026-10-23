@@ -1,0 +1,3 @@
+env_name: deep-sea-treasure-v0
+env_type: toy
+max_episode_steps: 100

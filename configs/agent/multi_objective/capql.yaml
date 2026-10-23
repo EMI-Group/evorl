@@ -1,0 +1,33 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.multi_objective.capql.CAPQLWorkflow
+
+num_envs: 16
+rollout_length: 1
+total_timesteps: 1000000
+normalize_obs: false
+discount: 0.99
+random_timesteps: 4096
+learning_start_timesteps: 4096
+replay_buffer_capacity: 1000000
+batch_size: 256
+num_updates_per_iter: 1
+fold_iters: 16
+alpha: 0.2
+tau: 0.005
+target_network_update_freq: 1
+save_replay_buffer: true
+
+optimizer:
+  lr: 0.0003
+  grad_clip_norm: 0
+agent_network:
+  actor_hidden_layer_sizes: [256, 256]
+  critic_hidden_layer_sizes: [256, 256]
+  num_critics: 2
+  norm_layer_type: none
+
+num_eval_envs: 16
+eval_episodes: 32
+eval_interval: 1000
+eval_preferences: null

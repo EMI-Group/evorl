@@ -256,6 +256,48 @@ class DiscreteQNetwork(nnx.Module):
         return self.mlp(inputs)
 
 
+class MultiObjectiveQNetwork(QNetwork):
+    """Continuous critic retaining its final objective axis, even for one objective.
+
+    Outputs have shape `(..., objectives)` or `(..., critics, objectives)`.
+    """
+
+    def __call__(self, obs: jax.Array, actions: jax.Array) -> jax.Array:
+        obs = obs[self.obs_key] if self.obs_key else obs
+        inputs = jnp.concatenate((obs, actions), axis=-1)
+        if self.n_stack > 1:
+            inputs = jnp.broadcast_to(inputs, (self.n_stack, *inputs.shape))
+        return self.mlp(inputs)
+
+
+class MultiObjectiveDiscreteQNetwork(DiscreteQNetwork):
+    """Discrete critic with separate action and objective axes.
+
+    Outputs have shape `(..., actions, objectives)` or
+    `(..., critics, actions, objectives)`.
+    """
+
+    def __init__(
+        self,
+        mlp: nnx.Module,
+        n_stack: int,
+        num_objectives: int,
+        obs_key: str = "",
+    ):
+        super().__init__(mlp, n_stack, obs_key)
+        self.num_objectives = num_objectives
+
+    def __call__(self, obs: jax.Array) -> jax.Array:
+        values = super().__call__(obs)
+        return values.reshape(
+            (
+                *values.shape[:-1],
+                values.shape[-1] // self.num_objectives,
+                self.num_objectives,
+            )
+        )
+
+
 def make_policy_network(
     input_size: int,
     action_size: int,
@@ -370,3 +412,79 @@ def make_discrete_q_network(
         else make_mlp(**kwargs)
     )
     return DiscreteQNetwork(mlp, n_stack, obs_key)
+
+
+def make_multi_objective_q_network(
+    input_size: int,
+    action_size: int,
+    num_objectives: int,
+    n_stack: int = 1,
+    hidden_layer_sizes: Sequence[int] = (256, 256),
+    activation: ActivationFn = jax.nn.relu,
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
+    norm_layer_type: str = "none",
+    obs_key: str = "",
+    *,
+    rngs: nnx.Rngs,
+) -> MultiObjectiveQNetwork:
+    """Create vector critics; `input_size` counts observation features.
+
+    Outputs retain the objective axis: `(..., num_objectives)` for one critic,
+    or `(..., n_stack, num_objectives)` for multiple independent critics.
+    """
+    if n_stack < 1:
+        raise ValueError("n_stack must be positive")
+    if num_objectives < 1:
+        raise ValueError("num_objectives must be positive")
+    kwargs = dict(
+        input_size=input_size + action_size,
+        layer_sizes=(*hidden_layer_sizes, num_objectives),
+        activation=activation,
+        kernel_init=kernel_init,
+        norm_layer_type=norm_layer_type,
+        rngs=rngs,
+    )
+    mlp = (
+        make_vmap_mlp(**kwargs, num_networks=n_stack)
+        if n_stack > 1
+        else make_mlp(**kwargs)
+    )
+    return MultiObjectiveQNetwork(mlp, n_stack, obs_key)
+
+
+def make_multi_objective_discrete_q_network(
+    input_size: int,
+    action_size: int,
+    num_objectives: int,
+    n_stack: int = 1,
+    hidden_layer_sizes: Sequence[int] = (256, 256),
+    activation: ActivationFn = jax.nn.relu,
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
+    norm_layer_type: str = "none",
+    obs_key: str = "",
+    *,
+    rngs: nnx.Rngs,
+) -> MultiObjectiveDiscreteQNetwork:
+    """Create vector action values with a final `num_objectives` axis.
+
+    Outputs have shape `(..., action_size, num_objectives)` for one critic,
+    or `(..., n_stack, action_size, num_objectives)` for independent critics.
+    """
+    if n_stack < 1:
+        raise ValueError("n_stack must be positive")
+    if num_objectives < 1:
+        raise ValueError("num_objectives must be positive")
+    kwargs = dict(
+        input_size=input_size,
+        layer_sizes=(*hidden_layer_sizes, action_size * num_objectives),
+        activation=activation,
+        kernel_init=kernel_init,
+        norm_layer_type=norm_layer_type,
+        rngs=rngs,
+    )
+    mlp = (
+        make_vmap_mlp(**kwargs, num_networks=n_stack)
+        if n_stack > 1
+        else make_mlp(**kwargs)
+    )
+    return MultiObjectiveDiscreteQNetwork(mlp, n_stack, num_objectives, obs_key)
