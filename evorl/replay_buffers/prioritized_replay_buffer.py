@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
+from evorl.types import pytree_field
 from evorl.utils.jax_utils import tree_get
 
 from .replay_buffer import ReplayBuffer, ReplayBufferState
@@ -19,9 +20,15 @@ class PrioritizedReplayBufferState(ReplayBufferState):
         sample_indices: Indices of the last sampled batch (for priority updates).
     """
 
-    priority: jax.Array = jnp.zeros((), jnp.float32)
-    max_priority: jax.Array = jnp.ones((), jnp.float32)
-    sample_indices: jax.Array = jnp.zeros((), jnp.int32)
+    priority: jax.Array = pytree_field(
+        default_factory=lambda: jnp.zeros((), jnp.float32)
+    )
+    max_priority: jax.Array = pytree_field(
+        default_factory=lambda: jnp.ones((), jnp.float32)
+    )
+    sample_indices: jax.Array = pytree_field(
+        default_factory=lambda: jnp.zeros((), jnp.int32)
+    )
 
 
 class PrioritizedReplayBuffer(ReplayBuffer):

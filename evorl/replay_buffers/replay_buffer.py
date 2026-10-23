@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.types import PyTreeData, PyTreeNode
+from evorl.types import PyTreeData, PyTreeNode, pytree_field
 from evorl.utils.jax_utils import tree_get, tree_set
 
 
@@ -19,8 +19,12 @@ class ReplayBufferState(PyTreeData):
     """
 
     data: chex.ArrayTree
-    current_index: jax.Array = jnp.zeros((), jnp.int32)
-    buffer_size: jax.Array = jnp.zeros((), jnp.int32)
+    current_index: jax.Array = pytree_field(
+        default_factory=lambda: jnp.zeros((), jnp.int32)
+    )
+    buffer_size: jax.Array = pytree_field(
+        default_factory=lambda: jnp.zeros((), jnp.int32)
+    )
 
 
 class AbstractReplayBuffer(PyTreeNode, metaclass=ABCMeta):

@@ -18,6 +18,9 @@ def metric_field(
 ):
     """Define a metric field in `MetricBase`.
 
+    Use `default_factory` for array defaults so each instance creates its
+    arrays in the current device and mesh context.
+
     Args:
         reduce_fn: A function to reduce the metric value across different devices. For example, `jax.mean`
         static: Whether the field is static related to pytree.
@@ -67,9 +70,15 @@ class WorkflowMetric(MetricBase):
         iterations: The total number of workflow iterations.
     """
 
-    sampled_timesteps: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    sampled_episodes: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    iterations: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
 
 
 class TrainMetric(MetricBase):
@@ -114,9 +123,15 @@ class ECWorkflowMetric(MetricBase):
     """
 
     best_objective: jax.Array
-    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps_m: jax.Array = jnp.zeros((), dtype=jnp.float32)
-    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_episodes: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    sampled_timesteps_m: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.float32)
+    )
+    iterations: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
 
 
 class MultiObjectiveECWorkflowMetric(MetricBase):
@@ -128,9 +143,15 @@ class MultiObjectiveECWorkflowMetric(MetricBase):
         iterations: The total number of workflow iterations.
     """
 
-    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps_m: jax.Array = jnp.zeros((), dtype=jnp.float32)
-    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_episodes: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    sampled_timesteps_m: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.float32)
+    )
+    iterations: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
 
 
 class ECTrainMetric(MetricBase):

@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 class DistributedInfo(PyTreeData):
     """Distributed information for multi-devices training."""
 
-    rank: int = jnp.zeros((), dtype=jnp.int32)
+    rank: int = pytree_field(default_factory=lambda: jnp.zeros((), dtype=jnp.int32))
     world_size: int = pytree_field(default=1, static=True)
 
 

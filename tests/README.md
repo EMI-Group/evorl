@@ -39,6 +39,7 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `test_multi_agent_env.py` | Shared environment/wrapper interfaces, individual and whole-episode boundaries, per-agent returns, terminal/global observations and nested autoreset |
 | `test_jaxmarl_env.py` | Configured native transitions, per-agent spaces/rewards, legal action masks, global observations and all autoreset modes under nested `vmap` |
 | `test_vector_rewards.py` | Scalar and vector reward shapes, terminal masking, nested evaluation, action repeat, reward scaling, autoreset and native Brax/Playground metric selection |
+| `test_metrics.py` | Array defaults across single-device and two-device meshes, including first import inside a mesh |
 | `test_jumanji_env.py` | Native state conversion, structured observations, extras and action spaces |
 | `test_jumanji_multi_agent.py` | Native states/rewards, discount-to-done conversion, native timeouts, joint actions, per-agent spaces, masks and observations for all seven multi-agent tasks |
 | `test_jumanji_autoreset.py` | EvoRL wrapper selection, staggered episodes and reset keys, terminal masks/observations, shared native time limits, termination/truncation and frozen evaluation states |

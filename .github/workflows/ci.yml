@@ -101,6 +101,7 @@ jobs:
             "$GITHUB_WORKSPACE/tests/networks" \
             "$GITHUB_WORKSPACE/tests/agents" \
             "$GITHUB_WORKSPACE/tests/test_toolkits.py" \
+            "$GITHUB_WORKSPACE/tests/test_metrics.py" \
             "$GITHUB_WORKSPACE/tests/test_recorders.py" \
             "$GITHUB_WORKSPACE/tests/test_accelerator_utils.py" \
             "$GITHUB_WORKSPACE/tests/test_jax_compatibility.py" \

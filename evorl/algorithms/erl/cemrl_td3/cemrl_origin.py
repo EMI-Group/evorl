@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.metrics import MetricBase
+from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
     tree_get,
@@ -22,15 +22,25 @@ from .cemrl import CEMRLWorkflow as _CEMRLWorkflow
 
 
 class CEMRLTrainMetric(CEMRLTrainMetricBase):
-    num_updates_per_iter: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    num_updates_per_iter: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
     time_cost_per_iter: float = 0.0
 
 
 class WorkflowMetric(MetricBase):
-    sampled_timesteps: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps_per_iter: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    sampled_timesteps_per_iter: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    sampled_episodes: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    iterations: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
 
 
 class CEMRLWorkflow(_CEMRLWorkflow):

@@ -160,6 +160,9 @@ class State(PyTreeDict):
 def pytree_field(*, static=False, **kwargs):
     """Define a pytree field in our dataclass.
 
+    Use `default_factory` for array defaults so each instance creates its
+    arrays in the current device and mesh context.
+
     Args:
         static: Setting to False will mark the field as static for pytree, where changing data in these fields will cause a re-jit of func.
 

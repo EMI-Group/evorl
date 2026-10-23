@@ -38,10 +38,18 @@ class ERLTrainMetric(MetricBase):
 
 
 class WorkflowMetric(MetricBase):
-    sampled_timesteps: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    rl_sampled_timesteps: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    sampled_episodes: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    rl_sampled_timesteps: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    iterations: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
 
 
 class ERLWorkflowBase(Workflow):

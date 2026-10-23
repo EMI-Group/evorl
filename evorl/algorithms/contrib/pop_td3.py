@@ -16,7 +16,7 @@ from evorl.distributed import (
 )
 from evorl.agent import AgentState, RandomAgent
 from evorl.types import PyTreeDict, State
-from evorl.metrics import MetricBase, EvaluateMetric
+from evorl.metrics import MetricBase, EvaluateMetric, metric_field
 from evorl.rollout import rollout
 from evorl.sample_batch import SampleBatch
 from evorl.utils import running_statistics
@@ -35,10 +35,18 @@ logger = logging.getLogger(__name__)
 
 
 class WorkflowMetric(MetricBase):
-    sampled_timesteps: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_timesteps_per_agent: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    sampled_episodes: jax.Array = jnp.zeros((), dtype=jnp.uint32)
-    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    sampled_timesteps_per_agent: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    sampled_episodes: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
+    iterations: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
 
 
 class PopTD3Workflow(TD3Workflow):

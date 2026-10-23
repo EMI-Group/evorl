@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from evorl.metrics import MetricBase
+from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import is_jitted
 from evorl.algorithms.td3 import TD3TrainMetric
@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 
 
 class ERLTrainMetric(ERLTrainMetricBase):
-    num_updates_per_iter: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    num_updates_per_iter: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
     time_cost_per_iter: float = 0.0
 
 

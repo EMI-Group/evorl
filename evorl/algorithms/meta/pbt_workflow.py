@@ -19,7 +19,7 @@ from evorl.distributed import (
     tree_scatter_set,
 )
 from evorl.rollout import rollout
-from evorl.metrics import MetricBase, EvaluateMetric
+from evorl.metrics import MetricBase, EvaluateMetric, metric_field
 from evorl.envs import AutoresetMode, create_env
 from evorl.evaluators import Evaluator
 from evorl.types import MISSING_REWARD, PyTreeDict, State, PyTreeData
@@ -60,8 +60,12 @@ class PBTEvalMetric(MetricBase):
 
 class PBTWorkflowMetric(MetricBase):
     # Total environment samples across the population, in millions.
-    sampled_timesteps_m: jax.Array = jnp.zeros((), dtype=jnp.float32)
-    iterations: jax.Array = jnp.zeros((), dtype=jnp.uint32)
+    sampled_timesteps_m: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.float32)
+    )
+    iterations: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )
 
 
 class PBTOptState(PyTreeData):

@@ -45,7 +45,9 @@ class DQNTrainMetric(MetricBase):
 
 
 class DQNWorkflowMetric(WorkflowMetric):
-    training_updates: jax.Array = jnp.zeros((), dtype=jnp.uint32)  # not need sync
+    training_updates: jax.Array = metric_field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.uint32)
+    )  # not need sync
 
 
 class DQNAgent(Agent):
