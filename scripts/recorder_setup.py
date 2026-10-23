@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from hydra.utils import get_original_cwd
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -62,15 +61,13 @@ def setup_recorders(
                 LogRecorder(log_path=output_dir / f"{exp_name}.log", console=True)
             )
         elif rec in recorder_types:
-            # Aim needs a shared repository across runs for comparisons.
-            path = Path(get_original_cwd()) / "aim" if rec == "aim" else output_dir
             kwargs = {
                 "project": config.project,
                 "name": exp_name,
                 "group": group,
                 "config": config_data,
                 "tags": backend_tags,
-                "path": path,
+                "path": output_dir,
             }
             kwargs.update(backend_options.get(rec, {}))
             recorders.append(recorder_types[rec](**kwargs))

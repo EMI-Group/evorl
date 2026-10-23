@@ -1,6 +1,7 @@
 """Comet recorder."""
 
 import json
+import os
 from collections.abc import Mapping
 from typing import Any
 from urllib.parse import quote
@@ -18,7 +19,15 @@ from .recorder_utils import (
 
 
 class CometRecorder(Recorder):
-    """Record EvoRL runs as Comet experiments."""
+    """Record EvoRL runs as Comet experiments.
+
+    Offline and connection-fallback ZIP archives default to `path`, which
+    training scripts set to `output_dir`. `COMET_OFFLINE_DIRECTORY` takes
+    precedence over this default. An explicit `experiment_config` in
+    `extra_kwargs` uses the SDK's own directory configuration instead.
+    Online runs upload to the server without forcing a retained ZIP.
+    SDK temporary files and login configuration are stored separately.
+    """
 
     def __init__(
         self, *, project, name, config, tags, path, group=None, **extra_kwargs
@@ -34,9 +43,14 @@ class CometRecorder(Recorder):
     def init(self) -> None:
         import comet_ml
 
-        self.experiment = comet_ml.start(
-            **{"project_name": self.project, "mode": "create", **self.extra_kwargs}
-        )
+        kwargs = {"project_name": self.project, "mode": "create", **self.extra_kwargs}
+        if "experiment_config" not in kwargs:
+            kwargs["experiment_config"] = comet_ml.ExperimentConfig(
+                offline_directory=os.environ.get(
+                    "COMET_OFFLINE_DIRECTORY", str(self.path)
+                )
+            )
+        self.experiment = comet_ml.start(**kwargs)
         self.experiment.set_name(self.name)
         self.experiment.add_tags(self.tags)
         self.experiment.log_parameters(self.config, nested_support=True)

@@ -17,7 +17,13 @@ from .recorder_utils import (  # noqa: F401
 
 
 class WandbRecorder(Recorder):
-    """Recorder for Weights & Biases."""
+    """Record runs with Weights & Biases.
+
+    `path` is passed as `wandb.init(dir=...)` for local run files, normally
+    under `path/wandb/`. Online runs also upload data to the W&B server.
+    Training scripts default `path` to `output_dir`; `extra_kwargs` can
+    override SDK options such as `dir` and `mode`.
+    """
 
     def __init__(
         self, *, project, name, config, tags, path, group=None, **extra_kwargs

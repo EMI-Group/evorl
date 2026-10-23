@@ -31,7 +31,7 @@ def _sdk(name, **attributes):
     return module
 
 
-def test_setup_accepts_script_options_and_shared_aim_repo(monkeypatch):
+def test_setup_accepts_script_options_and_uses_output_dir():
     config = OmegaConf.create(
         {
             "output_dir": "/tmp/evorl-run",
@@ -41,15 +41,14 @@ def test_setup_accepts_script_options_and_shared_aim_repo(monkeypatch):
             "env": {"env_name": "ant", "env_type": "brax"},
         }
     )
-    monkeypatch.setattr(recorder_setup, "get_original_cwd", lambda: "/tmp/evorl")
-
     aim, wandb = recorder_setup.setup_recorders(config, "PPO")
     assert aim.group == "dev"
-    assert str(aim.path) == "/tmp/evorl/aim"
+    assert str(aim.path) == config.output_dir
     assert aim.tags == ["PPO", "ant", "brax", "baseline"]
     assert wandb.wandb_kwargs["group"] == "dev"
 
     aim, wandb = recorder_setup.setup_recorders(config, "PPO", parallel=True)
+    assert str(aim.path) == config.output_dir
     assert aim.group == "PPO_ant_brax|baseline"
     assert wandb.wandb_kwargs["group"] == aim.group
 
@@ -156,6 +155,7 @@ def test_other_backends_keep_group_and_histogram_semantics(monkeypatch):
         project="EvoRL", name="run", config={}, tags=[], path="/tmp/run", group="dev"
     )
     recorder.init()
+    assert swan.init.call_args.kwargs["log_dir"] == "/tmp/run"
     assert swan.init.call_args.kwargs["group"] == "dev"
     recorder.write({"dist": pd.Series([1.0, 2.0])}, step=3)
     swan.echarts.Bar.assert_called_once()
@@ -164,7 +164,11 @@ def test_other_backends_keep_group_and_histogram_semantics(monkeypatch):
     swan_run.finish.assert_called_once()
 
     experiment = MagicMock()
-    comet = _sdk("comet_ml", start=MagicMock(return_value=experiment))
+    comet = _sdk(
+        "comet_ml",
+        start=MagicMock(return_value=experiment),
+        ExperimentConfig=MagicMock(),
+    )
     monkeypatch.setitem(sys.modules, "comet_ml", comet)
     recorder = CometRecorder(
         project="EvoRL", name="run", config={}, tags=[], path="/tmp/run", group="dev"
@@ -199,6 +203,7 @@ def test_other_backends_keep_group_and_histogram_semantics(monkeypatch):
         group="dev",
     )
     recorder.init()
+    assert neptune.Run.call_args.kwargs["log_directory"] == "/tmp/run"
     run.add_tags.assert_any_call(tags=["dev"], group_tags=True)
     recorder.write({"dist": pd.Series([1.0, 2.0])}, step=3)
     run.log_histograms.assert_called_once()
@@ -212,6 +217,53 @@ def test_other_backends_keep_group_and_histogram_semantics(monkeypatch):
     assert "step" not in frame.columns
     with pytest.raises(TypeError, match="step"):
         recorder.write({"loss": 0.5})
+    recorder.close()
+
+
+@pytest.mark.parametrize("directory", [None, "/custom/comet"])
+def test_comet_archive_directory_respects_environment(monkeypatch, directory):
+    if directory is None:
+        monkeypatch.delenv("COMET_OFFLINE_DIRECTORY", raising=False)
+    else:
+        monkeypatch.setenv("COMET_OFFLINE_DIRECTORY", directory)
+    comet = _sdk("comet_ml", start=MagicMock(), ExperimentConfig=MagicMock())
+    monkeypatch.setitem(sys.modules, "comet_ml", comet)
+    for path in ("/tmp/first-run", "/tmp/second-run"):
+        recorder = CometRecorder(
+            project="EvoRL",
+            name="run",
+            config={},
+            tags=[],
+            path=path,
+            online=False,
+        )
+        recorder.init()
+        comet.ExperimentConfig.assert_called_with(
+            offline_directory=path if directory is None else directory
+        )
+        assert comet.start.call_args.kwargs["online"] is False
+        assert (
+            comet.start.call_args.kwargs["experiment_config"]
+            is comet.ExperimentConfig.return_value
+        )
+        recorder.close()
+
+
+def test_comet_preserves_explicit_experiment_config(monkeypatch):
+    comet = _sdk("comet_ml", start=MagicMock(), ExperimentConfig=MagicMock())
+    monkeypatch.setitem(sys.modules, "comet_ml", comet)
+    config = object()
+    recorder = CometRecorder(
+        project="EvoRL",
+        name="run",
+        config={},
+        tags=[],
+        path="/tmp/run",
+        experiment_config=config,
+    )
+    recorder.init()
+    assert comet.start.call_args.kwargs["experiment_config"] is config
+    comet.ExperimentConfig.assert_not_called()
     recorder.close()
 
 
@@ -229,6 +281,7 @@ def test_wandb_uses_the_run_returned_by_init(monkeypatch):
         project="EvoRL", name="run", config={}, tags=[], path="/tmp/run", group="dev"
     )
     recorder.init()
+    assert wandb.init.call_args.kwargs["dir"] == "/tmp/run"
     assert wandb.init.call_args.kwargs["group"] == "dev"
     recorder.write({"loss": 0.5}, step=3)
     run.log.assert_called_once_with({"loss": 0.5}, step=3)
@@ -380,7 +433,7 @@ def test_real_aim_preserves_population_snapshots(tmp_path):
     aim = pytest.importorskip("aim")
     from aim.storage.context import Context
 
-    repo = tmp_path / "aim"
+    repo = tmp_path
     recorder = AimRecorder(
         project="EvoRL",
         name="pbt",
@@ -392,6 +445,8 @@ def test_real_aim_preserves_population_snapshots(tmp_path):
         capture_terminal_logs=False,
     )
     recorder.init()
+    assert (repo / ".aim").is_dir()
+    assert not (repo / ".aim" / ".aim").exists()
     run_hash = recorder.run.hash
     frame = pd.DataFrame({"pop_id": [0, 1], "learning_rate": [1e-8, 2e-4]})
     try:

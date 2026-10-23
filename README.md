@@ -163,10 +163,10 @@ For more advanced usage, see our documentation: [Training](https://evorl.readthe
 
 With the default Hydra configuration, a single run stores outputs in `outputs/<script>/<timestamp>/`, and [multi-run mode](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/) (`-m`) uses `multirun/<script>/<timestamp>/<overrides>/`, where `<script>` is `train` or `train_dist`. `LogRecorder` writes `<experiment-name>.log` there; checkpoints use the `checkpoints/` subdirectory when `checkpoint.enable=true`.
 
-By default, the training scripts enable `LogRecorder` and `AimRecorder` (`recorders: [log, aim]`). Aim stores runs locally in the shared `aim/.aim` repository under the directory where training was launched. View and compare runs from that directory:
+By default, the training scripts enable `LogRecorder` and `AimRecorder` (`recorders: [log, aim]`). Aim automatically creates `.aim/` inside the run's output directory. View the run by passing that output directory, without appending `.aim`:
 
 ```shell
-aim up --repo aim
+aim up --repo <output_dir>
 ```
 
 To use WandB, install its optional extra (or run `pip install wandb`) and select it explicitly:

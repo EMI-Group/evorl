@@ -18,7 +18,12 @@ from .recorder_utils import (
 
 
 class AimRecorder(Recorder):
-    """Record runs in a shared local Aim repository."""
+    """Record runs in the `.aim` directory Aim creates under `path`.
+
+    Training scripts default `path` to `output_dir`. Pass that parent
+    directory to `aim up --repo`, without appending `.aim`. The SDK's
+    `repo` option can be overridden through `extra_kwargs`.
+    """
 
     def __init__(
         self, *, project, name, config, tags, path, group=None, **extra_kwargs

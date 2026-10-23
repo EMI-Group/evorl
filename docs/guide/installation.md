@@ -47,7 +47,7 @@ Installing an SDK does not enable its recorder. Select the installed backends
 with the `recorders` override; quote the list to prevent shell globbing:
 
 ```shell
-# Default local logging and Aim; view runs using: aim up --repo aim
+# Default local logging and Aim; view runs using: aim up --repo <output_dir>
 python scripts/train.py agent=ppo env=brax/ant
 
 # Use WandB instead of Aim (authenticate using wandb login for online logging)

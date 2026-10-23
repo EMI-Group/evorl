@@ -19,7 +19,18 @@ from .recorder_utils import (
 
 
 class NeptuneRecorder(Recorder):
-    """Record through the legacy neptune-scale SDK when a server is available."""
+    """Record through the legacy neptune-scale SDK when a server is available.
+
+    `path` is passed as `Run(log_directory=...)`, defaulting to the training
+    `output_dir`. The SDK creates `<project>_<run_id>_<timestamp>/` there
+    with a `run_operations.sqlite3` database containing experiment data
+    queued for synchronization, including metrics and configuration.
+    Offline mode retains this data; async mode uploads it to the server
+    and cleans up local data after successful synchronization. Uploaded
+    files may be referenced at their original locations rather than
+    copied into this directory. `extra_kwargs` can override SDK options
+    such as `log_directory` and `mode`.
+    """
 
     def __init__(
         self, *, project, name, config, tags, path, group=None, **extra_kwargs

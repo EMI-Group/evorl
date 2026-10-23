@@ -19,7 +19,17 @@ from .recorder_utils import (
 
 
 class SwanlabRecorder(Recorder):
-    """Record metrics and media with SwanLab."""
+    """Record metrics and media with SwanLab.
+
+    `path` is passed as `swanlab.init(log_dir=...)`, defaulting to the
+    training `output_dir`. The SDK creates `run-<timestamp>-<id>/` there
+    for the `.swanlab` data file, configuration, debug logs, and media.
+    Online mode also uploads to the server; offline mode retains local
+    data. Local persistence can be disabled with `core.skip_store` in
+    online mode. User configuration and credentials live separately,
+    normally under `~/.swanlab/`, configurable through `SWANLAB_ROOT`.
+    `extra_kwargs` can override SDK options such as `log_dir` and `mode`.
+    """
 
     def __init__(
         self, *, project, name, config, tags, path, group=None, **extra_kwargs

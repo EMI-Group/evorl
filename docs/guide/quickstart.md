@@ -116,9 +116,9 @@ However, when there are multiple GPUs, `scripts/train.py` will sequentially run 
 
 ### Logging
 
-With the default Hydra configuration, a single run stores outputs in `outputs/<script>/<timestamp>/`, and multi-run mode (`-m`) uses `multirun/<script>/<timestamp>/<overrides>/`, where `<script>` is `train` or `train_dist`. `LogRecorder` writes `<experiment-name>.log` there; checkpoints use the `checkpoints/` subdirectory when `checkpoint.enable=true`. Aim uses the separate shared repository described below.
+With the default Hydra configuration, a single run stores outputs in `outputs/<script>/<timestamp>/`, and multi-run mode (`-m`) uses `multirun/<script>/<timestamp>/<overrides>/`, where `<script>` is `train` or `train_dist`. `LogRecorder` writes `<experiment-name>.log` there; checkpoints use the `checkpoints/` subdirectory when `checkpoint.enable=true`.
 
-By default, the script enables `LogRecorder` and `AimRecorder`. `LogRecorder` saves `*.log` in the output directory. Aim stores runs in the shared `aim/.aim` repository under the original working directory, so separate training runs can be compared with `aim up --repo aim`. Aim is installed with EvoRL; the other tracking SDKs are optional.
+By default, the script enables `LogRecorder` and `AimRecorder`. `LogRecorder` saves `*.log` in the output directory. Aim automatically creates `.aim/` in the same output directory; view it with `aim up --repo <output_dir>`, without appending `.aim`. Aim is installed with EvoRL; the other tracking SDKs are optional.
 
 Install optional trackers using an EvoRL extra or their SDK package directly:
 
@@ -152,9 +152,9 @@ The common constructor parameters are EvoRL concepts, not identical SDK features
 | Recorder | `project` and `name` | `group` | `path` |
 | --- | --- | --- | --- |
 | WandB | Native project and run name | Native group | Local run directory |
-| Aim | Project metadata and native run name | Experiment | Shared Aim repository |
+| Aim | Project metadata and native run name | Experiment | Local repository at `<output_dir>/.aim/` |
 | SwanLab | Native project and experiment name | Native group | Local log directory |
-| Comet | Native project and experiment name | `group` metadata, selectable for UI grouping | `output_dir` metadata only |
+| Comet | Native project and experiment name | `group` metadata, selectable for UI grouping | Offline/fallback ZIP directory; overridable with `COMET_OFFLINE_DIRECTORY` or `experiment_config` |
 | Neptune | Native `workspace/project` and experiment name | Group tag | Local log directory |
 
 All tracking recorders receive the resolved config and tags, but config appears in each SDK's own config, parameter, or metadata view. SDK-specific options are not portable across backends. Nested metric dictionaries are flattened to slash-separated names outside WandB. `Series` values become distributions or histograms; SwanLab uses an ECharts bar chart. Aim, SwanLab, and Neptune use 64 bins, matching WandB's default; Comet uses its SDK's histogram binning. Empty or nonfinite histogram samples and `None` values are skipped outside WandB. Raw arrays and other nonnumeric values are retained as JSON text outside WandB, so their dashboards differ from WandB's native array logging. SDKs may also capture system data or console output according to their own defaults; EvoRL does not normalize this automatic logging.

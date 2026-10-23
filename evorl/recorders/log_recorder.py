@@ -12,7 +12,11 @@ from .recorder_utils import normalize_step
 
 
 class LogRecorder(Recorder):
-    """Log file recorder."""
+    """Write metrics to `log_path`, overwriting the file when initialized.
+
+    Training scripts use `output_dir/<experiment-name>.log`. With
+    `console=True`, records also propagate to the root logger.
+    """
 
     def __init__(self, log_path: str, console: bool = True):
         """Initialize the log recorder.
