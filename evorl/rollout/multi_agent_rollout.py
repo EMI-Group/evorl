@@ -11,9 +11,10 @@ from evorl.types import PyTreeDict
 def multi_agent_rollout(env, action_fn, env_state, agent_state, key, rollout_length):
     """Collect joint transitions, retaining original observations at boundaries.
 
-    Training environments use NORMAL autoreset. A globally completed episode
-    already exposes reset observations, so all agents become active together.
-    An individually finished agent stays inactive until that episode resets.
+    With NORMAL autoreset, a completed episode already exposes reset
+    observations. With ENVPOOL autoreset, the next call only resets and every
+    agent is inactive for that transition. An individually finished agent stays
+    inactive until the whole episode resets.
     """
 
     def step(carry, _):
@@ -21,11 +22,15 @@ def multi_agent_rollout(env, action_fn, env_state, agent_state, key, rollout_len
         key, action_key = jax.random.split(key)
         actions, extras = action_fn(agent_state, SampleBatch(obs=state.obs), action_key)
         next_state = env.step(state, actions)
+        autoreset = jnp.asarray(next_state.info.get("autoreset", False), jnp.bool_)
         active = PyTreeDict(
             {
                 name: (
-                    ~state.done[name].astype(jnp.bool_)
-                    | state.done["__all__"].astype(jnp.bool_)
+                    (
+                        ~state.done[name].astype(jnp.bool_)
+                        | state.done["__all__"].astype(jnp.bool_)
+                    )
+                    & ~autoreset
                 )
                 for name in env.agents
             }
@@ -47,7 +52,7 @@ def multi_agent_rollout(env, action_fn, env_state, agent_state, key, rollout_len
             obs=state.obs,
             actions=actions,
             rewards=PyTreeDict({name: next_state.reward[name] for name in env.agents}),
-            next_obs=next_state.info.ori_obs,
+            next_obs=next_state.info.get("ori_obs", next_state.obs),
             dones=dones,
             extras=PyTreeDict(
                 policy_extras=extras,
@@ -55,7 +60,9 @@ def multi_agent_rollout(env, action_fn, env_state, agent_state, key, rollout_len
                 terminations=terminations,
                 episode_done=next_state.done["__all__"],
                 global_obs=state.info.get("global_obs"),
-                next_global_obs=next_state.info.get("ori_global_obs"),
+                next_global_obs=next_state.info.get(
+                    "ori_global_obs", next_state.info.get("global_obs")
+                ),
             ),
         )
         return (next_state, key), transition

@@ -10,8 +10,9 @@ pop_size: 32
 
 workflow_steps_per_iter: 1024
 
-random_timesteps: 4096 # timesteps filled into the replay buffer before the first iteration
-warmup_steps: 1024 # warmup_iters = warmup_steps // workflow_steps_per_iter
+shared_replay_buffer: true # false: one independent replay buffer per population member
+random_timesteps: 4096 # warmup transitions per buffer before the first iteration
+warmup_steps: 1024 # warmup_iters = ceil(warmup_steps / workflow_steps_per_iter)
 
 num_iters: 500
 

@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from evorl.agent import RandomAgent
-from evorl.algorithms.offpolicy_utils import OffPolicyWorkflowTemplate
+from evorl.algorithms.offpolicy_utils import OffPolicyWorkflowTemplate, clean_trajectory
 from evorl.distributed import DP_AXIS_NAME, pmean, psum
 from evorl.distributed.sharding import mark_varying
 from evorl.envs import Box
@@ -179,11 +179,12 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
             obs=zeros(env.obs),
             actions=self.env.action_space.sample(key),
             rewards=zeros(env.reward),
-            dones=zeros(env.done),
-            next_obs=zeros(env.obs),
             extras=PyTreeDict(
                 preferences=jnp.zeros(self.agent.num_objectives, jnp.float32),
-                terminations=zeros(env.info.termination),
+                policy_extras=PyTreeDict(),
+                env_extras=PyTreeDict(
+                    ori_obs=zeros(env.obs), termination=zeros(env.info.termination)
+                ),
             ),
         )
         return self.replay_buffer.init(spec)
@@ -216,9 +217,13 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
                 actions=action,
                 rewards=next_state.reward,
                 dones=next_state.done,
-                next_obs=next_state.info.ori_obs,
                 extras=PyTreeDict(
-                    preferences=preferences, terminations=next_state.info.termination
+                    preferences=preferences,
+                    policy_extras=PyTreeDict(),
+                    env_extras=PyTreeDict(
+                        ori_obs=next_state.info.ori_obs,
+                        termination=next_state.info.termination,
+                    ),
                 ),
             )
             new_weights = sample_preferences(
@@ -244,6 +249,7 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
         )
 
     def _postsetup_replaybuffer(self, state):
+        training_preferences = state.rollout_preferences
         random_length = self.config.random_timesteps // self.config.num_envs
         policy_length = max(
             0,
@@ -270,7 +276,9 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
                 continue
             trajectory, state = self._rollout(state, rollout_key, length, random)
             episodes = trajectory.dones.sum().astype(jnp.uint32)
-            trajectory = tree_stop_gradient(flatten_rollout_trajectory(trajectory))
+            trajectory = tree_stop_gradient(
+                flatten_rollout_trajectory(clean_trajectory(trajectory))
+            )
             agent_state = state.agent_state
             if agent_state.obs_preprocessor_state is not None:
                 agent_state = agent_state.replace(
@@ -280,22 +288,11 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
                         axis_name=self.dp_axis_name,
                     )
                 )
-            buffer = state.replay_buffer_state
-            stored = trajectory
-            overflow = trajectory.obs.shape[0] - self.replay_buffer.capacity
-            if overflow > 0:
-                # Earlier entries would already have been overwritten. Advance
-                # past them, then write the final ring once with unique indices.
-                buffer = buffer.replace(
-                    current_index=(buffer.current_index + overflow)
-                    % self.replay_buffer.capacity
-                )
-                stored = jax.tree.map(
-                    lambda x: x[-self.replay_buffer.capacity :], trajectory
-                )
             state = state.replace(
                 agent_state=agent_state,
-                replay_buffer_state=self.replay_buffer.add(buffer, stored),
+                replay_buffer_state=self.replay_buffer.add(
+                    state.replay_buffer_state, trajectory
+                ),
                 metrics=state.metrics.replace(
                     sampled_timesteps=state.metrics.sampled_timesteps
                     + psum(
@@ -304,6 +301,18 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
                     sampled_episodes=state.metrics.sampled_episodes
                     + psum(episodes, self.dp_axis_name),
                 ),
+            )
+        if random_length + policy_length > 0:
+            key, env_key = jax.random.split(state.key)
+            if self.is_multi_device:
+                env_key = jax.random.fold_in(
+                    env_key, jax.lax.axis_index(self.dp_axis_name)
+                )
+            # Training starts a new episode, independent of replay prefill.
+            state = state.replace(
+                key=key,
+                env_state=self.env.reset(env_key),
+                rollout_preferences=training_preferences,
             )
         return state
 

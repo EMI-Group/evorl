@@ -157,6 +157,13 @@ class MultiAgentOffPolicyWorkflow(OffPolicyWorkflowTemplate):
             sampled_episodes=state.metrics.sampled_episodes
             + psum(sampled_episodes, self.dp_axis_name),
         )
+        if random_length + policy_length > 0:
+            key, env_key = jax.random.split(key)
+            if self.is_multi_device:
+                env_key = jax.random.fold_in(
+                    env_key, jax.lax.axis_index(self.dp_axis_name)
+                )
+            env_state = self.env.reset(env_key)
         return state.replace(
             key=key,
             metrics=metrics,

@@ -98,10 +98,11 @@ class PBTWorkflowBase(Workflow):
     def build_from_config(cls, config: DictConfig, multi_device=True, jit: bool = True):
         config = copy.deepcopy(config)  # avoid in-place modification
 
-        devices = jax.local_devices()
+        devices = jax.local_devices() if multi_device else jax.local_devices()[:1]
 
         OmegaConf.set_readonly(config, False)
-        cls._rescale_config(config)
+        if multi_device:
+            cls._rescale_config(config)
 
         if jit:
             cls.enable_jit()
@@ -390,6 +391,11 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
         offsprings_workflow_state = jax.vmap(self.apply_hyperparams_to_workflow_state)(
             parents_wf_state, offsprings
         )
+        # Preserve independent exploration streams after copying a parent's
+        # model and environment snapshot into the destination member.
+        offsprings_workflow_state = offsprings_workflow_state.replace(
+            key=tree_get(pop_workflow_state.key, bottom_indices, out_sharding=jax.P())
+        )
 
         # ==== survival | merge population ====
         pop = tree_scatter_set(
@@ -463,7 +469,13 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
 
 
 class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
-    """PBT Workflow Template for Off-policy algorithms with shared replay buffer."""
+    """Train PBT members with a shared replay or independent per-member rings.
+
+    With `shared_replay_buffer=True`, one replay ring is replicated across
+    devices and receives every member's transitions. Otherwise each member has
+    its own ring, sharded along the population axis. Replay stays at the workflow
+    root so copying a parent during exploitation preserves the recipient's data.
+    """
 
     def __init__(
         self, workflow: OffPolicyWorkflow, evaluator: Evaluator, config: DictConfig
@@ -487,60 +499,94 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         return state
 
     def _setup_replaybuffer(self, key: jax.Array) -> ReplayBufferState:
-        # Each device holds a replica of the shared replay buffer.
-        return jax.device_put(self.workflow._setup_replaybuffer(key), jax.P())
+        if self.config.shared_replay_buffer:
+            # Each device holds a replica of the shared replay buffer.
+            return jax.device_put(self.workflow._setup_replaybuffer(key), jax.P())
+        keys = jax.device_put(
+            jax.random.split(key, self.config.pop_size), jax.P(META_POP_AXIS_NAME)
+        )
+        return shmap_vmap(
+            self.workflow._setup_replaybuffer,
+            in_specs=jax.P(META_POP_AXIS_NAME),
+            out_specs=jax.P(META_POP_AXIS_NAME),
+        )(keys)
 
     def _postsetup_replaybuffer(self, state: State) -> State:
-        # Since the replay buffer is shared across workflows, we need an independent post-setup
         env = self.workflow.env
-        action_space = env.action_space
-        obs_space = env.obs_space
         num_envs = self.config.target_workflow.num_envs
 
         pop_workflow_state = state.pop_workflow_state
         replay_buffer_state = state.replay_buffer_state
 
         rollout_length = self.config.random_timesteps // num_envs
+        if rollout_length < 1:
+            raise ValueError(
+                "random_timesteps must be at least target_workflow.num_envs"
+            )
 
         # ==== fill random transitions ====
 
-        key, env_key, rollout_key = jax.random.split(state.key, num=3)
+        key, rollout_key = jax.random.split(state.key)
 
         random_agent = RandomAgent()
-        random_agent_state = random_agent.init(
-            obs_space, action_space, jax.random.key(0)
-        )
-        env_state = env.reset(env_key)
 
-        trajectory, env_state = rollout(
-            env_fn=env.step,
-            action_fn=random_agent.compute_actions,
-            env_state=env_state,
-            agent_state=random_agent_state,
-            key=rollout_key,
-            rollout_length=rollout_length,
-            env_extra_fields=("ori_obs", "termination"),
-        )
+        def random_trajectory(key):
+            random_agent_state = random_agent.init(
+                env.obs_space, env.action_space, jax.random.key(0)
+            )
+            env_key, rollout_key = jax.random.split(key)
+            trajectory, _ = rollout(
+                env_fn=env.step,
+                action_fn=random_agent.compute_actions,
+                env_state=env.reset(env_key),
+                agent_state=random_agent_state,
+                key=rollout_key,
+                rollout_length=rollout_length,
+                env_extra_fields=("ori_obs", "termination"),
+            )
+            # [T, B, ...] -> [T*B, ...]
+            return tree_stop_gradient(
+                flatten_rollout_trajectory(clean_trajectory(trajectory))
+            )
 
-        # [T, B, ...] -> [T*B, ...]
-        trajectory = clean_trajectory(trajectory)
-        trajectory = flatten_rollout_trajectory(trajectory)
-        trajectory = tree_stop_gradient(trajectory)
-        trajectory = jax.device_put(trajectory, jax.P())
+        if self.config.shared_replay_buffer:
+            trajectory = jax.device_put(random_trajectory(rollout_key), jax.P())
+            replay_buffer_state = self.replay_buffer.add(
+                replay_buffer_state, trajectory
+            )
+        else:
+            keys = jax.device_put(
+                jax.random.split(rollout_key, self.config.pop_size),
+                jax.P(META_POP_AXIS_NAME),
+            )
+
+            def warmup_member(replay, key):
+                trajectory = random_trajectory(key)
+                return self.replay_buffer.add(replay, trajectory), trajectory.obs
+
+            replay_buffer_state, observations = shmap_vmap(
+                warmup_member,
+                in_specs=jax.P(META_POP_AXIS_NAME),
+                out_specs=jax.P(META_POP_AXIS_NAME),
+            )(replay_buffer_state, keys)
 
         if pop_workflow_state.agent_state.obs_preprocessor_state is not None:
-            # update all obs_preprocessor_state by the random trajectory
-
             obs_preprocessor_state = (
                 pop_workflow_state.agent_state.obs_preprocessor_state
             )
-
-            obs_preprocessor_state = shmap_vmap(
-                running_statistics.update,
-                in_specs=(jax.P(META_POP_AXIS_NAME), jax.P()),
-                out_specs=jax.P(META_POP_AXIS_NAME),
-                vmap_in_axes=(0, None),
-            )(obs_preprocessor_state, trajectory.obs)
+            if self.config.shared_replay_buffer:
+                obs_preprocessor_state = shmap_vmap(
+                    running_statistics.update,
+                    in_specs=(jax.P(META_POP_AXIS_NAME), jax.P()),
+                    out_specs=jax.P(META_POP_AXIS_NAME),
+                    vmap_in_axes=(0, None),
+                )(obs_preprocessor_state, trajectory.obs)
+            else:
+                obs_preprocessor_state = shmap_vmap(
+                    running_statistics.update,
+                    in_specs=jax.P(META_POP_AXIS_NAME),
+                    out_specs=jax.P(META_POP_AXIS_NAME),
+                )(obs_preprocessor_state, observations)
 
             pop_workflow_state = pop_workflow_state.replace(
                 agent_state=pop_workflow_state.agent_state.replace(
@@ -548,12 +594,24 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
                 )
             )
 
-        replay_buffer_state = self.replay_buffer.add(replay_buffer_state, trajectory)
-
         sampled_timesteps_m = rollout_length * num_envs / 1e6
+        if not self.config.shared_replay_buffer:
+            sampled_timesteps_m *= self.config.pop_size
         workflow_metrics = state.metrics.replace(
             sampled_timesteps_m=state.metrics.sampled_timesteps_m + sampled_timesteps_m,
         )
+
+        def reset_member(member):
+            member_key, env_key = jax.random.split(member.key)
+            return member.replace(key=member_key, env_state=env.reset(env_key))
+
+        # Shared prefill uses one batch; restore the population's training
+        # batches as well as resetting the actual host simulators.
+        pop_workflow_state = shmap_vmap(
+            reset_member,
+            in_specs=jax.P(META_POP_AXIS_NAME),
+            out_specs=jax.P(META_POP_AXIS_NAME),
+        )(pop_workflow_state)
 
         return state.replace(
             key=key,
@@ -573,28 +631,37 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
             def _one_step(carry, _):
                 pop_wf_state, replay_buffer_state = carry
 
-                def _wf_step_wrapper(wf_state):
-                    wf_state = wf_state.replace(replay_buffer_state=replay_buffer_state)
+                def _wf_step_wrapper(wf_state, replay):
+                    wf_state = wf_state.replace(replay_buffer_state=replay)
                     train_metrics, wf_state = self.workflow.step(wf_state)
                     wf_state = wf_state.replace(replay_buffer_state=None)
                     return train_metrics, wf_state
 
-                pop_train_metrics, pop_wf_state = jax.vmap(_wf_step_wrapper)(
-                    pop_wf_state
-                )
+                pop_train_metrics, pop_wf_state = jax.vmap(
+                    _wf_step_wrapper,
+                    in_axes=(0, None if self.config.shared_replay_buffer else 0),
+                )(pop_wf_state, replay_buffer_state)
 
-                # add replay buffer data:
-                # [pop, T*B, ...] -> [pop*T*B, ...]
-                trajectory = jtu.tree_map(
-                    lambda x: jax.lax.collapse(x, 0, 2), pop_train_metrics.trajectory
-                )
-                trajectory = all_gather(
-                    trajectory, META_POP_AXIS_NAME, axis=0, tiled=True, to="invarying"
-                )
-
-                replay_buffer_state = self.replay_buffer.add(
-                    replay_buffer_state, trajectory
-                )
+                if self.config.shared_replay_buffer:
+                    # [pop, T*B, ...] -> [pop*T*B, ...]
+                    trajectory = jtu.tree_map(
+                        lambda x: jax.lax.collapse(x, 0, 2),
+                        pop_train_metrics.trajectory,
+                    )
+                    trajectory = all_gather(
+                        trajectory,
+                        META_POP_AXIS_NAME,
+                        axis=0,
+                        tiled=True,
+                        to="invarying",
+                    )
+                    replay_buffer_state = self.replay_buffer.add(
+                        replay_buffer_state, trajectory
+                    )
+                else:
+                    replay_buffer_state = jax.vmap(self.replay_buffer.add)(
+                        replay_buffer_state, pop_train_metrics.trajectory
+                    )
                 pop_train_metrics = pop_train_metrics.replace(trajectory=None)
 
                 return (pop_wf_state, replay_buffer_state), pop_train_metrics
@@ -608,10 +675,17 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
 
             return train_metrics, pop_wf_state, replay_buffer_state
 
+        replay_spec = (
+            jax.P() if self.config.shared_replay_buffer else jax.P(META_POP_AXIS_NAME)
+        )
         pop_train_metrics, pop_workflow_state, replay_buffer_state = jax.shard_map(
             _train_steps,
-            in_specs=(jax.P(META_POP_AXIS_NAME), jax.P()),
-            out_specs=(jax.P(META_POP_AXIS_NAME), jax.P(META_POP_AXIS_NAME), jax.P()),
+            in_specs=(jax.P(META_POP_AXIS_NAME), replay_spec),
+            out_specs=(
+                jax.P(META_POP_AXIS_NAME),
+                jax.P(META_POP_AXIS_NAME),
+                replay_spec,
+            ),
         )(pop_workflow_state, replay_buffer_state)
 
         # Count new interactions before PBT copies parent states into offspring.

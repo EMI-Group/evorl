@@ -121,7 +121,9 @@ def test_random_setup_replicates_the_root_key(setup_components, dp_mesh):
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("workflow_kind", ["standard", "cso", "shared_buffer"])
+@pytest.mark.parametrize(
+    "workflow_kind", ["standard", "cso", "shared_buffer", "private_buffer"]
+)
 def test_population_selection_matches_single_device(workflow_kind, meta_mesh, request):
     class Target:
         def setup(self, key):
@@ -186,6 +188,7 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
             "perturb_factor": {"actor_loss_weight": 0.1},
             "search_space": {"actor_loss_weight": {"low": 0.1, "high": 5}},
             "eval_episodes": 1,
+            "shared_replay_buffer": workflow_kind == "shared_buffer",
         }
     )
 
@@ -229,9 +232,12 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
     )
 
     mesh = meta_mesh
-    cls = {"standard": Harness, "cso": CSOHarness, "shared_buffer": OffHarness}[
-        workflow_kind
-    ]
+    cls = {
+        "standard": Harness,
+        "cso": CSOHarness,
+        "shared_buffer": OffHarness,
+        "private_buffer": OffHarness,
+    }[workflow_kind]
     wf = cls(OffTarget() if cls is OffHarness else Target(), evaluator, cfg)
     wf.mesh = mesh
     request.addfinalizer(wf.close)
@@ -246,8 +252,16 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
     assert metrics.pop_episode_returns.shape == (4,)
     jax.block_until_ready(state)
     if cls is OffHarness:
-        assert int(state.replay_buffer_state.buffer_size) == 8
-        assert state.replay_buffer_state.total.sharding.spec == jax.P()
+        if cfg.shared_replay_buffer:
+            assert int(state.replay_buffer_state.buffer_size) == 8
+            assert state.replay_buffer_state.total.sharding.spec == jax.P()
+        else:
+            np.testing.assert_array_equal(
+                state.replay_buffer_state.buffer_size, [2] * 4
+            )
+            assert state.replay_buffer_state.total.sharding.spec == jax.P(
+                META_POP_AXIS_NAME
+            )
 
     # A one-device run is the numerical reference for distributed selection,
     # mutation, state transfer and shared-buffer accumulation.

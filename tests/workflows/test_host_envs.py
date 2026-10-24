@@ -137,3 +137,73 @@ def test_pbt_openes_host_environments(host_envs):
             assert environments
     finally:
         workflow.close()
+
+
+@pytest.mark.parametrize("host_envs", ["gymnasium"], indirect=True)
+def test_pbt_sac_restores_population_host_batches_after_shared_prefill(host_envs):
+    if jax.local_device_count() != 1:
+        pytest.skip(
+            "Host pools use one device; run with --cpu-devices=1 or --device=gpu"
+        )
+    backend, _ = host_envs
+    root = Path(__file__).resolve().parents[2]
+    common = OmegaConf.load(root / "configs/config.yaml")
+    target = OmegaConf.merge(
+        common,
+        OmegaConf.load(root / "configs/agent/meta/paramsac.yaml"),
+        dict(
+            num_envs=2,
+            num_eval_envs=1,
+            eval_episodes=1,
+            rollout_length=1,
+            batch_size=2,
+            replay_buffer_capacity=16,
+            num_updates_per_iter=1,
+            normalize_obs=False,
+            agent_network=dict(
+                actor_hidden_layer_sizes=[4], critic_hidden_layer_sizes=[4]
+            ),
+        ),
+    )
+    config = OmegaConf.merge(
+        common,
+        OmegaConf.load(root / "configs/agent/meta/pbt-paramsac.yaml"),
+        dict(
+            target_workflow=target,
+            env=dict(env_type=backend, env_name="Pendulum-v1", max_episode_steps=100),
+            pop_size=2,
+            random_timesteps=6,
+            shared_replay_buffer=True,
+            num_eval_envs=1,
+            eval_episodes=1,
+            workflow_steps_per_iter=1,
+            warmup_steps=100,
+            bottom_ratio=0.5,
+            top_ratio=0.5,
+        ),
+    )
+    target_cls = type("HostParamSAC", (get_class(target.workflow_cls),), {})
+    cls = type("HostPBTSAC", (get_class(config.workflow_cls),), {})
+    with patch("hydra.utils.get_class", return_value=target_cls):
+        workflow = cls.build_from_config(config, multi_device=False)
+    try:
+        with jax.set_mesh(workflow.mesh):
+            state = workflow.setup(jax.random.key(20))
+            jax.block_until_ready(state)
+            assert workflow.workflow.env.env.num_envs == 4
+            np.testing.assert_array_equal(
+                state.pop_workflow_state.env_state.info.steps, 0
+            )
+            # Exercise the actual pool after restoring its population batch.
+            native = workflow.workflow.env.env
+            np.testing.assert_array_equal(
+                native.call("get_wrapper_attr", "_elapsed_steps"), [0] * 4
+            )
+            observations, *_ = native.step(np.zeros((4, 1), np.float32))
+            assert observations.shape == (4, 3)
+            np.testing.assert_array_equal(
+                native.call("get_wrapper_attr", "_elapsed_steps"), [1] * 4
+            )
+            np.testing.assert_array_equal(state.replay_buffer_state.buffer_size, 6)
+    finally:
+        workflow.close()

@@ -15,7 +15,7 @@ from evorl.algorithms.a2c import A2CAgent
 from evorl.algorithms.ec.ec_agent import DeterministicECAgent, StochasticECAgent
 from evorl.algorithms.impala import IMPALAAgent
 from evorl.algorithms.ppo import PPOAgent
-from evorl.distributed import pmean_nnx_loss_and_grad
+from evorl.distributed import DP_AXIS_NAME, pmean_nnx_loss_and_grad
 from evorl.envs import Box, SpaceContainer
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict
@@ -30,6 +30,84 @@ FACTORIES = {
     "ppo": partial(build_agent, PPOAgent),
     "impala": partial(build_agent, IMPALAAgent),
 }
+
+
+@pytest.mark.parametrize("agent_cls", [PPOAgent, ParamPPOAgent])
+@pytest.mark.parametrize("normalize", [True, False])
+@pytest.mark.parametrize("valid_counts", [(4, 4), (2, 4), (0, 4), (0, 0)])
+def test_ppo_masked_data_parallel_loss_and_grad_match_valid_batch(
+    agent_cls, normalize, valid_counts, dp_mesh
+):
+    """Unequal valid counts must match training on all valid samples together."""
+    env = ToyEnv(4, discrete=True)
+    agent = build_agent(
+        agent_cls,
+        env.obs_space,
+        env.action_space,
+        actor_hidden_layer_sizes=(4,),
+        critic_hidden_layer_sizes=(4,),
+        normalize_obs=False,
+        normalize_gae=normalize,
+    )
+    state = agent.init(env.obs_space, env.action_space, jax.random.key(41))
+    valid = np.concatenate([np.arange(4) < count for count in valid_counts])
+    batch = SampleBatch(
+        obs=jnp.arange(24, dtype=jnp.float32).reshape(8, 3) / 10,
+        actions=jnp.repeat(jnp.array([0, 1]), 4),
+    )
+    models = agent.get_models(state, copy=True)
+    logp = jax.nn.log_softmax(models.policy(batch.obs))[jnp.arange(8), batch.actions]
+    batch = batch.replace(
+        extras=PyTreeDict(
+            env_extras=PyTreeDict(autoreset=jnp.asarray(~valid)),
+            policy_extras=PyTreeDict(logp=logp + jnp.where(valid, 0.2, -0.7)),
+            advantages=jnp.where(valid, jnp.arange(8, dtype=jnp.float32) + 1, 1e6),
+            v_targets=jnp.where(valid, jnp.linspace(-1, 1, 8), 1e6),
+        )
+    )
+
+    def loss(models, agent_state, batch, axis_name=None):
+        losses = agent.loss(
+            agent_state.replace(model_state=nnx.unpack(models)),
+            batch,
+            jax.random.key(0),
+            axis_name=axis_name,
+        )
+        return (
+            losses.actor_loss
+            + 0.5 * losses.critic_loss
+            - 0.01 * losses.actor_entropy
+            + 0.01 * losses.approx_kl
+        )
+
+    # This reference contains no invalid transitions; large masked values above
+    # must affect neither normalization nor the actor/critic gradients.
+    reference_batch = jax.tree.map(lambda x: x[valid], batch) if valid.any() else batch
+    expected_loss, expected_grads = nnx.value_and_grad(loss)(
+        models, state, reference_batch
+    )
+
+    @jax.jit
+    @jax.shard_map(in_specs=(jax.P(), jax.P(DP_AXIS_NAME)), out_specs=jax.P())
+    def distributed(agent_state, batch):
+        models = agent.get_models(agent_state, copy=True)
+        return pmean_nnx_loss_and_grad(
+            lambda models: loss(models, agent_state, batch, DP_AXIS_NAME),
+            DP_AXIS_NAME,
+        )(models)
+
+    actual_loss, actual_grads = distributed(
+        state, jax.device_put(batch, jax.P(DP_AXIS_NAME))
+    )
+    np.testing.assert_allclose(actual_loss, expected_loss, rtol=1e-5, atol=1e-6)
+    for actual, expected in zip(
+        jax.tree.leaves(actual_grads), jax.tree.leaves(expected_grads), strict=True
+    ):
+        np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-6)
+        if not valid.any():
+            np.testing.assert_array_equal(actual, 0)
+    if not valid.any():
+        np.testing.assert_array_equal(actual_loss, 0)
 
 
 def make_batch(agent, state, name):

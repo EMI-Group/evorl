@@ -19,6 +19,7 @@ from evorl.distributed import META_POP_AXIS_NAME, POP_AXIS_NAME
 from evorl.replay_buffers import ReplayBuffer
 from evorl.rollout import eval_rollout_episode, fast_eval_rollout_episode, rollout
 from evorl.types import PyTreeDict
+from evorl.utils.orbax_utils import save, load
 from hydra.utils import get_class
 from omegaconf import OmegaConf
 
@@ -29,12 +30,28 @@ from tests.helpers.sharding import compiled_collectives
 pytestmark = pytest.mark.integration
 
 
+@pytest.mark.parametrize("random_timesteps", [0, 1])
+def test_pbt_sac_rejects_warmup_without_a_complete_environment_batch(random_timesteps):
+    target = object.__new__(ParamSACWorkflow)
+    target.env = ToyEnv(2)
+    workflow = object.__new__(PBTOffpolicyWorkflowTemplate)
+    workflow.workflow = target
+    workflow.config = OmegaConf.create(
+        dict(random_timesteps=random_timesteps, target_workflow=dict(num_envs=2))
+    )
+    with pytest.raises(ValueError, match="random_timesteps must be at least"):
+        workflow._postsetup_replaybuffer(
+            State(pop_workflow_state=None, replay_buffer_state=None)
+        )
+
+
 def test_shared_replay_buffer_is_replicated_and_accepts_writes(meta_mesh, jit):
     target = object.__new__(OffPolicyWorkflowTemplate)
     target.env = ToyEnv(2)
     target.replay_buffer = ReplayBuffer(capacity=16, sample_batch_size=2)
     workflow = object.__new__(PBTOffpolicyWorkflowTemplate)
     workflow.workflow = target
+    workflow.config = OmegaConf.create(dict(shared_replay_buffer=True))
     key = jax.device_put(jax.random.key(3), jax.P())
     initialize = workflow._setup_replaybuffer
     if jit:
@@ -367,10 +384,11 @@ def test_paramsac_trains_with_shared_readonly_buffer_and_native_optimizers(neste
 
 
 @pytest.mark.parametrize("num_devices", [1, 2])
-def test_pbt_sac_counts_shared_warmup_and_training_before_member_replacement(
-    num_devices, mesh_factory, jit
+@pytest.mark.parametrize("shared", [True, False], ids=["shared", "private"])
+def test_pbt_sac_replay_ownership_and_counts_survive_member_replacement(
+    num_devices, jit, shared, tmp_path
 ):
-    """Keep global sampling history when shared warmup and member copies differ."""
+    """Member replacement preserves replay ownership and global sample history."""
     root = Path(__file__).resolve().parents[2]
     common = OmegaConf.load(root / "configs/config.yaml")
     target_config = OmegaConf.merge(
@@ -383,6 +401,7 @@ def test_pbt_sac_counts_shared_warmup_and_training_before_member_replacement(
             eval_episodes=2,
             batch_size=4,
             replay_buffer_capacity=64,
+            normalize_obs=True,
             agent_network=dict(
                 actor_hidden_layer_sizes=[4], critic_hidden_layer_sizes=[4]
             ),
@@ -396,6 +415,7 @@ def test_pbt_sac_counts_shared_warmup_and_training_before_member_replacement(
             env=dict(max_episode_steps=2),
             pop_size=4,
             random_timesteps=4,
+            shared_replay_buffer=shared,
             workflow_steps_per_iter=2,
             warmup_steps=0,
             bottom_ratio=0.25,
@@ -417,8 +437,13 @@ def test_pbt_sac_counts_shared_warmup_and_training_before_member_replacement(
         ),
         patch("evorl.algorithms.meta.pbt_workflow.create_env", side_effect=create_env),
     ):
-        workflow = workflow_cls.build_from_config(config, jit=jit)
-    workflow.mesh = mesh_factory((num_devices,), (META_POP_AXIS_NAME,))
+        workflow = workflow_cls.build_from_config(
+            config, multi_device=num_devices > 1, jit=jit
+        )
+    if len(jax.local_devices()) < num_devices:
+        workflow.close()
+        pytest.skip("Requires two devices")
+    assert workflow.num_devices == num_devices
     try:
         with jax.set_mesh(workflow.mesh):
             # Force a known parent copy, independent of random policy fitnesses.
@@ -430,16 +455,92 @@ def test_pbt_sac_counts_shared_warmup_and_training_before_member_replacement(
                 "evorl.algorithms.meta.pbt_workflow.select", return_value=selection
             ):
                 state = workflow.setup(jax.random.key(23))
-                np.testing.assert_allclose(state.metrics.sampled_timesteps_m, 4e-6)
+                warmup = 4 if shared else 16
+                np.testing.assert_allclose(
+                    state.metrics.sampled_timesteps_m, warmup / 1e6
+                )
                 np.testing.assert_array_equal(
                     state.pop_workflow_state.metrics.sampled_timesteps, [0] * 4
                 )
-                _, first = workflow.step(state)
-                # 4 shared warmup steps + 4 members * 2 steps * 2 envs * 2 calls.
-                np.testing.assert_allclose(first.metrics.sampled_timesteps_m, 36e-6)
+                replay = state.replay_buffer_state
+                assert state.pop_workflow_state.replay_buffer_state is None
+                assert replay.data.obs.shape == ((64, 3) if shared else (4, 64, 3))
+                spec = jax.P() if shared else jax.P(META_POP_AXIS_NAME)
+                assert replay.data.obs.sharding.is_equivalent_to(
+                    jax.sharding.NamedSharding(workflow.mesh, spec),
+                    replay.data.obs.ndim,
+                )
+                np.testing.assert_array_equal(
+                    replay.buffer_size, 4 if shared else [4] * 4
+                )
+                np.testing.assert_array_equal(
+                    state.pop_workflow_state.agent_state.obs_preprocessor_state.count,
+                    [4] * 4,
+                )
+                warmup_obs = np.asarray(
+                    replay.data.obs[:4] if shared else replay.data.obs[:, :4]
+                )
+                if not shared:
+                    # Warmup data and normalization belong to each member.
+                    assert not np.array_equal(warmup_obs[0], warmup_obs[1])
+                    np.testing.assert_allclose(
+                        state.pop_workflow_state.agent_state.obs_preprocessor_state.mean,
+                        warmup_obs.mean(axis=1),
+                        atol=1e-6,
+                    )
+                else:
+                    np.testing.assert_allclose(
+                        state.pop_workflow_state.agent_state.obs_preprocessor_state.mean,
+                        np.broadcast_to(warmup_obs.mean(axis=0), (4, 3)),
+                        atol=1e-6,
+                    )
+
+                # Record each member's initial observations. ToyEnv increments
+                # them by 0.1 per step, making foreign replay writes detectable.
+                initial_obs = np.asarray(state.pop_workflow_state.env_state.obs)
+                first_metrics, first = workflow.step(state)
+                keys = np.asarray(jax.random.key_data(first.pop_workflow_state.key))
+                assert not np.array_equal(keys[0], keys[3])
+                expected_keys = state.pop_workflow_state.key
+                for _ in range(config.workflow_steps_per_iter):
+                    expected_keys = jax.vmap(lambda key: jax.random.split(key, 3)[0])(
+                        expected_keys
+                    )
+                expected_keys = jax.vmap(lambda key: jax.random.split(key)[0])(
+                    expected_keys
+                )
+                np.testing.assert_array_equal(keys, jax.random.key_data(expected_keys))
+                assert np.isfinite(first_metrics.pop_train_metrics.actor_loss).all()
+                assert np.isfinite(first_metrics.pop_train_metrics.critic_loss).all()
+                np.testing.assert_allclose(
+                    first.metrics.sampled_timesteps_m, (warmup + 32) / 1e6
+                )
                 np.testing.assert_array_equal(
                     first.pop_workflow_state.metrics.sampled_timesteps, [8] * 4
                 )
+                np.testing.assert_array_equal(
+                    first_metrics.rb_size, 36 if shared else [12] * 4
+                )
+                np.testing.assert_array_equal(
+                    first.replay_buffer_state.current_index, 36 if shared else [12] * 4
+                )
+                if not shared:
+                    for offset in range(4):
+                        np.testing.assert_allclose(
+                            first.replay_buffer_state.data.obs[
+                                :, 4 + 2 * offset : 6 + 2 * offset
+                            ],
+                            initial_obs + 0.1 * offset,
+                            atol=1e-6,
+                        )
+                    # The forced copy 3 -> 0 changes member 0's model/env state,
+                    # while its replay still contains its own collection history.
+                    member_obs = np.asarray(first.pop_workflow_state.env_state.obs)
+                    np.testing.assert_array_equal(member_obs[0], member_obs[3])
+                    np.testing.assert_array_equal(
+                        first.replay_buffer_state.data.obs[:, :4],
+                        replay.data.obs[:, :4],
+                    )
 
                 # Resume from unequal member histories. Copying member 3 into 0
                 # must not count the parent's historical samples a second time.
@@ -459,7 +560,51 @@ def test_pbt_sac_counts_shared_warmup_and_training_before_member_replacement(
                         )
                     ),
                 )
-                _, second = workflow.step(resumed)
+                if jit:
+                    path = tmp_path / "checkpoint"
+                    save(path, resumed)
+                    restored = load(path, resumed)
+                    _, second = workflow.step(restored)
+                    _, expected_second = workflow.step(resumed)
+                    for actual, expected in zip(
+                        jax.tree.leaves(second.replace(replay_buffer_state=None)),
+                        jax.tree.leaves(
+                            expected_second.replace(replay_buffer_state=None)
+                        ),
+                        strict=True,
+                    ):
+                        if jax.dtypes.issubdtype(actual.dtype, jax.dtypes.prng_key):
+                            actual, expected = (
+                                jax.random.key_data(actual),
+                                jax.random.key_data(expected),
+                            )
+                        np.testing.assert_allclose(
+                            actual, expected, rtol=1e-6, atol=1e-6
+                        )
+                    replay = second.replay_buffer_state
+                    expected_replay = expected_second.replay_buffer_state
+                    np.testing.assert_array_equal(
+                        replay.current_index, expected_replay.current_index
+                    )
+                    np.testing.assert_array_equal(
+                        replay.buffer_size, expected_replay.buffer_size
+                    )
+                    written = min(4 + 2 * (32 if shared else 8), 64)
+                    for actual, expected in zip(
+                        jax.tree.leaves(replay.data),
+                        jax.tree.leaves(expected_replay.data),
+                        strict=True,
+                    ):
+                        actual, expected = np.asarray(actual), np.asarray(expected)
+                        actual = actual[:written] if shared else actual[:, :written]
+                        expected = (
+                            expected[:written] if shared else expected[:, :written]
+                        )
+                        np.testing.assert_allclose(
+                            actual, expected, rtol=1e-6, atol=1e-6
+                        )
+                else:
+                    _, second = workflow.step(resumed)
                 _, third = workflow.step(second)
                 np.testing.assert_allclose(second.metrics.sampled_timesteps_m, 168e-6)
                 np.testing.assert_allclose(third.metrics.sampled_timesteps_m, 200e-6)
@@ -472,7 +617,9 @@ def test_pbt_sac_counts_shared_warmup_and_training_before_member_replacement(
                     [64, 44, 54, 64],
                 )
                 assert int(third.metrics.iterations) == 3
-                np.testing.assert_allclose(state.metrics.sampled_timesteps_m, 4e-6)
+                np.testing.assert_allclose(
+                    state.metrics.sampled_timesteps_m, warmup / 1e6
+                )
                 np.testing.assert_array_equal(
                     resumed.pop_workflow_state.metrics.sampled_timesteps,
                     [18, 28, 38, 48],

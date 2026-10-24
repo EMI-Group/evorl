@@ -1,8 +1,54 @@
 import jax
 import jax.numpy as jnp
 import chex
+import numpy as np
+import pytest
 
-from evorl.utils.rl_toolkits import compute_gae, compute_discount_return
+from evorl.utils.rl_toolkits import approximate_kl, compute_gae, compute_discount_return
+
+
+def test_k3_weighted_expectation_matches_exact_categorical_kl(jit):
+    behavior = np.array([0.2, 0.3, 0.5])
+    current = np.array([0.4, 0.35, 0.25])
+    logratio = np.log(current / behavior)
+    estimate = (
+        jax.jit(approximate_kl, static_argnames=("axis",)) if jit else approximate_kl
+    )
+    terms = estimate(jnp.asarray(logratio, jnp.float32), axis=())
+    expected = np.sum(behavior * np.log(behavior / current))
+    np.testing.assert_allclose(np.sum(behavior * terms), expected, rtol=1e-6)
+    np.testing.assert_allclose(
+        estimate(jnp.asarray(logratio, jnp.float32)), np.mean(terms), rtol=1e-6
+    )
+    assert np.all(np.asarray(terms) >= 0)
+
+
+def test_k3_small_logratios_and_gradients_are_stable(jit):
+    values = np.array([-1e-4, -1e-6, 0.0, 1e-6, 1e-4])
+    expected = np.expm1(values) - values
+    estimate = (
+        jax.jit(lambda x: approximate_kl(x, axis=()))
+        if jit
+        else (lambda x: approximate_kl(x, axis=()))
+    )
+    actual = estimate(jnp.asarray(values, jnp.float32))
+    np.testing.assert_allclose(actual, expected, rtol=0.1, atol=1e-13)
+    gradient = jax.grad(lambda x: approximate_kl(x, axis=()).sum())
+    if jit:
+        gradient = jax.jit(gradient)
+    np.testing.assert_allclose(
+        gradient(jnp.asarray(values, jnp.float32)),
+        np.expm1(values),
+        rtol=0.1,
+        atol=1e-7,
+    )
+
+
+@pytest.mark.parametrize("mode", ["k1", "k2"])
+def test_alternative_kl_estimators_keep_their_existing_mean_api(mode):
+    logratio = jnp.array([-0.2, 0.1, 0.3])
+    terms = -logratio if mode == "k1" else 0.5 * logratio**2
+    np.testing.assert_allclose(approximate_kl(logratio, mode), terms.mean())
 
 
 def test_gae():

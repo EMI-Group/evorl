@@ -241,24 +241,30 @@ def average_episode_discount_return(
 
 
 def approximate_kl(logratio: jax.Array, mode="k3", axis=-1) -> jax.Array:
-    """Approximate KL divergence by K3 estimator (no bias, low variance).
+    """Estimate KL from behavior-policy samples, using K3 by default.
 
     See http://joschu.net/blog/kl-approx.html
 
     Args:
-        logratio: ratio of p(x)/q(x), where x are sampled from q(x)
+        logratio: `log(current_prob) - log(behavior_prob)` for samples drawn
+            from the behavior policy.
+        mode: `k3` uses `expm1(logratio) - logratio`. The alternatives are
+            the unbiased `k1` or the locally accurate, biased `k2` estimator.
+        axis: Axes to average. Use `()` to retain elementwise estimates for
+            a caller's masked or distributed reduction.
 
     Returns:
-        Approximated KL(q||p) (Forward KL)
+        Estimated `KL(behavior || current)` along the specified axes.
     """
     if mode == "k1":
-        approx_kl = -jnp.mean(logratio, axis=axis)
+        estimates = -logratio
     elif mode == "k2":
-        approx_kl = jnp.mean(0.5 * jnp.square(logratio), axis=axis)
+        estimates = 0.5 * jnp.square(logratio)
     elif mode == "k3":
-        ratio = jnp.exp(logratio)
-        approx_kl = jnp.mean((ratio - 1) * logratio, axis=axis)
-    return approx_kl
+        estimates = jnp.expm1(logratio) - logratio
+    else:
+        raise ValueError(f"Unknown KL estimator: {mode}")
+    return jnp.mean(estimates, axis=axis)
 
 
 def fold_multi_steps(step_fn, num_steps):

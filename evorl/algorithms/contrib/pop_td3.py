@@ -232,8 +232,11 @@ class PopTD3Workflow(TD3Workflow):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
         ).all_reduce(axis_name=self.dp_axis_name)
 
+        key, env_key = jax.random.split(key)
+        env_state = jax.vmap(self.env.reset)(jax.random.split(env_key, config.pop_size))
         return state.replace(
             key=key,
+            env_state=env_state,
             metrics=workflow_metrics,
             agent_state=agent_state,
             replay_buffer_state=replay_buffer_state,

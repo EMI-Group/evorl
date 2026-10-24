@@ -19,7 +19,7 @@ from evorl.rollout import multi_agent_rollout
 from evorl.types import PyTreeDict, pytree_field
 from evorl.utils import running_statistics
 from evorl.utils.jax_utils import tree_stop_gradient
-from evorl.utils.rl_toolkits import flatten_rollout_trajectory
+from evorl.utils.rl_toolkits import approximate_kl, flatten_rollout_trajectory
 from evorl.workflows import OnPolicyWorkflow
 
 from .common import (
@@ -39,11 +39,11 @@ from .common import (
 def compute_agent_gae(
     rewards, values, next_values, dones, terminations, active, discount, gae_lambda
 ):
-    """Compute per-agent GAE with original next observations at every boundary.
+    """Compute per-agent GAE, excluding reset-only and inactive-agent steps.
 
     Natural termination suppresses bootstrap. Time truncation retains one-step
     bootstrap but stops the trace. Inactive agents contribute no advantage.
-    `next_values` comes from terminal observations, before autoreset.
+    Under ENVPOOL autoreset, adjacent observations retain terminal values.
     """
 
     def step(carry, transition):
@@ -217,7 +217,9 @@ class IPPOAgent(MultiAgentAgent):
             critic_loss=masked_mean(value_error, mask, axis_name),
             actor_entropy=masked_mean(entropy, mask, axis_name),
             approx_kl=masked_mean(
-                (ratio - 1) - (logp - sample_batch.extras.policy_extras.logp[agent_id]),
+                approximate_kl(
+                    logp - sample_batch.extras.policy_extras.logp[agent_id], axis=()
+                ),
                 mask,
                 axis_name,
             ),
@@ -246,8 +248,7 @@ class IPPOWorkflow(OnPolicyWorkflow):
         env = create_env(
             config.env,
             parallel=config.num_envs,
-            autoreset_mode=AutoresetMode.NORMAL,
-            record_ori_obs=True,
+            autoreset_mode=AutoresetMode.ENVPOOL,
         )
         layout = agent_layout(env)
         batch_size = config.rollout_length * config.num_envs
@@ -332,16 +333,27 @@ class IPPOWorkflow(OnPolicyWorkflow):
             rollout_key,
             self.config.rollout_length,
         )
-        old_values = self.agent.compute_values(state.agent_state, trajectory)
-        next_values = self.agent.compute_values(
+        # ENVPOOL leaves terminal observations in the trajectory. Evaluate the
+        # T + 1 adjacent observations once, including centralized observations.
+        observations = jax.tree.map(
+            lambda obs, final: jnp.concatenate([obs, final[None]], axis=0),
+            trajectory.obs,
+            env_state.obs,
+        )
+        global_obs = jax.tree.map(
+            lambda obs, final: jnp.concatenate([obs, final[None]], axis=0),
+            trajectory.extras.global_obs,
+            env_state.info.get("global_obs"),
+        )
+        values = self.agent.compute_values(
             state.agent_state,
             trajectory.replace(
-                obs=trajectory.next_obs,
-                extras=trajectory.extras.replace(
-                    global_obs=trajectory.extras.next_global_obs
-                ),
+                obs=observations,
+                extras=trajectory.extras.replace(global_obs=global_obs),
             ),
         )
+        old_values = jax.tree.map(lambda x: x[:-1], values)
+        next_values = jax.tree.map(lambda x: x[1:], values)
         targets, advantages = PyTreeDict(), PyTreeDict()
         for name in self.agent.agents:
             targets[name], advantage = compute_agent_gae(

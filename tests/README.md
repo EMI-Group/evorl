@@ -8,22 +8,25 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `networks/` | Native NNX MLP/CNN shapes, ensembles, normalization state, gradients and target updates |
 | `networks/test_vector_q.py` | Scalar versus explicit objective axes, vector twin critics, gradients and nested batches |
 | `agents/` | Configuration-driven NNX initialization, selected-network and joint updates versus JAX/Optax references, input/target isolation, nested populations and dynamic PBT hyperparameters |
+| `agents/test_onpolicy.py` | PPO/ParamPPO global advantage normalization and valid-sample-weighted gradients versus combined batches, unequal/empty device batches and disabled normalization |
 | `agents/test_impala.py` | V-trace clipping against a NumPy recurrence and on-policy GAE equivalence, including termination and truncation |
+| `test_toolkits.py` | GAE/discounted returns and K3 KL estimates versus exact categorical KL, small-ratio stability and gradients |
 | `agents/test_multi_agent.py` | Per-agent GAE/targets, centralized deterministic policy gradients, legal-action masks and global masked gradient weighting |
 | `rollout/test_multi_agent.py` | Joint trajectories, per-agent activity, autoreset boundaries and terminal/global observations |
 | `evaluators/test_multi_agent_evaluator.py` | Per-agent termination masks, truncation, discounted returns, episode batching and nested `vmap` |
-| `agents/test_multi_objective.py` | EnvelopeQ selection/homotopy losses, CAPQL vector Bellman targets, density Jacobians and actor gradients against independent calculations |
+| `agents/test_multi_objective.py` | EnvelopeQ selection/homotopy losses, CAPQL vector Bellman targets, normalized-action densities and actor gradients against independent calculations |
 | `workflows/test_multi_objective.py` | Preference persistence/resampling, replay, vector evaluation, checkpoints, opposing-preference learning, nested populations, two-device execution and real Deep Sea Treasure/Brax/Playground tasks |
-| `workflows/test_multi_agent.py` | IPPO/MAPPO/MADDPG/MATD3 training, delayed target updates, joint replay, termination/truncation, budgets/logging, input isolation, nested populations, two-device execution and real JaxMARL/Jumanji tasks |
+| `workflows/test_multi_agent.py` | IPPO/MAPPO ENVPOOL and inactive-agent masks, MADDPG/MATD3 joint replay and delayed targets, termination/truncation, budgets/logging, input isolation, nested populations, two-device execution and real JaxMARL/Jumanji tasks |
 | `workflows/test_offpolicy.py` | Full TD3/TD7/DDPG/SAC/DQN updates versus explicit parameter gradients, update schedules, target copies and forward-variable propagation through state-based losses |
 | `workflows/test_erl.py` | Population actors with shared or independent critics and temporary actor optimizer state |
 | `workflows/test_pop_td3.py` | Independent TD3 members, shared replay, observation statistics and optimizer update counts |
 | `distributed/` | Mean loss/gradients, local auxiliary outputs, optimizer updates, collectives, local maps and VMA casts |
 | `replay_buffers/` | Independent device-local rings, masked/empty writes, wraparound, priorities and sampling with NaNs in unwritten storage |
 | `workflows/test_rl.py` | Real RL/OpenES/Random workflow setup, step, evaluation, keys and state layouts |
-| `workflows/test_pbt.py` | Independent PBT members, optimizer learning-rate mutation, dynamic rollout termination and shared read-only replay training |
+| `workflows/test_pbt.py` | Independent PBT members, optimizer learning-rate mutation, dynamic rollout termination, shared/private replay ownership, recipient RNG and sampling counts across replacement, checkpoint continuation |
 | `workflows/test_execution.py` | Template state layouts, population selection/transfer and per-member statistics |
-| Other `workflows/` tests | Training budgets, final evaluation/checkpoints, warmup and EC accounting |
+| `workflows/test_warmup.py` | Empty prefill phases, fresh training episodes, actual host reset under nested vmap, and population replay/statistics retention |
+| Other `workflows/` tests | Training budgets, final evaluation/checkpoints and EC accounting |
 | `helpers/` | Reusable toy environment and compiled-communication inspection |
 | `test_env_factory.py` | YAML argument forwarding, episode-limit defaults and explicit override precedence across environment factories |
 | `test_deep_sea_treasure.py` | All ten classic treasure paths, rock/boundary collisions and nested autoreset with vector rewards |
@@ -42,7 +45,7 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `workflows/test_mo_gymnasium.py` | Real EnvelopeQ and CAPQL training/evaluation with MO-Gymnasium, including nested independent populations |
 | `test_envpool_catalog.py` / `test_gymnasium_catalog.py` | Configured task shapes/dtypes under JIT, including nested EnvPool populations |
 | `test_host_env_stress.py` | Opt-in nested batches with up to 65,536 EnvPool or 16 Gymnasium environments |
-| `workflows/test_host_envs.py` | Real PPO training/evaluation and nested PBT/OpenES populations with both host backends |
+| `workflows/test_host_envs.py` | Real PPO training/evaluation, nested PBT/OpenES populations, and PBT-SAC host-batch reset after shared prefill |
 | `workflows/test_eval_batching.py` | Pure JAX and host early-stop metrics/final states, mixed shared/mapped agent leaves and keys |
 | `test_brax_env.py::test_brax_fast` | Brax Fast action bounds, array/dict observations and all autoreset modes |
 | `test_gymnax_env.py` | Configured environments under JIT, constructor and `EnvParams` overrides, unknown argument errors, and nested vmap across episode resets in all four autoreset modes |

@@ -18,6 +18,7 @@ from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict
 from evorl.utils.orbax_utils import load, save
 from evorl.envs.wrappers import (
+    ActionSquashWrapper,
     EpisodeWrapper,
     OneEpisodeWrapper,
     VmapAutoResetWrapper,
@@ -67,6 +68,8 @@ def make_workflow(
 
     def create_env(config, parallel, autoreset_mode, **kwargs):
         native = ToyMultiObjectiveEnv(algorithm == "capql", objectives)
+        if algorithm == "capql":
+            native = ActionSquashWrapper(native)
         if autoreset_mode == AutoresetMode.DISABLED:
             return VmapWrapper(
                 OneEpisodeWrapper(native, config.max_episode_steps),
@@ -92,6 +95,8 @@ def test_vector_workflow_training_evaluation_and_input_isolation(
     workflow = make_workflow(algorithm, jit=jit, objectives=objectives)
     try:
         state = workflow.setup(jax.random.key(0))
+        assert state.replay_buffer_state.data.next_obs is None
+        assert state.replay_buffer_state.data.dones is None
         before = jax.tree.map(np.array, (state.agent_state, state.opt_state))
         metrics, updated = workflow.step(state)
         assert np.isfinite(metrics.loss)
@@ -101,6 +106,15 @@ def test_vector_workflow_training_evaluation_and_input_isolation(
         assert updated.rollout_preferences.shape == (4, objectives)
         np.testing.assert_allclose(updated.rollout_preferences.sum(-1), 1, atol=1e-6)
         assert updated.replay_buffer_state.data.rewards.shape == (64, objectives)
+        assert updated.replay_buffer_state.data.next_obs is None
+        assert updated.replay_buffer_state.data.dones is None
+        assert updated.replay_buffer_state.data.extras.env_extras.ori_obs.shape == (
+            64,
+            3,
+        )
+        assert updated.replay_buffer_state.data.extras.env_extras.termination.shape == (
+            64,
+        )
         assert updated.replay_buffer_state.data.extras.preferences.shape == (
             64,
             objectives,
@@ -143,9 +157,9 @@ def test_preferences_change_at_the_algorithm_boundaries(algorithm):
         preferences = trajectory.extras.preferences
         # Terminal bootstrap must see the old episode's final observation,
         # while the following policy call sees the reset observation.
-        np.testing.assert_array_equal(trajectory.next_obs[1, :, 0], 2)
+        np.testing.assert_array_equal(trajectory.extras.env_extras.ori_obs[1, :, 0], 2)
         np.testing.assert_array_equal(trajectory.obs[2, :, 0], 0)
-        np.testing.assert_array_equal(trajectory.extras.terminations[1], 1)
+        np.testing.assert_array_equal(trajectory.extras.env_extras.termination[1], 1)
         if algorithm == "envelope_q":
             np.testing.assert_array_equal(preferences[0], preferences[1])
         else:
@@ -156,7 +170,8 @@ def test_preferences_change_at_the_algorithm_boundaries(algorithm):
 
 
 @pytest.mark.parametrize("algorithm", ["envelope_q", "capql"])
-def test_morl_two_device_training(algorithm, dp_mesh):
+def test_morl_two_device_training(algorithm, mesh_factory):
+    mesh_factory()
     workflow = make_workflow(algorithm, multi_device=True)
     try:
         with jax.set_mesh(workflow.mesh):
@@ -239,7 +254,7 @@ def test_morl_checkpoint_replays_models_preferences_and_local_ring(tmp_path, alg
 
 
 @pytest.mark.parametrize("algorithm", ["envelope_q", "capql"])
-@pytest.mark.parametrize("random_steps,policy_start", [(0, 8), (8, 4)])
+@pytest.mark.parametrize("random_steps,policy_start", [(0, 8), (8, 4), (4, 8)])
 def test_morl_warmup_handles_empty_phases(algorithm, random_steps, policy_start):
     workflow = make_workflow(
         algorithm,
@@ -251,6 +266,7 @@ def test_morl_warmup_handles_empty_phases(algorithm, random_steps, policy_start)
         state = workflow.setup(jax.random.key(35))
         assert int(state.metrics.sampled_timesteps) == 8
         assert int(state.replay_buffer_state.buffer_size) == 8
+        np.testing.assert_array_equal(state.env_state.env_state, 0)
         metrics, state = workflow.step(state)
         assert np.isfinite(metrics.loss)
         assert int(state.metrics.sampled_timesteps) == 16
@@ -259,7 +275,7 @@ def test_morl_warmup_handles_empty_phases(algorithm, random_steps, policy_start)
 
 
 @pytest.mark.parametrize("algorithm", ["envelope_q", "capql"])
-def test_morl_long_warmup_keeps_the_latest_ring_entries(algorithm, monkeypatch):
+def test_morl_long_warmup_passes_the_full_batch_to_replay(algorithm, monkeypatch):
     original_step = ToyMultiObjectiveEnv.step
 
     def nonterminating_step(self, state, action):
@@ -276,13 +292,21 @@ def test_morl_long_warmup_keeps_the_latest_ring_entries(algorithm, monkeypatch):
         ),
     )
     try:
+        buffer_cls = type(workflow.replay_buffer)
+        original_add = buffer_cls.add
+        batch_sizes = []
+
+        def add(self, buffer, trajectory):
+            batch_sizes.append(trajectory.obs.shape[0])
+            return original_add(self, buffer, trajectory)
+
+        monkeypatch.setattr(buffer_cls, "add", add)
         state = workflow.setup(jax.random.key(36))
+        assert batch_sizes == [20]
         assert int(state.metrics.sampled_timesteps) == 20
         assert int(state.replay_buffer_state.buffer_size) == 8
         assert int(state.replay_buffer_state.current_index) == 4
-        np.testing.assert_array_equal(
-            state.replay_buffer_state.data.obs[:, 0], [4] * 4 + [3] * 4
-        )
+        np.testing.assert_array_equal(state.env_state.env_state, 0)
     finally:
         workflow.close()
 

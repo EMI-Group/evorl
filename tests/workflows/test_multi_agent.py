@@ -17,6 +17,7 @@ from evorl.envs.wrappers import (
     EpisodeWrapper,
     OneEpisodeWrapper,
     VmapAutoResetWrapper,
+    VmapEnvPoolAutoResetWrapper,
     VmapWrapper,
 )
 from tests.helpers.multi_agent_envs import ToyMultiAgentEnv
@@ -73,8 +74,23 @@ def make_workflow(
                 parallel,
                 vmap_step=True,
             )
-        return VmapAutoResetWrapper(
-            EpisodeWrapper(native, config.max_episode_steps), parallel
+        wrapper = (
+            VmapEnvPoolAutoResetWrapper
+            if algorithm in ("ippo", "mappo")
+            else VmapAutoResetWrapper
+        )
+        assert autoreset_mode == (
+            AutoresetMode.ENVPOOL
+            if algorithm in ("ippo", "mappo")
+            else AutoresetMode.NORMAL
+        )
+        return wrapper(
+            EpisodeWrapper(
+                native,
+                config.max_episode_steps,
+                record_ori_obs=autoreset_mode != AutoresetMode.ENVPOOL,
+            ),
+            parallel,
         )
 
     module = "maddpg" if algorithm in ("maddpg", "matd3") else "ippo"
@@ -210,6 +226,7 @@ def test_offpolicy_multi_agent_workflow_preserves_joint_replay_and_targets(
     try:
         state = workflow.setup(jax.random.key(0))
         assert int(state.metrics.sampled_timesteps) == 8
+        np.testing.assert_array_equal(state.env_state.env_state, 0)
         original = jax.tree.map(np.array, (state.agent_state, state.opt_state))
         metrics, updated = workflow.step(state)
         assert np.isfinite(metrics.loss)
@@ -405,8 +422,11 @@ def test_nested_populations_match_independent_multi_agent_workflows(algorithm):
             return workflow.step(state)
 
         keys = jax.random.split(jax.random.key(8), (2, 2))
-        metrics, population = jax.jit(jax.vmap(jax.vmap(train)))(keys)
-        expected_metrics, expected_state = jax.jit(train)(keys[0, 0])
+        # Compare batching semantics at full float32 matmul precision; GPU
+        # batched and unbatched GEMMs may otherwise choose different precision.
+        with jax.default_matmul_precision("highest"):
+            metrics, population = jax.jit(jax.vmap(jax.vmap(train)))(keys)
+            expected_metrics, expected_state = jax.jit(train)(keys[0, 0])
         assert np.all(np.isfinite(metrics.loss))
         for actual, expected in zip(
             jax.tree.leaves(population.agent_state),

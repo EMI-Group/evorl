@@ -38,13 +38,19 @@ class ParamPPOAgent(PPOAgent):
         )
 
     def loss(
-        self, agent_state: AgentState, sample_batch: SampleBatch, key: jax.Array
+        self,
+        agent_state: AgentState,
+        sample_batch: SampleBatch,
+        key: jax.Array,
+        *,
+        axis_name: str | None = None,
     ) -> LossDict:
         return super().loss(
             agent_state,
             sample_batch,
             key,
             clip_epsilon=agent_state.extra_state.clip_epsilon,
+            axis_name=axis_name,
         )
 
 
@@ -182,7 +188,10 @@ class ParamPPOWorkflow(PPOWorkflow):
         def loss_fn(models, agent_state, sample_batch, key):
             # learn all data from trajectory
             loss_dict = self.agent.loss(
-                agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+                agent_state.replace(model_state=nnx.unpack(models)),
+                sample_batch,
+                key,
+                axis_name=self.dp_axis_name,
             )
             loss_weights = dict(
                 actor_loss=state.hp_state.actor_loss_weight,

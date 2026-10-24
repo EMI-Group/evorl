@@ -9,6 +9,7 @@ import optax
 from omegaconf import DictConfig
 
 from evorl.agent import Agent, AgentState
+from evorl.algorithms.offpolicy_utils import clean_trajectory
 from evorl.distributed import pmean_nnx_loss_and_grad, psum
 from evorl.envs import AutoresetMode, Discrete, create_env
 from evorl.evaluators import Evaluator
@@ -120,7 +121,9 @@ class EnvelopeQAgent(Agent):
             sample_batch.obs[:, None, :],
             (batch_size, self.num_sample_preferences, sample_batch.obs.shape[-1]),
         )
-        next_obs = jnp.broadcast_to(sample_batch.next_obs[:, None, :], obs.shape)
+        next_obs = jnp.broadcast_to(
+            sample_batch.extras.env_extras.ori_obs[:, None, :], obs.shape
+        )
         relabeled = sample_batch.replace(
             obs=obs, extras=sample_batch.extras.replace(preferences=weights)
         )
@@ -138,7 +141,7 @@ class EnvelopeQAgent(Agent):
         target = jax.lax.stop_gradient(
             sample_batch.rewards[:, None, :]
             + self.discount
-            * (1 - sample_batch.extras.terminations[:, None, None])
+            * (1 - sample_batch.extras.env_extras.termination[:, None, None])
             * next_values
         )
         error = values - target
@@ -231,7 +234,9 @@ class EnvelopeQWorkflow(MultiObjectiveOffPolicyWorkflow):
             state, rollout_key, self.config.rollout_length
         )
         episodes = trajectory.dones.sum().astype(jnp.uint32)
-        trajectory = tree_stop_gradient(flatten_rollout_trajectory(trajectory))
+        trajectory = tree_stop_gradient(
+            flatten_rollout_trajectory(clean_trajectory(trajectory))
+        )
         buffer = self.replay_buffer.add(state.replay_buffer_state, trajectory)
         agent_state = state.agent_state
         if agent_state.obs_preprocessor_state is not None:

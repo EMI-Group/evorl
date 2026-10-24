@@ -12,7 +12,7 @@ import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
-from evorl.distributed import pmean_nnx_loss_and_grad, psum
+from evorl.distributed import pmean, pmean_nnx_loss_and_grad, psum
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.envs import Discrete, Box, AutoresetMode, create_env, Space
 from evorl.evaluators import Evaluator
@@ -143,12 +143,18 @@ class IMPALAAgent(Agent):
         agent_state: AgentState,
         trajectory: SampleBatch,
         key: jax.Array,
+        *,
+        axis_name: str | None = None,
     ) -> LossDict:
         """IMPALA loss.
 
         Args:
+            agent_state: Functional model and observation-preprocessor state.
             trajectory: [T, B, ...]
                 a sequence of transitions, not shuffled timesteps
+            key: Random key for entropy estimation.
+            axis_name: Data-parallel Manual axis for the KL diagnostic's valid
+                sample count, or `None` for local training.
 
         """
         models = self.get_models(agent_state)
@@ -231,7 +237,9 @@ class IMPALAAgent(Agent):
         else:
             actor_entropy = actions_dist.entropy().mean(where=mask)
 
-        approx_kl = approximate_kl(logrho).mean()
+        mean_count = pmean(mask.sum(dtype=jnp.float32), axis_name)
+        denominator = jnp.where(mean_count > 0, mean_count, 1.0)
+        approx_kl = approximate_kl(logrho, axis=()).sum(where=mask) / denominator
 
         return PyTreeDict(
             actor_loss=policy_loss,
@@ -361,7 +369,10 @@ class IMPALAWorkflow(OnPolicyWorkflow):
         def loss_fn(models, agent_state, sample_batch, key):
             # learn all data from trajectory
             loss_dict = self.agent.loss(
-                agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+                agent_state.replace(model_state=nnx.unpack(models)),
+                sample_batch,
+                key,
+                axis_name=self.dp_axis_name,
             )
             loss_weights = self.config.loss_weights
             loss = jnp.zeros(())

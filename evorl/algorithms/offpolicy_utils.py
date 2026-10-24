@@ -211,8 +211,20 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
             sampled_timesteps=state.metrics.sampled_timesteps + sampled_timesteps,
         ).all_reduce(axis_name=self.dp_axis_name)
 
+        env_state = state.env_state
+        if rollout_timesteps > 0 or config.random_timesteps >= config.num_envs:
+            key, env_key = jax.random.split(key)
+            if self.is_multi_device:
+                env_key = jax.random.fold_in(
+                    env_key, jax.lax.axis_index(self.dp_axis_name)
+                )
+            # Host environments also need their actual simulator reset after
+            # prefill; retaining the initial EnvState alone cannot rewind them.
+            env_state = self.env.reset(env_key)
+
         return state.replace(
             key=key,
+            env_state=env_state,
             metrics=workflow_metrics,
             agent_state=agent_state,
             replay_buffer_state=replay_buffer_state,

@@ -46,6 +46,14 @@ Supported RL Algorithms:
 | SAC       | [`SACWorkflow`](#evorl.algorithms.sac.SACWorkflow)                          | Stochastic    | Discrete & Continuous  |
 | TD7       | [`TD7Workflow`](#evorl.algorithms.td7.TD7Workflow)                          | Deterministic | Continuous             |
 
+PPO and ParamPPO normalize advantages over each global training minibatch,
+excluding autoreset transitions. Losses are weighted by valid sample counts,
+including when those counts differ between devices. PBT members remain independent.
+Both use ENVPOOL (next-step) autoreset and the common GAE implementation.
+Sampling budgets count rollout steps, including reset-only slots.
+PPO-family and IMPALA KL diagnostics use the common K3 estimator of
+`KL(behavior || current)`, excluding invalid transitions.
+
 ## Multi-agent RL
 
 MARL workflows use EvoRL's `MultiAgentEnv` API: simultaneous agent-keyed
@@ -66,6 +74,9 @@ Structured numeric observations are flattened, excluding `action_mask`.
 Continuous actions are scaled to each agent's finite Box bounds. Per-agent
 termination stops bootstrap; time truncation bootstraps from the original
 terminal observation. Inactive-agent transitions are masked out of losses.
+IPPO/MAPPO use ENVPOOL next-step autoreset: reset-only transitions are masked
+for every agent, and adjacent local/global observations retain the terminal
+values needed for truncation bootstrap.
 MADDPG/MATD3 exploration and target-smoothing noise use normalized `[-1, 1]`
 action coordinates before scaling to the environment bounds.
 
@@ -73,6 +84,11 @@ These are feedforward, separate-policy implementations. Recurrent policies,
 parameter sharing, PopArt/value normalization and the discrete-action
 Gumbel-softmax MADDPG extension are not implemented. The configurations provide
 starting points rather than tuned reproductions of the papers' benchmarks.
+
+Each agent's reward is scalar. All four `step` methods support JIT and data
+parallelism: environments are sharded, agent models/optimizers are replicated,
+and gradients synchronize only replicas of the same agent. MADDPG/MATD3 keep a
+device-local ring of aligned joint transitions.
 
 For example, train MAPPO on discrete MPE or MATD3 on continuous MPE:
 
@@ -146,6 +162,12 @@ minimum in Algorithm 1 of the
 checked against the [authors' code](https://github.com/haoyelu/CAPQL) and
 MORL-Baselines. Configurations are starting points, not tuned benchmark
 reproductions.
+
+CAPQL returns normalized actions in `[-1, 1]`; `ActionSquashWrapper` maps
+these to native bounds. Replay uses SAC's `extras.env_extras.ori_obs` and
+`.termination` fields and preserves behavior preferences. Replay prefill passes
+complete batches to the common buffer and resets training environments afterward,
+retaining collected data, observation statistics and sampling counters.
 
 ## EC Algorithms
 
@@ -221,3 +243,20 @@ The ERL algorithms are defined in the subpackage [`evorl.algorithms.erl`](#evorl
 ## Population-based AutoRL Algorithms
 
 The Population-based AutoRL algorithms are defined in the subpackage [`evorl.algorithms.meta`](#evorl.algorithms.meta). We provide some general population-based training pipelines for RL hyperparameter tuning.
+
+PBT-SAC shards independent SAC members along `META_POP`, rather than applying
+data-parallel gradient averaging to one SAC policy. Each device vmaps the members
+assigned to it. With the default `shared_replay_buffer=true`, a complete replay
+ring is replicated on every device, and new member trajectories are explicitly
+`all_gather`ed before identical writes to those replicas. All members
+can therefore sample the whole population's experience. Setting
+`shared_replay_buffer=false` gives every member an independent ring, sharded
+with the population; members write and sample only their own experience, with
+no replay exchange between devices. Capacity and batch size apply to each ring.
+Warmup collects `random_timesteps` transitions per ring, rounded down to a full
+environment batch. Replay is owned by the outer PBT state and is not copied
+during exploit in either mode. This differs from ordinary data-parallel
+SAC, which keeps a local ring per device and synchronizes gradients for
+the same policy.
+Exploitation retains each recipient's root random key, keeping parent and
+offspring exploration independent after model/environment copying.

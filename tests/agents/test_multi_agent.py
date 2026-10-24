@@ -15,7 +15,11 @@ from evorl.algorithms.multi_agents.maddpg import MADDPGAgent
 from evorl.algorithms.multi_agents.matd3 import MATD3Agent
 from evorl.rollout import multi_agent_rollout
 from evorl.distributed import pmean_nnx_loss_and_grad
-from evorl.envs.wrappers import EpisodeWrapper, VmapAutoResetWrapper
+from evorl.envs.wrappers import (
+    EpisodeWrapper,
+    VmapAutoResetWrapper,
+    VmapEnvPoolAutoResetWrapper,
+)
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
@@ -33,6 +37,65 @@ def make_agent(cls, continuous=True, **kwargs):
     )
     state = agent.init(env.obs_space, env.action_space, jax.random.key(0))
     return env, agent, state
+
+
+@pytest.mark.parametrize("centralized", [False, True])
+def test_envpool_agent_gae_keeps_terminal_bootstrap_and_skips_reset(centralized, jit):
+    env = VmapEnvPoolAutoResetWrapper(
+        EpisodeWrapper(ToyMultiAgentEnv(True), 3, record_ori_obs=False), 2
+    )
+    agent = IPPOAgent(
+        **agent_layout(env),
+        centralized_critic=centralized,
+        agent_network_cfg=OmegaConf.create(
+            dict(actor_hidden_layer_sizes=[], critic_hidden_layer_sizes=[])
+        ),
+    )
+    state = agent.init(env.obs_space, env.action_space, jax.random.key(31))
+    models = agent.get_models(state, copy=True)
+    for name in agent.agents:
+        layer = models[name].value.mlp.layers[0]
+        layer.kernel[...] = jnp.zeros_like(layer.kernel[...]).at[0, 0].set(1)
+        layer.bias[...] = jnp.zeros_like(layer.bias[...])
+    state = state.replace(model_state=nnx.unpack(models))
+
+    def collect(key):
+        trajectory, final = multi_agent_rollout(
+            env, agent.compute_actions, env.reset(key), state, key, 6
+        )
+        obs = jax.tree.map(
+            lambda x, last: jnp.concatenate([x, last[None]]),
+            trajectory.obs,
+            final.obs,
+        )
+        global_obs = jnp.concatenate(
+            [trajectory.extras.global_obs, final.info.global_obs[None]]
+        )
+        values = agent.compute_values(
+            state, SampleBatch(obs=obs, extras=PyTreeDict(global_obs=global_obs))
+        )
+        result = PyTreeDict()
+        for name in agent.agents:
+            result[name] = compute_agent_gae(
+                trajectory.rewards[name],
+                values[name][:-1],
+                values[name][1:],
+                trajectory.dones[name],
+                trajectory.extras.terminations[name],
+                trajectory.extras.active[name],
+                0.5,
+                1.0,
+            )
+        return result, trajectory.extras.active
+
+    result, active = (jax.jit(collect) if jit else collect)(jax.random.key(32))
+    # First dies at step 2: reward only. Second truncates at step 3:
+    # -2 + 0.5 * V(terminal count=3) = -0.5, rather than V(reset count=0).
+    np.testing.assert_allclose(result.first[0][1], 1)
+    np.testing.assert_allclose(result.second[0][2], -0.5)
+    for name in agent.agents:
+        np.testing.assert_array_equal(active[name][3], False)
+        np.testing.assert_array_equal(result[name][1][3], 0)
 
 
 @pytest.mark.parametrize("lambda_", [0.0, 0.9, 1.0])

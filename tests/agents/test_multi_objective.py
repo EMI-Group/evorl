@@ -15,8 +15,36 @@ from evorl.algorithms.multi_objective.envelope_q import (
 )
 from evorl.distribution import get_tanh_norm_dist
 from evorl.envs import Box, Discrete
+from evorl.envs.wrappers import ActionSquashWrapper
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict
+from tests.helpers.multi_objective_envs import ToyMultiObjectiveEnv
+
+
+@pytest.mark.parametrize("evaluate", [False, True])
+def test_action_bounds_are_handled_only_by_the_environment(evaluate):
+    env = ActionSquashWrapper(ToyMultiObjectiveEnv(True))
+    kwargs = dict(
+        num_objectives=2,
+        agent_network_cfg=OmegaConf.create(
+            dict(
+                num_critics=2, actor_hidden_layer_sizes=[], critic_hidden_layer_sizes=[]
+            )
+        ),
+    )
+    agent = CAPQLAgent(**kwargs)
+    state = agent.init(env.obs_space, env.action_space, jax.random.key(33))
+    assert set(state.extra_state) == {"preferences"}
+    action_fn = agent.evaluate_actions if evaluate else agent.compute_actions
+    env_state = env.reset(jax.random.key(34))
+    action, _ = jax.jit(action_fn)(
+        state, SampleBatch(obs=env_state.obs), jax.random.key(35)
+    )
+    assert bool(jnp.all((action >= -1) & (action <= 1)))
+    physical = action * jnp.array([2.0, 1.5]) + jnp.array([0.0, 1.5])
+    expected = env.env.step(env_state, physical)
+    actual = jax.jit(env.step)(env_state, action)
+    np.testing.assert_allclose(actual.reward, expected.reward, atol=1e-6)
 
 
 def test_envelope_operator_selects_one_vector_across_preferences_and_actions(jit):
@@ -77,12 +105,15 @@ def test_envelope_homotopy_loss_and_bootstrap_match_numpy(mix, jit):
     )
     batch = SampleBatch(
         obs=jnp.ones((3, 3)),
-        next_obs=jnp.ones((3, 3)) * 2,
         actions=jnp.array([0, 1, 0]),
         rewards=jnp.array([[1.0, 2.0], [-1.0, 3.0], [2.0, -2.0]]),
         dones=jnp.array([1.0, 1.0, 0.0]),
         extras=PyTreeDict(
-            terminations=jnp.array([1.0, 0.0, 0.0]), preferences=jnp.ones((3, 2)) / 2
+            env_extras=PyTreeDict(
+                ori_obs=jnp.ones((3, 3)) * 2,
+                termination=jnp.array([1.0, 0.0, 0.0]),
+            ),
+            preferences=jnp.ones((3, 2)) / 2,
         ),
     )
     key = jax.random.key(5)
@@ -96,7 +127,9 @@ def test_envelope_homotopy_loss_and_bootstrap_match_numpy(mix, jit):
             action = np.argmax((online * weight).sum(-1))
             expected_targets[b, w] = (
                 np.array(batch.rewards[b])
-                + 0.9 * (1 - float(batch.extras.terminations[b])) * target[action]
+                + 0.9
+                * (1 - float(batch.extras.env_extras.termination[b]))
+                * target[action]
             )
     current = np.broadcast_to(online[np.array(batch.actions)][:, None, :], (3, 3, 2))
     errors = current - expected_targets
@@ -148,7 +181,7 @@ def capql_agent(alpha=0.2, objectives=2):
     )
     state = agent.init(
         Box(low=-jnp.ones(3), high=jnp.ones(3)),
-        Box(low=jnp.array([-2.0, 0.0]), high=jnp.array([2.0, 3.0])),
+        Box(low=-jnp.ones(2), high=jnp.ones(2)),
         jax.random.key(0),
     )
     models = agent.get_models(state, copy=True)
@@ -175,14 +208,19 @@ def test_capql_vector_target_entropy_and_losses_match_density_calculation(
     rewards = jnp.array([[1.0, 2.0], [-1.0, 3.0], [2.0, -2.0]])[:, :objectives]
     batch = SampleBatch(
         obs=jnp.ones((3, 3)),
-        next_obs=jnp.ones((3, 3)) * 2,
         actions=jnp.zeros((3, 2)),
         rewards=rewards,
         dones=jnp.array([1.0, 1.0, 0.0]),
-        extras=PyTreeDict(terminations=jnp.array([1.0, 0.0, 0.0]), preferences=weights),
+        extras=PyTreeDict(
+            env_extras=PyTreeDict(
+                ori_obs=jnp.ones((3, 3)) * 2,
+                termination=jnp.array([1.0, 0.0, 0.0]),
+            ),
+            preferences=weights,
+        ),
     )
     key = jax.random.key(12)
-    # Independent Gaussian density + tanh/physical-scale Jacobians. Networks
+    # Independent Gaussian density + tanh Jacobian in normalized coordinates. Networks
     # have zero parameters, so mean=0 and std=softplus(0)+1e-3.
     normalized = np.array(
         get_tanh_norm_dist(jnp.zeros((3, 2)), jnp.zeros((3, 2))).sample(seed=key)
@@ -194,12 +232,11 @@ def test_capql_vector_target_entropy_and_losses_match_density_calculation(
         - np.log(std)
         - 0.5 * np.log(2 * np.pi)
         - np.log1p(-(normalized**2))
-        - np.log(np.array([2.0, 1.5]))
     ).sum(-1)
     next_q = np.array([5.0, 2.0])[:objectives]
-    targets = np.array(rewards) + 0.9 * (1 - np.array(batch.extras.terminations))[
-        :, None
-    ] * (next_q - 0.2 * logp[:, None])
+    targets = np.array(rewards) + 0.9 * (
+        1 - np.array(batch.extras.env_extras.termination)
+    )[:, None] * (next_q - 0.2 * logp[:, None])
     online = np.array([[2.0, 9.0], [8.0, 3.0]])[:, :objectives]
     expected_critic = ((online[None, :, :] - targets[:, None, :]) ** 2).sum(1).mean()
     expected_actor = (
@@ -234,9 +271,7 @@ def test_capql_actor_gradient_matches_reparameterized_weighted_vector_critic():
 
     def reference(raw):
         mean, raw_scale = jnp.split(raw, 2)
-        action = jnp.tanh(
-            mean + (jax.nn.softplus(raw_scale) + 0.001) * standard_noise
-        ) * jnp.array([2.0, 1.5]) + jnp.array([0.0, 1.5])
+        action = jnp.tanh(mean + (jax.nn.softplus(raw_scale) + 0.001) * standard_noise)
         return -((action @ action_weights) * weights).sum(-1).mean()
 
     expected = jax.grad(reference)(jnp.zeros(4))

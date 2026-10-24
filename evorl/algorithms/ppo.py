@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
-from evorl.distributed import pmean_nnx_loss_and_grad, psum
+from evorl.distributed import pmean, pmean_nnx_loss_and_grad, psum
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.envs import Discrete, Box, AutoresetMode, create_env, Space
 from evorl.evaluators import Evaluator
@@ -146,7 +146,24 @@ class PPOAgent(Agent):
         sample_batch: SampleBatch,
         key: jax.Array,
         clip_epsilon: jax.Array | None = None,
+        *,
+        axis_name: str | None = None,
     ) -> LossDict:
+        """Compute PPO losses using valid samples across one policy's devices.
+
+        Args:
+            agent_state: Functional model and observation-preprocessor state.
+            sample_batch: Local minibatch, including the autoreset mask.
+            key: Random key for entropy estimation.
+            clip_epsilon: Optional override of the policy clipping threshold.
+            axis_name: Data-parallel Manual axis, or `None` for local training.
+                Independent population members must not share this axis.
+
+        Returns:
+            Loss terms weighted for the subsequent device mean. Advantage
+            statistics exclude autoreset samples and span the global minibatch.
+            An empty minibatch contributes zero actor, critic and entropy loss.
+        """
         models = self.get_models(agent_state)
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -154,13 +171,17 @@ class PPOAgent(Agent):
 
         # mask invalid transitions at autoreset
         mask = jnp.logical_not(sample_batch.extras.env_extras.autoreset)
+        # A mean of local sums divided by this denominator is the global valid
+        # sample mean, including when one device has no valid samples.
+        mean_count = pmean(mask.sum(dtype=jnp.float32), axis_name)
+        denominator = jnp.where(mean_count > 0, mean_count, 1.0)
 
         # ======= critic =======
         vs = models.value(obs)
 
         v_targets = sample_batch.extras.v_targets
 
-        critic_loss = optax.squared_error(vs, v_targets).mean(where=mask)
+        critic_loss = optax.squared_error(vs, v_targets).sum(where=mask) / denominator
 
         # ====== actor =======
 
@@ -178,7 +199,12 @@ class PPOAgent(Agent):
 
         advantages = sample_batch.extras.advantages
         if self.normalize_gae:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            mean = pmean(advantages.sum(where=mask), axis_name) / denominator
+            variance = (
+                pmean(jnp.square(advantages - mean).sum(where=mask), axis_name)
+                / denominator
+            )
+            advantages = (advantages - mean) / (jnp.sqrt(variance) + 1e-8)
 
         if clip_epsilon is None:
             clip_epsilon = self.clip_epsilon
@@ -191,17 +217,18 @@ class PPOAgent(Agent):
         policy_sorrogate_loss2 = (
             jnp.clip(rho, 1 - clip_epsilon, 1 + clip_epsilon) * advantages
         )
-        actor_loss = -jnp.minimum(policy_sorrogate_loss1, policy_sorrogate_loss2).mean(
-            where=mask
+        actor_loss = (
+            -jnp.minimum(policy_sorrogate_loss1, policy_sorrogate_loss2).sum(where=mask)
+            / denominator
         )
 
         # entropy: [T*B]
         if self.continuous_action:
-            actor_entropy = actions_dist.entropy(seed=key).mean(where=mask)
+            actor_entropy = actions_dist.entropy(seed=key).sum(where=mask) / denominator
         else:
-            actor_entropy = actions_dist.entropy().mean(where=mask)
+            actor_entropy = actions_dist.entropy().sum(where=mask) / denominator
 
-        approx_kl = approximate_kl(logrho)
+        approx_kl = approximate_kl(logrho, axis=()).sum(where=mask) / denominator
 
         return PyTreeDict(
             actor_loss=actor_loss,
@@ -364,7 +391,10 @@ class PPOWorkflow(OnPolicyWorkflow):
         def loss_fn(models, agent_state, sample_batch, key):
             # learn all data from trajectory
             loss_dict = self.agent.loss(
-                agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+                agent_state.replace(model_state=nnx.unpack(models)),
+                sample_batch,
+                key,
+                axis_name=self.dp_axis_name,
             )
             loss_weights = self.config.loss_weights
             loss = jnp.zeros(())

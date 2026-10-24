@@ -7,8 +7,62 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from evorl.algorithms.impala import compute_vtrace
+from evorl.algorithms.impala import IMPALAAgent, compute_vtrace
+from evorl.distributed import DP_AXIS_NAME
+from evorl.sample_batch import SampleBatch
+from evorl.types import PyTreeDict
 from evorl.utils.rl_toolkits import compute_gae
+from tests.helpers.agents import build_agent
+from tests.helpers.envs import ToyEnv
+
+
+@pytest.mark.parametrize("empty_first_device", [False, True])
+def test_kl_uses_valid_samples_across_time_and_devices(empty_first_device, dp_mesh):
+    env = ToyEnv(4, discrete=True)
+    agent = build_agent(
+        IMPALAAgent,
+        env.obs_space,
+        env.action_space,
+        actor_hidden_layer_sizes=(4,),
+        critic_hidden_layer_sizes=(4,),
+        normalize_obs=False,
+    )
+    state = agent.init(env.obs_space, env.action_space, jax.random.key(67))
+    obs = jnp.ones((2, 4, 3))
+    actions = jnp.zeros((2, 4), jnp.int32)
+    logits = agent.get_models(state, copy=True).policy(obs)
+    logp = jax.nn.log_softmax(logits)[..., 0]
+    logratio = np.array([[0.1, 3.0, 0.2, -0.2], [0.3, -2.0, 0.4, 0.5]])
+    valid = np.array([[True, False, True, True], [True, False, False, True]])
+    if empty_first_device:
+        valid[:, :2] = False
+    batch = SampleBatch(
+        obs=obs,
+        next_obs=obs + 0.1,
+        actions=actions,
+        rewards=jnp.ones((2, 4)),
+        dones=jnp.zeros((2, 4)),
+        extras=PyTreeDict(
+            env_extras=PyTreeDict(
+                autoreset=jnp.asarray(~valid), termination=jnp.zeros((2, 4))
+            ),
+            policy_extras=PyTreeDict(logp=logp - jnp.asarray(logratio, jnp.float32)),
+        ),
+    )
+    expected = (np.expm1(logratio[valid]) - logratio[valid]).mean()
+    local = agent.loss(state, batch, jax.random.key(0)).approx_kl
+    np.testing.assert_allclose(local, expected, rtol=1e-5, atol=1e-7)
+
+    @jax.jit
+    @jax.shard_map(in_specs=(jax.P(), jax.P(None, DP_AXIS_NAME)), out_specs=jax.P())
+    def distributed(state, batch):
+        value = agent.loss(
+            state, batch, jax.random.key(0), axis_name=DP_AXIS_NAME
+        ).approx_kl
+        return jax.lax.pmean(value, DP_AXIS_NAME)
+
+    actual = distributed(state, jax.device_put(batch, jax.P(None, DP_AXIS_NAME)))
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-7)
 
 
 @pytest.fixture

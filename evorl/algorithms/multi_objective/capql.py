@@ -9,6 +9,7 @@ import optax
 from omegaconf import DictConfig
 
 from evorl.agent import Agent, AgentState
+from evorl.algorithms.offpolicy_utils import clean_trajectory
 from evorl.distributed import pmean_nnx_loss_and_grad, psum
 from evorl.distribution import get_tanh_norm_dist
 from evorl.envs import AutoresetMode, Box, create_env
@@ -86,8 +87,6 @@ class CAPQLAgent(Agent):
                 preferences=jnp.full(
                     (self.num_objectives,), 1 / self.num_objectives, jnp.float32
                 ),
-                action_scale=(action_space.high - action_space.low) / 2,
-                action_bias=(action_space.high + action_space.low) / 2,
             ),
         )
 
@@ -96,43 +95,32 @@ class CAPQLAgent(Agent):
         raw = self.get_models(agent_state, copy=True).actor(inputs)
         dist = get_tanh_norm_dist(*jnp.split(raw, 2, axis=-1))
         action = dist.sample(seed=key)
-        return (
-            action * agent_state.extra_state.action_scale
-            + agent_state.extra_state.action_bias,
-            PyTreeDict(),
-        )
+        return action, PyTreeDict()
 
     def evaluate_actions(self, agent_state, sample_batch, key):
         inputs, _ = preference_inputs(self, agent_state, sample_batch)
         raw = self.get_models(agent_state, copy=True).actor(inputs)
         dist = get_tanh_norm_dist(*jnp.split(raw, 2, axis=-1))
-        return (
-            dist.mode() * agent_state.extra_state.action_scale
-            + agent_state.extra_state.action_bias,
-            PyTreeDict(),
-        )
+        return dist.mode(), PyTreeDict()
 
     def critic_loss(self, agent_state, sample_batch, key):
         models = self.get_models(agent_state)
         inputs, _ = preference_inputs(self, agent_state, sample_batch)
         next_inputs, _ = preference_inputs(
-            self, agent_state, sample_batch.replace(obs=sample_batch.next_obs)
+            self,
+            agent_state,
+            sample_batch.replace(obs=sample_batch.extras.env_extras.ori_obs),
         )
         raw = models.actor(next_inputs)
         dist = get_tanh_norm_dist(*jnp.split(raw, 2, axis=-1))
-        normalized = dist.sample(seed=key)
-        scale, bias = (
-            agent_state.extra_state.action_scale,
-            agent_state.extra_state.action_bias,
-        )
-        next_actions = normalized * scale + bias
-        logp = dist.log_prob(normalized) - jnp.log(scale).sum()
+        next_actions = dist.sample(seed=key)
+        logp = dist.log_prob(next_actions)
         # (..., critics, objectives): minimum is over critics, not objectives.
         next_q = models.target_critic(next_inputs, next_actions).min(axis=-2)
         target = jax.lax.stop_gradient(
             sample_batch.rewards
             + self.discount
-            * (1 - sample_batch.extras.terminations[..., None])
+            * (1 - sample_batch.extras.env_extras.termination[..., None])
             * (next_q - self.alpha * logp[..., None])
         )
         q = models.critic(inputs, sample_batch.actions)
@@ -147,13 +135,8 @@ class CAPQLAgent(Agent):
         inputs, weights = preference_inputs(self, agent_state, sample_batch)
         raw = models.actor(inputs)
         dist = get_tanh_norm_dist(*jnp.split(raw, 2, axis=-1))
-        normalized = dist.sample(seed=key)
-        scale, bias = (
-            agent_state.extra_state.action_scale,
-            agent_state.extra_state.action_bias,
-        )
-        actions = normalized * scale + bias
-        logp = dist.log_prob(normalized) - jnp.log(scale).sum()
+        actions = dist.sample(seed=key)
+        logp = dist.log_prob(actions)
         q = models.critic(inputs, actions).min(axis=-2)
         return PyTreeDict(
             actor_loss=(self.alpha * logp - (q * weights).sum(-1)).mean(),
@@ -253,7 +236,9 @@ class CAPQLWorkflow(MultiObjectiveOffPolicyWorkflow):
             state, rollout_key, self.config.rollout_length
         )
         episodes = trajectory.dones.sum().astype(jnp.uint32)
-        trajectory = tree_stop_gradient(flatten_rollout_trajectory(trajectory))
+        trajectory = tree_stop_gradient(
+            flatten_rollout_trajectory(clean_trajectory(trajectory))
+        )
         buffer = self.replay_buffer.add(state.replay_buffer_state, trajectory)
         agent_state = state.agent_state
         if agent_state.obs_preprocessor_state is not None:
