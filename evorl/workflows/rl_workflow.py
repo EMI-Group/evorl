@@ -22,6 +22,7 @@ from evorl.envs import BaseEnv
 from evorl.evaluators import Evaluator
 from evorl.metrics import EvaluateMetric, MetricBase, WorkflowMetric
 from evorl.types import State
+from evorl.utils.jax_utils import rng_fold_in_axis
 
 from .workflow import Workflow
 
@@ -285,9 +286,7 @@ class OnPolicyWorkflow(RLWorkflow):
             # reset already batches the local environments. Concatenate those
             # batches along the environment axis, without adding a device axis.
             def reset_env(env_key):
-                env_key = jax.random.fold_in(
-                    env_key, jax.lax.axis_index(self.dp_axis_name)
-                )
+                env_key = rng_fold_in_axis(env_key, self.dp_axis_name)
                 return self.env.reset(env_key)
 
             env_reset_fn = jax.shard_map(
@@ -309,10 +308,7 @@ class OnPolicyWorkflow(RLWorkflow):
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         key, eval_key = jax.random.split(state.key, num=2)
-        if self.is_multi_device:
-            eval_key = jax.random.fold_in(
-                eval_key, jax.lax.axis_index(self.dp_axis_name)
-            )
+        eval_key = rng_fold_in_axis(eval_key, self.dp_axis_name)
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(
@@ -456,9 +452,7 @@ class OffPolicyWorkflow(RLWorkflow):
             # reset already batches the local environments. Concatenate those
             # batches along the environment axis, without adding a device axis.
             def reset_env(env_key):
-                env_key = jax.random.fold_in(
-                    env_key, jax.lax.axis_index(self.dp_axis_name)
-                )
+                env_key = rng_fold_in_axis(env_key, self.dp_axis_name)
                 return self.env.reset(env_key)
 
             env_reset_fn = jax.shard_map(
@@ -469,9 +463,7 @@ class OffPolicyWorkflow(RLWorkflow):
             env_state = env_reset_fn(env_key)
 
             def setup_replaybuffer(rb_key):
-                rb_key = jax.random.fold_in(
-                    rb_key, jax.lax.axis_index(self.dp_axis_name)
-                )
+                rb_key = rng_fold_in_axis(rb_key, self.dp_axis_name)
                 buffer_state = self._setup_replaybuffer(rb_key)
                 buffer_state = buffer_state.replace(
                     current_index=buffer_state.current_index[None],
@@ -511,10 +503,7 @@ class OffPolicyWorkflow(RLWorkflow):
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         key, eval_key = jax.random.split(state.key, num=2)
-        if self.is_multi_device:
-            eval_key = jax.random.fold_in(
-                eval_key, jax.lax.axis_index(self.dp_axis_name)
-            )
+        eval_key = rng_fold_in_axis(eval_key, self.dp_axis_name)
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(

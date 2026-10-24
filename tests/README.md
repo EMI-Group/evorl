@@ -35,6 +35,7 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `workflows/test_warmup.py` | Empty prefill phases, fresh training episodes, actual host reset under nested vmap, and population replay/statistics retention |
 | Other `workflows/` tests | Training budgets, final evaluation/checkpoints and EC accounting |
 | `helpers/` | Reusable toy environment and compiled-communication inspection |
+| `test_prng.py` | Typed-key batching, named-axis key folding, unchanged replicated roots, nested vmap, explicit axis selection and absence of added collectives |
 | `test_env_factory.py` | YAML argument forwarding, episode-limit defaults and explicit override precedence across environment factories |
 | `test_deep_sea_treasure.py` | All ten classic treasure paths, rock/boundary collisions and nested autoreset with vector rewards |
 | `ec/test_operators.py` | MLP mutation counts/bounds, parent-row inheritance, LayerNorm preservation and population keys |

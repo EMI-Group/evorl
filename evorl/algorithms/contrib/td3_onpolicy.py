@@ -21,7 +21,12 @@ from evorl.types import (
     PyTreeDict,
     State,
 )
-from evorl.utils.jax_utils import scan_and_mean, tree_stop_gradient, scan_and_last
+from evorl.utils.jax_utils import (
+    scan_and_mean,
+    tree_stop_gradient,
+    scan_and_last,
+    rng_fold_in_axis,
+)
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 from evorl.agent import Agent, AgentState
 from evorl.recorders import add_prefix
@@ -142,10 +147,9 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            rollout_key = jax.random.fold_in(rollout_key, rank)
-            learn_key = jax.random.fold_in(learn_key, rank)
+        rollout_key, learn_key = rng_fold_in_axis(
+            (rollout_key, learn_key), self.dp_axis_name
+        )
 
         # trajectory: [T, #envs, ...]
         trajectory, env_state = rollout(

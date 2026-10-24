@@ -18,7 +18,7 @@ from omegaconf import OmegaConf
 from evorl.metrics import TrainMetric
 from evorl.recorders import add_prefix
 from evorl.types import PyTreeDict, State
-from evorl.utils.jax_utils import scan_and_last
+from evorl.utils.jax_utils import scan_and_last, rng_fold_in_axis
 from evorl.workflows import Workflow
 
 from .common import MultiObjectiveEvaluateMetric, MultiObjectiveWorkflowMetric
@@ -173,9 +173,7 @@ class MORLDSACWorkflow(Workflow):
             if self.workflow.is_multi_device:
 
                 def init_replay(key):
-                    key = jax.random.fold_in(
-                        key, jax.lax.axis_index(self.workflow.dp_axis_name)
-                    )
+                    key = rng_fold_in_axis(key, self.workflow.dp_axis_name)
                     replay = self.workflow._setup_replaybuffer(key)
                     return replay.replace(
                         current_index=replay.current_index[None],

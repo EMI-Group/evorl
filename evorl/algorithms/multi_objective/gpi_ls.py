@@ -28,7 +28,7 @@ from evorl.replay_buffers import ReplayBuffer
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict, pytree_field
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient, rng_fold_in_axis
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
 from .common import (
@@ -415,11 +415,9 @@ class GPILSWorkflow(MultiObjectiveOffPolicyWorkflow):
 
     def step(self, state):
         key, rollout_key, learn_key = jax.random.split(state.key, 3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            rollout_key, learn_key = (
-                jax.random.fold_in(k, rank) for k in (rollout_key, learn_key)
-            )
+        rollout_key, learn_key = rng_fold_in_axis(
+            (rollout_key, learn_key), self.dp_axis_name
+        )
         trajectory, state = self._rollout(
             state, rollout_key, self.config.rollout_length
         )
@@ -653,8 +651,7 @@ class GPILSWorkflow(MultiObjectiveOffPolicyWorkflow):
         return state
 
     def _evaluate_support(self, agent_state, key):
-        if self.is_multi_device:
-            key = jax.random.fold_in(key, jax.lax.axis_index(self.dp_axis_name))
+        key = rng_fold_in_axis(key, self.dp_axis_name)
         result = self.evaluator.evaluate(agent_state, key, self.config.eval_episodes)
         return pmean(result.episode_returns.mean(0), self.dp_axis_name)
 

@@ -13,6 +13,7 @@ from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict
 from evorl.utils.jax_utils import (
     ensure_batched_key,
+    rng_fold_in_axis,
     rng_key_batch_shape,
     rng_split,
     rng_split_by_shape,
@@ -21,6 +22,7 @@ from evorl.utils.jax_utils import (
 )
 
 from .utils import FakeEnv
+from .helpers.sharding import compiled_collectives
 
 
 @pytest.fixture
@@ -53,6 +55,88 @@ def test_batched_key_validation(key):
     )
     with pytest.raises(ValueError, match="batch size"):
         ensure_batched_key(keys, 2)
+
+
+def test_fold_in_axis_none_preserves_keys_and_tree(key):
+    keys = {"rollout": key, "learn": (jax.random.key(18),)}
+    assert rng_fold_in_axis(keys, None) is keys
+    actual = jax.jit(lambda keys: rng_fold_in_axis(keys, None))(keys)
+    for actual_key, expected in zip(
+        jax.tree.leaves(actual), jax.tree.leaves(keys), strict=True
+    ):
+        np.testing.assert_array_equal(
+            jax.random.key_data(actual_key), jax.random.key_data(expected)
+        )
+    with pytest.raises(TypeError):
+        rng_fold_in_axis(keys)
+    with pytest.raises(NameError, match="DP"):
+        rng_fold_in_axis(key, "DP")
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_fold_in_axis_matches_original_streams_without_communication(dp_mesh, nested):
+    def local_step(key):
+        root, rollout, learn = jax.random.split(key, 3)
+        local = rng_fold_in_axis({"rollout": rollout, "learn": (learn,)}, "DP")
+        return root, jax.tree.map(lambda k: jax.random.key_data(k)[None], local)
+
+    mapped = jax.shard_map(
+        local_step, in_specs=jax.P(), out_specs=(jax.P(), jax.P("DP"))
+    )
+    keys = jax.random.key(19)
+    if nested:
+        keys = jax.random.split(keys, (2, 3))
+        mapped = jax.vmap(jax.vmap(mapped))
+    compiled = jax.jit(mapped).lower(keys).compile()
+    roots, actual = compiled(keys)
+
+    def expected_step(key):
+        root, rollout, learn = jax.random.split(key, 3)
+        # Reproduce the former inline implementation directly for every rank.
+        ranks = jnp.arange(dp_mesh.size, dtype=jnp.uint32)
+        expected = jax.tree.map(
+            lambda k: jax.random.key_data(
+                jax.vmap(jax.random.fold_in, (None, 0))(k, ranks)
+            ),
+            {"rollout": rollout, "learn": (learn,)},
+        )
+        return root, expected
+
+    if nested:
+        expected_step = jax.vmap(jax.vmap(expected_step))
+    expected_roots, expected = expected_step(keys)
+    np.testing.assert_array_equal(
+        jax.random.key_data(roots), jax.random.key_data(expected_roots)
+    )
+    assert jax.tree.structure(actual) == jax.tree.structure(expected)
+    for a, b in zip(jax.tree.leaves(actual), jax.tree.leaves(expected), strict=True):
+        np.testing.assert_array_equal(a, b)
+        assert np.all(
+            np.any(np.asarray(a)[..., 0, :] != np.asarray(a)[..., 1, :], axis=-1)
+        )
+    assert not compiled_collectives(compiled.as_text())
+
+
+@pytest.mark.four_devices
+def test_fold_in_axis_uses_only_the_requested_axis(mesh_factory, key):
+    mesh = mesh_factory((2, 2), ("DP", "POP"))
+    with jax.set_mesh(mesh):
+
+        @jax.shard_map(in_specs=jax.P(), out_specs=(jax.P("DP"), jax.P("POP")))
+        def local(key):
+            return (
+                jax.random.key_data(rng_fold_in_axis(key, "DP"))[None],
+                jax.random.key_data(rng_fold_in_axis(key, "POP"))[None],
+            )
+
+        compiled = jax.jit(local).lower(key).compile()
+        dp_keys, pop_keys = compiled(key)
+    expected = jax.random.key_data(
+        jax.vmap(jax.random.fold_in, (None, 0))(key, jnp.arange(2, dtype=jnp.uint32))
+    )
+    np.testing.assert_array_equal(dp_keys, expected)
+    np.testing.assert_array_equal(pop_keys, expected)
+    assert not compiled_collectives(compiled.as_text())
 
 
 @pytest.mark.parametrize("scalar_obs", [False, True])

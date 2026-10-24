@@ -18,7 +18,7 @@ from evorl.recorders import add_prefix
 from evorl.rollout import multi_agent_rollout
 from evorl.types import PyTreeDict, pytree_field
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient, rng_fold_in_axis
 from evorl.utils.rl_toolkits import approximate_kl, flatten_rollout_trajectory
 from evorl.workflows import OnPolicyWorkflow
 
@@ -306,10 +306,7 @@ class IPPOWorkflow(OnPolicyWorkflow):
 
     def evaluate(self, state):
         key, eval_key = jax.random.split(state.key)
-        if self.is_multi_device:
-            eval_key = jax.random.fold_in(
-                eval_key, jax.lax.axis_index(self.dp_axis_name)
-            )
+        eval_key = rng_fold_in_axis(eval_key, self.dp_axis_name)
         metrics = self.evaluator.evaluate(
             state.agent_state, eval_key, self.config.eval_episodes
         )
@@ -320,11 +317,9 @@ class IPPOWorkflow(OnPolicyWorkflow):
 
     def step(self, state):
         key, rollout_key, learn_key = jax.random.split(state.key, 3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            rollout_key, learn_key = (
-                jax.random.fold_in(k, rank) for k in (rollout_key, learn_key)
-            )
+        rollout_key, learn_key = rng_fold_in_axis(
+            (rollout_key, learn_key), self.dp_axis_name
+        )
         trajectory, env_state = multi_agent_rollout(
             self.env,
             self.agent.compute_actions,

@@ -9,7 +9,7 @@ from evorl.distributed import psum, pmean_nnx_loss_and_grad
 from evorl.metrics import TrainMetric
 from evorl.rollout import multi_agent_rollout
 from evorl.types import PyTreeDict, pytree_field
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient, rng_fold_in_axis
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
 from .common import (
@@ -122,11 +122,9 @@ class MATD3Workflow(MADDPGWorkflow):
 
     def step(self, state):
         key, rollout_key, learn_key = jax.random.split(state.key, 3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            rollout_key, learn_key = (
-                jax.random.fold_in(k, rank) for k in (rollout_key, learn_key)
-            )
+        rollout_key, learn_key = rng_fold_in_axis(
+            (rollout_key, learn_key), self.dp_axis_name
+        )
         trajectory, env_state = multi_agent_rollout(
             self.env,
             self.agent.compute_actions,

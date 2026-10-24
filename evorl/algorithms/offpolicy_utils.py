@@ -14,7 +14,7 @@ from evorl.types import State, PyTreeDict
 from evorl.rollout import rollout
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient, scan_and_last
+from evorl.utils.jax_utils import tree_stop_gradient, scan_and_last, rng_fold_in_axis
 from evorl.agent import RandomAgent
 from evorl.recorders import add_prefix
 
@@ -154,10 +154,9 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         # ==== fill random transitions ====
 
         key, random_rollout_key, rollout_key = jax.random.split(state.key, num=3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            random_rollout_key = jax.random.fold_in(random_rollout_key, rank)
-            rollout_key = jax.random.fold_in(rollout_key, rank)
+        random_rollout_key, rollout_key = rng_fold_in_axis(
+            (random_rollout_key, rollout_key), self.dp_axis_name
+        )
         rollout_length = config.random_timesteps // config.num_envs
         if rollout_length > 0:
             random_agent = RandomAgent()
@@ -214,10 +213,7 @@ class OffPolicyWorkflowTemplate(OffPolicyWorkflow):
         env_state = state.env_state
         if rollout_timesteps > 0 or config.random_timesteps >= config.num_envs:
             key, env_key = jax.random.split(key)
-            if self.is_multi_device:
-                env_key = jax.random.fold_in(
-                    env_key, jax.lax.axis_index(self.dp_axis_name)
-                )
+            env_key = rng_fold_in_axis(env_key, self.dp_axis_name)
             # Host environments also need their actual simulator reset after
             # prefill; retaining the initial EnvState alone cannot rewind them.
             env_state = self.env.reset(env_key)

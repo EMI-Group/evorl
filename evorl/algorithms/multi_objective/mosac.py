@@ -34,6 +34,7 @@ from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict, State, pytree_field
 from evorl.workflows.rl_workflow import _shard_map_replay_buffer_context
 from evorl.utils import running_statistics
+from evorl.utils.jax_utils import rng_fold_in_axis
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory, soft_target_update
 
 from .common import (
@@ -242,10 +243,7 @@ class MOSACAgent(Agent):
 def _update(workflow, state):
     """Run SAC update cycles over local replay, without collecting transitions."""
     key, update_key = jax.random.split(state.key)
-    if workflow.is_multi_device:
-        update_key = jax.random.fold_in(
-            update_key, jax.lax.axis_index(workflow.dp_axis_name)
-        )
+    update_key = rng_fold_in_axis(update_key, workflow.dp_axis_name)
     buffer = state.replay_buffer_state
 
     def update_critic(agent_state, optimizer_state, batch, critic_key):
@@ -536,11 +534,9 @@ class MOSACWorkflow(OffPolicyWorkflowTemplate):
 
     def _postsetup_replaybuffer(self, state):
         key, random_key, policy_key = jax.random.split(state.key, 3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            random_key, policy_key = (
-                jax.random.fold_in(k, rank) for k in (random_key, policy_key)
-            )
+        random_key, policy_key = rng_fold_in_axis(
+            (random_key, policy_key), self.dp_axis_name
+        )
         random_length = self.config.random_timesteps // self.config.num_envs
         policy_length = max(
             0,
@@ -608,10 +604,7 @@ class MOSACWorkflow(OffPolicyWorkflowTemplate):
             )
         if random_length + policy_length > 0:
             key, env_key = jax.random.split(key)
-            if self.is_multi_device:
-                env_key = jax.random.fold_in(
-                    env_key, jax.lax.axis_index(self.dp_axis_name)
-                )
+            env_key = rng_fold_in_axis(env_key, self.dp_axis_name)
             state = state.replace(env_state=self.env.reset(env_key))
         return state.replace(key=key)
 
@@ -627,10 +620,7 @@ class MOSACWorkflow(OffPolicyWorkflowTemplate):
 
     def step(self, state):
         key, rollout_key = jax.random.split(state.key)
-        if self.is_multi_device:
-            rollout_key = jax.random.fold_in(
-                rollout_key, jax.lax.axis_index(self.dp_axis_name)
-            )
+        rollout_key = rng_fold_in_axis(rollout_key, self.dp_axis_name)
         trajectory, env_state = rollout(
             self.env.step,
             self.agent.compute_actions,
@@ -676,10 +666,7 @@ class MOSACWorkflow(OffPolicyWorkflowTemplate):
 
     def evaluate(self, state):
         key, eval_key = jax.random.split(state.key)
-        if self.is_multi_device:
-            eval_key = jax.random.fold_in(
-                eval_key, jax.lax.axis_index(self.dp_axis_name)
-            )
+        eval_key = rng_fold_in_axis(eval_key, self.dp_axis_name)
         evaluation = self.evaluator.evaluate(
             state.agent_state, eval_key, self.config.eval_episodes
         )

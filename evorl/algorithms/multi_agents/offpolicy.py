@@ -13,7 +13,7 @@ from evorl.metrics import EvaluateMetric
 from evorl.sample_batch import SampleBatch
 from evorl.rollout import multi_agent_rollout
 from evorl.types import PyTreeDict
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient, rng_fold_in_axis
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 
 from .common import scale_action, update_preprocessing
@@ -107,11 +107,9 @@ class MultiAgentOffPolicyWorkflow(OffPolicyWorkflowTemplate):
 
     def _postsetup_replaybuffer(self, state):
         key, random_key, policy_key = jax.random.split(state.key, 3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            random_key, policy_key = (
-                jax.random.fold_in(k, rank) for k in (random_key, policy_key)
-            )
+        random_key, policy_key = rng_fold_in_axis(
+            (random_key, policy_key), self.dp_axis_name
+        )
         random_length = self.config.random_timesteps // self.config.num_envs
         policy_length = max(
             0,
@@ -159,10 +157,7 @@ class MultiAgentOffPolicyWorkflow(OffPolicyWorkflowTemplate):
         )
         if random_length + policy_length > 0:
             key, env_key = jax.random.split(key)
-            if self.is_multi_device:
-                env_key = jax.random.fold_in(
-                    env_key, jax.lax.axis_index(self.dp_axis_name)
-                )
+            env_key = rng_fold_in_axis(env_key, self.dp_axis_name)
             env_state = self.env.reset(env_key)
         return state.replace(
             key=key,
@@ -174,10 +169,7 @@ class MultiAgentOffPolicyWorkflow(OffPolicyWorkflowTemplate):
 
     def evaluate(self, state):
         key, eval_key = jax.random.split(state.key)
-        if self.is_multi_device:
-            eval_key = jax.random.fold_in(
-                eval_key, jax.lax.axis_index(self.dp_axis_name)
-            )
+        eval_key = rng_fold_in_axis(eval_key, self.dp_axis_name)
         metrics = self.evaluator.evaluate(
             state.agent_state, eval_key, self.config.eval_episodes
         )

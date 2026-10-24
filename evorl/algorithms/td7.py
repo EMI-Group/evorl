@@ -30,6 +30,7 @@ from evorl.utils.jax_utils import (
     scan_and_mean,
     tree_stop_gradient,
     right_shift_with_padding,
+    rng_fold_in_axis,
 )
 from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import Agent, AgentState
@@ -520,10 +521,9 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            rollout_key = jax.random.fold_in(rollout_key, rank)
-            learn_key = jax.random.fold_in(learn_key, rank)
+        rollout_key, learn_key = rng_fold_in_axis(
+            (rollout_key, learn_key), self.dp_axis_name
+        )
 
         # Evaluate via episodes (rollout [T, episodes, ...])
         eval_metrics, trajectory = self.collector.rollout(

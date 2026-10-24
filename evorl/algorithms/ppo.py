@@ -28,10 +28,7 @@ from evorl.types import (
     State,
     pytree_field,
 )
-from evorl.utils.jax_utils import (
-    tree_stop_gradient,
-    scan_and_mean,
-)
+from evorl.utils.jax_utils import tree_stop_gradient, scan_and_mean, rng_fold_in_axis
 from evorl.utils.rl_toolkits import (
     average_episode_discount_return,
     compute_gae_with_horizon,
@@ -331,10 +328,9 @@ class PPOWorkflow(OnPolicyWorkflow):
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         key, rollout_key, learn_key = jax.random.split(state.key, num=3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            rollout_key = jax.random.fold_in(rollout_key, rank)
-            learn_key = jax.random.fold_in(learn_key, rank)
+        rollout_key, learn_key = rng_fold_in_axis(
+            (rollout_key, learn_key), self.dp_axis_name
+        )
 
         # trajectory: [T, #envs, ...]
         trajectory, env_state = rollout(

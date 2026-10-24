@@ -15,7 +15,7 @@ from evorl.metrics import MetricBase, WorkflowMetric, metric_field
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict, State
 from evorl.utils import running_statistics
-from evorl.utils.jax_utils import tree_stop_gradient
+from evorl.utils.jax_utils import tree_stop_gradient, rng_fold_in_axis
 from evorl.utils.rl_toolkits import flatten_rollout_trajectory
 from evorl.workflows.rl_workflow import _shard_map_replay_buffer_context
 
@@ -129,10 +129,7 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
         metrics = MultiObjectiveWorkflowMetric()
 
         def reset(env_key):
-            if self.is_multi_device:
-                env_key = jax.random.fold_in(
-                    env_key, jax.lax.axis_index(self.dp_axis_name)
-                )
+            env_key = rng_fold_in_axis(env_key, self.dp_axis_name)
             reset_key, weight_key = jax.random.split(env_key)
             return self.env.reset(reset_key), sample_preferences(
                 weight_key, (self.config.num_envs,), self.agent.num_objectives
@@ -263,11 +260,9 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
             ),
         )
         key, random_key, policy_key = jax.random.split(state.key, 3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            random_key, policy_key = (
-                jax.random.fold_in(k, rank) for k in (random_key, policy_key)
-            )
+        random_key, policy_key = rng_fold_in_axis(
+            (random_key, policy_key), self.dp_axis_name
+        )
         state = state.replace(key=key)
         for length, rollout_key, random in (
             (random_length, random_key, True),
@@ -305,10 +300,7 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
             )
         if random_length + policy_length > 0:
             key, env_key = jax.random.split(state.key)
-            if self.is_multi_device:
-                env_key = jax.random.fold_in(
-                    env_key, jax.lax.axis_index(self.dp_axis_name)
-                )
+            env_key = rng_fold_in_axis(env_key, self.dp_axis_name)
             # Training starts a new episode, independent of replay prefill.
             state = state.replace(
                 key=key,
@@ -319,10 +311,7 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
 
     def evaluate(self, state):
         key, eval_key = jax.random.split(state.key)
-        if self.is_multi_device:
-            eval_key = jax.random.fold_in(
-                eval_key, jax.lax.axis_index(self.dp_axis_name)
-            )
+        eval_key = rng_fold_in_axis(eval_key, self.dp_axis_name)
         weights = jnp.asarray(self.eval_preferences, jnp.float32)
 
         def evaluate_preference(weight, key):

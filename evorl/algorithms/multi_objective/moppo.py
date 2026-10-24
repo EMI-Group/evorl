@@ -25,6 +25,7 @@ from evorl.recorders import add_prefix
 from evorl.rollout import rollout
 from evorl.types import PyTreeDict, pytree_field
 from evorl.utils import running_statistics
+from evorl.utils.jax_utils import rng_fold_in_axis
 from evorl.utils.rl_toolkits import (
     approximate_kl,
     compute_gae,
@@ -308,10 +309,9 @@ class MOPPOWorkflow(OnPolicyWorkflow):
 
     def step(self, state):
         key, rollout_key, learn_key = jax.random.split(state.key, 3)
-        if self.is_multi_device:
-            rank = jax.lax.axis_index(self.dp_axis_name)
-            rollout_key = jax.random.fold_in(rollout_key, rank)
-            learn_key = jax.random.fold_in(learn_key, rank)
+        rollout_key, learn_key = rng_fold_in_axis(
+            (rollout_key, learn_key), self.dp_axis_name
+        )
         trajectory, env_state = rollout(
             self.env.step,
             self.agent.compute_actions,
@@ -438,10 +438,7 @@ class MOPPOWorkflow(OnPolicyWorkflow):
 
     def evaluate(self, state):
         key, eval_key = jax.random.split(state.key)
-        if self.is_multi_device:
-            eval_key = jax.random.fold_in(
-                eval_key, jax.lax.axis_index(self.dp_axis_name)
-            )
+        eval_key = rng_fold_in_axis(eval_key, self.dp_axis_name)
         metrics = self.evaluator.evaluate(
             state.agent_state, eval_key, self.config.eval_episodes
         )

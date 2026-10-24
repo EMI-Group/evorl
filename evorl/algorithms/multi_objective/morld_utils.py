@@ -9,6 +9,7 @@ import numpy as np
 
 from evorl.ec.optimizers.nsga2 import crowding_distance
 from evorl.types import PyTreeDict
+from evorl.utils.jax_utils import rng_fold_in_axis
 
 
 def reset_decomposition_env(workflow, key):
@@ -17,7 +18,7 @@ def reset_decomposition_env(workflow, key):
         return workflow.env.reset(key)
 
     def reset(key):
-        key = jax.random.fold_in(key, jax.lax.axis_index(workflow.dp_axis_name))
+        key = rng_fold_in_axis(key, workflow.dp_axis_name)
         return workflow.env.reset(key)
 
     return jax.shard_map(

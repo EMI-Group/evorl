@@ -37,6 +37,7 @@ from evorl.metrics import MetricBase, TrainMetric
 from evorl.recorders import add_prefix
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict, State, pytree_field
+from evorl.utils.jax_utils import rng_fold_in_axis
 from evorl.workflows.rl_workflow import RLWorkflow
 
 from .common import MultiObjectiveWorkflowMetric, objective_count
@@ -402,8 +403,7 @@ class PCNWorkflow(RLWorkflow):
         random=False,
         evaluate=False,
     ):
-        if self.is_multi_device:
-            key = jax.random.fold_in(key, jax.lax.axis_index(self.dp_axis_name))
+        key = rng_fold_in_axis(key, self.dp_axis_name)
         key, reset_key = jax.random.split(key)
         env_state = env.reset(reset_key)
         desired_return = jnp.broadcast_to(
@@ -539,10 +539,7 @@ class PCNWorkflow(RLWorkflow):
         def update(carry, _):
             agent_state, opt_state, key = carry
             key, sample_key = jax.random.split(key)
-            if self.is_multi_device:
-                sample_key = jax.random.fold_in(
-                    sample_key, jax.lax.axis_index(self.dp_axis_name)
-                )
+            sample_key = rng_fold_in_axis(sample_key, self.dp_axis_name)
             batch = sample_episode_batch(
                 state.episode_archive, sample_key, self.config.batch_size
             )
@@ -571,10 +568,7 @@ class PCNWorkflow(RLWorkflow):
             length=self.config.num_updates_per_iter,
         )
         key, command_key, rollout_key = jax.random.split(key, 3)
-        if self.is_multi_device:
-            command_key = jax.random.fold_in(
-                command_key, jax.lax.axis_index(self.dp_axis_name)
-            )
+        command_key = rng_fold_in_axis(command_key, self.dp_axis_name)
         desired, horizons = sample_commands(
             state.episode_archive,
             command_key,

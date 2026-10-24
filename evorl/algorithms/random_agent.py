@@ -9,6 +9,7 @@ from evorl.types import State
 from evorl.envs import create_env, AutoresetMode
 from evorl.evaluators import Evaluator
 from evorl.recorders import add_prefix
+from evorl.utils.jax_utils import rng_fold_in_axis
 
 
 class RandomTrainMetric(MetricBase):
@@ -80,10 +81,7 @@ class RandomAgentWorkflow(RLWorkflow):
 
     def evaluate(self, state: State) -> tuple[MetricBase, State]:
         key, eval_key = jax.random.split(state.key, num=2)
-        if self.is_multi_device:
-            eval_key = jax.random.fold_in(
-                eval_key, jax.lax.axis_index(self.dp_axis_name)
-            )
+        eval_key = rng_fold_in_axis(eval_key, self.dp_axis_name)
 
         # [#episodes]
         raw_eval_metrics = self.evaluator.evaluate(

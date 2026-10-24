@@ -250,6 +250,27 @@ def rng_split(key: jax.Array, num: int = 2) -> jax.Array:
     return split_fn(key, num)
 
 
+def rng_fold_in_axis(keys: chex.ArrayTree, axis_name: str | None) -> chex.ArrayTree:
+    """Derive local random keys from the index of a named JAX axis.
+
+    Args:
+        keys: A scalar PRNG key or a pytree of scalar PRNG keys. Use `vmap`
+            over key batches; nested `vmap` is supported.
+        axis_name: Bound axis whose index is folded into every key. Pass `None`
+            to disable folding and return `keys` unchanged.
+
+    Returns:
+        Keys with the same structure and key representation. With a named axis,
+        each leaf equals `jax.random.fold_in(key, jax.lax.axis_index(axis_name))`.
+        This performs no communication. In data-parallel workflows, apply it to
+        consumed subkeys; keep the saved root key replicated across devices.
+    """
+    if axis_name is None:
+        return keys
+    rank = jax.lax.axis_index(axis_name)
+    return jtu.tree_map(lambda key: jax.random.fold_in(key, rank), keys)
+
+
 def rng_split_by_shape(key: jax.Array, shape: tuple[int, ...]) -> jax.Array:
     """Split a scalar key into a key batch with the requested shape."""
     return jax.random.split(key, shape)
