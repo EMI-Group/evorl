@@ -1,0 +1,27 @@
+# @package _global_
+
+defaults:
+  - /agent/multi_objective@target_workflow: moppo
+  - _self_
+
+workflow_cls: evorl.algorithms.multi_objective.morld_ppo.MORLDPPOWorkflow
+pop_size: 6
+total_timesteps: 2000000
+exchange_every: 16384
+neighborhood_size: 1
+transfer: true
+weight_adaptation: null
+psa_delta: 0.1
+preferences: null
+archive_capacity: 128
+eval_interval: 1
+
+target_workflow:
+  # Archive and PSA compare the same discounted returns optimized by PPO.
+  eval_discount: ${.discount}
+  num_envs: 16
+  rollout_length: 128
+  minibatch_size: 256
+  reuse_rollout_epochs: 4
+  num_eval_envs: 4
+  eval_episodes: 4

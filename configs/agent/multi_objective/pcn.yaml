@@ -1,0 +1,28 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.multi_objective.pcn.PCNWorkflow
+
+num_envs: 10
+num_eval_envs: 4
+total_timesteps: 100000
+discount: 1.0
+num_initial_episodes: 20
+# Whole episodes, padded to env.max_episode_steps, not individual transitions.
+episode_buffer_capacity: 100
+num_command_candidates: 20
+num_eval_commands: 10
+num_updates_per_iter: 50
+batch_size: 256
+exploration_noise: 0.1
+# One scale per reward coordinate, followed by the remaining-horizon scale.
+# null leaves rewards unchanged and divides horizon by max_episode_steps.
+scaling_factor: null
+# Optional per-objective upper bounds on the residual return command.
+max_return: null
+
+optimizer:
+  lr: 0.001
+agent_network:
+  hidden_size: 64
+
+eval_interval: 10

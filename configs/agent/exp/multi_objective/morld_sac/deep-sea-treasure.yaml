@@ -1,0 +1,5 @@
+# @package _global_
+defaults:
+  - /agent/multi_objective/morld_sac
+  - override /env: toy/deep-sea-treasure-v0
+  - _self_

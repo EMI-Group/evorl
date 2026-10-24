@@ -1,0 +1,8 @@
+# @package _global_
+
+defaults:
+  - /agent/multi_objective/morld_ppo
+  - override /env: brax/ant_multi_objective
+  - _self_
+
+total_timesteps: 2000000

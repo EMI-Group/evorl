@@ -1,0 +1,27 @@
+# @package _global_
+
+defaults:
+  - /agent/multi_objective@target_workflow: mosac
+  - _self_
+
+workflow_cls: evorl.algorithms.multi_objective.morld_sac.MORLDSACWorkflow
+pop_size: 6
+total_timesteps: 2000000
+exchange_every: 16384
+neighborhood_size: 1
+transfer: true
+weight_adaptation: null
+psa_delta: 0.1
+preferences: null
+archive_capacity: 128
+eval_interval: 1
+# Capacity below belongs to one common ring, or to each private ring.
+shared_replay_buffer: true
+update_passes: 10
+
+target_workflow:
+  eval_discount: ${.discount}
+  num_envs: 16
+  num_eval_envs: 4
+  eval_episodes: 4
+  fold_iters: 1

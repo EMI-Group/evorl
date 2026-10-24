@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /agent/multi_objective/morld_ppo
+  - override /env: playground/dm_control_suite/CartpoleBalance_multi_objective
+  - _self_
+
+# Population vmap requires a backend with nested JAX batching support.
+env:
+  config_overrides:
+    impl: jax

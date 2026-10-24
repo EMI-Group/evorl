@@ -75,8 +75,9 @@ class MultiObjectiveEvaluateMetric(MetricBase):
     """Keep every evaluation preference and reward coordinate visible.
 
     `episode_returns` has shape `(preferences, objectives)`; scalarized returns
-    and episode lengths have shape `(preferences,)`. Only episode/device axes
-    are averaged, never the objective or preference axis.
+    and episode lengths have shape `(preferences,)`. A fixed-preference workflow
+    returns `(objectives,)` and scalar lengths/scalarized returns instead. Only
+    episode/device axes are averaged, never the objective or preference axis.
     """
 
     preferences: jax.Array

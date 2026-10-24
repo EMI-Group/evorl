@@ -1,0 +1,5 @@
+# @package _global_
+defaults:
+  - /agent/multi_objective/morld_sac
+  - override /env: brax/ant_multi_objective
+  - _self_

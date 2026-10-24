@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - /agent/multi_objective/gpi_ls
+  - override /env: toy/deep-sea-treasure-v0
+  - _self_
+
+discount: 1.0
+eval_preferences: [[1.0, 0.0], [0.75, 0.25], [0.5, 0.5], [0.25, 0.75], [0.0, 1.0]]

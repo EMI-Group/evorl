@@ -360,7 +360,7 @@ def test_morl_target_updates_and_envelope_schedules_count_gradient_steps(algorit
 
 @pytest.mark.parametrize(
     "example",
-    ["envelope_q-deep-sea-treasure", "capql-brax-ant", "capql-playground-cartpole"],
+    ["envelope_q/deep-sea-treasure", "capql/brax-ant", "capql/playground-cartpole"],
 )
 def test_morl_yaml_runs_training_and_evaluation_on_real_environments(example):
     root = Path(__file__).resolve().parents[2]

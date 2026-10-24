@@ -1,0 +1,41 @@
+# @package _global_
+
+workflow_cls: evorl.algorithms.multi_objective.gpi_ls.GPILSWorkflow
+
+num_envs: 16
+rollout_length: 1
+total_timesteps: 1000000
+normalize_obs: false
+discount: 0.99
+random_timesteps: 4096
+learning_start_timesteps: 4096
+replay_buffer_capacity: 100000
+batch_size: 128
+num_updates_per_iter: 1
+max_support_size: 32
+# Workflow steps per LS task; each step collects num_envs * rollout_length transitions.
+training_steps_per_weight: 10000
+num_corner_weights: 4
+huber_delta: 1.0
+# LS stages are scheduled by learn() one training step at a time.
+fold_iters: 1
+tau: 1.0
+target_network_update_freq: 200
+save_replay_buffer: true
+
+exploration_epsilon:
+  start: 0.8
+  end: 0.05
+  decay_updates: 50000
+
+optimizer:
+  lr: 0.0003
+  grad_clip_norm: 1.0
+agent_network:
+  q_hidden_layer_sizes: [256, 256]
+
+num_eval_envs: 16
+eval_episodes: 32
+eval_interval: 1000
+# null evaluates each coordinate preference and the balanced preference.
+eval_preferences: null

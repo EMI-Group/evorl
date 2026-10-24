@@ -1,0 +1,5 @@
+# @package _global_
+defaults:
+  - /agent/multi_objective/morld_sac
+  - override /env: mo_gymnasium/mo-mountaincarcontinuous-v0
+  - _self_

@@ -46,10 +46,10 @@ Supported RL Algorithms:
 | SAC       | [`SACWorkflow`](#evorl.algorithms.sac.SACWorkflow)                          | Stochastic    | Discrete & Continuous  |
 | TD7       | [`TD7Workflow`](#evorl.algorithms.td7.TD7Workflow)                          | Deterministic | Continuous             |
 
-PPO and ParamPPO normalize advantages over each global training minibatch,
+PPO, ParamPPO and MOPPO normalize advantages over each global training minibatch,
 excluding autoreset transitions. Losses are weighted by valid sample counts,
 including when those counts differ between devices. PBT members remain independent.
-Both use ENVPOOL (next-step) autoreset and the common GAE implementation.
+All three use ENVPOOL (next-step) autoreset and the common GAE implementation.
 Sampling budgets count rollout steps, including reset-only slots.
 PPO-family and IMPALA KL diagnostics use the common K3 estimator of
 `KL(behavior || current)`, excluding invalid transitions.
@@ -110,64 +110,158 @@ Implementation references include
 
 ## Multi-objective RL
 
-These single-agent workflows learn from vector rewards and nonnegative linear
-preferences whose weights sum to one. All objectives are maximized; represent
-costs with negative rewards. Observations currently use a flat `Box` space.
+These single-agent workflows maximize vector rewards; represent costs with
+negative rewards. Observations use a flat `Box` space. Preference weights are
+nonnegative and sum to one. SER applies utility to the expected return; ESR
+averages episode utilities. They coincide for linear utility.
 
-| Algorithm | Workflow | Actions |
+CAPQL, MOPPO and MOSAC use normalized continuous actions in `[-1, 1]`.
+Use `ActionSquashWrapper` around environments with other native Box bounds;
+the agents do not rescale actions or apply an additional density correction.
+
+| Algorithm | Workflow | Policy family | Criterion | Actions |
+| --- | --- | --- | --- | --- |
+| EnvelopeQ | `EnvelopeQWorkflow` | Preference-conditioned | SER | Discrete |
+| CAPQL | `CAPQLWorkflow` | Preference-conditioned | SER | Finite continuous Box |
+| GPI-LS | `GPILSWorkflow` | Successor features and GPI | SER | Discrete |
+| PCN | `PCNWorkflow` | Return/horizon-conditioned | Deterministic dynamics/rewards | Discrete or finite continuous Box |
+| MOPPO | `MOPPOWorkflow` | One fixed-preference policy | SER | Discrete or finite continuous Box |
+| MOSAC | `MOSACWorkflow` | One fixed-preference policy | SER | Discrete or finite continuous Box |
+| PGMORL | `PGMORLWorkflow` | Independent PPO policies | SER | Finite continuous Box |
+| MORL/D-PPO | `MORLDPPOWorkflow` | Independent PPO subproblems | SER, linear utility | Discrete or finite continuous Box |
+| MORL/D-SAC | `MORLDSACWorkflow` | Independent SAC subproblems | SER, linear utility | Discrete or finite continuous Box |
+
+Workflows live in `evorl.algorithms.multi_objective`. EnvelopeQ, CAPQL, GPI-LS
+and PCN each share one model across multiple represented policies. PGMORL and
+MORL/D maintain separate models and optimizers per population member.
+Configurations are starting points, not tuned benchmark reproductions.
+
+### Algorithm details and scope
+
+- **EnvelopeQ** uses the vector squared-L2 and projected absolute-error losses
+  from Eq. 6/7 of the [paper](https://proceedings.neurips.cc/paper/2019/hash/4a46fbfca3f1465a27b210f4bdfe6ab3-Abstract.html).
+  The [released code](https://github.com/RunzheYang/MORL) and MORL-Baselines
+  instead square the projected error. Behavior preferences persist for an
+  episode; replay is relabeled with additional preferences. Bellman targets use
+  online selection and target-network evaluation.
+- **CAPQL** follows the [paper](https://cs.uwaterloo.ca/~y328yu/publication/lu-hy-23/lu-hy-23.pdf)
+  and [authors' code](https://github.com/haoyelu/CAPQL): vector entropy augmentation,
+  coordinatewise twin-critic minimum, per-step behavior preferences, a TanhNormal
+  policy and fixed entropy coefficient.
+- **GPI-LS** uses policy-conditioned DDQN with exact linear-support corners.
+  Corner enumeration grows combinatorially; `max_support_size` bounds storage
+  and raises when exhausted. Ensemble/prioritized replay and GPI-PD are excluded.
+- **PCN** learns actions by supervised hindsight on complete episodes, conditioned
+  on desired return and remaining horizon. Padded transitions are excluded from
+  losses and counters; sampling budgets finish after a whole episode batch.
+  `scaling_factor` scales the commands. For discounted returns, the next command
+  is `(command - reward) / discount`.
+
+  PCN assumes that state and action determine the next state and reward;
+  random resets and exploratory actions are allowed. Native DeepSeaTreasure
+  satisfies this assumption; Brax/Playground tasks may satisfy it with fixed
+  physics and perturbations disabled. Slippery FrozenLake and stochastic rewards
+  do not: hindsight imitation can learn lucky outcomes rather than expected
+  returns. Reusing an RNG seed does not make a stochastic task deterministic.
+- **MOPPO** uses vector values and GAE, then scalarizes the actor advantage.
+  PGMORL and MORL/D-PPO use this same PPO training workflow.
+  **MOSAC** scalarizes each vector critic before the twin-critic minimum and
+  regresses a scalar Bellman target. MOSAC supports optional temperature tuning
+  and exact categorical expectations for discrete actions. It uses SAC's
+  action distribution, alpha loss, optimizer configuration and replay fields.
+  `actor_update_interval` counts critic updates per actor update for either
+  action type; the target updates once afterward. `num_updates_per_iter` counts
+  these update cycles. Agents use normalized actions; `ActionSquashWrapper`
+  handles native Box bounds. Its `update(state)`
+  trains from replay without collecting or counting new environment samples.
+- **PGMORL** selects PPO tasks using a directional performance buffer and local
+  predictions. It supports two or three objectives and excludes the final
+  Pareto-analysis/interpolation stage, matching MORL-Baselines.
+  Host environments finish whole population batches, so the last batch can
+  exceed `total_timesteps`; all collected transitions are counted.
+- **MORL/D-PPO and MORL/D-SAC** use round-robin collection, first-round actor
+  transfer and optional PSA preference adjustment. Pareto archives preserve
+  policy snapshots evaluated with the training discount, as does PGMORL's
+  performance model. These variants implement weighted-sum SER; Tchebycheff and
+  nonlinear ESR training are excluded.
+
+The additional implementations follow [MORL-Baselines](https://github.com/LucasAlegre/morl-baselines).
+References: [GPI-LS](https://arxiv.org/abs/2301.07784),
+[PCN](https://arxiv.org/abs/2204.05036),
+[PGMORL](https://proceedings.mlr.press/v119/xu20h.html),
+[MORL/D](https://doi.org/10.1613/jair.1.15702).
+
+### Replay and execution
+
+| Algorithms | Training data | Retention and sampling |
 | --- | --- | --- |
-| EnvelopeQ (Envelope Q-learning) | `evorl.algorithms.multi_objective.envelope_q.EnvelopeQWorkflow` | Discrete |
-| CAPQL | `evorl.algorithms.multi_objective.capql.CAPQLWorkflow` | Finite continuous Box |
+| EnvelopeQ, CAPQL, GPI-LS, MOSAC | Transition ring | Overwrite oldest entries; uniform sampling |
+| PCN | Complete-episode archive | Retain Pareto quality/diversity; sample an episode uniformly, then one valid timestep |
+| MOPPO, PGMORL, MORL/D-PPO | Current PPO rollout | Reuse for PPO epochs, then discard; no replay across iterations |
+| MORL/D-SAC | MOSAC transition rings | Default `shared_replay_buffer=true`: one shared ring; `false`: one ring per member |
 
-Both use static agents and complete NNX model snapshots in `AgentState`.
-Networks receive observations and preference weights; critics return a vector
-instead of collapsing rewards into a scalar. Replay preserves reward vectors,
-original terminal observations and behavior preferences. EnvelopeQ samples one
-behavior preference per episode and relabels replay with additional preferences.
-CAPQL samples behavior preferences each step, as in the authors' implementation.
-It uses EvoRL's existing TanhNormal policy and a fixed entropy coefficient.
+Transition replay preserves vector rewards, original terminal observations and
+termination flags in `extras.env_extras.ori_obs` and `.termination`, as in SAC.
+EnvelopeQ, CAPQL and GPI-LS also store behavior preferences;
+MOSAC applies its learner's current preference during loss computation. These
+rings use uniform replay, not prioritized sampling. PCN's retention priorities
+control which episodes survive, not their training-sampling probabilities.
+PGMORL's performance buffer and Pareto archive store policy snapshots and
+performance data, rather than transition replay.
 
-Set `eval_preferences` to a list of normalized weight vectors. With `null`,
-evaluation uses each coordinate preference and the balanced preference.
-Evaluation reports arrays of preferences, vector returns, scalarized returns
-and episode lengths separately. To call a trained policy directly, replace
-`agent_state.extra_state.preferences` or supply `SampleBatch.extras.preferences`.
-Preference coordinates are never observation-normalized.
+| Workflow | JIT boundary | Multiple devices |
+| --- | --- | --- |
+| EnvelopeQ, CAPQL, MOPPO, MOSAC | Whole `step` | Split environments and batches; replicated models/optimizers and averaged gradients; off-policy replay stays local |
+| GPI-LS | Training/evaluation; support selection stays in Python | Same data parallelism as above |
+| PCN | Whole `step` | Replicated global episode archive; gather complete episodes before common retention and sample local batches from the full archive |
+| PGMORL | Population PPO training/evaluation; prediction/selection stay in Python | Single device |
+| MORL/D-PPO | Whole `step` | Data parallel within each member; keep round-robin collection |
+| MORL/D-SAC | Whole `step` | Data parallel within each member; replay stays on the collecting device |
+
+MORL/D-SAC shares each device's local ring among policy replicas when
+`shared_replay_buffer=true`; otherwise each policy has its own local ring.
+Only collection writes replay. `update_passes` controls extra replay-only updates
+to the other members. Shared warmup is collected and counted once; private
+warmup is counted per member. Actor transfer preserves replay, critic/target
+parameters, temperature and counters, and transfers observation statistics.
+Replay prefill retains its transitions and observation statistics; training
+starts from reset environments rather than continuing the prefill episode.
+
+Environment counts and training batch sizes are configured as single-device
+totals and divided across devices, as is transition replay capacity per learner.
+PCN keeps episode capacity, initial episode count and command candidate counts
+global. MORL/D keeps `exchange_every` global and its Pareto policy archive
+replicated. Gradients are never averaged between different population members.
+External nested `vmap` creates independent workflow states, including independent
+replay/archive ownership; PGMORL's Python outer loop is excluded.
+
+Playground population examples select JAX physics because Warp FFI does not
+support their nested batching. With MJX 3.16.0 and Playground 0.2.0, VMA checks
+under `shard_map` fail in the Cartpole/Cheetah line search and Pendulum physics
+step. Ordinary PPO also reproduces these failures; they are not specific to
+MORL/D or multi-objective losses. Workflow VMA checks remain enabled.
+
+### Configuration and examples
+
+For EnvelopeQ, CAPQL and GPI-LS, `eval_preferences=null` evaluates coordinate
+preferences and the balanced preference. Evaluation reports preference/command
+vectors, vector returns and episode lengths separately. To select a preference
+for an action, set `agent_state.extra_state.preferences` or
+`SampleBatch.extras.preferences`; preference coordinates are not observation-normalized.
+
+Experiment YAMLs are grouped by algorithm under `configs/agent/exp/multi_objective/`:
 
 ```shell
-python scripts/train.py agent=exp/multi_objective/envelope_q-deep-sea-treasure
-python scripts/train.py agent=exp/multi_objective/capql-brax-ant
-python scripts/train.py agent=exp/multi_objective/capql-playground-cartpole
-python scripts/train.py agent=exp/multi_objective/envelope_q-mo-deep-sea-treasure
-python scripts/train.py agent=exp/multi_objective/capql-mo-mountaincar
+python scripts/train.py agent=exp/multi_objective/envelope_q/deep-sea-treasure
+python scripts/train.py agent=exp/multi_objective/pcn/deep-sea-treasure
+python scripts/train.py agent=exp/multi_objective/morld_sac/brax-ant
 ```
 
-The EnvelopeQ example includes a native JAX Deep Sea Treasure benchmark with the
-classic convex treasure map and standard EvoRL episode/autoreset wrappers.
-It lives in `evorl/envs/toy/` for tests and examples, without additional
-environment dependencies. The continuous examples reuse
-the Brax and MuJoCo Playground vector-reward configurations.
-The MO-Gymnasium examples require `pip install -e ".[mo-gymnasium]"`; their
-environments run on the CPU while JAX policy evaluation and training can use a GPU.
-
-EnvelopeQ follows the vector squared-L2 and projected absolute-error losses in
-Eq. 6/7 of the [original paper](https://proceedings.neurips.cc/paper/2019/hash/4a46fbfca3f1465a27b210f4bdfe6ab3-Abstract.html).
-The [released implementation](https://github.com/RunzheYang/MORL) and
-[MORL-Baselines](https://github.com/LucasAlegre/morl-baselines) instead square
-the projected error. This implementation uses uniform replay and online
-selection/target-network evaluation for the envelope Bellman target.
-CAPQL follows the vector entropy augmentation and coordinatewise twin-critic
-minimum in Algorithm 1 of the
-[paper](https://cs.uwaterloo.ca/~y328yu/publication/lu-hy-23/lu-hy-23.pdf),
-checked against the [authors' code](https://github.com/haoyelu/CAPQL) and
-MORL-Baselines. Configurations are starting points, not tuned benchmark
-reproductions.
-
-CAPQL returns normalized actions in `[-1, 1]`; `ActionSquashWrapper` maps
-these to native bounds. Replay uses SAC's `extras.env_extras.ori_obs` and
-`.termination` fields and preserves behavior preferences. Replay prefill passes
-complete batches to the common buffer and resets training environments afterward,
-retaining collected data, observation statistics and sampling counters.
+Native DeepSeaTreasure lives in `evorl/envs/toy/` and needs no optional environment
+library. Brax/Playground examples select reward components through their
+environment YAMLs. MO-Gymnasium examples require
+`uv pip install -e ".[mo-gymnasium]"`; simulation runs on the CPU while JAX models
+can train and evaluate on a GPU.
 
 ## EC Algorithms
 
@@ -256,7 +350,7 @@ no replay exchange between devices. Capacity and batch size apply to each ring.
 Warmup collects `random_timesteps` transitions per ring, rounded down to a full
 environment batch. Replay is owned by the outer PBT state and is not copied
 during exploit in either mode. This differs from ordinary data-parallel
-SAC, which keeps a local ring per device and synchronizes gradients for
+SAC/MOSAC, which keeps a local ring per device and synchronizes gradients for
 the same policy.
 Exploitation retains each recipient's root random key, keeping parent and
 offspring exploration independent after model/environment copying.

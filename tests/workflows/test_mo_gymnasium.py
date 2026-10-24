@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.mark.parametrize(
-    "example", ["envelope_q-mo-deep-sea-treasure", "capql-mo-mountaincar"]
+    "example", ["envelope_q/mo-deep-sea-treasure", "capql/mo-mountaincar"]
 )
 @pytest.mark.parametrize("nested", [False, True], ids=["single", "nested"])
 def test_real_mo_workflow_updates_and_evaluates_vectors(

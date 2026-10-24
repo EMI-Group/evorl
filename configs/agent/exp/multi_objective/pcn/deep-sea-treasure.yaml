@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - /agent/multi_objective/pcn
+  - override /env: toy/deep-sea-treasure-v0
+  - _self_
+
+scaling_factor: [0.1, 0.1, 0.1]
+max_return: [23.7, -1.0]

@@ -9,6 +9,7 @@ import pytest
 
 from evorl.algorithms.multi_objective.capql import CAPQLAgent
 from evorl.algorithms.multi_objective.common import sample_preferences
+from evorl.algorithms.multi_objective.moppo import MOPPOAgent
 from evorl.algorithms.multi_objective.envelope_q import (
     EnvelopeQAgent,
     envelope_next_values,
@@ -21,8 +22,9 @@ from evorl.types import PyTreeDict
 from tests.helpers.multi_objective_envs import ToyMultiObjectiveEnv
 
 
+@pytest.mark.parametrize("policy", ["capql", "moppo"])
 @pytest.mark.parametrize("evaluate", [False, True])
-def test_action_bounds_are_handled_only_by_the_environment(evaluate):
+def test_action_bounds_are_handled_only_by_the_environment(policy, evaluate):
     env = ActionSquashWrapper(ToyMultiObjectiveEnv(True))
     kwargs = dict(
         num_objectives=2,
@@ -32,7 +34,11 @@ def test_action_bounds_are_handled_only_by_the_environment(evaluate):
             )
         ),
     )
-    agent = CAPQLAgent(**kwargs)
+    agent = (
+        CAPQLAgent(**kwargs)
+        if policy == "capql"
+        else MOPPOAgent(**kwargs, continuous_action=True)
+    )
     state = agent.init(env.obs_space, env.action_space, jax.random.key(33))
     assert set(state.extra_state) == {"preferences"}
     action_fn = agent.evaluate_actions if evaluate else agent.compute_actions
