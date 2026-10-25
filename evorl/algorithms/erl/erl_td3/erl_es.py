@@ -1,4 +1,3 @@
-from evorl.utils import running_statistics
 from flax import nnx
 import logging
 import math
@@ -8,22 +7,20 @@ import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import optax
 
-from evorl.replay_buffers import ReplayBuffer
 from evorl.metrics import MetricBase
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import tree_get
-from evorl.evaluators import Evaluator, EpisodeCollector
 from evorl.agent import AgentState
-from evorl.envs import create_env, AutoresetMode
 from evorl.recorders import get_1d_array_statistics, add_prefix, get_1d_array
 from evorl.ec.optimizers import ECState, VanillaESMod, ExponentialScheduleSpec
-from evorl.algorithms.td3 import TD3Agent
 from evorl.algorithms.offpolicy_utils import skip_replay_buffer_state
 
-from ..erl_workflow import ERLTrainMetric
-from .erl_td3_workflow import ERLTD3WorkflowTemplate, erl_replace_td3_actor_params
+from .erl_workflow import (
+    ERLTrainMetric,
+    ERLWorkflowBase,
+    make_erl_rollout_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +32,7 @@ class EvaluateMetric(MetricBase):
     pop_center_episode_lengths: jax.Array
 
 
-class ERLESWorkflow(ERLTD3WorkflowTemplate):
+class ERLESWorkflow(ERLWorkflowBase):
     """ERL w/ ES.
 
     Configs:
@@ -50,105 +47,14 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
         return "ERL-ES"
 
     @classmethod
-    def _build_from_config(cls, config: DictConfig):
-        # env for rl&ec rollout
-        env = create_env(
-            config.env,
-            parallel=config.num_envs,
-            autoreset_mode=AutoresetMode.DISABLED,
-            record_ori_obs=True,
-        )
-
-        agent = TD3Agent(
-            agent_network_cfg=config.agent_network,
-            discount=config.discount,
-            exploration_epsilon=config.exploration_epsilon,
-            policy_noise=config.policy_noise,
-            clip_policy_noise=config.clip_policy_noise,
-            critics_in_actor_loss=config.critics_in_actor_loss,
-            obs_preprocessor=running_statistics.normalize
-            if config.normalize_obs
-            else None,
-        )
-
-        if (
-            config.optimizer.grad_clip_norm is not None
-            and config.optimizer.grad_clip_norm > 0
-        ):
-            optimizer = optax.chain(
-                optax.clip_by_global_norm(config.optimizer.grad_clip_norm),
-                optax.adam(config.optimizer.lr),
-            )
-        else:
-            optimizer = optax.adam(config.optimizer.lr)
-
-        ec_optimizer = VanillaESMod(
+    def _build_ec_optimizer(cls, config: DictConfig):
+        return VanillaESMod(
             pop_size=config.pop_size,
             external_size=config.num_rl_agents,
             num_elites=config.num_elites,
             noise_std_schedule=ExponentialScheduleSpec(**config.ec_noise_std),
             mix_strategy=config.mix_strategy,
         )
-
-        if config.fitness_with_exploration:
-            action_fn = agent.compute_actions
-        else:
-            action_fn = agent.evaluate_actions
-
-        ec_collector = EpisodeCollector(
-            env=env,
-            action_fn=action_fn,
-            max_episode_steps=config.env.max_episode_steps,
-            env_extra_fields=("ori_obs", "termination"),
-        )
-
-        if config.rl_exploration:
-            action_fn = agent.compute_actions
-        else:
-            action_fn = agent.evaluate_actions
-
-        rl_collector = EpisodeCollector(
-            env=env,
-            action_fn=action_fn,
-            max_episode_steps=config.env.max_episode_steps,
-            env_extra_fields=("ori_obs", "termination"),
-        )
-
-        replay_buffer = ReplayBuffer(
-            capacity=config.replay_buffer_capacity,
-            min_sample_timesteps=config.batch_size,
-            sample_batch_size=config.batch_size,
-        )
-
-        # to evaluate the pop-mean actor
-        eval_env = create_env(
-            config.env,
-            parallel=config.num_eval_envs,
-            autoreset_mode=AutoresetMode.DISABLED,
-        )
-
-        evaluator = Evaluator(
-            env=eval_env,
-            action_fn=agent.evaluate_actions,
-            max_episode_steps=config.env.max_episode_steps,
-        )
-
-        agent_state_vmap_axes = AgentState(model_state=0, obs_preprocessor_state=None)
-
-        workflow = cls(
-            env=env,
-            agent=agent,
-            agent_state_vmap_axes=agent_state_vmap_axes,
-            optimizer=optimizer,
-            ec_optimizer=ec_optimizer,
-            ec_collector=ec_collector,
-            rl_collector=rl_collector,
-            evaluator=evaluator,
-            replay_buffer=replay_buffer,
-            config=config,
-        )
-
-        return workflow
 
     def _setup_agent_and_optimizer(
         self, key: jax.Array
@@ -238,7 +144,7 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
         # metrics: [#pop, B]
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
 
-        pop_agent_state = erl_replace_td3_actor_params(agent_state, pop_actor_params)
+        pop_agent_state = make_erl_rollout_state(agent_state, pop_actor_params)
         ec_eval_metrics, ec_trajectory, replay_buffer_state = self._ec_rollout(
             pop_agent_state, replay_buffer_state, ec_rollout_key
         )
@@ -329,7 +235,7 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
 
         pop_mean_actor_params = state.ec_opt_state.mean
 
-        pop_mean_agent_state = erl_replace_td3_actor_params(
+        pop_mean_agent_state = make_erl_rollout_state(
             state.agent_state, pop_mean_actor_params
         )
 
@@ -349,17 +255,18 @@ class ERLESWorkflow(ERLTD3WorkflowTemplate):
         return eval_metrics, state
 
     def learn(self, state: State) -> State:
+        sampled_episodes = int(state.metrics.sampled_episodes)
+        start_iteration = int(state.metrics.iterations)
         sampled_episodes_per_iter = (
             self.config.episodes_for_fitness * self.config.pop_size
             + self.config.rollout_episodes * self.config.num_rl_agents
         )
         num_iters = math.ceil(
-            (self.config.total_episodes - state.metrics.sampled_episodes)
-            / sampled_episodes_per_iter
+            (self.config.total_episodes - sampled_episodes) / sampled_episodes_per_iter
         )
 
-        final_iteration = num_iters + state.metrics.iterations
-        for i in range(state.metrics.iterations, final_iteration):
+        final_iteration = start_iteration + num_iters
+        for i in range(start_iteration, final_iteration):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics

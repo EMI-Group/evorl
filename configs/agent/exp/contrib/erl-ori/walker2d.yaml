@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent/erl/erl-ori
+  - /agent/contrib/erl-ori
   - _self_
 
 total_episodes: 20000
@@ -10,14 +10,14 @@ batch_size: 256 # 128 in ERL
 tau: 0.005 # 0.001 in ERL
 
 pop_size: 10
-num_elites: 3
-episodes_for_fitness: 5 # must be devided by num_envs
+num_elites: 2
+episodes_for_fitness: 3 # must be devided by num_envs
 rollout_episodes: 1 # must be devided by num_envs
 
 weight_max_magnitude: 10
 
 rl_updates_frac: 1.0
-rl_injection_interval: 1
+rl_injection_interval: 10
 
 num_eval_envs: 128
 eval_episodes: 128 # should be divided by num_eval_envs

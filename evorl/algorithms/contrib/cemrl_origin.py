@@ -1,24 +1,24 @@
 from flax import nnx
 import time
-from omegaconf import DictConfig
 
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 
 from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
     tree_get,
     tree_set,
-    scan_and_last,
-    is_jitted,
 )
+from evorl.algorithms.erl.cemrl_td3.cemrl import CEMRLWorkflow
 from evorl.algorithms.td3 import TD3TrainMetric
+from evorl.algorithms.episodic_utils import create_dummy_td3_trainmetric
 
-from ..cemrl_workflow import CEMRLTrainMetric as CEMRLTrainMetricBase
-from .cemrl_td3_workflow import cemrl_replace_td3_actor_params
-from .cemrl import CEMRLWorkflow as _CEMRLWorkflow
+from evorl.algorithms.erl.cemrl_td3.cemrl_workflow import (
+    CEMRLTrainMetric as CEMRLTrainMetricBase,
+    replace_cemrl_actor_params,
+    update_cemrl_td3,
+)
 
 
 class CEMRLTrainMetric(CEMRLTrainMetricBase):
@@ -43,7 +43,7 @@ class WorkflowMetric(MetricBase):
     )
 
 
-class CEMRLWorkflow(_CEMRLWorkflow):
+class CEMRLOriginalWorkflow(CEMRLWorkflow):
     """Original CEMRL impl.
 
     1 critic + n actors + 1 replay buffer.
@@ -56,84 +56,68 @@ class CEMRLWorkflow(_CEMRLWorkflow):
     def _setup_workflow_metrics(self) -> MetricBase:
         return WorkflowMetric()
 
-    @classmethod
-    def _build_from_config(cls, config: DictConfig):
-        workflow = super()._build_from_config(config)
+    def _ec_sample(self, ec_opt_state):
+        return self.ec_optimizer.ask(ec_opt_state)
 
-        def _rl_sample_and_update_fn(carry, unused_t):
-            key, agent_state, opt_state, replay_buffer_state = carry
-
-            def _sample_fn(key):
-                return workflow.replay_buffer.sample(replay_buffer_state, key)
-
-            key, rb_key, learn_key = jax.random.split(key, 3)
-            rb_keys = jax.random.split(
-                rb_key,
-                config.actor_update_interval * config.num_learning_offspring,
+    def _rl_update(self, agent_state, opt_state, replay_buffer_state, key, num_updates):
+        # The original algorithm uses a runtime training budget. Keep only the
+        # last metrics in the carry instead of stacking every update's outputs.
+        def sample_and_update(carry, unused_t):
+            key, agent_state, opt_state, _ = carry
+            key, replay_key, learn_key = jax.random.split(key, 3)
+            sample_batches = jax.vmap(
+                lambda sample_key: self.replay_buffer.sample(
+                    replay_buffer_state, sample_key
+                )
+            )(
+                jax.random.split(
+                    replay_key,
+                    self.config.actor_update_interval
+                    * self.config.num_learning_offspring,
+                )
             )
-            sample_batches = jax.vmap(_sample_fn)(rb_keys)
-
-            # (actor_update_interval, num_learning_offspring, B, ...)
-            sample_batches = jtu.tree_map(
+            sample_batches = jax.tree.map(
                 lambda x: x.reshape(
                     (
-                        config.actor_update_interval,
-                        config.num_learning_offspring,
+                        self.config.actor_update_interval,
+                        self.config.num_learning_offspring,
                         *x.shape[1:],
                     )
                 ),
                 sample_batches,
             )
-
-            (agent_state, opt_state), train_info = workflow._rl_update_fn(
-                agent_state, opt_state, sample_batches, learn_key
+            (
+                (agent_state, opt_state),
+                (critic_loss, actor_loss, critic_losses, actor_losses),
+            ) = update_cemrl_td3(
+                agent_state,
+                opt_state,
+                sample_batches,
+                learn_key,
+                agent=self.agent,
+                agent_state_vmap_axes=self.agent_state_vmap_axes,
+                config=self.config,
             )
+            metrics = TD3TrainMetric(
+                actor_loss=actor_loss,
+                critic_loss=critic_loss,
+                raw_loss_dict=PyTreeDict({**critic_losses, **actor_losses}),
+            )
+            return (key, agent_state, opt_state, metrics), None
 
-            return (key, agent_state, opt_state, replay_buffer_state), train_info
-
-        if is_jitted(cls.evaluate):
-            _rl_sample_and_update_fn = jax.jit(_rl_sample_and_update_fn)
-
-        workflow._rl_sample_and_update_fn = _rl_sample_and_update_fn
-
-        return workflow
-
-    def _ec_sample(self, ec_opt_state):
-        return self.ec_optimizer.ask(ec_opt_state)
-
-    def _rl_update(
-        self,
-        agent_state,
-        opt_state,
-        replay_buffer_state,
-        key,
-        num_updates,
-    ):
-        """Add num_updates support. Therefore this method cannot be jitted."""
-        (
-            (_, agent_state, opt_state, replay_buffer_state),
-            train_info,
-        ) = scan_and_last(
-            self._rl_sample_and_update_fn,
-            (key, agent_state, opt_state, replay_buffer_state),
-            (),
+        initial_metrics = create_dummy_td3_trainmetric(
+            self.config.num_learning_offspring
+        )
+        (_, agent_state, opt_state, metrics), _ = jax.lax.scan(
+            sample_and_update,
+            (key, agent_state, opt_state, initial_metrics),
+            None,
             length=num_updates,
         )
-
-        critic_loss, actor_loss, critic_loss_dict, actor_loss_dict = train_info
-
-        # smoothed td3 metrics
-        td3_metrics = TD3TrainMetric(
-            actor_loss=actor_loss,
-            critic_loss=critic_loss,
-            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
+        metrics = metrics.replace(
+            actor_loss=metrics.actor_loss / self.config.num_learning_offspring
         )
-
-        td3_metrics = td3_metrics.replace(
-            actor_loss=td3_metrics.actor_loss / self.config.num_learning_offspring
-        )
-
-        return td3_metrics, agent_state, opt_state
+        return metrics, agent_state, opt_state
 
     def _rollout_and_update(
         self, pop_agent_state, replay_buffer_state, ec_opt_state, key
@@ -174,7 +158,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
                 replace=False,
             )
             learning_actor_params = tree_get(pop_actor_params, learning_actor_indices)
-            learning_agent_state = cemrl_replace_td3_actor_params(
+            learning_agent_state = replace_cemrl_actor_params(
                 agent_state, learning_actor_params
             )
             # reset and add actors' opt_state
@@ -215,7 +199,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
             )
 
             # drop the actors and their opt_state
-            agent_state = cemrl_replace_td3_actor_params(
+            agent_state = replace_cemrl_actor_params(
                 learning_agent_state, actor_params=None
             )
             opt_state = learning_opt_state.replace(actor=None)
@@ -228,7 +212,7 @@ class CEMRLWorkflow(_CEMRLWorkflow):
             td3_metrics = None
 
         # ======== CEM update ========
-        pop_agent_state = cemrl_replace_td3_actor_params(agent_state, pop_actor_params)
+        pop_agent_state = replace_cemrl_actor_params(agent_state, pop_actor_params)
         eval_metrics, ec_metrics, fitnesses, replay_buffer_state, ec_opt_state = (
             self._rollout_and_update(
                 pop_agent_state,

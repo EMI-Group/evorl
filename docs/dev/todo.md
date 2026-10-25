@@ -1,9 +1,11 @@
 # 开发待办
 
-- [ ] 拆开 PopEpisodicTD3 与 CEMRL 的工作流继承关系（暂缓）。
-  独立 TD3 种群不再依赖 CEMRL 模板、跳过父类构造函数或保留无用的 `ec_opt_state`、`num_learning_offspring`。
-- [ ] 拆开 CEMRL 与 ERL 的 actor 参数导入策略（暂缓）。
-  清理 `cemrl_replace_td3_actor_params` 对 ERL 实现的别名复用，各自明确 target actor 和网络辅助状态的恢复规则。
+- [x] 拆开 PopEpisodicTD3 与 CEMRL 的工作流继承关系。
+  PopEpisodicTD3 独立继承 `Workflow`，不再保留 `ec_opt_state`、`ec_optimizer` 或 `num_learning_offspring`。CEMRL／OpenES 共用一层 `CEMRLWorkflowBase`，ERL-GA／ES 共用一层 ERL 基类；原版变种和 ERL-EDA 保留在 contrib。
+- [x] 拆开 CEMRL 与 ERL 的 actor 参数导入策略。
+  CEMRL 导入 offspring 时同步 target actor，保留共享 critic；ERL 的进化评估只创建 actor 状态，不改 learner。仅复用参数写入和辅助变量的种群维调整，不再通过别名共享整个 AgentState 替换逻辑。
+- [x] 简化 ERL／CEMRL 的 NNX 更新和变种扩展。
+  删除更新工厂、实例上的更新闭包和无用的 `optimizer` 形参；一次更新只在入口恢复 NNX 对象、出口保存快照。GA／ES／EDA 复用构建流程，通过 `_build_ec_optimizer` 选择进化优化器；原版变种在自己的训练流程中确定更新次数。
 
 - [x] 清理算法构建环境时重复传入的 `episode_length`。
   RL、EC、ERL、PBT 和 contrib 算法统一使用 `create_env()` 从环境配置的 `max_episode_steps` 获取默认上限；评估器自身的 `max_episode_steps` 参数保留。

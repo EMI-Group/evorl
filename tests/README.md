@@ -25,7 +25,7 @@ buffer type and execution mode has its own test node and assertion traceback.
 | `workflows/test_morld_sac.py` | Shared/private replay ownership, warmup and update accounting, data-parallel subproblems without replay exchange, actor-only transfer, nested replay independence, checkpoint continuation and real native/host tasks |
 | `workflows/test_multi_agent.py` | IPPO/MAPPO ENVPOOL and inactive-agent masks, MADDPG/MATD3 joint replay and delayed targets, termination/truncation, budgets/logging, input isolation, nested populations, two-device execution and real JaxMARL/Jumanji tasks |
 | `workflows/test_offpolicy.py` | Full TD3/TD7/DDPG/SAC/DQN updates versus explicit parameter gradients, update schedules, target copies and forward-variable propagation through state-based losses |
-| `workflows/test_erl.py` | Population actors with shared or independent critics and temporary actor optimizer state |
+| `workflows/test_erl.py` | Core/contrib configuration loading, EC warmup, population training/evaluation, shared versus independent critics, actor/target auxiliary state, temporary actor optimizer state, learning budgets/checkpoints and OpenES candidate/noise correspondence |
 | `workflows/test_pop_td3.py` | Independent TD3 members, shared replay, observation statistics and optimizer update counts |
 | `distributed/` | Mean loss/gradients, local auxiliary outputs, optimizer updates, collectives, local maps and VMA casts |
 | `replay_buffers/` | Independent device-local rings, masked/empty writes, wraparound, priorities and sampling with NaNs in unwritten storage |

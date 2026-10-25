@@ -333,7 +333,22 @@ int32 generation counters.
 
 ## ERL Algorithms
 
-The ERL algorithms are defined in the subpackage [`evorl.algorithms.erl`](#evorl.algorithms.erl). We provide ERL and CEM-RL and their variants.
+The core [`evorl.algorithms.erl`](#evorl.algorithms.erl) workflows are
+`CEMRLWorkflow`, `CEMRLOpenESWorkflow`, `ERLGAWorkflow` and `ERLESWorkflow`.
+CEMRL and CEMRL-OpenES share `CEMRLWorkflowBase` for shared-critic training,
+initialization and evaluation, while defining their own evolutionary steps.
+ERL-GA/ES maintain independent TD3 learners alongside the evolutionary population.
+Both families use shared replay.
+
+Original-paper variants and ERL-EDA live in
+`evorl.algorithms.contrib`, with configurations under `agent=contrib/...`.
+`PopEpisodicTD3Workflow` is an independent TD3 population with no evolutionary
+optimizer or state. These workflows share episode collection and replay
+initialization functions; shared-critic and independent-critic updates stay separate.
+RL updates use direct NNX update functions, with model and optimizer snapshots
+restored once per update. Subclasses select the evolutionary optimizer through
+`_build_ec_optimizer`; each `step()` defines its collection, learning and injection
+order. Original-paper variants choose their own runtime update budgets.
 
 ## Population-based AutoRL Algorithms
 

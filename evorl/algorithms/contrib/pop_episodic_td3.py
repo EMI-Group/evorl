@@ -10,12 +10,11 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
 
-from evorl.distributed import pmean_nnx_loss_and_grad
 from evorl.agent import Agent, AgentState
 from evorl.types import PyTreeDict, State
-from evorl.metrics import MetricBase, EvaluateMetric
-from evorl.replay_buffers import ReplayBuffer
-from evorl.envs import create_env, AutoresetMode
+from evorl.metrics import MetricBase, EvaluateMetric, WorkflowMetric
+from evorl.replay_buffers import ReplayBuffer, AbstractReplayBuffer
+from evorl.envs import create_env, AutoresetMode, BaseEnv
 from evorl.utils.rl_toolkits import (
     soft_target_update,
 )
@@ -24,26 +23,192 @@ from evorl.evaluators import Evaluator, EpisodeCollector
 
 
 from evorl.algorithms.offpolicy_utils import skip_replay_buffer_state
-from evorl.algorithms.td3 import TD3Agent
-from evorl.algorithms.erl.cemrl_td3.cemrl_td3_workflow import CEMRLTD3WorkflowTemplate
-from evorl.algorithms.erl.cemrl_workflow import CEMRLTrainMetric
+from evorl.algorithms.td3 import TD3Agent, TD3TrainMetric
 
 
-class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
-    """A batched TD3 workflow like CEMERL.
+import copy
+from evorl.workflows import Workflow
+from evorl.utils.jax_utils import scan_and_mean
+from evorl.algorithms.episodic_utils import (
+    init_replay_buffer,
+    prefill_replay_buffer,
+    collect_population_episodes,
+)
 
-    The differences from CEMRL are:
-    - Each individual has an actor and a critic.
-    - All individuals are updated by RL.
-    """
 
-    def __init__(self, **kwargs):
-        super(CEMRLTD3WorkflowTemplate, self).__init__(**kwargs)
-        self._rl_update_fn = build_rl_update_fn(
-            self.agent,
-            self.optimizer,
-            self.config,
-            self.agent_state_vmap_axes,
+class PopEpisodicTD3TrainMetric(MetricBase):
+    """Independent TD3 population returns and training losses."""
+
+    rb_size: jax.Array
+    pop_episode_returns: jax.Array
+    pop_episode_lengths: jax.Array
+    rl_metrics: MetricBase
+
+
+class PopEpisodicTD3Workflow(Workflow):
+    """Independent TD3 learners sharing episodic collection and one replay."""
+
+    def __init__(
+        self,
+        *,
+        env: BaseEnv,
+        agent: Agent,
+        optimizer: optax.GradientTransformation,
+        collector: EpisodeCollector,
+        evaluator: Evaluator,
+        replay_buffer: AbstractReplayBuffer,
+        config: DictConfig,
+    ):
+        super().__init__(config)
+        self.env = env
+        self.agent = agent
+        self.agent_state_vmap_axes = AgentState(
+            model_state=0, obs_preprocessor_state=None
+        )
+        self.optimizer = optimizer
+        self.collector = collector
+        self.evaluator = evaluator
+        self.replay_buffer = replay_buffer
+
+    @classmethod
+    def build_from_config(
+        cls,
+        config: DictConfig,
+        multi_device: bool = False,
+        jit: bool = True,
+    ) -> Self:
+        config = copy.deepcopy(config)  # avoid in-place modification
+
+        devices = jax.local_devices()
+
+        if multi_device or len(devices) > 1:
+            raise NotImplementedError("Multi-devices is not supported yet.")
+
+        if jit:
+            cls.enable_jit()
+
+        workflow = cls._build_from_config(config)
+
+        return workflow
+
+    def setup(self, key: jax.Array) -> State:
+        key, agent_key, replay_key = jax.random.split(key, 3)
+        agent_state, opt_state = self._setup_agent_and_optimizer(agent_key)
+        state = State(
+            key=key,
+            agent_state=agent_state,
+            opt_state=opt_state,
+            replay_buffer_state=init_replay_buffer(
+                self.env, self.replay_buffer, replay_key
+            ),
+            metrics=WorkflowMetric(),
+        )
+        return self._postsetup_replaybuffer(state)
+
+    def _postsetup_replaybuffer(self, state: State) -> State:
+        env = create_env(
+            self.config.env,
+            parallel=self.config.num_envs,
+            autoreset_mode=AutoresetMode.NORMAL,
+            record_ori_obs=True,
+        )
+        agent_state, buffer_state, key = prefill_replay_buffer(
+            env,
+            self.replay_buffer,
+            state.agent_state,
+            state.replay_buffer_state,
+            state.key,
+            self.config.random_timesteps,
+        )
+        return state.replace(
+            key=key, agent_state=agent_state, replay_buffer_state=buffer_state
+        )
+
+    def _rollout(self, pop_agent_state, replay_buffer_state, key):
+        return collect_population_episodes(
+            pop_agent_state,
+            replay_buffer_state,
+            key,
+            collector=self.collector,
+            replay_buffer=self.replay_buffer,
+            agent_state_vmap_axes=self.agent_state_vmap_axes,
+            num_episodes=self.config.episodes_for_fitness,
+            num_agents=self.config.pop_size,
+        )
+
+    def _rl_update(self, agent_state, opt_state, replay_buffer_state, key):
+        def _sample_and_update_fn(carry, unused_t):
+            key, agent_state, opt_state = carry
+
+            key, rb_key, learn_key = jax.random.split(key, 3)
+
+            rb_keys = jax.random.split(
+                rb_key,
+                self.config.actor_update_interval * self.config.pop_size,
+            )
+            sample_batches = jax.vmap(self.replay_buffer.sample, in_axes=(None, 0))(
+                replay_buffer_state, rb_keys
+            )
+
+            # (actor_update_interval, pop_size, B, ...)
+            sample_batches = jtu.tree_map(
+                lambda x: x.reshape(
+                    (
+                        self.config.actor_update_interval,
+                        self.config.pop_size,
+                        *x.shape[1:],
+                    )
+                ),
+                sample_batches,
+            )
+
+            (agent_state, opt_state), train_info = update_pop_td3(
+                agent_state,
+                opt_state,
+                sample_batches,
+                learn_key,
+                agent=self.agent,
+                agent_state_vmap_axes=self.agent_state_vmap_axes,
+                config=self.config,
+            )
+
+            return (key, agent_state, opt_state), train_info
+
+        (
+            (_, agent_state, opt_state),
+            (
+                critic_loss,
+                actor_loss,
+                critic_loss_dict,
+                actor_loss_dict,
+            ),
+        ) = scan_and_mean(
+            _sample_and_update_fn,
+            (key, agent_state, opt_state),
+            (),
+            length=self.config.num_rl_updates_per_iter,
+        )
+
+        # smoothed td3 metrics
+        td3_metrics = TD3TrainMetric(
+            actor_loss=actor_loss,
+            critic_loss=critic_loss,
+            raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
+        )
+
+        td3_metrics = td3_metrics.replace(
+            actor_loss=td3_metrics.actor_loss / self.config.pop_size,
+            critic_loss=td3_metrics.critic_loss / self.config.pop_size,
+        )
+
+        return td3_metrics, agent_state, opt_state
+
+    @classmethod
+    def enable_jit(cls) -> None:
+        cls.step = jax.jit(cls.step, static_argnums=(0,))
+        cls.evaluate = jax.jit(cls.evaluate, static_argnums=(0,))
+        cls._postsetup_replaybuffer = jax.jit(
+            cls._postsetup_replaybuffer, static_argnums=(0,)
         )
 
     @classmethod
@@ -54,10 +219,6 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
     def _build_from_config(cls, config: DictConfig) -> Self:
         assert config.random_timesteps > 0, (
             "random_timesteps should be positive to pre-fill some data in the replay buffer"
-        )
-
-        assert config.pop_size == config.num_learning_offspring, (
-            "pop_size must equal to num_learning_offspring"
         )
 
         # env for one actor
@@ -122,17 +283,10 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
             max_episode_steps=config.env.max_episode_steps,
         )
 
-        agent_state_vmap_axes = AgentState(
-            model_state=0,
-            obs_preprocessor_state=None,  # shared
-        )
-
         workflow = cls(
             env=env,
             agent=agent,
-            agent_state_vmap_axes=agent_state_vmap_axes,
             optimizer=optimizer,
-            ec_optimizer=None,
             collector=collector,
             evaluator=evaluator,
             replay_buffer=replay_buffer,
@@ -171,15 +325,12 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
             ),
         )
 
-        ec_opt_state = None
-
-        return agent_state, opt_state, ec_opt_state
+        return agent_state, opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         pop_size = self.config.pop_size
         agent_state = state.agent_state
         opt_state = state.opt_state
-        ec_opt_state = state.ec_opt_state
         replay_buffer_state = state.replay_buffer_state
         iterations = state.metrics.iterations + 1
 
@@ -199,7 +350,7 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
             agent_state, replay_buffer_state, rollout_key
         )
 
-        train_metrics = CEMRLTrainMetric(
+        train_metrics = PopEpisodicTD3TrainMetric(
             rb_size=replay_buffer_state.buffer_size,
             pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
             pop_episode_returns=eval_metrics.episode_returns.mean(-1),
@@ -221,7 +372,6 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
             metrics=workflow_metrics,
             agent_state=agent_state,
             replay_buffer_state=replay_buffer_state,
-            ec_opt_state=ec_opt_state,
             opt_state=opt_state,
         )
 
@@ -248,13 +398,15 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
         return eval_metrics, state
 
     def learn(self, state: State) -> State:
+        sampled_episodes = int(state.metrics.sampled_episodes)
+        start_iteration = int(state.metrics.iterations)
         num_iters = math.ceil(
-            (self.config.total_episodes - state.metrics.sampled_episodes)
+            (self.config.total_episodes - sampled_episodes)
             / (self.config.episodes_for_fitness * self.config.pop_size)
         )
 
-        final_iteration = num_iters + state.metrics.iterations
-        for i in range(state.metrics.iterations, final_iteration):
+        final_iteration = start_iteration + num_iters
+        for i in range(start_iteration, final_iteration):
             iters = i + 1
             train_metrics, state = self.step(state)
             workflow_metrics = state.metrics
@@ -302,16 +454,31 @@ class PopEpisodicTD3Workflow(CEMRLTD3WorkflowTemplate):
         return state
 
 
-def build_rl_update_fn(
+def update_pop_td3(
+    agent_state: AgentState,
+    opt_state: PyTreeDict,
+    sample_batches,
+    key: jax.Array,
+    *,
     agent: Agent,
-    optimizer: optax.GradientTransformation,
-    config: DictConfig,
     agent_state_vmap_axes: AgentState,
+    config: DictConfig,
 ):
-    """Train independent actor/critic pairs on population replay samples."""
-    num_learning_offspring = config.num_learning_offspring
+    """Update independent TD3 learners with member-local optimizers.
 
-    def critic_loss_fn(models, agent_state, sample_batch, key):
+    Restore isolated NNX objects once, update them in place, then return snapshots.
+    Forward-pass auxiliary variables are retained for the network being trained.
+    Batches have axes `(critic_updates, population, batch, ...)`; each member
+    clips its gradients and updates its own actor/critic optimizer state.
+    """
+    models = agent.get_models(agent_state, copy=True)
+    actor_optimizer = nnx.merge(opt_state.actor, copy=True)
+    critic_optimizer = nnx.merge(opt_state.critic, copy=True)
+
+    num_agents = config.pop_size
+    model_axes = agent_state_vmap_axes.model_state
+
+    def critic_loss_fn(models, sample_batch, key):
         def member_loss(member, obs_state, batch, member_key):
             return agent.critic_loss(
                 agent_state.replace(
@@ -321,17 +488,18 @@ def build_rl_update_fn(
                 member_key,
             )
 
-        loss_dict = nnx.vmap(
-            member_loss, in_axes=(0, agent_state_vmap_axes.obs_preprocessor_state, 0, 0)
+        losses = nnx.vmap(
+            member_loss,
+            in_axes=(model_axes, agent_state_vmap_axes.obs_preprocessor_state, 0, 0),
         )(
             models,
             agent_state.obs_preprocessor_state,
             sample_batch,
-            jax.random.split(key, num_learning_offspring),
+            jax.random.split(key, num_agents),
         )
-        return loss_dict.critic_loss.sum(), loss_dict
+        return losses.critic_loss.sum(), losses
 
-    def actor_loss_fn(models, agent_state, sample_batch, key):
+    def actor_loss_fn(models, sample_batch, key):
         def member_loss(member, obs_state, batch, member_key):
             return agent.actor_loss(
                 agent_state.replace(
@@ -341,122 +509,78 @@ def build_rl_update_fn(
                 member_key,
             )
 
-        loss_dict = nnx.vmap(
-            member_loss, in_axes=(0, agent_state_vmap_axes.obs_preprocessor_state, 0, 0)
+        losses = nnx.vmap(
+            member_loss,
+            in_axes=(model_axes, agent_state_vmap_axes.obs_preprocessor_state, 0, 0),
         )(
             models,
             agent_state.obs_preprocessor_state,
             sample_batch,
-            jax.random.split(key, num_learning_offspring),
+            jax.random.split(key, num_agents),
         )
-        return loss_dict.actor_loss.sum(), loss_dict
+        return losses.actor_loss.sum(), losses
 
-    def critic_update_fn(opt_state, agent_state, sample_batch, key):
-        models = nnx.merge(agent_state.model_state, copy=True)
-        (loss, loss_dict), grads = pmean_nnx_loss_and_grad(
+    def update_critic(models, optimizer, sample_batch, key):
+        value, grads = nnx.value_and_grad(
             critic_loss_fn,
-            None,
+            argnums=nnx.DiffState(0, nnx.All(nnx.Param, nnx.PathContains("critic"))),
             has_aux=True,
-            wrt=nnx.All(nnx.Param, nnx.PathContains("critic")),
-        )(models, agent_state, sample_batch, key)
-        local_optimizer = nnx.merge(opt_state, copy=True)
-        nnx.vmap(lambda optimizer, model, grad: optimizer.update(model, grad))(
-            local_optimizer, models.critic, grads["critic"]
+        )(models, sample_batch, key)
+        nnx.vmap(lambda opt, model, grad: opt.update(model, grad))(
+            optimizer, models.critic, grads["critic"]
         )
-        return (
-            (loss, loss_dict),
-            agent_state.replace(model_state=nnx.unpack(models)),
-            nnx.unpack(local_optimizer),
-        )
+        return value
 
-    def actor_update_fn(opt_state, agent_state, sample_batch, key):
-        models = nnx.merge(agent_state.model_state, copy=True)
-        critic_state = nnx.clone(nnx.state(models.critic, nnx.Not(nnx.Param)))
-        (loss, loss_dict), grads = pmean_nnx_loss_and_grad(
-            actor_loss_fn,
-            None,
-            has_aux=True,
-            wrt=nnx.All(nnx.Param, nnx.PathContains("actor")),
-        )(models, agent_state, sample_batch, key)
-        nnx.update(models.critic, critic_state)
-        local_optimizer = nnx.merge(opt_state, copy=True)
-        nnx.vmap(lambda optimizer, model, grad: optimizer.update(model, grad))(
-            local_optimizer, models.actor, grads["actor"]
-        )
-        return (
-            (loss, loss_dict),
-            agent_state.replace(model_state=nnx.unpack(models)),
-            nnx.unpack(local_optimizer),
+    key, critic_key, actor_key = jax.random.split(key, 3)
+    if config.actor_update_interval > 1:
+
+        def update_critics(carry, sample_batch):
+            key, models, optimizer = carry
+            key, update_key = jax.random.split(key)
+            update_critic(models, optimizer, sample_batch, update_key)
+            return key, models, optimizer
+
+        _, multiple_update_key = jax.random.split(key)
+        _, models, critic_optimizer = nnx.scan(
+            update_critics, in_axes=(nnx.Carry, 0), out_axes=nnx.Carry
+        )(
+            (multiple_update_key, models, critic_optimizer),
+            jax.tree.map(lambda x: x[:-1], sample_batches),
         )
 
-    def _update_fn(agent_state, opt_state, sample_batches, key):
-        critic_opt_state = opt_state.critic
-        actor_opt_state = opt_state.actor
+    last_batch = jax.tree.map(lambda x: x[-1], sample_batches)
+    critic_loss, critic_losses = update_critic(
+        models, critic_optimizer, last_batch, critic_key
+    )
 
-        key, critic_key, actor_key = jax.random.split(key, num=3)
+    # Actor gradients use the critic without retaining changes to its auxiliary state.
+    critic_auxiliary = nnx.clone(nnx.state(models.critic, nnx.Not(nnx.Param)))
+    (actor_loss, actor_losses), grads = nnx.value_and_grad(
+        actor_loss_fn,
+        argnums=nnx.DiffState(0, nnx.All(nnx.Param, nnx.PathContains("actor"))),
+        has_aux=True,
+    )(models, last_batch, actor_key)
+    nnx.vmap(lambda opt, model, grad: opt.update(model, grad))(
+        actor_optimizer, models.actor, grads["actor"]
+    )
+    nnx.update(models.critic, critic_auxiliary)
 
-        critic_sample_batches = jtu.tree_map(lambda x: x[:-1], sample_batches)
-        last_sample_batch = jtu.tree_map(lambda x: x[-1], sample_batches)
-
-        if config.actor_update_interval - 1 > 0:
-
-            def _update_critic_fn(carry, sample_batch):
-                key, agent_state, critic_opt_state = carry
-
-                key, critic_key = jax.random.split(key)
-
-                (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-                    critic_update_fn(
-                        critic_opt_state, agent_state, sample_batch, critic_key
-                    )
-                )
-
-                return (key, agent_state, critic_opt_state), None
-
-            key, critic_multiple_update_key = jax.random.split(key)
-
-            (_, agent_state, critic_opt_state), _ = jax.lax.scan(
-                _update_critic_fn,
-                (
-                    critic_multiple_update_key,
-                    agent_state,
-                    critic_opt_state,
-                ),
-                critic_sample_batches,
-                length=config.actor_update_interval - 1,
-            )
-
-        (critic_loss, critic_loss_dict), agent_state, critic_opt_state = (
-            critic_update_fn(
-                critic_opt_state, agent_state, last_sample_batch, critic_key
-            )
+    for target, online in (
+        (models.target_actor, models.actor),
+        (models.target_critic, models.critic),
+    ):
+        nnx.update(
+            target,
+            soft_target_update(
+                nnx.state(target, nnx.Param), nnx.state(online, nnx.Param), config.tau
+            ),
         )
 
-        (actor_loss, actor_loss_dict), agent_state, actor_opt_state = actor_update_fn(
-            actor_opt_state, agent_state, last_sample_batch, actor_key
-        )
-
-        # not need vmap
-        models = nnx.merge(agent_state.model_state, copy=True)
-        for target, online in (
-            (models.target_actor, models.actor),
-            (models.target_critic, models.critic),
-        ):
-            nnx.update(
-                target,
-                soft_target_update(
-                    nnx.state(target, nnx.Param),
-                    nnx.state(online, nnx.Param),
-                    config.tau,
-                ),
-            )
-        agent_state = agent_state.replace(model_state=nnx.unpack(models))
-
-        opt_state = opt_state.replace(actor=actor_opt_state, critic=critic_opt_state)
-
-        return (
-            (agent_state, opt_state),
-            (critic_loss, actor_loss, critic_loss_dict, actor_loss_dict),
-        )
-
-    return _update_fn
+    agent_state = agent_state.replace(model_state=nnx.unpack(models))
+    opt_state = opt_state.replace(
+        actor=nnx.unpack(actor_optimizer), critic=nnx.unpack(critic_optimizer)
+    )
+    return (
+        (agent_state, opt_state),
+        (critic_loss, actor_loss, critic_losses, actor_losses),
+    )

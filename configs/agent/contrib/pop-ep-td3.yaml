@@ -19,7 +19,6 @@ actor_update_interval: 2 # use default TD3 setting
 critics_in_actor_loss: first # first or min
 
 pop_size: 8
-num_learning_offspring: 8 # number of offspring to learn from RL(TD3)
 
 fitness_with_exploration: true
 episodes_for_fitness: 1 # must be devided by num_envs

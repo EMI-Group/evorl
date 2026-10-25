@@ -1,7 +1,6 @@
 from flax import nnx
 import logging
 import time
-from omegaconf import DictConfig
 
 import jax
 import jax.numpy as jnp
@@ -9,12 +8,17 @@ import jax.tree_util as jtu
 
 from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
-from evorl.utils.jax_utils import is_jitted
 from evorl.algorithms.td3 import TD3TrainMetric
 
-from ..erl_workflow import ERLTrainMetric as ERLTrainMetricBase
-from .erl_td3_workflow import create_dummy_td3_trainmetric, erl_replace_td3_actor_params
-from .erl_ga import ERLGAWorkflow
+from evorl.algorithms.erl.erl_td3.erl_workflow import (
+    ERLTrainMetric as ERLTrainMetricBase,
+)
+from evorl.algorithms.episodic_utils import create_dummy_td3_trainmetric
+from evorl.algorithms.erl.erl_td3.erl_workflow import (
+    make_erl_rollout_state,
+    update_erl_td3,
+)
+from evorl.algorithms.erl.erl_td3.erl_ga import ERLGAWorkflow
 
 
 logger = logging.getLogger(__name__)
@@ -27,7 +31,7 @@ class ERLTrainMetric(ERLTrainMetricBase):
     time_cost_per_iter: float = 0.0
 
 
-class ERLWorkflow(ERLGAWorkflow):
+class ERLOriginalWorkflow(ERLGAWorkflow):
     """Original ERL impl.
 
     Have dynamic training updates per iteration, i.e., #rl_updates = #sampled_timesteps_this_iter. Therefore the `step()` function cannot be directly jitted.
@@ -37,63 +41,6 @@ class ERLWorkflow(ERLGAWorkflow):
     def name(cls):
         return "ERL-Origin"
 
-    @classmethod
-    def _build_from_config(cls, config: DictConfig):
-        workflow = super()._build_from_config(config)
-
-        def _rl_sample_and_update_fn(carry, unused_t):
-            key, agent_state, opt_state, replay_buffer_state, _ = carry
-
-            def _sample_fn(key):
-                return workflow.replay_buffer.sample(replay_buffer_state, key)
-
-            key, rb_key, learn_key = jax.random.split(key, 3)
-
-            rb_keys = jax.random.split(
-                rb_key, config.actor_update_interval * config.num_rl_agents
-            )
-            sample_batches = jax.vmap(_sample_fn)(rb_keys)
-
-            # (actor_update_interval, num_learning_offspring, B, ...)
-            sample_batches = jtu.tree_map(
-                lambda x: x.reshape(
-                    (
-                        config.actor_update_interval,
-                        config.num_rl_agents,
-                        *x.shape[1:],
-                    )
-                ),
-                sample_batches,
-            )
-
-            (
-                (agent_state, opt_state),
-                (
-                    critic_loss,
-                    actor_loss,
-                    critic_loss_dict,
-                    actor_loss_dict,
-                ),
-            ) = workflow._rl_update_fn(
-                agent_state, opt_state, sample_batches, learn_key
-            )
-
-            td3_metrics = TD3TrainMetric(
-                actor_loss=actor_loss,
-                critic_loss=critic_loss,
-                raw_loss_dict=PyTreeDict({**critic_loss_dict, **actor_loss_dict}),
-            )
-
-            # Note: we do not put train_info into y_t for saving memory
-            return (key, agent_state, opt_state, replay_buffer_state, td3_metrics), None
-
-        if is_jitted(cls.evaluate):
-            _rl_sample_and_update_fn = jax.jit(_rl_sample_and_update_fn)
-
-        workflow._rl_sample_and_update_fn = _rl_sample_and_update_fn
-
-        return workflow
-
     def _ec_update(self, ec_opt_state, fitnesses):
         return self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
@@ -102,17 +49,58 @@ class ERLWorkflow(ERLGAWorkflow):
         return self.ec_optimizer.tell_external(ec_opt_state, fitnesses)
 
     def _rl_update(self, agent_state, opt_state, replay_buffer_state, key, num_updates):
-        # unlike erl-ga, since num_updates is large, we only use the last train_info
-        init_td3_metrics = create_dummy_td3_trainmetric(self.config.num_rl_agents)
+        # The original algorithm uses a runtime training budget. Keep only the
+        # last metrics in the carry instead of stacking every update's outputs.
+        def sample_and_update(carry, unused_t):
+            key, agent_state, opt_state, _ = carry
+            key, replay_key, learn_key = jax.random.split(key, 3)
+            sample_batches = jax.vmap(
+                lambda sample_key: self.replay_buffer.sample(
+                    replay_buffer_state, sample_key
+                )
+            )(
+                jax.random.split(
+                    replay_key,
+                    self.config.actor_update_interval * self.config.num_rl_agents,
+                )
+            )
+            sample_batches = jax.tree.map(
+                lambda x: x.reshape(
+                    (
+                        self.config.actor_update_interval,
+                        self.config.num_rl_agents,
+                        *x.shape[1:],
+                    )
+                ),
+                sample_batches,
+            )
+            (
+                (agent_state, opt_state),
+                (critic_loss, actor_loss, critic_losses, actor_losses),
+            ) = update_erl_td3(
+                agent_state,
+                opt_state,
+                sample_batches,
+                learn_key,
+                agent=self.agent,
+                agent_state_vmap_axes=self.agent_state_vmap_axes,
+                config=self.config,
+            )
+            metrics = TD3TrainMetric(
+                actor_loss=actor_loss,
+                critic_loss=critic_loss,
+                raw_loss_dict=PyTreeDict({**critic_losses, **actor_losses}),
+            )
+            return (key, agent_state, opt_state, metrics), None
 
-        (_, agent_state, opt_state, replay_buffer_state, td3_metrics), _ = jax.lax.scan(
-            self._rl_sample_and_update_fn,
-            (key, agent_state, opt_state, replay_buffer_state, init_td3_metrics),
-            (),
+        initial_metrics = create_dummy_td3_trainmetric(self.config.num_rl_agents)
+        (_, agent_state, opt_state, metrics), _ = jax.lax.scan(
+            sample_and_update,
+            (key, agent_state, opt_state, initial_metrics),
+            None,
             length=num_updates,
         )
-
-        return td3_metrics, agent_state, opt_state
+        return metrics, agent_state, opt_state
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         """The basic step function for the workflow to update agent."""
@@ -135,7 +123,7 @@ class ERLWorkflow(ERLGAWorkflow):
         # the trajectory [#pop, T, B, ...]
         # metrics: [#pop, B]
         pop_actor_params, ec_opt_state = self.ec_optimizer.ask(ec_opt_state)
-        pop_agent_state = erl_replace_td3_actor_params(agent_state, pop_actor_params)
+        pop_agent_state = make_erl_rollout_state(agent_state, pop_actor_params)
         ec_eval_metrics, ec_trajectory, replay_buffer_state = self._ec_rollout(
             pop_agent_state, replay_buffer_state, ec_rollout_key
         )

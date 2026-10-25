@@ -8,7 +8,7 @@ import pytest
 
 from evorl.algorithms.ec.so.cmaes import _get_std_statistics
 from evorl.algorithms.erl.cemrl_td3.cemrl import get_std_statistics
-from evorl.algorithms.erl.erl_td3.erl_origin import get_ec_pop_statistics
+from evorl.algorithms.contrib.erl_origin import get_ec_pop_statistics
 from evorl.algorithms.ec.ec_agent import DeterministicECAgent
 from evorl.envs import Box
 from evorl.sample_batch import SampleBatch
