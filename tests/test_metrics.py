@@ -19,9 +19,11 @@ from evorl.types import PyTreeDict
     ("module_name", "class_name"),
     [
         ("evorl.metrics", "WorkflowMetric"),
+        ("evorl.metrics", "TrainMetric"),
         ("evorl.metrics", "ECWorkflowMetric"),
         ("evorl.metrics", "MultiObjectiveECWorkflowMetric"),
         ("evorl.algorithms.dqn", "DQNWorkflowMetric"),
+        ("evorl.algorithms.dqn", "DQNTrainMetric"),
         ("evorl.algorithms.meta.pbt_workflow", "PBTWorkflowMetric"),
         ("evorl.algorithms.contrib.pop_td3", "WorkflowMetric"),
         ("evorl.algorithms.erl.erl_td3.erl_workflow", "WorkflowMetric"),
