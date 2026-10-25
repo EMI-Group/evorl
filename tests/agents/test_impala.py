@@ -6,14 +6,89 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from flax import nnx
 
 from evorl.algorithms.impala import IMPALAAgent, compute_vtrace
-from evorl.distributed import DP_AXIS_NAME
+from evorl.distributed import DP_AXIS_NAME, pmean_nnx_loss_and_grad
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict
 from evorl.utils.rl_toolkits import compute_gae
 from tests.helpers.agents import build_agent
 from tests.helpers.envs import ToyEnv
+
+
+@pytest.mark.parametrize("valid_counts", [(4, 4), (2, 4), (0, 4), (0, 0)])
+def test_masked_losses_and_gradients_match_global_sequences(valid_counts, dp_mesh):
+    """Keep V-trace sequences intact while varying valid counts across devices."""
+    env = ToyEnv(4, discrete=True)
+    agent = build_agent(
+        IMPALAAgent,
+        env.obs_space,
+        env.action_space,
+        actor_hidden_layer_sizes=(4,),
+        critic_hidden_layer_sizes=(4,),
+        normalize_obs=False,
+    )
+    state = agent.init(env.obs_space, env.action_space, jax.random.key(61))
+    obs = jnp.arange(24, dtype=jnp.float32).reshape(2, 4, 3) / 10
+    models = agent.get_models(state, copy=True)
+    logp = jax.nn.log_softmax(models.policy(obs))[..., 0]
+    valid = np.concatenate(
+        [(np.arange(4) < count).reshape(2, 2) for count in valid_counts], axis=1
+    )
+    batch = SampleBatch(
+        obs=obs,
+        next_obs=obs + 0.1,
+        actions=jnp.zeros((2, 4), jnp.int32),
+        rewards=jnp.arange(8, dtype=jnp.float32).reshape(2, 4),
+        dones=jnp.zeros((2, 4)),
+        extras=PyTreeDict(
+            env_extras=PyTreeDict(
+                autoreset=jnp.asarray(~valid),
+                termination=jnp.zeros((2, 4)),
+            ),
+            policy_extras=PyTreeDict(logp=logp + 0.2),
+        ),
+    )
+
+    def loss(models, state, batch, axis_name=None):
+        losses = agent.loss(
+            state.replace(model_state=nnx.unpack(models)),
+            batch,
+            jax.random.key(0),
+            axis_name=axis_name,
+        )
+        return (
+            losses.actor_loss + 0.5 * losses.critic_loss - 0.01 * losses.actor_entropy,
+            losses,
+        )
+
+    expected, expected_grads = nnx.value_and_grad(loss, has_aux=True)(
+        models, state, batch
+    )
+
+    @jax.jit
+    @jax.shard_map(in_specs=(jax.P(), jax.P(None, DP_AXIS_NAME)), out_specs=jax.P())
+    def distributed(state, batch):
+        local_models = agent.get_models(state, copy=True)
+        (value, losses), grads = pmean_nnx_loss_and_grad(
+            lambda models: loss(models, state, batch, DP_AXIS_NAME),
+            DP_AXIS_NAME,
+            has_aux=True,
+        )(local_models)
+        return (value, jax.lax.pmean(losses, DP_AXIS_NAME)), grads
+
+    actual, actual_grads = distributed(
+        state, jax.device_put(batch, jax.P(None, DP_AXIS_NAME))
+    )
+    for value, reference in zip(
+        jax.tree.leaves((actual, actual_grads)),
+        jax.tree.leaves((expected, expected_grads)),
+        strict=True,
+    ):
+        np.testing.assert_allclose(value, reference, rtol=1e-5, atol=1e-6)
+        if not valid.any():
+            np.testing.assert_array_equal(value, 0)
 
 
 @pytest.mark.parametrize("empty_first_device", [False, True])

@@ -72,6 +72,19 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
+        if config.minibatch_size <= 0:
+            raise ValueError("minibatch_size must be positive.")
+        one_step_rollout_steps = config.num_envs * config.rollout_length
+        if config.actor_update_interval <= 0:
+            raise ValueError("actor_update_interval must be positive.")
+        update_size = config.minibatch_size * config.actor_update_interval
+        if one_step_rollout_steps % update_size != 0:
+            raise ValueError(
+                f"num_envs * rollout_length ({one_step_rollout_steps}) must be "
+                "divisible by minibatch_size * actor_update_interval "
+                f"({update_size})."
+            )
+
         env = create_env(
             config.env,
             parallel=config.num_envs,
@@ -107,12 +120,6 @@ class TD3OnPolicyWorkflow(OnPolicyWorkflow):
             parallel=config.num_eval_envs,
             autoreset_mode=AutoresetMode.DISABLED,
         )
-
-        one_step_rollout_steps = config.num_envs * config.rollout_length
-        if one_step_rollout_steps % config.minibatch_size != 0:
-            logger.warning(
-                f"minibatch_size ({config.minibath_size} cannot divides num_envs*rollout_length)"
-            )
 
         evaluator = Evaluator(
             env=eval_env,

@@ -101,7 +101,8 @@ def test_vector_workflow_training_evaluation_and_input_isolation(
         metrics, updated = workflow.step(state)
         assert np.isfinite(metrics.loss)
         assert int(updated.metrics.sampled_timesteps) == 16
-        assert int(updated.metrics.sampled_episodes) == 8
+        assert int(state.metrics.sampled_episodes) == 0
+        assert int(updated.metrics.sampled_episodes) == 4
         assert int(updated.metrics.training_updates) == 2
         assert updated.rollout_preferences.shape == (4, objectives)
         np.testing.assert_allclose(updated.rollout_preferences.sum(-1), 1, atol=1e-6)

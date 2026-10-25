@@ -573,7 +573,6 @@ class MOSACWorkflow(OffPolicyWorkflowTemplate):
                 length,
                 env_extra_fields=("ori_obs", "termination"),
             )
-            episodes = trajectory.dones.sum().astype(jnp.uint32)
             trajectory = jax.tree.map(
                 jax.lax.stop_gradient,
                 flatten_rollout_trajectory(clean_trajectory(trajectory)),
@@ -598,8 +597,6 @@ class MOSACWorkflow(OffPolicyWorkflowTemplate):
                     + psum(
                         jnp.uint32(length * self.config.num_envs), self.dp_axis_name
                     ),
-                    sampled_episodes=state.metrics.sampled_episodes
-                    + psum(episodes, self.dp_axis_name),
                 ),
             )
         if random_length + policy_length > 0:

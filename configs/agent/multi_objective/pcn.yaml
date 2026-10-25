@@ -2,6 +2,7 @@
 
 workflow_cls: evorl.algorithms.multi_objective.pcn.PCNWorkflow
 
+normalize_obs: false
 num_envs: 10
 num_eval_envs: 4
 total_timesteps: 100000

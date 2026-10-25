@@ -126,7 +126,7 @@ class MultiAgentOffPolicyWorkflow(OffPolicyWorkflowTemplate):
             state.replay_buffer_state,
             state.env_state,
         )
-        sampled_steps, sampled_episodes = jnp.uint32(0), jnp.uint32(0)
+        sampled_steps = jnp.uint32(0)
         for length, rollout_key, action_fn in (
             (random_length, random_key, partial(random_actions, self.agent)),
             (policy_length, policy_key, self.agent.compute_actions),
@@ -143,7 +143,6 @@ class MultiAgentOffPolicyWorkflow(OffPolicyWorkflowTemplate):
                 length,
             )
             sampled_steps += jnp.uint32(length * self.config.num_envs)
-            sampled_episodes += trajectory.extras.episode_done.sum().astype(jnp.uint32)
             trajectory = tree_stop_gradient(flatten_rollout_trajectory(trajectory))
             agent_state = update_preprocessing(
                 self.agent, agent_state, trajectory, self.dp_axis_name
@@ -152,8 +151,6 @@ class MultiAgentOffPolicyWorkflow(OffPolicyWorkflowTemplate):
         metrics = state.metrics.replace(
             sampled_timesteps=state.metrics.sampled_timesteps
             + psum(sampled_steps, self.dp_axis_name),
-            sampled_episodes=state.metrics.sampled_episodes
-            + psum(sampled_episodes, self.dp_axis_name),
         )
         if random_length + policy_length > 0:
             key, env_key = jax.random.split(key)

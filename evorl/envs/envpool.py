@@ -1,5 +1,3 @@
-import warnings
-
 import envpool
 import gymnasium
 import jax
@@ -33,6 +31,9 @@ def _reshape_batch_dims(pytree, batch_shape):
 class EnvPoolGymAdapter(EnvAdapter):
     """Adapter for EnvPool to support EnvPool environments.
 
+    `autoreset_next_step=True` uses EnvPool's native next-step autoreset.
+    When `False`, ended rows are reset in the same host callback as the step.
+
     This env already is a vectorized environment and has experimental supports. It is not recommended to direcly replace other jax-based envs with this env in EvoRL's existing workflows. Users should carefully check the compatibility and modify the corresponding code to avoid the side-effects and other undefined behaviors.
 
     :::{caution}
@@ -54,6 +55,8 @@ class EnvPoolGymAdapter(EnvAdapter):
         max_episode_steps: int,
         num_envs: int,
         discount: float | None = None,
+        record_ori_obs: bool = False,
+        autoreset_next_step: bool = True,
         **env_kwargs,
     ):
         self.env_name = env_name
@@ -61,6 +64,8 @@ class EnvPoolGymAdapter(EnvAdapter):
         self.num_envs = num_envs
         self.record_episode_return = discount is not None
         self.discount = discount
+        self.record_ori_obs = record_ori_obs
+        self.autoreset_next_step = autoreset_next_step
         self.env_kwargs = env_kwargs
 
         def _env_fn(_num_envs):
@@ -101,6 +106,8 @@ class EnvPoolGymAdapter(EnvAdapter):
         dummy_obs, _ = self.env.reset()
         # define your own dummy reset info
         dummy_reset_info = PyTreeDict()
+        if self.record_ori_obs:
+            dummy_reset_info.ori_obs = dummy_obs
         # Preserve mapped state axes even when every member uses constant actions.
         dummy_token = np.zeros((self.num_envs,), dtype=np.int32)
         reset_spec = _to_jax_spec((dummy_obs, dummy_reset_info, dummy_token))
@@ -112,6 +119,8 @@ class EnvPoolGymAdapter(EnvAdapter):
         )
         # define your own dummy step info
         dummy_step_info = PyTreeDict()
+        if self.record_ori_obs:
+            dummy_step_info.ori_obs = dummy_obs
         step_spec = _to_jax_spec(
             self.env.step(dummy_actions)[:-1] + (dummy_step_info, dummy_token)
         )
@@ -131,6 +140,8 @@ class EnvPoolGymAdapter(EnvAdapter):
 
             # drop the original info dict as they do not have static shape.
             info = PyTreeDict()
+            if self.record_ori_obs:
+                info.ori_obs = jtu.tree_map(np.zeros_like, obs)
 
             token = np.zeros((*batch_shape, self.num_envs), dtype=np.int32)
             return obs, info, token
@@ -147,6 +158,23 @@ class EnvPoolGymAdapter(EnvAdapter):
 
             # drop the original info dict as they do not have static shape.
             info = PyTreeDict()
+            if self.record_ori_obs:
+                info.ori_obs = jtu.tree_map(np.copy, obs)
+
+            if not self.autoreset_next_step:
+                ended = np.flatnonzero(termination | truncation).astype(np.int32)
+                if ended.size:
+                    # Snapshot the transition before another native call can
+                    # reuse its buffers. Reset only the environments that ended.
+                    obs, reward, termination, truncation = jtu.tree_map(
+                        np.copy, (obs, reward, termination, truncation)
+                    )
+                    reset_obs, reset_info = self.env.reset(ended)
+                    reset_ids = np.asarray(reset_info["env_id"], dtype=np.int32)
+                    for current, initial in zip(
+                        jtu.tree_leaves(obs), jtu.tree_leaves(reset_obs), strict=True
+                    ):
+                        current[reset_ids] = initial
 
             return (
                 *_reshape_batch_dims(
@@ -168,7 +196,8 @@ class EnvPoolGymAdapter(EnvAdapter):
         info.truncation = jnp.zeros((self.num_envs,))
         if self.record_episode_return:
             info.episode_return = jnp.zeros((self.num_envs,))
-        info.autoreset = jnp.zeros((self.num_envs,))
+        if self.autoreset_next_step:
+            info.autoreset = jnp.zeros((self.num_envs,))
 
         return EnvState(
             env_state=None,
@@ -180,7 +209,7 @@ class EnvPoolGymAdapter(EnvAdapter):
         )
 
     def step(self, state: EnvState, action: Action) -> EnvState:
-        autorest = state.done  # True = this step is the reset() step
+        prev_done = state.done
 
         obs, reward, termination, truncation, info, token = _to_jax(
             self._step(state._internal.callback_token, action)
@@ -191,18 +220,29 @@ class EnvPoolGymAdapter(EnvAdapter):
         reward = reward.astype(jnp.float32)
         done = (jnp.logical_or(termination, truncation)).astype(jnp.float32)
 
-        info.steps = (state.info.steps + 1) * (1 - autorest).astype(jnp.int32)
         info.termination = termination.astype(jnp.float32)
         info.truncation = truncation.astype(jnp.float32)
-        info.autoreset = autorest  # prev_done
+        if not self.autoreset_next_step:
+            # The previous step already reset ended environments; this is a
+            # real transition, including the first step of each new episode.
+            reward_steps = state.info.steps * (1 - prev_done).astype(jnp.int32)
+            info.steps = reward_steps + 1
+        else:
+            reward_steps = state.info.steps
+            info.steps = (state.info.steps + 1) * (1 - prev_done).astype(jnp.int32)
+            info.autoreset = prev_done
 
         if self.record_episode_return:
             episode_return = state.info.episode_return
+            if not self.autoreset_next_step:
+                episode_return = episode_return * (1 - prev_done)
             if self.discount == 1.0:
                 episode_return += reward
             else:
-                episode_return += jnp.power(self.discount, state.info.steps) * reward
-            info.episode_return = episode_return * (1 - autorest)
+                episode_return += jnp.power(self.discount, reward_steps) * reward
+            if self.autoreset_next_step:
+                episode_return = episode_return * (1 - prev_done)
+            info.episode_return = episode_return
 
         return state.replace(
             obs=obs,
@@ -274,26 +314,39 @@ def create_envpool_env(
     parallel: int = 1,
     autoreset_mode: AutoresetMode = AutoresetMode.ENVPOOL,
     discount: float | None = 1.0,
+    record_ori_obs: bool = False,
     **kwargs,
 ) -> BaseEnv[Action, Space]:
     """Create an EnvPool environment with Gymnasium API.
 
     Unlike other jax-based env, most wrappers are handled inside the envpool.
+    `NORMAL` resets ended sub-environments within the same ordered host callback,
+    preserving their terminal reward and flags while returning reset observations.
+    `ENVPOOL` uses native next-step autoreset. `FAST` is unsupported and raises
+    `NotImplementedError`.
+    `record_ori_obs=True` exposes the observation before reset in `info.ori_obs`.
+    With next-step autoreset this is the observation returned by the step itself.
     """
     match autoreset_mode:
-        case AutoresetMode.NORMAL | AutoresetMode.FAST:
-            warnings.warn(
-                f"{autoreset_mode} is not supported for EnvPool Envs. Fallback to AutoresetMode.ENVPOOL.",
+        case AutoresetMode.FAST:
+            raise NotImplementedError(
+                "EnvPool does not support AutoresetMode.FAST. "
+                "Use NORMAL, ENVPOOL or DISABLED."
             )
-            autoreset_mode = AutoresetMode.ENVPOOL
         case AutoresetMode.DISABLED:
             discount = None
+        case AutoresetMode.NORMAL | AutoresetMode.ENVPOOL:
+            pass
+        case _:
+            raise ValueError(f"Unsupported autoreset mode: {autoreset_mode!r}.")
 
     env = EnvPoolGymAdapter(
         env_name=env_name,
         max_episode_steps=episode_length,
         num_envs=parallel,
         discount=discount,
+        record_ori_obs=record_ori_obs,
+        autoreset_next_step=autoreset_mode != AutoresetMode.NORMAL,
         **kwargs,
     )
 

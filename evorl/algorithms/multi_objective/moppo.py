@@ -183,7 +183,7 @@ class MOPPOAgent(Agent):
             )
         return PyTreeDict(
             actor_loss=actor_loss,
-            critic_loss=0.5 * squared.mean(-1).sum(where=mask) / denominator,
+            critic_loss=squared.mean(-1).sum(where=mask) / denominator,
             actor_entropy=entropy.sum(where=mask) / denominator,
             approx_kl=approximate_kl(logratio, axis=()).sum(where=mask) / denominator,
         )

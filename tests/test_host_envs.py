@@ -15,6 +15,51 @@ from evorl.rollout import host_fast_eval_rollout_episode
 from evorl.types import PyTreeDict
 
 
+@pytest.mark.parametrize("host_envs", ["envpool"], indirect=True)
+@pytest.mark.parametrize("nested", [False, True])
+def test_envpool_original_observations_at_termination(host_envs, nested):
+    """The factory consumes record_ori_obs and retains next-step terminal obs."""
+    env = create_env(
+        OmegaConf.create(dict(env_type="envpool", env_name="Pendulum-v1")),
+        parallel=2,
+        episode_length=2,
+        autoreset_mode=AutoresetMode.ENVPOOL,
+        record_ori_obs=True,
+    )
+
+    def run(key):
+        state = env.reset(key)
+
+        def step(state, _):
+            state = env.step(state, jnp.zeros((2, 1)))
+            return state, (
+                state.obs,
+                state.info.ori_obs,
+                state.info.truncation,
+                state.info.autoreset,
+            )
+
+        return jax.lax.scan(step, state, None, length=3)[1]
+
+    if nested:
+        result = jax.jit(jax.vmap(jax.vmap(run)))(
+            jax.random.split(jax.random.key(0), (2, 3))
+        )
+        expected_shape = (2, 3, 3, 2, 3)
+    else:
+        result = jax.jit(run)(jax.random.key(0))
+        expected_shape = (3, 2, 3)
+    obs, original, truncation, autoreset = jax.block_until_ready(result)
+    assert original.shape == obs.shape == expected_shape
+    np.testing.assert_array_equal(original, obs)
+    np.testing.assert_array_equal(
+        truncation, np.broadcast_to(np.array([0, 1, 0])[:, None], truncation.shape)
+    )
+    np.testing.assert_array_equal(
+        autoreset, np.broadcast_to(np.array([0, 0, 1])[:, None], autoreset.shape)
+    )
+
+
 @pytest.mark.parametrize("backend", ["gymnasium", "envpool"])
 @pytest.mark.parametrize("env_name,obs_size", [("CartPole-v1", 4), ("Pendulum-v1", 3)])
 @pytest.mark.parametrize("vmapped", [False, True], ids=["batch", "vmap"])
@@ -48,6 +93,9 @@ def test_host_env_action_batches(
             autoreset_mode=autoreset_mode,
             **kwargs,
         )
+        if backend == "envpool":
+            adapter = env.env if autoreset_mode == AutoresetMode.DISABLED else env
+            assert adapter.autoreset_next_step
         key = jax.random.key(0)
         reset, step = env.reset, env.step
         batch_shape = (2,)
@@ -236,10 +284,8 @@ def test_host_episode_resets_stay_ordered(host_envs, monkeypatch):
 
 
 @pytest.mark.parametrize("env_name", ["CartPole-v1", "Pendulum-v1"])
-def test_gymnasium_same_step_nested_vmap(host_envs, env_name):
+def test_host_same_step_nested_vmap(host_envs, env_name):
     backend, _ = host_envs
-    if backend != "gymnasium":
-        pytest.skip("EnvPool supports next-step autoreset")
     env = create_env(
         OmegaConf.create(dict(env_type=backend, env_name=env_name)),
         parallel=1,

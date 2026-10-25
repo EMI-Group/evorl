@@ -67,6 +67,8 @@ class WorkflowMetric(MetricBase):
 
     Attributes:
         sampled_timesteps: The total number of sampled timesteps from environments.
+        sampled_episodes: Completed training episodes, excluding replay or
+            episode-archive prefill during setup.
         iterations: The total number of workflow iterations.
     """
 

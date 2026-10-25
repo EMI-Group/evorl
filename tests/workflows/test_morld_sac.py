@@ -176,7 +176,8 @@ def test_replay_ownership_and_training_counts(shared, continuous, jit):
         state = workflow.setup(jax.random.key(0))
         np.testing.assert_array_equal(state.population.env_state.env_state, 0)
         assert int(state.metrics.sampled_timesteps) == (8 if shared else 16)
-        assert int(state.metrics.sampled_episodes) == (4 if shared else 8)
+        assert int(state.metrics.sampled_episodes) == 0
+        np.testing.assert_array_equal(state.population.metrics.sampled_episodes, 0)
         if shared:
             assert state.population.replay_buffer_state is None
             assert state.replay_buffer_state.data.rewards.shape == (16, 2)
@@ -193,6 +194,7 @@ def test_replay_ownership_and_training_counts(shared, continuous, jit):
             int(updated.metrics.sampled_timesteps - state.metrics.sampled_timesteps)
             == 4
         )
+        assert int(updated.metrics.sampled_episodes) == 2
         assert int(updated.metrics.training_updates) == 6
         np.testing.assert_array_equal(
             updated.population.metrics.training_updates, [2, 4]

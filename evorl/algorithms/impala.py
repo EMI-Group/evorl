@@ -153,13 +153,17 @@ class IMPALAAgent(Agent):
             trajectory: [T, B, ...]
                 a sequence of transitions, not shuffled timesteps
             key: Random key for entropy estimation.
-            axis_name: Data-parallel Manual axis for the KL diagnostic's valid
-                sample count, or `None` for local training.
+            axis_name: Data-parallel Manual axis used to count valid samples,
+                or `None` for local training. Losses and diagnostics are local
+                contributions to the global valid-sample mean; reduce them
+                across this axis. An empty mask contributes zero.
 
         """
         models = self.get_models(agent_state)
         # mask invalid transitions at autoreset
         mask = jnp.logical_not(trajectory.extras.env_extras.autoreset)
+        mean_count = pmean(mask.sum(dtype=jnp.float32), axis_name)
+        denominator = jnp.where(mean_count > 0, mean_count, 1.0)
 
         obs = trajectory.obs
         _obs = jtu.tree_map(
@@ -190,8 +194,6 @@ class IMPALAAgent(Agent):
         logrho = actions_logp - behavior_actions_logp
         rho = jnp.exp(logrho)
 
-        # TODO: consider PEB: truncation in the middle of trajectory
-        # hint: use IS of td-error with
         vtrace = compute_vtrace(
             rho_t=rho,
             v_t=vs[:-1],
@@ -209,7 +211,7 @@ class IMPALAAgent(Agent):
 
         # ======= critic =======
 
-        critic_loss = optax.squared_error(vs[:-1], vtrace).mean(where=mask)
+        critic_loss = optax.squared_error(vs[:-1], vtrace).sum(where=mask) / denominator
 
         # ====== actor =======
 
@@ -229,23 +231,21 @@ class IMPALAAgent(Agent):
         pg_advantage = clipped_pg_rho_t * pg_advantages
         pg_advantage = jax.lax.stop_gradient(pg_advantage)
 
-        policy_loss = -(pg_advantage * actions_logp).mean(where=mask)
+        policy_loss = -(pg_advantage * actions_logp).sum(where=mask) / denominator
 
         # entropy: [T*B]
         if self.continuous_action:
-            actor_entropy = actions_dist.entropy(seed=key).mean(where=mask)
+            actor_entropy = actions_dist.entropy(seed=key).sum(where=mask) / denominator
         else:
-            actor_entropy = actions_dist.entropy().mean(where=mask)
+            actor_entropy = actions_dist.entropy().sum(where=mask) / denominator
 
-        mean_count = pmean(mask.sum(dtype=jnp.float32), axis_name)
-        denominator = jnp.where(mean_count > 0, mean_count, 1.0)
         approx_kl = approximate_kl(logrho, axis=()).sum(where=mask) / denominator
 
         return PyTreeDict(
             actor_loss=policy_loss,
             critic_loss=critic_loss,
             actor_entropy=actor_entropy,
-            rho=rho.mean(where=mask),
+            rho=rho.sum(where=mask) / denominator,
             approx_kl=approx_kl,
         )
 
@@ -347,16 +347,6 @@ class IMPALAWorkflow(OnPolicyWorkflow):
             env_extra_fields=("autoreset", "episode_return", "termination"),
         )
 
-        agent_state = state.agent_state
-        if agent_state.obs_preprocessor_state is not None:
-            agent_state = agent_state.replace(
-                obs_preprocessor_state=running_statistics.update(
-                    agent_state.obs_preprocessor_state,
-                    trajectory.obs,
-                    axis_name=self.dp_axis_name,
-                )
-            )
-
         train_episode_return = average_episode_discount_return(
             trajectory.extras.env_extras.episode_return,
             trajectory.dones,
@@ -430,10 +420,20 @@ class IMPALAWorkflow(OnPolicyWorkflow):
 
         (opt_state, agent_state, _), (loss, loss_dict) = scan_and_mean(
             epoch_step,
-            (state.opt_state, agent_state, learn_key),
+            (state.opt_state, state.agent_state, learn_key),
             None,
             length=self.config.reuse_rollout_epochs,
         )
+
+        # Update after training so normalization changes do not affect V-trace ratios.
+        if agent_state.obs_preprocessor_state is not None:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    trajectory.obs,
+                    axis_name=self.dp_axis_name,
+                )
+            )
 
         # ======== update metrics ========
 

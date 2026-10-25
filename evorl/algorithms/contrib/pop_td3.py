@@ -63,6 +63,13 @@ class PopTD3Workflow(TD3Workflow):
         multi_device: bool = False,
         jit: bool = True,
     ) -> Self:
+        if not 0 <= config.random_timesteps <= config.learning_start_timesteps:
+            raise ValueError(
+                "PopTD3 requires 0 <= random_timesteps <= learning_start_timesteps; "
+                f"got random_timesteps={config.random_timesteps}, "
+                f"learning_start_timesteps={config.learning_start_timesteps}"
+            )
+
         devices = jax.local_devices()
 
         if multi_device or len(devices) > 1:

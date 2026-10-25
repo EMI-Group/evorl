@@ -139,8 +139,10 @@ def test_pbt_openes_host_environments(host_envs):
         workflow.close()
 
 
-@pytest.mark.parametrize("host_envs", ["gymnasium"], indirect=True)
-def test_pbt_sac_restores_population_host_batches_after_shared_prefill(host_envs):
+@pytest.mark.parametrize(
+    "shared_replay_buffer", [True, False], ids=["shared", "private"]
+)
+def test_pbt_sac_host_prefill_training_and_evaluation(host_envs, shared_replay_buffer):
     if jax.local_device_count() != 1:
         pytest.skip(
             "Host pools use one device; run with --cpu-devices=1 or --device=gpu"
@@ -170,10 +172,10 @@ def test_pbt_sac_restores_population_host_batches_after_shared_prefill(host_envs
         OmegaConf.load(root / "configs/agent/meta/pbt-paramsac.yaml"),
         dict(
             target_workflow=target,
-            env=dict(env_type=backend, env_name="Pendulum-v1", max_episode_steps=100),
+            env=dict(env_type=backend, env_name="Pendulum-v1", max_episode_steps=2),
             pop_size=2,
             random_timesteps=6,
-            shared_replay_buffer=True,
+            shared_replay_buffer=shared_replay_buffer,
             num_eval_envs=1,
             eval_episodes=1,
             workflow_steps_per_iter=1,
@@ -194,16 +196,30 @@ def test_pbt_sac_restores_population_host_batches_after_shared_prefill(host_envs
             np.testing.assert_array_equal(
                 state.pop_workflow_state.env_state.info.steps, 0
             )
-            # Exercise the actual pool after restoring its population batch.
-            native = workflow.workflow.env.env
-            np.testing.assert_array_equal(
-                native.call("get_wrapper_attr", "_elapsed_steps"), [0] * 4
-            )
-            observations, *_ = native.step(np.zeros((4, 1), np.float32))
-            assert observations.shape == (4, 3)
-            np.testing.assert_array_equal(
-                native.call("get_wrapper_attr", "_elapsed_steps"), [1] * 4
-            )
             np.testing.assert_array_equal(state.replay_buffer_state.buffer_size, 6)
+            before = state.pop_workflow_state.agent_state.model_state
+            for expected_steps in (1, 2, 1):
+                metrics, state = workflow.step(state)
+                jax.block_until_ready((metrics, state))
+                assert metrics.pop_episode_returns.shape == (2,)
+                for leaf in jax.tree.leaves(metrics):
+                    assert np.isfinite(leaf).all()
+                np.testing.assert_array_equal(
+                    state.pop_workflow_state.env_state.info.steps, expected_steps
+                )
+                # Every call advances Pendulum; a reset-only call would return 0.
+                assert np.all(np.asarray(state.pop_workflow_state.env_state.reward) < 0)
+            assert any(
+                np.any(np.asarray(a) != np.asarray(b))
+                for a, b in zip(
+                    jax.tree.leaves(before),
+                    jax.tree.leaves(state.pop_workflow_state.agent_state.model_state),
+                    strict=True,
+                )
+            )
+            metrics, state = workflow.evaluate(state)
+            jax.block_until_ready((metrics, state))
+            assert np.isfinite(metrics.pop_episode_returns).all()
+            np.testing.assert_array_equal(metrics.pop_episode_lengths, 2)
     finally:
         workflow.close()

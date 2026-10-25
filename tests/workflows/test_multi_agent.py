@@ -222,16 +222,26 @@ def test_multi_agent_learn_records_agent_returns_and_stops_at_budget(algorithm):
 def test_offpolicy_multi_agent_workflow_preserves_joint_replay_and_targets(
     algorithm, jit
 ):
-    workflow = make_workflow(algorithm, jit, continuous=True, normalize_obs=True)
+    workflow = make_workflow(
+        algorithm,
+        jit,
+        continuous=True,
+        normalize_obs=True,
+        overrides=dict(random_timesteps=12, learning_start_timesteps=12),
+    )
     try:
         state = workflow.setup(jax.random.key(0))
-        assert int(state.metrics.sampled_timesteps) == 8
+        assert int(state.metrics.sampled_timesteps) == 12
+        assert int(state.metrics.sampled_episodes) == 0
+        # Prefill did finish episodes, and their transitions remain in replay.
+        assert int(state.replay_buffer_state.data.extras.episode_done[:12].sum()) == 4
         np.testing.assert_array_equal(state.env_state.env_state, 0)
         original = jax.tree.map(np.array, (state.agent_state, state.opt_state))
         metrics, updated = workflow.step(state)
         assert np.isfinite(metrics.loss)
-        assert int(updated.metrics.sampled_timesteps) == 24
-        assert int(updated.replay_buffer_state.buffer_size) == 24
+        assert int(updated.metrics.sampled_timesteps) == 28
+        assert int(updated.metrics.sampled_episodes) == 4
+        assert int(updated.replay_buffer_state.buffer_size) == 28
         assert set(updated.replay_buffer_state.data.rewards) == {"first", "second"}
         for name in workflow.agent.agents:
             assert (

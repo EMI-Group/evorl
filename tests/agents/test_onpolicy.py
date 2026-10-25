@@ -32,10 +32,18 @@ FACTORIES = {
 }
 
 
-@pytest.mark.parametrize("agent_cls", [PPOAgent, ParamPPOAgent])
-@pytest.mark.parametrize("normalize", [True, False])
+@pytest.mark.parametrize(
+    "agent_cls,normalize",
+    [
+        (A2CAgent, False),
+        (PPOAgent, True),
+        (PPOAgent, False),
+        (ParamPPOAgent, True),
+        (ParamPPOAgent, False),
+    ],
+)
 @pytest.mark.parametrize("valid_counts", [(4, 4), (2, 4), (0, 4), (0, 0)])
-def test_ppo_masked_data_parallel_loss_and_grad_match_valid_batch(
+def test_masked_data_parallel_loss_and_grad_match_valid_batch(
     agent_cls, normalize, valid_counts, dp_mesh
 ):
     """Unequal valid counts must match training on all valid samples together."""
@@ -47,7 +55,7 @@ def test_ppo_masked_data_parallel_loss_and_grad_match_valid_batch(
         actor_hidden_layer_sizes=(4,),
         critic_hidden_layer_sizes=(4,),
         normalize_obs=False,
-        normalize_gae=normalize,
+        **(dict(normalize_gae=normalize) if agent_cls is not A2CAgent else {}),
     )
     state = agent.init(env.obs_space, env.action_space, jax.random.key(41))
     valid = np.concatenate([np.arange(4) < count for count in valid_counts])
@@ -77,7 +85,7 @@ def test_ppo_masked_data_parallel_loss_and_grad_match_valid_batch(
             losses.actor_loss
             + 0.5 * losses.critic_loss
             - 0.01 * losses.actor_entropy
-            + 0.01 * losses.approx_kl
+            + 0.01 * losses.get("approx_kl", 0)
         )
 
     # This reference contains no invalid transitions; large masked values above

@@ -8,12 +8,72 @@ import pytest
 from flax import nnx
 
 from evorl.algorithms.multi_objective.moppo import MOPPOAgent
+from evorl.algorithms.ppo import PPOAgent
 from evorl.distributed import DP_AXIS_NAME, pmean_nnx_loss_and_grad
 from evorl.envs.wrappers import ActionSquashWrapper
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict
 from evorl.utils.rl_toolkits import compute_gae
 from tests.helpers.multi_objective_envs import ToyMultiObjectiveEnv
+from tests.helpers.agents import build_agent
+
+
+@pytest.mark.parametrize("num_objectives", [1, 3])
+def test_critic_loss_and_gradient_use_ppo_scale(num_objectives, jit):
+    """Duplicating a scalar objective preserves PPO's value-loss scale."""
+    env = ToyMultiObjectiveEnv()
+    config = OmegaConf.create(
+        dict(actor_hidden_layer_sizes=[], critic_hidden_layer_sizes=[])
+    )
+    ppo = build_agent(
+        PPOAgent,
+        env.obs_space,
+        env.action_space,
+        agent_network_cfg=config,
+        normalize_obs=False,
+    )
+    moppo = MOPPOAgent(
+        num_objectives=num_objectives,
+        continuous_action=False,
+        agent_network_cfg=config,
+        clip_value_loss=False,
+    )
+    for vector, agent in [(False, ppo), (True, moppo)]:
+        state = agent.init(env.obs_space, env.action_space, jax.random.key(27))
+        models = agent.get_models(state, copy=True)
+        value = models.value if vector else models.value.mlp
+        value.layers[-1].kernel[...] = jnp.zeros_like(value.layers[-1].kernel[...])
+        state = state.replace(model_state=nnx.unpack(models))
+        targets = jnp.array([0.0, 3.0, 100.0])
+        if vector:
+            targets = jnp.broadcast_to(targets[:, None], (3, num_objectives))
+        batch = SampleBatch(
+            obs=jnp.ones((3, 3)),
+            actions=jnp.zeros(3, jnp.int32),
+            extras=PyTreeDict(
+                env_extras=PyTreeDict(autoreset=jnp.array([False, False, True])),
+                policy_extras=PyTreeDict(logp=jnp.zeros(3)),
+                advantages=jnp.zeros_like(targets),
+                v_targets=targets,
+            ),
+        )
+
+        def critic_loss(bias, *, agent=agent, state=state, batch=batch, vector=vector):
+            models = agent.get_models(state, copy=True)
+            value = models.value if vector else models.value.mlp
+            value.layers[-1].bias[...] = jnp.full(value.layers[-1].bias.shape, bias)
+            return agent.loss(
+                state.replace(model_state=nnx.unpack(models)), batch, jax.random.key(0)
+            ).critic_loss
+
+        loss_and_grad = jax.value_and_grad(critic_loss)
+        if jit:
+            loss_and_grad = jax.jit(loss_and_grad)
+        loss, grad = loss_and_grad(jnp.float32(2.0))
+        # Valid prediction errors are 2 and -1: mean squared error 2.5,
+        # derivative with respect to the common prediction bias is 1.
+        np.testing.assert_allclose(loss, 2.5, atol=1e-6)
+        np.testing.assert_allclose(grad, 1.0, atol=1e-6)
 
 
 @pytest.mark.parametrize("valid_counts", [(2, 2), (1, 2), (0, 2), (0, 0)])

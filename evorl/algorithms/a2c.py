@@ -10,7 +10,7 @@ import jax.tree_util as jtu
 import optax
 from omegaconf import DictConfig
 
-from evorl.distributed import pmean_nnx_loss_and_grad, psum
+from evorl.distributed import pmean, pmean_nnx_loss_and_grad, psum
 from evorl.distribution import get_categorical_dist, get_tanh_norm_dist
 from evorl.envs import Discrete, Box, AutoresetMode, create_env, Space
 from evorl.evaluators import Evaluator
@@ -139,7 +139,23 @@ class A2CAgent(Agent):
         agent_state: AgentState,
         sample_batch: SampleBatch,
         key: jax.Array,
+        *,
+        axis_name: str | None = None,
     ) -> LossDict:
+        """Compute local loss contributions for the global valid-sample mean.
+
+        Args:
+            agent_state: Functional model and observation-preprocessor state.
+            sample_batch: Flattened transitions with an autoreset mask.
+            key: Random key for entropy estimation.
+            axis_name: Data-parallel Manual axis used to count valid samples,
+                or `None` for local training. Reduce the returned losses across
+                this axis before differentiation; auxiliary metrics remain local.
+
+        Returns:
+            Actor, critic and entropy loss contributions, normalized by the
+            mean valid-sample count per device. An empty mask contributes zero.
+        """
         models = self.get_models(agent_state)
         obs = sample_batch.obs
         if self.normalize_obs:
@@ -147,13 +163,15 @@ class A2CAgent(Agent):
 
         # mask invalid transitions at autoreset
         mask = jnp.logical_not(sample_batch.extras.env_extras.autoreset)
+        mean_count = pmean(mask.sum(dtype=jnp.float32), axis_name)
+        denominator = jnp.where(mean_count > 0, mean_count, 1.0)
 
         # ======= critic =======
         vs = models.value(obs)
 
         v_targets = sample_batch.extras.v_targets
 
-        critic_loss = optax.squared_error(vs, v_targets).mean(where=mask)
+        critic_loss = optax.squared_error(vs, v_targets).sum(where=mask) / denominator
 
         # ====== actor =======
 
@@ -171,12 +189,12 @@ class A2CAgent(Agent):
         advantages = sample_batch.extras.advantages
 
         # advantages: [T*B]
-        actor_loss = -(advantages * actions_logp).mean(where=mask)
+        actor_loss = -(advantages * actions_logp).sum(where=mask) / denominator
         # entropy: [T*B]
         if self.continuous_action:
-            actor_entropy = actions_dist.entropy(seed=key).mean(where=mask)
+            actor_entropy = actions_dist.entropy(seed=key).sum(where=mask) / denominator
         else:
-            actor_entropy = actions_dist.entropy().mean(where=mask)
+            actor_entropy = actions_dist.entropy().sum(where=mask) / denominator
 
         return PyTreeDict(
             actor_loss=actor_loss,
@@ -277,16 +295,6 @@ class A2CWorkflow(OnPolicyWorkflow):
             env_extra_fields=("autoreset", "episode_return", "termination"),
         )
 
-        agent_state = state.agent_state
-        if agent_state.obs_preprocessor_state is not None:
-            agent_state = agent_state.replace(
-                obs_preprocessor_state=running_statistics.update(
-                    agent_state.obs_preprocessor_state,
-                    trajectory.obs,
-                    axis_name=self.dp_axis_name,
-                )
-            )
-
         train_episode_return = average_episode_discount_return(
             trajectory.extras.env_extras.episode_return,
             trajectory.dones,
@@ -319,7 +327,10 @@ class A2CWorkflow(OnPolicyWorkflow):
         def loss_fn(models, agent_state, sample_batch, key):
             # learn all data from trajectory
             loss_dict = self.agent.loss(
-                agent_state.replace(model_state=nnx.unpack(models)), sample_batch, key
+                agent_state.replace(model_state=nnx.unpack(models)),
+                sample_batch,
+                key,
+                axis_name=self.dp_axis_name,
             )
             loss_weights = self.config.loss_weights
             loss = jnp.zeros(())
@@ -332,6 +343,7 @@ class A2CWorkflow(OnPolicyWorkflow):
             loss_fn, self.dp_axis_name, has_aux=True
         )
 
+        agent_state = state.agent_state
         models = nnx.merge(agent_state.model_state, copy=True)
         optimizer = nnx.merge(state.opt_state, copy=True)
         (loss, loss_dict), grads = loss_and_grad(
@@ -340,6 +352,16 @@ class A2CWorkflow(OnPolicyWorkflow):
         optimizer.update(models, grads)
         agent_state = agent_state.replace(model_state=nnx.unpack(models))
         opt_state = nnx.unpack(optimizer)
+
+        # Update after training so rollout, GAE and loss use the same normalization.
+        if agent_state.obs_preprocessor_state is not None:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    trajectory.obs,
+                    axis_name=self.dp_axis_name,
+                )
+            )
 
         # ======== update metrics ========
 

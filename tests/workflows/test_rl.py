@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from flax import nnx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -13,8 +14,215 @@ from omegaconf import OmegaConf
 
 from tests.helpers.envs import ToyEnv
 from tests.helpers.sharding import compiled_collectives
+from evorl.rollout import rollout
+from evorl.utils import running_statistics
 
 pytestmark = pytest.mark.integration
+
+
+@pytest.mark.parametrize("agent", ["ppo", "meta/paramppo", "contrib/td3-onpolicy"])
+@pytest.mark.parametrize("minibatch_size", [0, -4, 3, 16])
+def test_invalid_minibatch_partition_fails_before_environment_creation(
+    agent, minibatch_size
+):
+    root = Path(__file__).resolve().parents[2]
+    config = OmegaConf.merge(
+        OmegaConf.load(root / "configs/config.yaml"),
+        OmegaConf.load(root / f"configs/agent/{agent}.yaml"),
+        dict(num_envs=4, rollout_length=2, minibatch_size=minibatch_size),
+    )
+    cls = get_class(config.workflow_cls)
+    with patch(f"{cls._build_from_config.__module__}.create_env") as create:
+        with pytest.raises(ValueError, match="minibatch_size"):
+            cls.build_from_config(config, jit=False)
+        create.assert_not_called()
+
+
+@pytest.mark.parametrize("actor_update_interval", [0, -1, 2])
+def test_td3_onpolicy_requires_complete_delayed_actor_update_groups(
+    actor_update_interval,
+):
+    root = Path(__file__).resolve().parents[2]
+    config = OmegaConf.merge(
+        OmegaConf.load(root / "configs/config.yaml"),
+        OmegaConf.load(root / "configs/agent/contrib/td3-onpolicy.yaml"),
+        dict(
+            num_envs=4,
+            rollout_length=3,
+            minibatch_size=4,
+            actor_update_interval=actor_update_interval,
+        ),
+    )
+    cls = get_class(config.workflow_cls)
+    with patch(f"{cls._build_from_config.__module__}.create_env") as create:
+        with pytest.raises(ValueError, match="actor_update_interval"):
+            cls.build_from_config(config, jit=False)
+        create.assert_not_called()
+
+
+@pytest.mark.parametrize("agent", ["ppo", "meta/paramppo", "contrib/td3-onpolicy"])
+def test_invalid_multidevice_minibatch_partition_fails_before_environment_creation(
+    agent,
+):
+    root = Path(__file__).resolve().parents[2]
+    config = OmegaConf.merge(
+        OmegaConf.load(root / "configs/config.yaml"),
+        OmegaConf.load(root / f"configs/agent/{agent}.yaml"),
+        dict(
+            num_envs=4,
+            num_eval_envs=4,
+            eval_episodes=4,
+            rollout_length=2,
+            minibatch_size=6,
+        ),
+    )
+    cls = get_class(config.workflow_cls)
+    with patch(f"{cls._build_from_config.__module__}.create_env") as create:
+        with pytest.raises(ValueError, match="minibatch_size"):
+            cls.build_from_config(config, multi_device=True, jit=False)
+        create.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "agent,minibatch_size",
+    [
+        ("ppo", 4),
+        ("ppo", 8),
+        ("meta/paramppo", 4),
+        ("meta/paramppo", 8),
+        ("contrib/td3-onpolicy", 2),
+        ("contrib/td3-onpolicy", 4),
+    ],
+)
+def test_valid_minibatch_partition_trains_on_the_whole_rollout(agent, minibatch_size):
+    root = Path(__file__).resolve().parents[2]
+    config = OmegaConf.merge(
+        OmegaConf.load(root / "configs/config.yaml"),
+        OmegaConf.load(root / f"configs/agent/{agent}.yaml"),
+        dict(
+            env=dict(max_episode_steps=2),
+            num_envs=4,
+            num_eval_envs=4,
+            eval_episodes=4,
+            rollout_length=2,
+            minibatch_size=minibatch_size,
+            reuse_rollout_epochs=1,
+            agent_network=dict(
+                actor_hidden_layer_sizes=[4], critic_hidden_layer_sizes=[4]
+            ),
+        ),
+    )
+    base = get_class(config.workflow_cls)
+    cls = type(f"CompleteMinibatches{base.__name__}", (base,), {})
+    with patch(
+        f"{base._build_from_config.__module__}.create_env",
+        side_effect=lambda *args, **kwargs: ToyEnv(
+            kwargs["parallel"], discrete=agent != "contrib/td3-onpolicy"
+        ),
+    ):
+        workflow = cls.build_from_config(config)
+    try:
+        metric, state = workflow.step(workflow.setup(jax.random.key(94)))
+        expected_updates = 8 // minibatch_size
+        if agent == "contrib/td3-onpolicy":
+            critic = nnx.merge(state.opt_state.critic, copy=True)
+            actor = nnx.merge(state.opt_state.actor, copy=True)
+            assert int(critic.step[...]) == expected_updates
+            assert (
+                int(actor.step[...]) == expected_updates // config.actor_update_interval
+            )
+            assert np.isfinite(metric.critic_loss)
+        else:
+            optimizer = nnx.merge(state.opt_state, copy=True)
+            assert int(optimizer.step[...]) == expected_updates
+            assert np.isfinite(metric.loss)
+        assert int(state.metrics.sampled_timesteps) == 8
+    finally:
+        workflow.close()
+
+
+@pytest.mark.parametrize("agent", ["a2c", "impala", "ppo", "meta/paramppo"])
+def test_observation_statistics_stay_fixed_until_training_finishes(agent, jit):
+    """Training must match a reference that freezes behavior normalization."""
+    root = Path(__file__).resolve().parents[2]
+    config = OmegaConf.merge(
+        OmegaConf.load(root / "configs/config.yaml"),
+        OmegaConf.load(root / f"configs/agent/{agent}.yaml"),
+        dict(
+            env=dict(max_episode_steps=2),
+            num_envs=4,
+            num_eval_envs=4,
+            eval_episodes=4,
+            normalize_obs=True,
+            rollout_length=2,
+            minibatch_size=4,
+            reuse_rollout_epochs=2,
+            agent_network=dict(
+                actor_hidden_layer_sizes=[4], critic_hidden_layer_sizes=[4]
+            ),
+        ),
+    )
+    base = get_class(config.workflow_cls)
+    cls = type(f"FixedStatistics{base.__name__}", (base,), {})
+    with patch(
+        f"{base._build_from_config.__module__}.create_env",
+        side_effect=lambda *args, **kwargs: ToyEnv(kwargs["parallel"], discrete=True),
+    ):
+        workflow = cls.build_from_config(config, jit=jit)
+    try:
+        state = workflow.setup(jax.random.key(92))
+        stats = running_statistics.update(
+            state.agent_state.obs_preprocessor_state,
+            jax.random.normal(jax.random.key(93), (32, 3)) + 3,
+        )
+        state = state.replace(
+            agent_state=state.agent_state.replace(obs_preprocessor_state=stats)
+        )
+        trajectory, _ = rollout(
+            workflow.env.step,
+            workflow.agent.compute_actions,
+            state.env_state,
+            state.agent_state,
+            jax.random.split(state.key, 3)[1],
+            rollout_length=2,
+        )
+        expected_stats = running_statistics.update(stats, trajectory.obs)
+        with patch.object(
+            running_statistics,
+            "update",
+            side_effect=lambda stats, *args, **kwargs: stats,
+        ):
+            expected_metrics, expected_state = base.step(workflow, state)
+        actual_metrics, actual_state = workflow.step(state)
+        for actual, expected in zip(
+            jax.tree.leaves(
+                (
+                    actual_metrics,
+                    actual_state.agent_state.model_state,
+                    actual_state.opt_state,
+                )
+            ),
+            jax.tree.leaves(
+                (
+                    expected_metrics,
+                    expected_state.agent_state.model_state,
+                    expected_state.opt_state,
+                )
+            ),
+            strict=True,
+        ):
+            np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-6)
+        for actual, expected in zip(
+            jax.tree.leaves(actual_state.agent_state.obs_preprocessor_state),
+            jax.tree.leaves(expected_stats),
+            strict=True,
+        ):
+            np.testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(
+            actual_state.agent_state.obs_preprocessor_state.count, stats.count + 8
+        )
+    finally:
+        workflow.close()
 
 
 @pytest.mark.parametrize(

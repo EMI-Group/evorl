@@ -82,10 +82,22 @@ def test_replay_warmup_skips_empty_phases(
     )
 
 
-def test_pop_td3_warmup_resets_every_training_member(jit):
+@pytest.mark.parametrize(
+    "random_timesteps,learning_start_timesteps,expected_samples",
+    [(0, 0, 0), (4, 4, 4), (2, 8, 8)],
+    ids=["empty", "random_only", "both_phases"],
+)
+def test_pop_td3_warmup_resets_every_training_member(
+    jit, random_timesteps, learning_start_timesteps, expected_samples
+):
     workflow = object.__new__(PopTD3Workflow)
     workflow.config = OmegaConf.create(
-        dict(num_envs=2, pop_size=3, random_timesteps=2, learning_start_timesteps=8)
+        dict(
+            num_envs=2,
+            pop_size=3,
+            random_timesteps=random_timesteps,
+            learning_start_timesteps=learning_start_timesteps,
+        )
     )
     workflow.dp_axis_name = None
     workflow.env = ToyEnv(num_envs=2)
@@ -104,8 +116,8 @@ def test_pop_td3_warmup_resets_every_training_member(jit):
     prefill = workflow._postsetup_replaybuffer
     updated = (jax.jit(prefill) if jit else prefill)(state)
     np.testing.assert_array_equal(updated.env_state.env_state, np.zeros((3, 2)))
-    assert int(updated.replay_buffer_state.buffer_size) == 8
-    assert int(updated.metrics.sampled_timesteps) == 8
+    assert int(updated.replay_buffer_state.buffer_size) == expected_samples
+    assert int(updated.metrics.sampled_timesteps) == expected_samples
 
 
 @pytest.mark.integration

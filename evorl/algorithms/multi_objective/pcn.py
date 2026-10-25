@@ -29,7 +29,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-from evorl.agent import Agent, AgentState
+from evorl.agent import Agent, AgentState, ObsPreprocessorFn
 from evorl.distributed import all_gather, pmean, pmean_nnx_loss_and_grad
 from evorl.distributed.sharding import mark_varying
 from evorl.envs import AutoresetMode, Box, Discrete, create_env
@@ -37,6 +37,7 @@ from evorl.metrics import MetricBase, TrainMetric
 from evorl.recorders import add_prefix
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict, State, pytree_field
+from evorl.utils import running_statistics
 from evorl.utils.jax_utils import rng_fold_in_axis
 from evorl.workflows.rl_workflow import RLWorkflow
 
@@ -191,6 +192,7 @@ class PCNAgent(Agent):
     num_objectives: int = pytree_field(static=True)
     agent_network_cfg: object = pytree_field(static=True)
     scaling_factor: tuple = pytree_field(static=True)
+    obs_preprocessor: ObsPreprocessorFn | None = pytree_field(default=None, static=True)
     noise: float = 0.1
 
     def init(self, obs_space, action_space, key):
@@ -211,6 +213,11 @@ class PCNAgent(Agent):
         )
         return AgentState(
             model_state=nnx.unpack(nnx.Dict(policy=policy)),
+            obs_preprocessor_state=running_statistics.init_state(
+                jnp.zeros(obs_space.shape, jnp.float32)
+            )
+            if self.obs_preprocessor is not None
+            else None,
             extra_state=PyTreeDict(
                 action_low=jnp.asarray(action_space.low, jnp.float32)
                 if continuous
@@ -226,6 +233,8 @@ class PCNAgent(Agent):
     def predictions(self, agent_state, sample_batch):
         """Predict logits or continuous actions from explicit commands."""
         obs = sample_batch.obs.astype(jnp.float32)
+        if self.obs_preprocessor is not None:
+            obs = self.obs_preprocessor(obs, agent_state.obs_preprocessor_state)
         extras = sample_batch.extras or agent_state.extra_state
         returns = jnp.broadcast_to(
             extras.desired_return, (*obs.shape[:-1], self.num_objectives)
@@ -388,6 +397,9 @@ class PCNWorkflow(RLWorkflow):
             num_objectives=objectives,
             agent_network_cfg=config.agent_network,
             scaling_factor=tuple(scaling),
+            obs_preprocessor=running_statistics.normalize
+            if config.normalize_obs
+            else None,
             noise=config.exploration_noise,
         )
         return cls(env, eval_env, agent, optax.adam(config.optimizer.lr), config)
@@ -494,7 +506,7 @@ class PCNWorkflow(RLWorkflow):
         )
 
         def warmup(carry, _):
-            archive, key, timesteps = carry
+            archive, agent_state, key, timesteps = carry
             key, rollout_key = jax.random.split(key)
             episodes = self._collect_episodes(
                 self.env,
@@ -504,6 +516,15 @@ class PCNWorkflow(RLWorkflow):
                 jnp.float32(1),
                 random=True,
             )
+            if agent_state.obs_preprocessor_state is not None:
+                agent_state = agent_state.replace(
+                    obs_preprocessor_state=running_statistics.update(
+                        agent_state.obs_preprocessor_state,
+                        episodes.obs.astype(jnp.float32),
+                        weights=episodes.valid,
+                        axis_name=self.dp_axis_name,
+                    )
+                )
             if self.is_multi_device:
                 episodes = jax.tree.map(
                     lambda x: all_gather(
@@ -513,13 +534,14 @@ class PCNWorkflow(RLWorkflow):
                 )
             return (
                 add_episodes(archive, episodes),
+                agent_state,
                 key,
                 timesteps + episodes.lengths.sum().astype(jnp.uint32),
             ), None
 
-        (archive, key, timesteps), _ = jax.lax.scan(
+        (archive, agent_state, key, timesteps), _ = jax.lax.scan(
             warmup,
-            (archive, key, jnp.uint32(0)),
+            (archive, agent_state, key, jnp.uint32(0)),
             (),
             length=self.config.num_initial_episodes
             // (self.config.num_envs * self.num_devices),
@@ -531,7 +553,6 @@ class PCNWorkflow(RLWorkflow):
             episode_archive=archive,
             metrics=MultiObjectiveWorkflowMetric(
                 sampled_timesteps=timesteps,
-                sampled_episodes=jnp.uint32(self.config.num_initial_episodes),
             ),
         )
 
@@ -578,6 +599,15 @@ class PCNWorkflow(RLWorkflow):
         episodes = self._collect_episodes(
             self.env, agent_state, rollout_key, desired, horizons
         )
+        if agent_state.obs_preprocessor_state is not None:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    episodes.obs.astype(jnp.float32),
+                    weights=episodes.valid,
+                    axis_name=self.dp_axis_name,
+                )
+            )
         if self.is_multi_device:
             episodes = jax.tree.map(
                 lambda x: all_gather(

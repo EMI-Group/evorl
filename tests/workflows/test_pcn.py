@@ -1,5 +1,6 @@
 """PCN complete episodic learning, conditioned evaluation and state isolation."""
 
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -93,6 +94,7 @@ def test_pcn_training_and_command_evaluation_are_functional(
     workflow = make_workflow(jit=jit, continuous=continuous, objectives=objectives)
     try:
         state = workflow.setup(jax.random.key(1))
+        assert state.agent_state.obs_preprocessor_state is None
         before = jax.tree.map(
             np.array, (state.agent_state, state.opt_state, state.episode_archive)
         )
@@ -100,7 +102,8 @@ def test_pcn_training_and_command_evaluation_are_functional(
         assert np.isfinite(metrics.loss)
         assert int(state.metrics.sampled_timesteps) == 8
         assert int(updated.metrics.sampled_timesteps) == 12
-        assert int(updated.metrics.sampled_episodes) == 6
+        assert int(state.metrics.sampled_episodes) == 0
+        assert int(updated.metrics.sampled_episodes) == 2
         assert int(updated.metrics.training_updates) == 2
         archive = updated.episode_archive
         assert archive.returns.shape == (6, 4, objectives)
@@ -141,8 +144,16 @@ def test_pcn_training_and_command_evaluation_are_functional(
 
 
 @pytest.mark.parametrize("multi_device", [False, True])
-def test_pcn_nested_vmap_matches_independent_instances(multi_device, dp_mesh):
-    workflow = make_workflow(jit=False, multi_device=multi_device)
+@pytest.mark.parametrize("normalize_obs", [False, True])
+def test_pcn_nested_vmap_matches_independent_instances(
+    multi_device, normalize_obs, dp_mesh
+):
+    workflow = make_workflow(
+        jit=False,
+        multi_device=multi_device,
+        random_resets=normalize_obs,
+        overrides=dict(normalize_obs=normalize_obs),
+    )
     try:
         keys = jax.random.split(jax.random.key(2), (2, 2))
         states = jax.jit(jax.vmap(jax.vmap(workflow.setup)))(keys)
@@ -163,6 +174,40 @@ def test_pcn_nested_vmap_matches_independent_instances(multi_device, dp_mesh):
                 np.testing.assert_allclose(
                     batched[1, 0], separate, rtol=3e-5, atol=2e-6
                 )
+    finally:
+        workflow.close()
+
+
+@pytest.mark.parametrize("multi_device", [False, True])
+def test_observation_statistics_count_real_collections_once(multi_device, jit):
+    """Count prefill and later observations, excluding padding and replay reuse."""
+    workflow = make_workflow(
+        jit=jit,
+        multi_device=multi_device,
+        overrides=dict(normalize_obs=True, episode_buffer_capacity=4),
+    )
+    try:
+        with jax.set_mesh(workflow.mesh) if multi_device else nullcontext():
+            state = workflow.setup(jax.random.key(71))
+            for iteration, count in enumerate((8, 12, 16)):
+                if iteration:
+                    _, state = workflow.step(state)
+                stats = state.agent_state.obs_preprocessor_state
+                assert int(stats.count) == count
+                assert int(state.metrics.sampled_timesteps) == count
+                np.testing.assert_allclose(stats.mean, [0.5, 1, -1])
+                np.testing.assert_allclose(stats.std, [0.5, 1e-6, 1e-6], rtol=1e-6)
+                # Four-step records contain two real transitions. Eviction does not
+                # remove observations from the cumulative statistics.
+                np.testing.assert_array_equal(state.episode_archive.valid[:, 2:], False)
+                before = jax.tree.map(np.array, stats)
+                _, evaluated = workflow.evaluate(state)
+                for a, b in zip(
+                    jax.tree.leaves(before),
+                    jax.tree.leaves(evaluated.agent_state.obs_preprocessor_state),
+                    strict=True,
+                ):
+                    np.testing.assert_array_equal(a, b)
     finally:
         workflow.close()
 
@@ -199,8 +244,13 @@ def test_real_deep_sea_treasure_terminates_once_without_padding_rewards():
         workflow.close()
 
 
-def test_real_deep_sea_treasure_data_parallel_training():
-    workflow = make_workflow(native=True, multi_device=True)
+@pytest.mark.parametrize("normalize_obs", [False, True])
+def test_real_deep_sea_treasure_data_parallel_training(normalize_obs):
+    workflow = make_workflow(
+        native=True,
+        multi_device=True,
+        overrides=dict(normalize_obs=normalize_obs),
+    )
     try:
         with jax.set_mesh(workflow.mesh):
             state = workflow.setup(jax.random.key(43))
@@ -208,7 +258,8 @@ def test_real_deep_sea_treasure_data_parallel_training():
             evaluation, _ = workflow.evaluate(updated)
             assert np.isfinite(metric.loss)
             assert np.isfinite(evaluation.episode_returns).all()
-            assert int(updated.metrics.sampled_episodes) == 6
+            assert int(state.metrics.sampled_episodes) == 0
+            assert int(updated.metrics.sampled_episodes) == 2
             assert int(updated.metrics.sampled_timesteps) > int(
                 state.metrics.sampled_timesteps
             )
@@ -217,11 +268,14 @@ def test_real_deep_sea_treasure_data_parallel_training():
 
 
 @pytest.mark.parametrize("nested", [False, True], ids=["single", "nested"])
-def test_real_mo_gymnasium_complete_pcn_training(mo_gymnasium_pools, nested):
+@pytest.mark.parametrize("normalize_obs", [False, True])
+def test_real_mo_gymnasium_complete_pcn_training(
+    mo_gymnasium_pools, nested, normalize_obs
+):
     workflow = make_workflow(
         native=True,
         jit=not nested,
-        overrides=dict(env=dict(env_type="mo_gymnasium")),
+        overrides=dict(env=dict(env_type="mo_gymnasium"), normalize_obs=normalize_obs),
     )
     try:
 
@@ -246,10 +300,10 @@ def test_real_mo_gymnasium_complete_pcn_training(mo_gymnasium_pools, nested):
         assert np.isfinite(evaluation.episode_returns).all()
         assert np.all(np.asarray(evaluation.episode_lengths) > 0)
         assert np.all(np.asarray(evaluation.episode_lengths) <= 4)
-        np.testing.assert_array_equal(state.metrics.sampled_episodes, 6)
+        np.testing.assert_array_equal(state.metrics.sampled_episodes, 2)
         np.testing.assert_array_equal(state.metrics.training_updates, 2)
-        # The first six real episodes still fit the archive, so their lengths
-        # independently recover exactly the training sampling counter.
+        # The archive contains four prefill episodes and two training episodes.
+        # The timestep counter includes both, while the episode counter excludes prefill.
         np.testing.assert_array_equal(
             state.metrics.sampled_timesteps,
             np.asarray(state.episode_archive.lengths).sum(-1),
@@ -439,21 +493,43 @@ def test_pcn_two_device_gradient_matches_combined_sample_batch(dp_mesh):
 
 
 @pytest.mark.parametrize("continuous", [False, True])
-def test_pcn_data_parallel_global_archive_and_replicated_updates(continuous):
+@pytest.mark.parametrize("normalize_obs", [False, True])
+def test_pcn_data_parallel_global_archive_and_replicated_updates(
+    continuous, normalize_obs
+):
     workflow = make_workflow(
-        continuous=continuous, multi_device=True, random_resets=True
+        continuous=continuous,
+        multi_device=True,
+        random_resets=True,
+        overrides=dict(normalize_obs=normalize_obs),
     )
     try:
         with jax.set_mesh(workflow.mesh):
             state = workflow.setup(jax.random.key(29))
-            assert int(state.metrics.sampled_episodes) == 4
+            assert int(state.metrics.sampled_episodes) == 0
             assert int(state.metrics.sampled_timesteps) == 8
             assert state.episode_archive.returns.shape == (6, 4, 2)
             metric, updated = workflow.step(state)
             assert np.isfinite(metric.loss)
-            assert int(updated.metrics.sampled_episodes) == 6
+            assert int(updated.metrics.sampled_episodes) == 2
             assert int(updated.metrics.sampled_timesteps) == 12
             assert int(updated.metrics.training_updates) == 2
+            if normalize_obs:
+                for current in (state, updated):
+                    stats = current.agent_state.obs_preprocessor_state
+                    observations = np.asarray(current.episode_archive.obs)[
+                        np.asarray(current.episode_archive.valid)
+                    ]
+                    assert int(stats.count) == len(observations)
+                    np.testing.assert_allclose(
+                        stats.mean, observations.mean(0), rtol=1e-5, atol=1e-6
+                    )
+                    np.testing.assert_allclose(
+                        stats.std,
+                        np.maximum(observations.std(0), 1e-6),
+                        rtol=1e-5,
+                        atol=1e-6,
+                    )
             for leaf in jax.tree.leaves(updated):
                 assert leaf.sharding.is_fully_replicated
                 shards = leaf.addressable_shards

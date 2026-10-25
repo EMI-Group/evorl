@@ -237,6 +237,183 @@ def test_gymnasium_dict_terminal_observations(
 
 
 @pytest.mark.parametrize("host_envs", ["envpool"], indirect=True)
+@pytest.mark.parametrize(
+    "name,episode_length,steps",
+    [
+        ("CartPole-v1", 2, 3),
+        ("Pendulum-v1", 2, 3),
+        ("AcrobotSwingup-v1", 2, 3),
+        ("CartPole-v1", 1000, 35),
+    ],
+    ids=[
+        "discrete_truncation",
+        "continuous_truncation",
+        "dict_truncation",
+        "termination",
+    ],
+)
+@pytest.mark.parametrize("batch_shape", [(), (2, 3)], ids=["batch", "nested_vmap"])
+@pytest.mark.parametrize("record_ori_obs", [False, True])
+def test_envpool_normal_preserves_partial_resets_and_native_transitions(
+    host_envs, name, episode_length, steps, batch_shape, record_ori_obs
+):
+    """Reset only ended rows, including when native reset reorders its outputs."""
+    library = pytest.importorskip("envpool")
+    _, environments = host_envs
+    env = create_env(
+        OmegaConf.create(dict(env_type="envpool", env_name=name)),
+        parallel=2,
+        episode_length=episode_length,
+        autoreset_mode=AutoresetMode.NORMAL,
+        record_ori_obs=record_ori_obs,
+        discount=0.5,
+        seed=137,
+    )
+    reset, step = env.reset, env.step
+    for _ in batch_shape:
+        reset, step = jax.vmap(reset), jax.vmap(step)
+    keys = (
+        jax.random.split(jax.random.key(0), batch_shape)
+        if batch_shape
+        else jax.random.key(0)
+    )
+    state = jax.block_until_ready(jax.jit(reset)(keys))
+    native = environments[-1]
+    shape = (*batch_shape, 2)
+    count = int(np.prod(shape))
+    reference = library.make_gymnasium(
+        name,
+        num_envs=count,
+        num_threads=2,
+        max_episode_steps=episode_length,
+        seed=137,
+    )
+    reference.reset()
+    action_shape = env.action_space.shape
+    actions = np.arange(count * max(1, int(np.prod(action_shape)))).reshape(
+        (count, *action_shape)
+    )
+    actions = (
+        (actions % env.action_space.n).astype(np.int32)
+        if name == "CartPole-v1"
+        else (actions / (1 + actions.size)).astype(np.float32)
+    )
+    # Stagger episode ages across both environment and mapped population axes.
+    primed = np.arange(0, count, 3, dtype=np.int32)
+    prime_obs, prime_reward, prime_term, prime_trunc, _ = native.step(
+        actions[primed], env_id=primed
+    )
+    reference.step(actions[primed], env_id=primed)
+    assert not np.any(prime_term | prime_trunc)
+
+    def prime_rows(x, updates):
+        flat = x.reshape((count, *x.shape[len(shape) :]))
+        return flat.at[primed].set(jnp.asarray(updates, x.dtype)).reshape(x.shape)
+
+    state = state.replace(
+        obs=jax.tree.map(
+            prime_rows,
+            state.obs,
+            PyTreeDict(prime_obs) if isinstance(prime_obs, dict) else prime_obs,
+        ),
+        info=state.info.replace(
+            steps=prime_rows(state.info.steps, np.ones(len(primed), np.int32)),
+            episode_return=prime_rows(state.info.episode_return, prime_reward),
+        ),
+    )
+    expected_steps = np.zeros(count, np.int32)
+    expected_steps[primed] = 1
+    expected_return = np.zeros(count, np.float32)
+    expected_return[primed] = prime_reward
+    previous_done = np.zeros(count, bool)
+    original_step, original_reset = native.step, native.reset
+    step_batches, reset_batches = [], []
+
+    def tracked_step(actions):
+        step_batches.append(len(actions))
+        return original_step(actions)
+
+    def reordered_reset(ids):
+        reset_batches.append(np.array(ids, copy=True))
+        obs, info = original_reset(ids)
+        return jax.tree.map(lambda x: x[::-1].copy(), obs), dict(
+            info, env_id=info["env_id"][::-1].copy()
+        )
+
+    native.step, native.reset = tracked_step, reordered_reset
+    step = jax.jit(step)
+    expected_reset_batches = []
+    natural_termination = False
+    partial_reset = False
+    for _ in range(steps):
+        state = jax.block_until_ready(
+            step(state, jnp.asarray(actions.reshape((*shape, *action_shape))))
+        )
+        obs, reward, terminated, truncated, _ = reference.step(actions)
+        obs, reward, terminated, truncated = jax.tree.map(
+            np.copy, (obs, reward, terminated, truncated)
+        )
+        terminal_obs = jax.tree.map(np.copy, obs)
+        done = terminated | truncated
+        ids = np.flatnonzero(done).astype(np.int32)
+        natural_termination |= bool(terminated.any())
+        partial_reset |= 0 < len(ids) < count
+        if len(ids):
+            expected_reset_batches.append(ids)
+            initial, info = reference.reset(ids)
+            for current, reset_obs in zip(
+                jax.tree.leaves(obs), jax.tree.leaves(initial), strict=True
+            ):
+                current[info["env_id"]] = reset_obs
+        expected_steps = np.where(previous_done, 0, expected_steps) + 1
+        expected_return = (
+            np.where(previous_done, 0, expected_return)
+            + 0.5 ** (expected_steps - 1) * reward
+        )
+        for actual, expected in zip(
+            jax.tree.leaves(state.obs), jax.tree.leaves(obs), strict=True
+        ):
+            np.testing.assert_allclose(
+                np.asarray(actual).reshape(expected.shape),
+                expected,
+                rtol=1e-6,
+                atol=1e-6,
+            )
+        for actual, expected in (
+            (state.reward, reward),
+            (state.done, done),
+            (state.info.termination, terminated),
+            (state.info.truncation, truncated),
+            (state.info.steps, expected_steps),
+            (state.info.episode_return, expected_return),
+        ):
+            np.testing.assert_allclose(
+                np.asarray(actual).reshape(count), expected, rtol=1e-6, atol=1e-6
+            )
+        assert ("ori_obs" in state.info) == record_ori_obs
+        assert "autoreset" not in state.info
+        if record_ori_obs:
+            for actual, expected in zip(
+                jax.tree.leaves(state.info.ori_obs),
+                jax.tree.leaves(terminal_obs),
+                strict=True,
+            ):
+                np.testing.assert_allclose(
+                    np.asarray(actual).reshape(expected.shape),
+                    expected,
+                    rtol=1e-6,
+                    atol=1e-6,
+                )
+        previous_done = done
+    assert partial_reset
+    assert natural_termination == (episode_length == 1000)
+    assert step_batches == [count] * steps
+    assert len(reset_batches) == len(expected_reset_batches)
+    for actual, expected in zip(reset_batches, expected_reset_batches, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("host_envs", ["envpool"], indirect=True)
 @pytest.mark.parametrize("name", ["AcrobotSwingup-v1", "FetchReach-v4"])
 @pytest.mark.parametrize("mode", [AutoresetMode.ENVPOOL, AutoresetMode.DISABLED])
 def test_envpool_dict_matches_native(host_envs, name, mode):
@@ -248,6 +425,7 @@ def test_envpool_dict_matches_native(host_envs, name, mode):
         parallel=2,
         episode_length=3,
         autoreset_mode=mode,
+        record_ori_obs=True,
         seed=123,
     )
     assert isinstance(env.obs_space, SpaceContainer)
@@ -265,6 +443,7 @@ def test_envpool_dict_matches_native(host_envs, name, mode):
                 state.done,
                 state.info.termination,
                 state.info.truncation,
+                state.info.ori_obs,
             )
 
         return initial.obs, jax.lax.scan(step, initial, None, length=5)[1]
@@ -293,7 +472,7 @@ def test_envpool_dict_matches_native(host_envs, name, mode):
         obs, reward, termination, truncation, _ = native.step(
             np.asarray(actions).reshape((12, *action_shape))
         )
-        expected = (obs, reward, termination | truncation, termination, truncation)
+        expected = (obs, reward, termination | truncation, termination, truncation, obs)
         if mode == AutoresetMode.DISABLED and previous is not None:
             done = previous[2]
             expected = jax.tree.map(
@@ -358,6 +537,17 @@ def test_envpool_rejects_unsupported_modes(host_envs, name, kwargs, error, match
             parallel=2,
             **kwargs,
         )
+
+
+@pytest.mark.parametrize("host_envs", ["envpool"], indirect=True)
+def test_envpool_rejects_fast_autoreset_before_native_creation(host_envs):
+    _, environments = host_envs
+    with pytest.raises(NotImplementedError, match="does not support.*FAST"):
+        create_env(
+            OmegaConf.create(dict(env_type="envpool", env_name="CartPole-v1")),
+            autoreset_mode=AutoresetMode.FAST,
+        )
+    assert not environments
 
 
 @pytest.mark.parametrize("host_envs", ["envpool"], indirect=True)

@@ -15,6 +15,27 @@ from tests.helpers.envs import ToyEnv
 pytestmark = pytest.mark.integration
 
 
+@pytest.mark.parametrize(
+    "random_timesteps,learning_start_timesteps", [(-1, 4), (0, -1), (16, 4)]
+)
+def test_invalid_warmup_is_rejected_before_environment_creation(
+    random_timesteps, learning_start_timesteps
+):
+    config = OmegaConf.create(
+        dict(
+            random_timesteps=random_timesteps,
+            learning_start_timesteps=learning_start_timesteps,
+        )
+    )
+    cls = type("InvalidWarmupPopTD3", (PopTD3Workflow,), {})
+    with patch("evorl.algorithms.td3.create_env") as create_env:
+        with pytest.raises(
+            ValueError, match="0 <= random_timesteps <= learning_start_timesteps"
+        ):
+            cls.build_from_config(config, jit=False)
+        create_env.assert_not_called()
+
+
 @pytest.mark.parametrize("norm", ["none", "spectral_norm"])
 @pytest.mark.parametrize("normalize_obs", [False, True])
 def test_population_step_preserves_members_and_updates_native_optimizers(

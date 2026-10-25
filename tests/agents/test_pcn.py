@@ -18,6 +18,7 @@ from evorl.algorithms.multi_objective.pcn import (
 from evorl.envs import Box, Discrete
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict
+from evorl.utils import running_statistics
 
 
 def archive(returns, lengths=None):
@@ -182,3 +183,77 @@ def test_supervised_loss_and_gradient_match_independent_values(continuous, jit):
         np.testing.assert_array_equal(action, [[1, -1], [1, -1]])
     else:
         np.testing.assert_array_equal(action, [0, 0])
+
+
+@pytest.mark.parametrize("continuous", [False, True])
+def test_observation_normalization_matches_explicit_inputs_and_gradients(
+    continuous, jit
+):
+    """Sampling, evaluation and supervised updates normalize only observations."""
+    agent = PCNAgent(
+        num_objectives=2,
+        agent_network_cfg=OmegaConf.create(dict(hidden_size=4)),
+        scaling_factor=(0.1, 0.2, 0.3),
+        obs_preprocessor=running_statistics.normalize,
+    )
+    space = Box(low=-10 * jnp.ones(2), high=10 * jnp.ones(2))
+    actions = space if continuous else Discrete(n=2)
+    state = agent.init(space, actions, jax.random.key(11))
+    stats = running_statistics.update(
+        state.obs_preprocessor_state,
+        jnp.array([[1.0, -4.0], [3.0, -2.0], [5.0, 0.0]]),
+    )
+    state = state.replace(obs_preprocessor_state=stats)
+    batch = SampleBatch(
+        obs=jnp.array([[4, -3], [2, -1]], jnp.int32),
+        actions=jnp.array([[0.5, -0.5], [-0.5, 0.5]])
+        if continuous
+        else jnp.array([0, 1]),
+        extras=PyTreeDict(
+            desired_return=jnp.array([[3.0, -2.0], [2.0, -1.0]]),
+            desired_horizon=jnp.array([2.0, 1.0]),
+        ),
+    )
+    normalized = batch.replace(
+        obs=running_statistics.normalize(batch.obs.astype(jnp.float32), stats)
+    )
+    reference_agent = agent.replace(obs_preprocessor=None)
+
+    def forward(state, batch):
+        return (
+            agent.predictions(state, batch),
+            agent.loss(state, batch, jax.random.key(12)),
+            agent.compute_actions(state, batch, jax.random.key(12)),
+            agent.evaluate_actions(state, batch, jax.random.key(12)),
+        )
+
+    actual = (jax.jit(forward) if jit else forward)(state, batch)
+    expected = (
+        reference_agent.predictions(state, normalized),
+        reference_agent.loss(state, normalized, jax.random.key(12)),
+        reference_agent.compute_actions(state, normalized, jax.random.key(12)),
+        reference_agent.evaluate_actions(state, normalized, jax.random.key(12)),
+    )
+    for a, b in zip(jax.tree.leaves(actual), jax.tree.leaves(expected), strict=True):
+        np.testing.assert_allclose(a, b, rtol=1e-6, atol=1e-6)
+    models = agent.get_models(state, copy=True)
+    actual_grad = nnx.grad(
+        lambda models: (
+            agent.loss(
+                state.replace(model_state=nnx.unpack(models)), batch, jax.random.key(12)
+            ).policy_loss
+        )
+    )(models)
+    expected_grad = nnx.grad(
+        lambda models: (
+            reference_agent.loss(
+                state.replace(model_state=nnx.unpack(models)),
+                normalized,
+                jax.random.key(12),
+            ).policy_loss
+        )
+    )(models)
+    for a, b in zip(
+        jax.tree.leaves(actual_grad), jax.tree.leaves(expected_grad), strict=True
+    ):
+        np.testing.assert_allclose(a, b, rtol=1e-6, atol=1e-6)

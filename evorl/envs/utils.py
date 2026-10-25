@@ -6,6 +6,8 @@ from gymnasium import spaces
 from jax.custom_batching import custom_vmap
 from jax.experimental import io_callback
 
+from evorl.distributed.sharding import mark_varying
+
 
 def sort_dict(d: dict) -> dict:
     return dict(sorted(d.items()))
@@ -61,6 +63,9 @@ def make_batched_io_callback(callback: Callable, result_spec) -> Callable:
     JAX's default batching rule rejects ordered IO callbacks.
     Ordering also covers consecutive resets of the same native pool: a reset
     does not consume the preceding episode's callback token.
+    Within `shard_map`, outputs are marked varying over the active Manual axes:
+    separate host environment calls need not return identical values, even with
+    identical inputs. This type cast performs no communication.
 
     Args:
         callback: Stateful host function accepting arrays.
@@ -72,7 +77,8 @@ def make_batched_io_callback(callback: Callable, result_spec) -> Callable:
 
     @custom_vmap
     def call(*args):
-        return io_callback(callback, result_spec, *args, ordered=True)
+        result = io_callback(callback, result_spec, *args, ordered=True)
+        return mark_varying(result, jax.sharding.get_abstract_mesh().manual_axes)
 
     @call.def_vmap
     def batch(axis_size, in_batched, *args):

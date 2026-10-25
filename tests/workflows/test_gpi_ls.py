@@ -118,10 +118,10 @@ def test_prefill_keeps_data_but_starts_training_from_a_new_episode(jit):
         np.testing.assert_array_equal(state.env_state.env_state, 0)
         assert int(state.metrics.sampled_timesteps) == 12
         assert int(state.replay_buffer_state.buffer_size) == 12
-        assert int(state.metrics.sampled_episodes) == 4
+        assert int(state.metrics.sampled_episodes) == 0
         _, state = workflow.step(state)
         assert int(state.metrics.sampled_timesteps) == 20
-        assert int(state.metrics.sampled_episodes) == 8
+        assert int(state.metrics.sampled_episodes) == 4
     finally:
         workflow.close()
 

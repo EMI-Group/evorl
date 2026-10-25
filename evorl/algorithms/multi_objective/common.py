@@ -271,7 +271,6 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
             if not length:
                 continue
             trajectory, state = self._rollout(state, rollout_key, length, random)
-            episodes = trajectory.dones.sum().astype(jnp.uint32)
             trajectory = tree_stop_gradient(
                 flatten_rollout_trajectory(clean_trajectory(trajectory))
             )
@@ -294,8 +293,6 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
                     + psum(
                         jnp.uint32(length * self.config.num_envs), self.dp_axis_name
                     ),
-                    sampled_episodes=state.metrics.sampled_episodes
-                    + psum(episodes, self.dp_axis_name),
                 ),
             )
         if random_length + policy_length > 0:

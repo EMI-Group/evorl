@@ -95,7 +95,7 @@ def test_mosac_warmup_step_and_replay_only_update(continuous, adaptive_alpha, ji
     try:
         state = workflow.setup(jax.random.key(0))
         assert int(state.metrics.sampled_timesteps) == 12
-        assert int(state.metrics.sampled_episodes) == 4
+        assert int(state.metrics.sampled_episodes) == 0
         # Keep warmup transitions, but start training from a fresh episode.
         np.testing.assert_array_equal(state.env_state.env_state, 0)
         np.testing.assert_array_equal(
@@ -116,6 +116,7 @@ def test_mosac_warmup_step_and_replay_only_update(continuous, adaptive_alpha, ji
         train, updated = workflow.step(updated)
         assert np.isfinite(train.loss)
         assert int(updated.metrics.sampled_timesteps) == 20
+        assert int(updated.metrics.sampled_episodes) == 4
         assert int(updated.metrics.training_updates) == 8
         evaluation, _ = workflow.evaluate(updated)
         assert evaluation.episode_returns.shape == (2,)

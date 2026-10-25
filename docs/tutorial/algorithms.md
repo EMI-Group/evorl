@@ -155,7 +155,8 @@ Configurations are starting points, not tuned benchmark reproductions.
   on desired return and remaining horizon. Padded transitions are excluded from
   losses and counters; sampling budgets finish after a whole episode batch.
   `scaling_factor` scales the commands. For discounted returns, the next command
-  is `(command - reward) / discount`.
+  is `(command - reward) / discount`. Optional `normalize_obs` defaults to
+  `false`; observation statistics accumulate only real collected transitions.
 
   PCN assumes that state and action determine the next state and reward;
   random resets and exploratory actions are allowed. Native DeepSeaTreasure

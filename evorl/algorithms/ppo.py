@@ -277,6 +277,15 @@ class PPOWorkflow(OnPolicyWorkflow):
 
     @classmethod
     def _build_from_config(cls, config: DictConfig):
+        if config.minibatch_size <= 0:
+            raise ValueError("minibatch_size must be positive.")
+        one_step_rollout_steps = config.num_envs * config.rollout_length
+        if one_step_rollout_steps % config.minibatch_size != 0:
+            raise ValueError(
+                f"num_envs * rollout_length ({one_step_rollout_steps}) must be "
+                f"divisible by minibatch_size ({config.minibatch_size})."
+            )
+
         max_episode_steps = config.env.max_episode_steps
 
         env = create_env(
@@ -312,12 +321,6 @@ class PPOWorkflow(OnPolicyWorkflow):
             autoreset_mode=AutoresetMode.DISABLED,
         )
 
-        one_step_rollout_steps = config.num_envs * config.rollout_length
-        if one_step_rollout_steps % config.minibatch_size != 0:
-            logger.warning(
-                f"minibatch_size ({config.minibath_size} cannot divides num_envs*rollout_length)"
-            )
-
         evaluator = Evaluator(
             env=eval_env,
             action_fn=agent.evaluate_actions,
@@ -342,16 +345,6 @@ class PPOWorkflow(OnPolicyWorkflow):
             rollout_length=self.config.rollout_length,
             env_extra_fields=("autoreset", "episode_return", "termination"),
         )
-
-        agent_state = state.agent_state
-        if agent_state.obs_preprocessor_state is not None:
-            agent_state = agent_state.replace(
-                obs_preprocessor_state=running_statistics.update(
-                    agent_state.obs_preprocessor_state,
-                    trajectory.obs,
-                    axis_name=self.dp_axis_name,
-                )
-            )
 
         train_episode_return = average_episode_discount_return(
             trajectory.extras.env_extras.episode_return,
@@ -446,10 +439,20 @@ class PPOWorkflow(OnPolicyWorkflow):
         # loss_list: [reuse_rollout_epochs, num_minibatches]
         (opt_state, agent_state, _), (loss, loss_dict) = scan_and_mean(
             epoch_step,
-            (state.opt_state, agent_state, learn_key),
+            (state.opt_state, state.agent_state, learn_key),
             None,
             length=self.config.reuse_rollout_epochs,
         )
+
+        # Update after training so rollout and loss use the same normalization.
+        if agent_state.obs_preprocessor_state is not None:
+            agent_state = agent_state.replace(
+                obs_preprocessor_state=running_statistics.update(
+                    agent_state.obs_preprocessor_state,
+                    trajectory.obs,
+                    axis_name=self.dp_axis_name,
+                )
+            )
 
         # ======== update metrics ========
 
