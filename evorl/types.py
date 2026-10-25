@@ -2,13 +2,14 @@
 
 import dataclasses
 from functools import wraps
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, dataclass_transform
 
 import chex
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as np
 
 Metrics = Mapping[str, chex.ArrayTree]
 AgentID = Any
@@ -175,22 +176,51 @@ def pytree_field(*, static=False, **kwargs):
     return dataclasses.field(**kwargs)
 
 
+def _array_default_factory(default: jax.Array) -> Callable[[], jax.Array]:
+    """Snapshot an array on the host and rebuild it in each instance's context."""
+    is_key = jax.dtypes.issubdtype(default.dtype, jax.dtypes.prng_key)
+    key_impl = jax.random.key_impl(default) if is_key else None
+    weak_type = not is_key and default.weak_type
+    values = np.array(jax.random.key_data(default) if is_key else default, copy=True)
+
+    def factory():
+        array = jnp.asarray(values)
+        if is_key:
+            return jax.random.wrap_key_data(array, impl=key_impl)
+        if weak_type:
+            # A Python scalar prototype preserves weak typing for each fill.
+            prototype = values.dtype.type(0).item()
+            array = jax.vmap(lambda value: jax.lax.full_like(prototype, value))(
+                array.reshape(-1)
+            ).reshape(values.shape)
+        return array
+
+    return factory
+
+
 @dataclass_transform(field_specifiers=(pytree_field,))  # type: ignore[literal-required]
 def dataclass[T](clz: T, *, pure_data=False, **kwargs) -> T:
+    """Create a PyTree dataclass.
+
+    Direct array defaults are snapshotted on the host and converted to factories.
+    Each instance creates its arrays in the current device and mesh context.
+    Explicit `default_factory` avoids the initial device-to-host copy.
+    """
     # set frozen=True unless manually specified
     if "frozen" not in kwargs:
         kwargs["frozen"] = True
 
-    # Special handling for jax.Array fields with init value.
-    # for name in get_type_hints(clz).keys():
+    # Capturing an existing array would also capture its device/mesh context.
     for name in clz.__annotations__:
-        if hasattr(clz, name):
-            obj = getattr(clz, name)
-            # Although JAX Array is immutable, it is not hashable (__hash__ is None).
-            # To meet the requirements of dataclass, we need to use default_factory.
-            # Note: x=obj is necessary to capture current obj in the closure.
-            if isinstance(obj, jax.Array):
-                setattr(clz, name, pytree_field(default_factory=lambda x=obj: x))
+        field = getattr(clz, name, dataclasses.MISSING)
+        default = field.default if isinstance(field, dataclasses.Field) else field
+        if isinstance(default, jax.Array):
+            factory = _array_default_factory(default)
+            if isinstance(field, dataclasses.Field):
+                field.default = dataclasses.MISSING
+                field.default_factory = factory
+            else:
+                setattr(clz, name, pytree_field(default_factory=factory))
 
     data_clz = dataclasses.dataclass(**kwargs)(clz)  # type: ignore
     meta_fields = []
