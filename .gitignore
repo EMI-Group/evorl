@@ -250,3 +250,6 @@ pip-selfcheck.json
 /debug
 # /test*.py
 .conda
+
+# MuJoCo runtime log
+MUJOCO_LOG.TXT
