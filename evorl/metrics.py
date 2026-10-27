@@ -12,7 +12,7 @@ from .types import AgentMapping, LossDict, PyTreeData, PyTreeDict
 
 def metric_field(
     *,
-    reduce_fn: Callable[[jax.Array, str | None], jax.Array] | None = None,
+    reduce_fn: Callable[[chex.ArrayTree, str | None], chex.ArrayTree] | None = None,
     static=False,
     **kwargs,
 ):
@@ -22,7 +22,10 @@ def metric_field(
     arrays in the current device and mesh context.
 
     Args:
-        reduce_fn: A function to reduce the metric value across different devices. For example, `jax.mean`
+        reduce_fn: Function accepting `(value, axis_name)` and reducing across
+            devices, such as `evorl.distributed.pmean`. For a pytree value, the
+            reducer must handle its leaves. Local episode, objective and
+            population axes are not reduced by `pmean`.
         static: Whether the field is static related to pytree.
 
     Returns:
@@ -104,11 +107,12 @@ class EvaluateMetric(MetricBase):
     """Evaluation metrics for RLWorkflow.
 
     Attributes:
-        episode_returns: Returns with shape `(num_episodes,)` for scalar rewards
-            or `(num_episodes, num_objectives)` for vector rewards. Multi-agent
-            evaluation keeps a mapping of per-agent return arrays.
-        episode_lengths: Episode lengths with shape `(num_episodes,)`,
-            independent of the number of reward objectives.
+        episode_returns: Evaluators return shape `(num_episodes,)` for scalar
+            rewards or `(num_episodes, num_objectives)` for vector rewards.
+            Workflows average only the episode axis, producing a scalar or
+            `(num_objectives,)`. Multi-agent returns keep the agent mapping.
+        episode_lengths: Evaluators return shape `(num_episodes,)`; workflows
+            report the mean length, independent of the reward objectives.
     """
 
     episode_returns: jax.Array | AgentMapping[jax.Array] = metric_field(reduce_fn=pmean)

@@ -14,8 +14,9 @@ from evorl.types import PyTreeDict, PyTreeNode, pytree_field
 class MultiAgentEvaluator(PyTreeNode):
     """Evaluate per-agent returns with a shared episode boundary.
 
-    Rewards remain keyed by agent. Each agent stops accumulating reward after
-    its own termination; the episode length follows `done['__all__']`.
+    Rewards remain keyed by agent, with scalar or vector values. Returns keep
+    an episode axis followed by any objective axis. Each agent stops accumulating
+    reward after its own termination; the episode length follows `done['__all__']`.
     Evaluation environments must use DISABLED autoreset.
     """
 
@@ -42,20 +43,19 @@ class MultiAgentEvaluator(PyTreeNode):
                 )
                 next_state = self.env.step(state, actions)
                 active_episode = ~state.done["__all__"].astype(jnp.bool_)
-                returns = PyTreeDict(
-                    {
-                        name: returns[name]
-                        + self.discount**t
-                        * next_state.reward[name]
-                        * active_episode
-                        * ~state.done[name].astype(jnp.bool_)
-                        for name in self.env.agents
-                    }
-                )
+                next_returns = PyTreeDict()
+                for name in self.env.agents:
+                    reward = next_state.reward[name]
+                    active = active_episode & ~state.done[name].astype(jnp.bool_)
+                    if reward.ndim == active.ndim + 1:
+                        active = active[..., None]
+                    next_returns[name] = returns[name] + self.discount**t * jnp.where(
+                        active, reward, 0
+                    )
                 return (
                     next_state,
                     key,
-                    returns,
+                    next_returns,
                     lengths + active_episode.astype(jnp.int32),
                 ), None
 
@@ -70,6 +70,8 @@ class MultiAgentEvaluator(PyTreeNode):
             episode, key, (), length=math.ceil(num_episodes / self.env.num_envs)
         )
         return EvaluateMetric(
-            episode_returns=jax.tree.map(lambda x: x.reshape(-1), returns),
+            episode_returns=jax.tree.map(
+                lambda x: x.reshape(-1, *x.shape[2:]), returns
+            ),
             episode_lengths=lengths.reshape(-1),
         )

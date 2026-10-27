@@ -1,6 +1,7 @@
 """Functional off-policy workflow updates, schedules and NNX state ownership."""
 
 from pathlib import Path
+from contextlib import nullcontext
 from unittest.mock import patch
 
 from flax import nnx
@@ -12,6 +13,7 @@ from omegaconf import OmegaConf
 import pytest
 
 from evorl.algorithms.td3 import TD3Agent
+from evorl.algorithms.td7 import TD7Agent
 from evorl.networks.linear import QNetwork
 from evorl.sample_batch import SampleBatch
 from evorl.types import PyTreeDict
@@ -93,6 +95,95 @@ def make_workflow(name, jit, multi_device=False, **overrides):
     ):
         workflow = cls.build_from_config(config, multi_device=multi_device, jit=jit)
     return workflow
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("updates_per_iter", [1, 3])
+@pytest.mark.parametrize("distributed", [False, True])
+def test_td7_reports_mean_metrics_without_reducing_local_replay_data(
+    updates_per_iter, distributed, mesh_factory, jit
+):
+    if distributed:
+        mesh_factory()
+    workflow = make_workflow(
+        "td7",
+        jit,
+        multi_device=distributed,
+        num_updates_per_iter=updates_per_iter,
+        policy_freq=2,
+    )
+    original_critic_loss = TD7Agent.critic_loss
+    original_actor_loss = TD7Agent.actor_loss
+
+    def critic_loss(agent, state, batch, key):
+        info = original_critic_loss(agent, state, batch, key)
+        rank = jax.lax.axis_index("DP") if distributed else 0
+        return info.replace(
+            priority=jnp.full(batch.rewards.shape, 2 + 5 * rank, jnp.float32),
+            batch_q_max=jnp.float32(20) + 100 * rank,
+            batch_q_min=jnp.float32(-10) - 50 * rank,
+            q_value=info.q_value * 0 + 2 + 6 * rank,
+        )
+
+    def actor_loss(agent, state, batch, key):
+        info = original_actor_loss(agent, state, batch, key)
+        return info.replace(actor_loss=info.actor_loss * 0 + 4)
+
+    try:
+        with jax.set_mesh(workflow.mesh) if distributed else nullcontext():
+            state = workflow.setup(jax.random.key(71))
+            with (
+                patch.object(TD7Agent, "critic_loss", critic_loss),
+                patch.object(TD7Agent, "actor_loss", actor_loss),
+            ):
+                for iteration in range(1, 3):
+                    metrics, state = workflow.step(state)
+                    assert set(metrics.raw_loss_dict) == {
+                        "encoder_loss",
+                        "critic_loss",
+                        "actor_loss",
+                        "q_value",
+                    }
+                    assert all(
+                        value.shape == () for value in metrics.raw_loss_dict.values()
+                    )
+                    np.testing.assert_allclose(
+                        metrics.raw_loss_dict.q_value, 5 if distributed else 2
+                    )
+                    start = (iteration - 1) * updates_per_iter
+                    actor_updates = iteration * updates_per_iter // 2 - start // 2
+                    np.testing.assert_allclose(
+                        metrics.actor_loss, 4 if actor_updates else 0
+                    )
+                    np.testing.assert_allclose(
+                        metrics.raw_loss_dict.actor_loss, metrics.actor_loss
+                    )
+                    np.testing.assert_allclose(
+                        metrics.raw_loss_dict.critic_loss, metrics.critic_loss
+                    )
+                    np.testing.assert_allclose(
+                        metrics.raw_loss_dict.encoder_loss, metrics.encoder_loss
+                    )
+                    np.testing.assert_allclose(
+                        state.agent_state.extra_state.max_q, 120 if distributed else 20
+                    )
+                    np.testing.assert_allclose(
+                        state.agent_state.extra_state.min_q, -60 if distributed else -10
+                    )
+                    replay = state.replay_buffer_state
+                    for rank, (priorities, indices) in enumerate(
+                        zip(
+                            replay.priority.addressable_shards,
+                            replay.sample_indices.addressable_shards,
+                            strict=True,
+                        )
+                    ):
+                        np.testing.assert_array_equal(
+                            np.asarray(priorities.data)[np.asarray(indices.data)],
+                            2 + 5 * rank,
+                        )
+    finally:
+        workflow.close()
 
 
 @pytest.mark.integration

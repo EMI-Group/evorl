@@ -685,6 +685,11 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
                     min_q=new_min,
                 )
             )
+            # Priorities and batch extrema are training data, not mean metrics.
+            critic_loss_dict = PyTreeDict(
+                critic_loss=critic_loss_dict.critic_loss,
+                q_value=critic_loss_dict.q_value,
+            )
 
             # 3. Update Actor
             def _update_actor_step(carry):
@@ -835,9 +840,17 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             agent_state,
         )
 
-        # actor loss would be divided by policy_freq effectively (thanks to zeros)
-        # So multiply back by policy_freq to get the real mean
-        actor_loss = actor_loss * self.config.policy_freq
+        # Exclude skipped actor updates, including partially completed periods.
+        actor_updates = (
+            global_steps + self.config.num_updates_per_iter
+        ) // self.config.policy_freq - global_steps // self.config.policy_freq
+        actor_loss_scale = self.config.num_updates_per_iter / jnp.maximum(
+            actor_updates, 1
+        )
+        actor_loss = actor_loss * actor_loss_scale
+        actor_loss_dict = actor_loss_dict.replace(
+            actor_loss=actor_loss_dict.actor_loss * actor_loss_scale
+        )
 
         train_metrics = TD7TrainMetric(
             encoder_loss=encoder_loss,
