@@ -184,7 +184,8 @@ def _array_default_factory(default: jax.Array) -> Callable[[], jax.Array]:
     values = np.array(jax.random.key_data(default) if is_key else default, copy=True)
 
     def factory():
-        array = jnp.asarray(values)
+        # An explicit copy also honors the active mesh on JAX 0.10.
+        array = jnp.array(values, copy=True)
         if is_key:
             return jax.random.wrap_key_data(array, impl=key_impl)
         if weak_type:

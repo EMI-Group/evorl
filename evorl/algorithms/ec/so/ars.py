@@ -52,7 +52,7 @@ class ARSWorkflow(ESWorkflowTemplate):
             action_fn = agent.evaluate_actions
 
         assert config.normalize_obs_mode in ["VBN", "RS", "Global"]
-        if config.normalize_obs_mode == "VBN":
+        if not config.normalize_obs or config.normalize_obs_mode == "VBN":
             ec_evaluator = Evaluator(
                 env=env,
                 action_fn=action_fn,

@@ -202,3 +202,65 @@ def test_ec_population_keeps_spectral_variables_shared_and_out_of_genome(
         )
     finally:
         workflow.close()
+
+
+@pytest.mark.parametrize("normalize_obs", [False, True])
+@pytest.mark.parametrize("normalize_obs_mode", ["Global", "RS", "VBN"])
+@pytest.mark.parametrize("multi_device", [False, True])
+def test_ars_observation_normalization_modes(
+    normalize_obs, normalize_obs_mode, multi_device, jit
+):
+    """The enable flag controls statistics in every normalization mode."""
+    root = Path(__file__).resolve().parents[2]
+    config = OmegaConf.merge(
+        OmegaConf.load(root / "configs/config.yaml"),
+        OmegaConf.load(root / "configs/agent/ec/ars.yaml"),
+        dict(
+            env=dict(max_episode_steps=2),
+            pop_size=4,
+            num_elites=2,
+            num_envs=2,
+            episodes_for_fitness=2,
+            num_eval_envs=2,
+            eval_episodes=2,
+            random_timesteps=4,
+            normalize_obs=normalize_obs,
+            normalize_obs_mode=normalize_obs_mode,
+            agent_network=dict(actor_hidden_layer_sizes=[2]),
+        ),
+    )
+    base = get_class(config.workflow_cls)
+    cls = type("ARSNormalizationWorkflow", (base,), {})
+
+    def create_env(*args, **kwargs):
+        return ToyEnv(kwargs["parallel"])
+
+    with (
+        patch(f"{base.__module__}.create_env", side_effect=create_env),
+        patch("evorl.algorithms.ec.obs_utils.create_env", side_effect=create_env),
+    ):
+        workflow = cls.build_from_config(config, multi_device=multi_device, jit=jit)
+        try:
+            with jax.set_mesh(workflow.mesh) if multi_device else nullcontext():
+                state = workflow.init(jax.random.key(11))
+                before = state.agent_state.obs_preprocessor_state
+                metrics, updated = workflow.step(state)
+                evaluation, _ = workflow.evaluate(updated)
+                jax.block_until_ready((metrics, updated, evaluation))
+                assert metrics.objectives.shape == (config.pop_size,)
+                assert np.all(np.isfinite(metrics.objectives))
+                assert np.isfinite(evaluation.episode_return)
+                after = updated.agent_state.obs_preprocessor_state
+                if not normalize_obs:
+                    assert before is None
+                    assert after is None
+                elif normalize_obs_mode == "VBN":
+                    assert float(before.count) > 0
+                    chex.assert_trees_all_equal(before, after)
+                elif normalize_obs_mode == "Global":
+                    assert float(after.count) > float(before.count)
+                else:
+                    assert float(before.count) == 0
+                    assert float(after.count) > 0
+        finally:
+            workflow.close()
