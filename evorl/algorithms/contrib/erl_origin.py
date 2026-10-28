@@ -133,8 +133,8 @@ class ERLOriginalWorkflow(ERLGAWorkflow):
         sampled_episodes += jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         train_metrics = ERLTrainMetric(
-            pop_episode_length=ec_eval_metrics.episode_length.mean(-1),
-            pop_episode_return=ec_eval_metrics.episode_return.mean(-1),
+            pop_episode_lengths=ec_eval_metrics.episode_length.mean(-1),
+            pop_episode_returns=ec_eval_metrics.episode_return.mean(-1),
         )
 
         # ======== RL update ========
@@ -173,8 +173,8 @@ class ERLOriginalWorkflow(ERLGAWorkflow):
 
         train_metrics = train_metrics.replace(
             num_updates_per_iter=num_updates,
-            rl_episode_length=rl_eval_metrics.episode_length.mean(-1),
-            rl_episode_return=rl_eval_metrics.episode_return.mean(-1),
+            rl_episode_lengths=rl_eval_metrics.episode_length.mean(-1),
+            rl_episode_returns=rl_eval_metrics.episode_return.mean(-1),
             rl_metrics=td3_metrics,
         )
 

@@ -282,10 +282,16 @@ class PCNAgent(Agent):
 
 
 class PCNEvaluateMetric(MetricBase):
-    """Returns for each desired return/horizon pair, without scalarization."""
+    """Evaluate each requested return/horizon command without scalarization.
 
-    desired_return: jax.Array
-    desired_horizon: jax.Array
+    `desired_returns` and `episode_return` have shape `(commands, objectives)`;
+    `desired_horizons` and `episode_length` have shape `(commands,)`. Return
+    and length keep the common per-policy metric names; the leading command
+    axis is retained.
+    """
+
+    desired_returns: jax.Array
+    desired_horizons: jax.Array
     episode_return: jax.Array
     episode_length: jax.Array
     command_error: jax.Array
@@ -657,8 +663,8 @@ class PCNWorkflow(RLWorkflow):
         )
         returns, lengths = pmean((returns, lengths), self.dp_axis_name)
         return PCNEvaluateMetric(
-            desired_return=desired,
-            desired_horizon=horizons,
+            desired_returns=desired,
+            desired_horizons=horizons,
             episode_return=returns,
             episode_length=lengths,
             command_error=jnp.linalg.norm(returns - desired, axis=-1),

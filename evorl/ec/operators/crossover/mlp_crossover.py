@@ -87,7 +87,7 @@ class MLPCrossover(PyTreeNode):
 
         key = ensure_batched_key(key, pop_size // 2)
 
-        offsprings1, offsprings2 = self.crossover_fn(parents1, parents2, key)
+        offspring1, offspring2 = self.crossover_fn(parents1, parents2, key)
         return jtu.tree_map(
-            lambda x1, x2: jnp.concatenate([x1, x2], axis=0), offsprings1, offsprings2
+            lambda x1, x2: jnp.concatenate([x1, x2], axis=0), offspring1, offspring2
         )

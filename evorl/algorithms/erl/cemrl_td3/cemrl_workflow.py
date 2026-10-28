@@ -38,9 +38,11 @@ class EvaluateMetric(MetricBase):
 
 
 class CEMRLTrainMetric(MetricBase):
+    """Episode means for each candidate, retaining the population axis."""
+
     rb_size: jax.Array
-    pop_episode_return: jax.Array
-    pop_episode_length: jax.Array
+    pop_episode_returns: jax.Array
+    pop_episode_lengths: jax.Array
     rl_metrics: MetricBase | None = None
     ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 

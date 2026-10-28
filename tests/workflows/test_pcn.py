@@ -122,12 +122,13 @@ def test_pcn_training_and_command_evaluation_are_functional(
         )
         evaluation, evaluated = workflow.evaluate(updated)
         assert evaluation.episode_return.shape == (2, objectives)
-        assert evaluation.desired_return.shape == (2, objectives)
+        assert evaluation.desired_returns.shape == (2, objectives)
+        assert evaluation.desired_horizons.shape == (2,)
         np.testing.assert_allclose(evaluation.episode_length, 2)
         np.testing.assert_allclose(
             evaluation.command_error,
             np.linalg.norm(
-                evaluation.episode_return - evaluation.desired_return, axis=-1
+                evaluation.episode_return - evaluation.desired_returns, axis=-1
             ),
         )
         assert evaluated.metrics.sampled_timesteps == updated.metrics.sampled_timesteps
@@ -544,7 +545,7 @@ def test_pcn_data_parallel_global_archive_and_replicated_updates(
             np.testing.assert_allclose(
                 evaluation.command_error,
                 np.linalg.norm(
-                    evaluation.episode_return - evaluation.desired_return, axis=-1
+                    evaluation.episode_return - evaluation.desired_returns, axis=-1
                 ),
             )
     finally:

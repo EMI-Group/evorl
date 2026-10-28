@@ -74,6 +74,8 @@ class MultiObjectiveWorkflowMetric(WorkflowMetric):
 class MultiObjectiveEvaluateMetric(MetricBase):
     """Keep every evaluation preference and reward coordinate visible.
 
+    The field names describe one policy's metrics; evaluating multiple
+    preferences or vmapping over policies adds a leading result axis.
     `episode_return` has shape `(preferences, objectives)`; scalarized returns
     and episode lengths have shape `(preferences,)`. A fixed-preference workflow
     returns `(objectives,)` and scalar lengths/scalarized returns instead. Only

@@ -244,12 +244,14 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
     state = jax.jit(wf.setup)(jax.random.key(7))
     for _ in range(2):
         metrics, state = jax.jit(wf.step)(state)
+        assert metrics.pop_episode_returns.shape == (4,)
+        assert metrics.pop_episode_lengths.shape == (4,)
     metrics, state = jax.jit(wf.evaluate)(state)
     assert state.pop.actor_loss_weight.sharding.spec == jax.P(META_POP_AXIS_NAME)
     assert state.pop_workflow_state.agent_state.model_state.w.sharding.spec == jax.P(
         META_POP_AXIS_NAME, None
     )
-    assert metrics.pop_episode_return.shape == (4,)
+    assert metrics.pop_episode_returns.shape == (4,)
     jax.block_until_ready(state)
     if cls is OffHarness:
         if cfg.shared_replay_buffer:

@@ -42,11 +42,11 @@ def test_cmaes_update_matches_reference_equations(optimizer_cls):
     )
     initial = optimizer.init(mean, jax.random.key(0))
     population = np.array([[1.5, 2], [0, 3], [1, 1], [2, 2.5]], dtype=np.float32)
-    fitness = jnp.array([2, 0, 1, 3], jnp.float32)
+    fitnesses = jnp.array([2, 0, 1, 3], jnp.float32)
     pending = initial.replace(
         population=jnp.asarray(population), count_iter=jnp.int32(1)
     )
-    _, actual = jax.jit(optimizer.tell)(pending, fitness)
+    _, actual = jax.jit(optimizer.tell)(pending, fitnesses=fitnesses)
     weights = np.asarray(optimizer.weights)
     y = (population[[3, 0]] - [1, 2]) / 0.5
     yw = weights @ y
@@ -201,8 +201,8 @@ def test_nsga2_optimizes_zdt1_with_bounded_offspring(pop_size):
         population, state = optimizer.ask(state)
         x = population["w"][:, 0]
         g = 1 + 9 * x[:, 1:].mean(axis=-1)
-        fitness = -jnp.stack((x[:, 0], g * (1 - jnp.sqrt(x[:, 0] / g))), axis=-1)
-        return optimizer.tell(state, fitness)[1]
+        fitnesses = -jnp.stack((x[:, 0], g * (1 - jnp.sqrt(x[:, 0] / g))), axis=-1)
+        return optimizer.tell(state, fitnesses)[1]
 
     step = jax.jit(generation)
     initial = step(state)
@@ -238,10 +238,10 @@ def test_native_optimizers_support_nested_vmap(optimizer_cls):
         # Compare the first update; convergence is checked separately above.
         for _ in range(1 if optimizer_cls is CMAES else 2):
             population, state = optimizer.ask(state)
-            fitness = -jnp.square(population["w"]).sum(axis=(1, 2))
+            fitnesses = -jnp.square(population["w"]).sum(axis=(1, 2))
             if optimizer_cls is NSGA2:
-                fitness = jnp.stack((fitness, -fitness), axis=-1)
-            _, state = optimizer.tell(state, fitness)
+                fitnesses = jnp.stack((fitnesses, -fitnesses), axis=-1)
+            _, state = optimizer.tell(state, fitnesses)
         return state
 
     keys = jax.random.split(jax.random.key(9), (2, 2))
@@ -276,10 +276,10 @@ def test_replicated_optimizers_need_no_communication(optimizer_cls, mesh_factory
 
     def generation(state):
         population, state = optimizer.ask(state)
-        fitness = -jnp.square(population).sum(axis=-1)
+        fitnesses = -jnp.square(population).sum(axis=-1)
         if optimizer_cls is NSGA2:
-            fitness = jnp.stack((fitness, -fitness), axis=-1)
-        return optimizer.tell(state, fitness)[1]
+            fitnesses = jnp.stack((fitnesses, -fitnesses), axis=-1)
+        return optimizer.tell(state, fitnesses)[1]
 
     mesh = mesh_factory(shape=(min(2, jax.local_device_count()),))
     with jax.set_mesh(mesh):

@@ -123,9 +123,9 @@ def test_pbt_evaluation_keeps_each_members_reward_coordinates(
             result, _ = evaluate(state)
         expected = np.asarray(rewards).mean(0)
         offsets = (np.arange(4) * 100).reshape(4, *((1,) * expected.ndim))
-        assert result.pop_episode_return.shape == (4, *expected.shape)
-        np.testing.assert_allclose(result.pop_episode_return, expected + offsets)
-        np.testing.assert_allclose(result.pop_episode_length, 3)
-        assert result.pop_episode_length.shape == (4,)
+        assert result.pop_episode_returns.shape == (4, *expected.shape)
+        np.testing.assert_allclose(result.pop_episode_returns, expected + offsets)
+        np.testing.assert_allclose(result.pop_episode_lengths, 3)
+        assert result.pop_episode_lengths.shape == (4,)
     finally:
         workflow.close()

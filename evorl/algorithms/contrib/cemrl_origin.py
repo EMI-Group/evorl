@@ -233,8 +233,8 @@ class CEMRLOriginalWorkflow(CEMRLWorkflow):
 
         train_metrics = CEMRLTrainMetric(
             rb_size=replay_buffer_state.buffer_size,
-            pop_episode_length=eval_metrics.episode_length.mean(-1),
-            pop_episode_return=eval_metrics.episode_return.mean(-1),
+            pop_episode_lengths=eval_metrics.episode_length.mean(-1),
+            pop_episode_returns=eval_metrics.episode_return.mean(-1),
             rl_metrics=td3_metrics,
             ec_info=ec_info,
             num_updates_per_iter=num_updates,

@@ -138,8 +138,8 @@ class CMAES(EvoOptimizer):
         )
         return self.param_vec_spec.to_tree(population), new_state
 
-    def tell(self, state, fitness):
-        population = state.population[jnp.argsort(fitness, descending=True)]
+    def tell(self, state, fitnesses):
+        population = state.population[jnp.argsort(fitnesses, descending=True)]
 
         updates = population[: self.mu] - state.mean
         update = self.weights @ updates
@@ -233,8 +233,8 @@ class SepCMAES(CMAES):
         )
         return self.param_vec_spec.to_tree(population), new_state
 
-    def tell(self, state, fitness):
-        population = state.population[jnp.argsort(fitness, descending=True)]
+    def tell(self, state, fitnesses):
+        population = state.population[jnp.argsort(fitnesses, descending=True)]
 
         updates = population[: self.mu] - state.mean
         update = self.weights @ updates

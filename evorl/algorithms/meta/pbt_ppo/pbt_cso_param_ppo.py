@@ -81,7 +81,7 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
         student_indices = jnp.where(mask, randperm[1], randperm[0])  # slow learner
 
         students_velocity = PyTreeDict()
-        offsprings = PyTreeDict()
+        offspring = PyTreeDict()
         for hp, hp_key in zip(
             search_space.keys(), jax.random.split(rand_key, len(search_space))
         ):
@@ -122,15 +122,15 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
             )
 
             students_velocity[hp] = v_stu
-            offsprings[hp] = x_stu
+            offspring[hp] = x_stu
 
         # Note: no need to deepcopy teachers_wf_state here, since it should be
         # ensured immutable in apply_hyperparams_to_workflow_state()
         teachers_wf_state = tree_get(
             pop_workflow_state, teacher_indices, out_sharding=jax.P()
         )
-        offsprings_workflow_state = jax.vmap(self.apply_hyperparams_to_workflow_state)(
-            teachers_wf_state, offsprings
+        offspring_workflow_state = jax.vmap(self.apply_hyperparams_to_workflow_state)(
+            teachers_wf_state, offspring
         )
 
         velocity = tree_set(
@@ -140,11 +140,11 @@ class PBTCSOParamPPOWorkflow(PBTParamPPOWorkflow):
 
         # ==== survival | merge population ====
         pop = tree_scatter_set(
-            pop, offsprings, student_indices, jax.P(META_POP_AXIS_NAME)
+            pop, offspring, student_indices, jax.P(META_POP_AXIS_NAME)
         )
         pop_workflow_state = tree_scatter_set(
             pop_workflow_state,
-            offsprings_workflow_state,
+            offspring_workflow_state,
             student_indices,
             jax.P(META_POP_AXIS_NAME),
         )

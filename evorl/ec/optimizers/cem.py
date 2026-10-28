@@ -99,7 +99,7 @@ class SepCEM(EvoOptimizer):
     def tell(
         self, state: SepCEMState, fitnesses: jax.Array
     ) -> tuple[PyTreeDict, SepCEMState]:
-        # fitness: episode_return, higher is better
+        # Each fitness is the candidate's episode return; higher is better.
         elite_indices = jax.lax.top_k(fitnesses, self.num_elites)[1]
 
         mean = jtu.tree_map(

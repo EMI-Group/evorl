@@ -77,13 +77,13 @@ class VanillaGA(EvoOptimizer):
         parents = jtu.tree_map(lambda x: x[parents_indices], state.pop)
 
         if self.enable_crossover:
-            offsprings = self.crossover(parents, crossover_key)
-            offsprings = self.mutate(offsprings, mutate_key)
+            offspring = self.crossover(parents, crossover_key)
+            offspring = self.mutate(offspring, mutate_key)
         else:
-            offsprings = self.mutate(parents, mutate_key)
+            offspring = self.mutate(parents, mutate_key)
 
         new_pop = jtu.tree_map(
-            lambda x, y: jnp.concatenate([x, y], axis=0), elites, offsprings
+            lambda x, y: jnp.concatenate([x, y], axis=0), elites, offspring
         )
 
         return PyTreeDict(), state.replace(pop=new_pop, key=key)

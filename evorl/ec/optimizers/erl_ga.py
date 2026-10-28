@@ -78,18 +78,18 @@ class ERLGA(EvoOptimizer):
             parents_indices = self.select_parents(fitnesses, num_parents, select_key)
             parents = tree_get(state.pop, parents_indices)
 
-            offsprings = self.crossover(parents, crossover_key)
+            offspring = self.crossover(parents, crossover_key)
             if real_num_parents % 2 != 0:
-                offsprings = tree_get(offsprings, slice(real_num_parents))
-            offsprings = self.mutate(offsprings, mutate_key)
+                offspring = tree_get(offspring, slice(real_num_parents))
+            offspring = self.mutate(offspring, mutate_key)
         else:
             num_parents = self.pop_size - self.num_elites
             parents_indices = self.select_parents(fitnesses, num_parents, select_key)
             parents = tree_get(state.pop, parents_indices)
-            offsprings = self.mutate(parents, mutate_key)
+            offspring = self.mutate(parents, mutate_key)
 
         new_pop = jtu.tree_map(
-            lambda x, y: jnp.concatenate([x, y], axis=0), elites, offsprings
+            lambda x, y: jnp.concatenate([x, y], axis=0), elites, offspring
         )
 
         return PyTreeDict(), state.replace(pop=new_pop, key=key)
@@ -138,10 +138,10 @@ class ERLGAMod(ERLGA):
                 )
             ]
             parents = tree_get(state.pop, parents_indices)
-            offsprings = self.crossover(parents, crossover_key)
+            offspring = self.crossover(parents, crossover_key)
             if real_num_parents % 2 != 0:
-                offsprings = tree_get(offsprings, slice(real_num_parents))
-            offsprings = self.mutate(offsprings, mutate_key)
+                offspring = tree_get(offspring, slice(real_num_parents))
+            offspring = self.mutate(offspring, mutate_key)
         else:
             num_parents = self.pop_size - self.num_elites - self.external_size
             parents_indices = selected_indices[
@@ -152,12 +152,12 @@ class ERLGAMod(ERLGA):
                 )
             ]
             parents = tree_get(state.pop, parents_indices)
-            offsprings = self.mutate(parents, mutate_key)
+            offspring = self.mutate(parents, mutate_key)
 
         new_pop = jtu.tree_map(
             lambda x, y, z: jnp.concatenate([x, y, z], axis=0),
             elites,
-            offsprings,
+            offspring,
             unselected,
         )
 

@@ -248,7 +248,7 @@ def test_pbt_members_train_independently(target):
             _, state = workflow.step(state)
             metrics, state = workflow.evaluate(state)
             jax.block_until_ready(state)
-            assert np.isfinite(metrics.pop_episode_return).all()
+            assert np.isfinite(metrics.pop_episode_returns).all()
             assert state.pop_workflow_state.key.sharding.spec == jax.P(
                 META_POP_AXIS_NAME
             )

@@ -94,8 +94,8 @@ def test_openes_optax_injected_hyperparameters(optimizer_name):
     state = es.init({"w": jnp.ones(3)}, jax.random.key(0))
     for _ in range(2):
         population, state = jax.jit(es.ask)(state)
-        fitness = -jnp.sum(population["w"] ** 2, axis=-1)
-        _, state = jax.jit(es.tell)(state, fitness)
+        fitnesses = -jnp.sum(population["w"] ** 2, axis=-1)
+        _, state = jax.jit(es.tell)(state, fitnesses)
     np.testing.assert_allclose(state.opt_state.hyperparams["learning_rate"], 0.0325)
     np.testing.assert_allclose(state.noise_std, 0.065)
     assert jnp.all(jnp.isfinite(state.mean["w"]))

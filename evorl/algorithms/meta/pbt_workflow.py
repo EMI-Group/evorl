@@ -43,8 +43,15 @@ logger = logging.getLogger(__name__)
 
 
 class PBTTrainMetric(MetricBase):
-    pop_episode_return: jax.Array
-    pop_episode_length: jax.Array
+    """Collect each workflow's metrics along the population axis.
+
+    `pop_train_metrics` retains the inner workflow's field names, with a
+    leading population axis added by `vmap`. The explicit population return
+    and length collections use plural names.
+    """
+
+    pop_episode_returns: jax.Array
+    pop_episode_lengths: jax.Array
     pop_train_metrics: MetricBase
     pop: chex.ArrayTree
 
@@ -54,8 +61,10 @@ class PBTOffpolicyTrainMetric(PBTTrainMetric):
 
 
 class PBTEvalMetric(MetricBase):
-    pop_episode_return: jax.Array
-    pop_episode_length: jax.Array
+    """Episode means for each member, retaining the leading population axis."""
+
+    pop_episode_returns: jax.Array
+    pop_episode_lengths: jax.Array
 
 
 class PBTWorkflowMetric(MetricBase):
@@ -277,8 +286,8 @@ class PBTWorkflowBase(Workflow):
         )
 
         train_metrics = PBTTrainMetric(
-            pop_episode_return=pop_eval_metrics.episode_return,
-            pop_episode_length=pop_eval_metrics.episode_length,
+            pop_episode_returns=pop_eval_metrics.episode_return,
+            pop_episode_lengths=pop_eval_metrics.episode_length,
             pop_train_metrics=pop_train_metrics,
             pop=state.pop,  # save prev pop instead of new pop to match the metrics
         )
@@ -321,8 +330,8 @@ class PBTWorkflowBase(Workflow):
         )
 
         eval_metrics = PBTEvalMetric(
-            pop_episode_return=pop_eval_metrics.episode_return,
-            pop_episode_length=pop_eval_metrics.episode_length,
+            pop_episode_returns=pop_eval_metrics.episode_return,
+            pop_episode_lengths=pop_eval_metrics.episode_length,
         )
 
         return eval_metrics, state.replace(key=key)
@@ -378,7 +387,7 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
             pop_workflow_state, top_indices, out_sharding=jax.P()
         )
 
-        offsprings = jax.vmap(
+        offspring = jax.vmap(
             partial(
                 explore,
                 perturb_factor=config.perturb_factor,
@@ -388,23 +397,23 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
 
         # Note: no need to deepcopy parents_wf_state here, since it should be
         # ensured immutable in apply_hyperparams_to_workflow_state()
-        offsprings_workflow_state = jax.vmap(self.apply_hyperparams_to_workflow_state)(
-            parents_wf_state, offsprings
+        offspring_workflow_state = jax.vmap(self.apply_hyperparams_to_workflow_state)(
+            parents_wf_state, offspring
         )
         # Preserve independent exploration streams after copying a parent's
         # model and environment snapshot into the destination member.
-        offsprings_workflow_state = offsprings_workflow_state.replace(
+        offspring_workflow_state = offspring_workflow_state.replace(
             key=tree_get(pop_workflow_state.key, bottom_indices, out_sharding=jax.P())
         )
 
         # ==== survival | merge population ====
         pop = tree_scatter_set(
-            pop, offsprings, bottom_indices, jax.P(META_POP_AXIS_NAME)
+            pop, offspring, bottom_indices, jax.P(META_POP_AXIS_NAME)
         )
         # we copy wf_state back to offspring wf_state
         pop_workflow_state = tree_scatter_set(
             pop_workflow_state,
-            offsprings_workflow_state,
+            offspring_workflow_state,
             bottom_indices,
             jax.P(META_POP_AXIS_NAME),
         )
@@ -414,28 +423,28 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
     def _record_step_metrics(self, train_metrics, workflow_metrics, iters):
         train_metrics_dict = train_metrics.to_local_dict()
 
-        pop_train_metric = train_metrics_dict["pop_train_metrics"]
-        if "train_episode_return" in pop_train_metric:
-            train_episode_return = pop_train_metric["train_episode_return"]
-            # Note: the order does not matter, since we use
-            train_episode_return = train_episode_return[
-                train_episode_return != MISSING_REWARD
+        pop_train_metrics = train_metrics_dict["pop_train_metrics"]
+        if "train_episode_return" in pop_train_metrics:
+            train_episode_returns = pop_train_metrics["train_episode_return"]
+            # Keep returns from members with completed training episodes.
+            train_episode_returns = train_episode_returns[
+                train_episode_returns != MISSING_REWARD
             ]
 
-            if len(train_episode_return) == 0:
-                train_episode_return = None
+            if len(train_episode_returns) == 0:
+                train_episode_returns = None
 
-            pop_train_metric["train_episode_return"] = train_episode_return
+            pop_train_metrics["train_episode_return"] = train_episode_returns
 
         train_metrics_dict.update(
-            pop_episode_return=get_1d_array_statistics(
-                train_metrics_dict["pop_episode_return"], histogram=True
+            pop_episode_returns=get_1d_array_statistics(
+                train_metrics_dict["pop_episode_returns"], histogram=True
             ),
-            pop_episode_length=get_1d_array_statistics(
-                train_metrics_dict["pop_episode_length"], histogram=True
+            pop_episode_lengths=get_1d_array_statistics(
+                train_metrics_dict["pop_episode_lengths"], histogram=True
             ),
             pop=convert_pop_to_df(train_metrics_dict["pop"]),
-            pop_train_metrics=jtu.tree_map(get_1d_array_statistics, pop_train_metric),
+            pop_train_metrics=jtu.tree_map(get_1d_array_statistics, pop_train_metrics),
         )
 
         self.recorder.write(workflow_metrics.to_local_dict(), iters)
@@ -738,8 +747,8 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         )
 
         train_metrics = PBTOffpolicyTrainMetric(
-            pop_episode_return=pop_eval_metrics.episode_return,
-            pop_episode_length=pop_eval_metrics.episode_length,
+            pop_episode_returns=pop_eval_metrics.episode_return,
+            pop_episode_lengths=pop_eval_metrics.episode_length,
             pop_train_metrics=pop_train_metrics,
             pop=state.pop,  # save prev pop instead of new pop to match the metrics
             rb_size=replay_buffer_state.buffer_size,
@@ -757,11 +766,11 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
     def _record_step_metrics(self, train_metrics, workflow_metrics, iters):
         train_metrics_dict = train_metrics.to_local_dict()
 
-        train_metrics_dict["pop_episode_return"] = get_1d_array_statistics(
-            train_metrics_dict["pop_episode_return"], histogram=True
+        train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
+            train_metrics_dict["pop_episode_returns"], histogram=True
         )
-        train_metrics_dict["pop_episode_length"] = get_1d_array_statistics(
-            train_metrics_dict["pop_episode_length"], histogram=True
+        train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
+            train_metrics_dict["pop_episode_lengths"], histogram=True
         )
         train_metrics_dict["pop"] = convert_pop_to_df(train_metrics_dict["pop"])
         train_metrics_dict["pop_train_metrics"] = jtu.tree_map(

@@ -116,8 +116,8 @@ def test_pbt_openes_host_environments(host_envs):
             before = state.pop_workflow_state.ec_opt_state.mean
             metrics, state = workflow.step(state)
             jax.block_until_ready(state)
-            assert metrics.pop_episode_return.shape == (4,)
-            assert np.isfinite(metrics.pop_episode_return).all()
+            assert metrics.pop_episode_returns.shape == (4,)
+            assert np.isfinite(metrics.pop_episode_returns).all()
             assert any(
                 np.any(np.asarray(a) != np.asarray(b))
                 for a, b in zip(
@@ -131,9 +131,9 @@ def test_pbt_openes_host_environments(host_envs):
             assert workflow.workflow.env.unwrapped.env.num_envs == 16
             metrics, state = workflow.evaluate(state)
             jax.block_until_ready(state)
-            assert metrics.pop_episode_return.shape == (4,)
-            assert np.isfinite(metrics.pop_episode_return).all()
-            assert np.all(metrics.pop_episode_length == 3)
+            assert metrics.pop_episode_returns.shape == (4,)
+            assert np.isfinite(metrics.pop_episode_returns).all()
+            assert np.all(metrics.pop_episode_lengths == 3)
             assert environments
     finally:
         workflow.close()
@@ -201,7 +201,7 @@ def test_pbt_sac_host_prefill_training_and_evaluation(host_envs, shared_replay_b
             for expected_steps in (1, 2, 1):
                 metrics, state = workflow.step(state)
                 jax.block_until_ready((metrics, state))
-                assert metrics.pop_episode_return.shape == (2,)
+                assert metrics.pop_episode_returns.shape == (2,)
                 for leaf in jax.tree.leaves(metrics):
                     assert np.isfinite(leaf).all()
                 np.testing.assert_array_equal(
@@ -219,7 +219,7 @@ def test_pbt_sac_host_prefill_training_and_evaluation(host_envs, shared_replay_b
             )
             metrics, state = workflow.evaluate(state)
             jax.block_until_ready((metrics, state))
-            assert np.isfinite(metrics.pop_episode_return).all()
-            np.testing.assert_array_equal(metrics.pop_episode_length, 2)
+            assert np.isfinite(metrics.pop_episode_returns).all()
+            np.testing.assert_array_equal(metrics.pop_episode_lengths, 2)
     finally:
         workflow.close()

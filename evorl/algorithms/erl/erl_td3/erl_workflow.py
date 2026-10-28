@@ -33,11 +33,17 @@ logger = logging.getLogger(__name__)
 
 
 class ERLTrainMetric(MetricBase):
-    pop_episode_return: jax.Array | None = None
-    pop_episode_length: jax.Array | None = None
+    """Episode means for each evolutionary member and each RL learner.
+
+    `pop_episode_returns` and `pop_episode_lengths` have shape `(pop_size,)`.
+    The `rl_*` arrays have shape `(num_rl_agents,)`, including one learner.
+    """
+
+    pop_episode_returns: jax.Array | None = None
+    pop_episode_lengths: jax.Array | None = None
     rb_size: jax.Array | None = None
-    rl_episode_return: jax.Array | None = None
-    rl_episode_length: jax.Array | None = None
+    rl_episode_returns: jax.Array | None = None
+    rl_episode_lengths: jax.Array | None = None
     rl_metrics: MetricBase | None = None
     ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
@@ -289,8 +295,8 @@ class ERLWorkflowBase(Workflow):
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         train_metrics = ERLTrainMetric(
-            pop_episode_length=ec_eval_metrics.episode_length.mean(-1),
-            pop_episode_return=ec_eval_metrics.episode_return.mean(-1),
+            pop_episode_lengths=ec_eval_metrics.episode_length.mean(-1),
+            pop_episode_returns=ec_eval_metrics.episode_return.mean(-1),
             ec_info=ec_metrics,
             rb_size=replay_buffer_state.buffer_size,
         )

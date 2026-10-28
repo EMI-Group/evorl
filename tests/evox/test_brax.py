@@ -100,17 +100,17 @@ def test_evox_brax_full_training_and_checkpoint_resume(
         assert float(final.metrics.sampled_timesteps_m) > 0
         tensors = final.algorithm_state.params_and_buffers
         assert all(value.device == jax.local_devices()[0] for value in tensors.values())
-        population, fitness = np.asarray(tensors["pop"]), np.asarray(tensors["fit"])
+        population, fitnesses = np.asarray(tensors["pop"]), np.asarray(tensors["fit"])
         if algorithm == "cso":
             assert np.all(np.isfinite(population))
-            assert np.all(np.isfinite(fitness))
+            assert np.all(np.isfinite(fitnesses))
         else:
             # RVEA reserves NaN rows for reference vectors without survivors.
             valid = ~np.isnan(population).any(axis=-1)
             assert valid.any()
             assert np.all(np.isfinite(population[valid]))
-            assert np.all(np.isfinite(fitness[valid]))
-            assert np.array_equal(~valid, np.isnan(fitness).all(axis=-1))
+            assert np.all(np.isfinite(fitnesses[valid]))
+            assert np.array_equal(~valid, np.isnan(fitnesses).all(axis=-1))
             assert int(tensors["gen"]) == 5
             assert tensors["gen"].dtype == jnp.int32
             assert tensors["max_gen"].dtype == jnp.int32

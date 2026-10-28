@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from evorl.metrics import MetricBase
+from evorl.metrics import MetricBase, metric_field
 from evorl.types import PyTreeDict, State
 from evorl.utils.jax_utils import (
     tree_stop_gradient,
@@ -23,12 +23,23 @@ from evorl.algorithms.td3 import TD3TrainMetric
 from evorl.algorithms.offpolicy_utils import clean_trajectory, skip_replay_buffer_state
 
 from evorl.algorithms.erl.erl_td3.erl_workflow import (
-    ERLTrainMetric,
     make_erl_rollout_state,
     ERLWorkflowBase,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class ERLEDATrainMetric(MetricBase):
+    """Population results and scalar results for the single RL learner."""
+
+    pop_episode_returns: jax.Array
+    pop_episode_lengths: jax.Array
+    rl_episode_return: jax.Array
+    rl_episode_length: jax.Array
+    rl_metrics: MetricBase
+    rb_size: jax.Array
+    ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
 
 class EvaluateMetric(MetricBase):
@@ -234,9 +245,9 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             agent_state,
         )
 
-        train_metrics = ERLTrainMetric(
-            pop_episode_length=ec_eval_metrics.episode_length.mean(-1),
-            pop_episode_return=ec_eval_metrics.episode_return.mean(-1),
+        train_metrics = ERLEDATrainMetric(
+            pop_episode_lengths=ec_eval_metrics.episode_length.mean(-1),
+            pop_episode_returns=ec_eval_metrics.episode_return.mean(-1),
             rl_episode_length=rl_eval_metrics.episode_length.mean(-1),
             rl_episode_return=rl_eval_metrics.episode_return.mean(-1),
             rl_metrics=td3_metrics,
@@ -314,12 +325,12 @@ class ERLEDAWorkflow(ERLWorkflowBase):
             self.recorder.write(workflow_metrics_dict, iters)
 
             train_metrics_dict = train_metrics.to_local_dict()
-            train_metrics_dict["pop_episode_return"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_return"], histogram=True
+            train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
+                train_metrics_dict["pop_episode_returns"], histogram=True
             )
 
-            train_metrics_dict["pop_episode_length"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_length"], histogram=True
+            train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
+                train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
             self.recorder.write(train_metrics_dict, iters)

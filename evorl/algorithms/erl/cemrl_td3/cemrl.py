@@ -168,8 +168,8 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
 
         train_metrics = CEMRLTrainMetric(
             rb_size=replay_buffer_state.buffer_size,
-            pop_episode_length=eval_metrics.episode_length.mean(-1),
-            pop_episode_return=eval_metrics.episode_return.mean(-1),
+            pop_episode_lengths=eval_metrics.episode_length.mean(-1),
+            pop_episode_returns=eval_metrics.episode_return.mean(-1),
             rl_metrics=td3_metrics,
             ec_info=ec_info,
         )
@@ -213,12 +213,12 @@ class CEMRLWorkflow(CEMRLWorkflowBase):
             self.recorder.write(workflow_metrics_dict, iters)
 
             train_metrics_dict = train_metrics.to_local_dict()
-            train_metrics_dict["pop_episode_return"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_return"], histogram=True
+            train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
+                train_metrics_dict["pop_episode_returns"], histogram=True
             )
 
-            train_metrics_dict["pop_episode_length"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_length"], histogram=True
+            train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
+                train_metrics_dict["pop_episode_lengths"], histogram=True
             )
 
             if train_metrics_dict["rl_metrics"] is not None:

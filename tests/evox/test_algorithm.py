@@ -261,14 +261,14 @@ def test_static_constants_are_real_copied_and_unchanged_by_init(jit):
 )
 def test_evaluation_rejects_misaligned_fitness(wrong_output):
     def evaluate(population, state):
-        fitness = population.sum(-1)
+        fitnesses = population.sum(-1)
         return (
             {
-                "scalar": fitness.sum(),
-                "candidates": fitness[:-1],
-                "rank": fitness[:, None, None],
-                "dtype": fitness.astype(jnp.int32),
-                "empty": fitness[:, None][:, :0],
+                "scalar": fitnesses.sum(),
+                "candidates": fitnesses[:-1],
+                "rank": fitnesses[:, None, None],
+                "dtype": fitnesses.astype(jnp.int32),
+                "empty": fitnesses[:, None][:, :0],
             }[wrong_output],
             (),
             state,
@@ -523,9 +523,13 @@ def test_real_algorithms_maximize_rewards_and_reuse_jitted_evaluation(
     @jax.jit
     def evaluate(population, evaluation_state):
         shapes.append(population.shape)
-        fitness = -jnp.square(population).sum(-1)
+        fitnesses = -jnp.square(population).sum(-1)
         return (
-            (jnp.stack((fitness, fitness - 1), -1) if multi_objective else fitness),
+            (
+                jnp.stack((fitnesses, fitnesses - 1), -1)
+                if multi_objective
+                else fitnesses
+            ),
             (),
             evaluation_state,
         )

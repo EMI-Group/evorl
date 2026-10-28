@@ -23,6 +23,7 @@ from evorl.algorithms.erl.cemrl_td3.cemrl_workflow import (
     CEMRLWorkflowBase,
 )
 from evorl.algorithms.contrib.pop_episodic_td3 import update_pop_td3
+from evorl.algorithms.contrib.erl_eda import ERLEDATrainMetric
 from evorl.agent import AgentState
 from evorl.networks.utils import model_state_axes
 from evorl.metrics import WorkflowMetric, EvaluateMetric
@@ -188,6 +189,25 @@ def test_population_training_preserves_input_and_updates_critic(
     metrics, updated = workflow.step(state)
     evaluation, _ = workflow.evaluate(updated)
     assert all(np.isfinite(x).all() for x in jax.tree.leaves(evaluation))
+    assert metrics.pop_episode_returns.shape == (config.pop_size,)
+    assert metrics.pop_episode_lengths.shape == (config.pop_size,)
+    if algorithm == "erl-openes":
+        assert isinstance(metrics, ERLEDATrainMetric)
+        assert metrics.rl_episode_return.shape == ()
+        assert metrics.rl_episode_length.shape == ()
+        assert evaluation.rl_episode_return.shape == ()
+        assert evaluation.rl_episode_length.shape == ()
+    elif algorithm in ("erl-ga", "erl-es", "erl-ori"):
+        assert metrics.rl_episode_returns.shape == (config.num_rl_agents,)
+        assert metrics.rl_episode_lengths.shape == (config.num_rl_agents,)
+        assert evaluation.rl_episode_returns.shape == (config.num_rl_agents,)
+        assert evaluation.rl_episode_lengths.shape == (config.num_rl_agents,)
+    if algorithm.startswith("cemrl") or algorithm in ("erl-openes", "erl-es"):
+        assert evaluation.pop_center_episode_return.shape == ()
+        assert evaluation.pop_center_episode_length.shape == ()
+    elif algorithm == "pop-ep-td3":
+        assert evaluation.episode_return.shape == (config.pop_size,)
+        assert evaluation.episode_length.shape == (config.pop_size,)
     expected_iterations = 1
     if algorithm == "cemrl-ori":
         # Its training budget uses the previous iteration's collected steps;
@@ -221,11 +241,13 @@ def test_population_training_preserves_input_and_updates_critic(
     )
     assert int(updated.metrics.iterations) == expected_iterations
     episodes_per_iter = config.pop_size * config.episodes_for_fitness
-    timesteps_per_iter = metrics.pop_episode_length.sum() * config.episodes_for_fitness
-    if isinstance(metrics, ERLTrainMetric) and metrics.rl_episode_length is not None:
-        num_learners = 1 if algorithm == "erl-openes" else config.num_rl_agents
-        episodes_per_iter += num_learners * config.rollout_episodes
-        timesteps_per_iter += metrics.rl_episode_length.sum() * config.rollout_episodes
+    timesteps_per_iter = metrics.pop_episode_lengths.sum() * config.episodes_for_fitness
+    if isinstance(metrics, ERLEDATrainMetric):
+        episodes_per_iter += config.rollout_episodes
+        timesteps_per_iter += metrics.rl_episode_length * config.rollout_episodes
+    elif isinstance(metrics, ERLTrainMetric) and metrics.rl_episode_lengths is not None:
+        episodes_per_iter += config.num_rl_agents * config.rollout_episodes
+        timesteps_per_iter += metrics.rl_episode_lengths.sum() * config.rollout_episodes
     assert (
         int(updated.metrics.sampled_episodes) == expected_iterations * episodes_per_iter
     )
@@ -793,17 +815,28 @@ def test_erl_learn_records_evaluates_and_saves_final_state(
             iterations=jnp.uint32(1), sampled_episodes=jnp.uint32(4)
         )
     )
-    train_metrics = ERLTrainMetric(
-        pop_episode_return=jnp.ones(2),
-        pop_episode_length=jnp.ones(2),
-        rl_episode_return=jnp.ones(2),
-        rl_episode_length=jnp.ones(2),
+    train_fields = dict(
+        pop_episode_returns=jnp.ones(2),
+        pop_episode_lengths=jnp.ones(2),
         rl_metrics=TD3TrainMetric(
             actor_loss=jnp.zeros(()),
             critic_loss=jnp.zeros(()),
             raw_loss_dict=PyTreeDict(actor_loss=jnp.zeros(2), critic_loss=jnp.zeros(2)),
         ),
     )
+    if workflow_cls.endswith("ERLEDAWorkflow"):
+        train_metrics = ERLEDATrainMetric(
+            **train_fields,
+            rl_episode_return=jnp.ones(()),
+            rl_episode_length=jnp.ones(()),
+            rb_size=jnp.int32(0),
+        )
+    else:
+        train_metrics = ERLTrainMetric(
+            **train_fields,
+            rl_episode_returns=jnp.ones(2),
+            rl_episode_lengths=jnp.ones(2),
+        )
     workflow.step = Mock(side_effect=[(train_metrics, final)])
     workflow.evaluate = Mock(
         return_value=(

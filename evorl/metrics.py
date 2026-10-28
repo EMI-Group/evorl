@@ -106,6 +106,11 @@ class TrainMetric(MetricBase):
 class EvaluateMetric(MetricBase):
     """Evaluation metrics for RLWorkflow.
 
+    Field names describe one policy's metrics. Evaluators retain an episode
+    axis until the workflow averages it; `vmap` adds batch axes without
+    changing the field names. Dedicated population result fields use names
+    such as `pop_episode_returns` to identify the collection explicitly.
+
     Attributes:
         episode_return: Evaluators return shape `(num_episodes,)` for scalar
             rewards or `(num_episodes, num_objectives)` for vector rewards.
