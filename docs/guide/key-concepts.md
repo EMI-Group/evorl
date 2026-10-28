@@ -278,8 +278,8 @@ evaluator = Evaluator(
 )
 
 eval_metrics = evaluator.evaluate(agent_state, eval_key, num_episodes=10)
-print("Avg Return:", eval_metrics.episode_returns.mean())
-print("Avg Length:", eval_metrics.episode_lengths.mean())
+print("Avg Return:", eval_metrics.episode_return.mean())
+print("Avg Length:", eval_metrics.episode_length.mean())
 ```
 
 ## Workflow

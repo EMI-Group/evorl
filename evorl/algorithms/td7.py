@@ -806,15 +806,15 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
         # Episodic Checkpointing evaluate & replace
         if self.config.checkpoint_metric == "mean":
             perf = pmean(
-                jnp.mean(eval_metrics.episode_returns), axis_name=self.dp_axis_name
+                jnp.mean(eval_metrics.episode_return), axis_name=self.dp_axis_name
             )
         elif self.config.checkpoint_metric == "min":
             perf = pmin(
-                jnp.min(eval_metrics.episode_returns), axis_name=self.dp_axis_name
+                jnp.min(eval_metrics.episode_return), axis_name=self.dp_axis_name
             )
         elif self.config.checkpoint_metric == "max":
             perf = pmax(
-                jnp.max(eval_metrics.episode_returns), axis_name=self.dp_axis_name
+                jnp.max(eval_metrics.episode_return), axis_name=self.dp_axis_name
             )
         else:
             raise ValueError(
@@ -861,7 +861,7 @@ class TD7Workflow(OffPolicyWorkflowTemplate):
             ),
         ).all_reduce(axis_name=self.dp_axis_name)
 
-        sampled_timesteps = jnp.uint32(eval_metrics.episode_lengths.sum())
+        sampled_timesteps = jnp.uint32(eval_metrics.episode_length.sum())
         sampled_timesteps = psum(sampled_timesteps, axis_name=self.dp_axis_name)
 
         sampled_epsiodes = psum(

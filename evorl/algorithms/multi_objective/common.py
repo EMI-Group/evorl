@@ -74,16 +74,16 @@ class MultiObjectiveWorkflowMetric(WorkflowMetric):
 class MultiObjectiveEvaluateMetric(MetricBase):
     """Keep every evaluation preference and reward coordinate visible.
 
-    `episode_returns` has shape `(preferences, objectives)`; scalarized returns
+    `episode_return` has shape `(preferences, objectives)`; scalarized returns
     and episode lengths have shape `(preferences,)`. A fixed-preference workflow
     returns `(objectives,)` and scalar lengths/scalarized returns instead. Only
     episode/device axes are averaged, never the objective or preference axis.
     """
 
     preferences: jax.Array
-    episode_returns: jax.Array = metric_field(reduce_fn=pmean)
-    scalarized_returns: jax.Array = metric_field(reduce_fn=pmean)
-    episode_lengths: jax.Array = metric_field(reduce_fn=pmean)
+    episode_return: jax.Array = metric_field(reduce_fn=pmean)
+    scalarized_return: jax.Array = metric_field(reduce_fn=pmean)
+    episode_length: jax.Array = metric_field(reduce_fn=pmean)
 
 
 class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
@@ -318,16 +318,16 @@ class MultiObjectiveOffPolicyWorkflow(OffPolicyWorkflowTemplate):
             metrics = self.evaluator.evaluate(
                 agent_state, key, self.config.eval_episodes
             )
-            return metrics.episode_returns.mean(axis=0), metrics.episode_lengths.mean()
+            return metrics.episode_return.mean(axis=0), metrics.episode_length.mean()
 
         returns, lengths = jax.vmap(evaluate_preference)(
             weights, jax.random.split(eval_key, len(self.eval_preferences))
         )
         metrics = MultiObjectiveEvaluateMetric(
             preferences=weights,
-            episode_returns=returns,
-            scalarized_returns=(weights * returns).sum(-1),
-            episode_lengths=lengths,
+            episode_return=returns,
+            scalarized_return=(weights * returns).sum(-1),
+            episode_length=lengths,
         ).all_reduce(self.dp_axis_name)
         return metrics, state.replace(key=key)
 

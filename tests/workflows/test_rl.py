@@ -409,7 +409,7 @@ def test_rl_workflow_setup_step_and_evaluate(agent, jit):
                     episode_metrics, _ = workflow.collector.rollout(
                         agent_state, key, workflow.config.rollout_episodes
                     )
-                    return jnp.min(episode_metrics.episode_returns)[None]
+                    return jnp.min(episode_metrics.episode_return)[None]
 
                 expected_best_perf = jnp.min(
                     jax.jit(local_checkpoint_perf)(state.agent_state, rollout_key)

@@ -100,7 +100,7 @@ def test_training_support_selection_evaluation_and_state_isolation(compiled):
         )
         assert updated.agent_state.extra_state.coverage_mask.any()
         evaluation, _ = workflow.evaluate(updated)
-        assert evaluation.episode_returns.shape == (5, 2)
+        assert evaluation.episode_return.shape == (5, 2)
         for old, current in zip(
             jax.tree.leaves(before),
             jax.tree.leaves((state.agent_state, state.opt_state)),
@@ -138,7 +138,7 @@ def test_learn_runs_linear_support_stages_budget_and_records():
         assert int(state.agent_state.extra_state.support_iterations) == 2
         assert workflow.checkpoint_manager.save.call_args.kwargs["force"] is True
         assert workflow.recorder.write.call_args.args[0][
-            "eval/episode_returns"
+            "eval/episode_return"
         ].shape == (5, 2)
         workflow.recorder.reset_mock()
         workflow.learn(state)
@@ -185,7 +185,7 @@ def test_jitted_nested_populations_match_independent_training():
         ):
             np.testing.assert_allclose(actual[0, 0], expected, rtol=2e-5, atol=2e-5)
         evaluated, _ = jax.jit(jax.vmap(jax.vmap(workflow.evaluate)))(state)
-        assert evaluated.episode_returns.shape == (2, 2, 5, 2)
+        assert evaluated.episode_return.shape == (2, 2, 5, 2)
     finally:
         workflow.close()
 
@@ -200,7 +200,7 @@ def test_two_device_training_and_host_linear_support(dp_mesh):
             evaluated, _ = workflow.evaluate(state)
         assert np.isfinite(metrics.loss)
         assert int(state.metrics.sampled_timesteps) == 16
-        assert evaluated.episode_returns.shape == (5, 2)
+        assert evaluated.episode_return.shape == (5, 2)
         assert not state.rollout_preferences.sharding.is_fully_replicated
         for value in jax.tree.leaves(state.agent_state):
             assert value.sharding.is_fully_replicated
@@ -216,7 +216,7 @@ def test_yaml_real_deep_sea_treasure_training_and_support():
         state = workflow.update_linear_support(state)
         evaluated, _ = workflow.evaluate(state)
         assert np.isfinite(metrics.loss)
-        assert np.isfinite(evaluated.episode_returns).all()
+        assert np.isfinite(evaluated.episode_return).all()
         assert int(state.agent_state.extra_state.support_iterations) == 1
     finally:
         workflow.close()
@@ -293,7 +293,7 @@ def test_real_mo_gymnasium_jitted_training_and_evaluation(mo_gymnasium_pools, ne
         train, evaluation, state = run(keys)
         shape = (2, 2) if nested else ()
         assert np.isfinite(train.loss).all()
-        assert evaluation.episode_returns.shape == (*shape, 2, 2)
+        assert evaluation.episode_return.shape == (*shape, 2, 2)
         np.testing.assert_array_equal(
             state.metrics.sampled_timesteps, np.full(shape, 8)
         )

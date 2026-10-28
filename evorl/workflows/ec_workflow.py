@@ -339,7 +339,7 @@ class ECWorkflowTemplate(ECWorkflow):
     def _metrics_to_fitnesses(self, metrics: MetricBase) -> chex.ArrayTree:
         """Convert the rollout metrics to fitnesses.
 
-        By default, use the mean of episode_returns over multiple episodes as fitnesses.
+        By default, use the mean of episode_return over multiple episodes as fitnesses.
 
         Args:
             metrics: Rollout metrics.
@@ -347,7 +347,7 @@ class ECWorkflowTemplate(ECWorkflow):
         Returns:
             Fitnesses of the population.
         """
-        return jnp.mean(metrics.episode_returns, axis=-1)
+        return jnp.mean(metrics.episode_return, axis=-1)
 
     def step(self, state: State) -> tuple[MetricBase, State]:
         agent_state = state.agent_state
@@ -413,7 +413,7 @@ class ECWorkflowTemplate(ECWorkflow):
             self.dp_axis_name,
         )
         sampled_timesteps_m = (
-            psum(rollout_metrics.episode_lengths.sum(), self.dp_axis_name) / 1e6
+            psum(rollout_metrics.episode_length.sum(), self.dp_axis_name) / 1e6
         )
 
         workflow_metrics = state.metrics.replace(
@@ -422,7 +422,7 @@ class ECWorkflowTemplate(ECWorkflow):
             iterations=state.metrics.iterations + 1,
             best_objective=jnp.maximum(
                 state.metrics.best_objective,
-                pmax(jnp.max(rollout_metrics.episode_returns), self.dp_axis_name),
+                pmax(jnp.max(rollout_metrics.episode_return), self.dp_axis_name),
             ),
         )
 
@@ -450,7 +450,7 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
     def _metrics_to_fitnesses(self, metrics: MetricBase) -> chex.ArrayTree:
         # [..., episodes, objectives] -> [..., objectives]. Keep one-objective
         # vectors distinct from ordinary scalar fitnesses.
-        return jnp.mean(metrics.episode_returns, axis=-2)
+        return jnp.mean(metrics.episode_return, axis=-2)
 
     def _setup_workflow_metrics(self) -> MetricBase:
         return MultiObjectiveECWorkflowMetric()
@@ -519,7 +519,7 @@ class MultiObjectiveECWorkflowTemplate(ECWorkflowTemplate):
             self.dp_axis_name,
         )
         sampled_timesteps_m = (
-            psum(rollout_metrics.episode_lengths.sum(), self.dp_axis_name) / 1e6
+            psum(rollout_metrics.episode_length.sum(), self.dp_axis_name) / 1e6
         )
 
         workflow_metrics = state.metrics.replace(

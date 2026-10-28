@@ -156,8 +156,8 @@ def test_prediction_guided_training_preserves_history_archive_and_budget(tmp_pat
         archive = np.asarray(state.archive_returns)[: int(state.archive_count)]
         assert len(pareto_indices(archive)) == len(archive)
         evaluation, _ = workflow.evaluate(state)
-        assert evaluation.episode_returns.shape[1] == 2
-        np.testing.assert_array_equal(evaluation.episode_lengths, 2)
+        assert evaluation.episode_return.shape[1] == 2
+        np.testing.assert_array_equal(evaluation.episode_length, 2)
         workflow.recorder.reset_mock()
         workflow.learn(state)
         workflow.recorder.write.assert_not_called()
@@ -202,7 +202,7 @@ def test_pgmorl_eager_execution_does_not_compile_population_helpers():
             metrics, state = workflow.step(state)
             evaluation, _ = workflow.evaluate(state)
         assert np.isfinite(metrics.loss)
-        assert np.isfinite(evaluation.episode_returns).all()
+        assert np.isfinite(evaluation.episode_return).all()
         compile_fn.assert_not_called()
     finally:
         workflow.close()
@@ -217,8 +217,8 @@ def test_pgmorl_three_objective_training_and_archive():
         evaluation, _ = workflow.evaluate(state)
         assert np.isfinite(metrics.loss)
         assert state.performances.shape == (2, 3)
-        assert evaluation.episode_returns.shape[-1] == 3
-        assert np.isfinite(evaluation.episode_returns).all()
+        assert evaluation.episode_return.shape[-1] == 3
+        assert np.isfinite(evaluation.episode_return).all()
         np.testing.assert_allclose(
             state.population.agent_state.extra_state.preferences.sum(-1), 1
         )

@@ -40,8 +40,8 @@ class PopEpisodicTD3TrainMetric(MetricBase):
     """Independent TD3 population returns and training losses."""
 
     rb_size: jax.Array
-    pop_episode_returns: jax.Array
-    pop_episode_lengths: jax.Array
+    pop_episode_return: jax.Array
+    pop_episode_length: jax.Array
     rl_metrics: MetricBase
 
 
@@ -352,13 +352,13 @@ class PopEpisodicTD3Workflow(Workflow):
 
         train_metrics = PopEpisodicTD3TrainMetric(
             rb_size=replay_buffer_state.buffer_size,
-            pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
-            pop_episode_returns=eval_metrics.episode_returns.mean(-1),
+            pop_episode_length=eval_metrics.episode_length.mean(-1),
+            pop_episode_return=eval_metrics.episode_return.mean(-1),
             rl_metrics=td3_metrics,
         )
 
         # calculate the number of timestep
-        sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        sampled_timesteps = eval_metrics.episode_length.sum().astype(jnp.uint32)
         sampled_episodes = jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         workflow_metrics = state.metrics.replace(
@@ -390,8 +390,8 @@ class PopEpisodicTD3Workflow(Workflow):
         )
 
         eval_metrics = EvaluateMetric(
-            episode_returns=raw_eval_metrics.episode_returns.mean(-1),
-            episode_lengths=raw_eval_metrics.episode_lengths.mean(-1),
+            episode_return=raw_eval_metrics.episode_return.mean(-1),
+            episode_length=raw_eval_metrics.episode_length.mean(-1),
         )
 
         state = state.replace(key=key)
@@ -415,12 +415,12 @@ class PopEpisodicTD3Workflow(Workflow):
             self.recorder.write(workflow_metrics_dict, iters)
 
             train_metrics_dict = train_metrics.to_local_dict()
-            train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_returns"], histogram=True
+            train_metrics_dict["pop_episode_return"] = get_1d_array_statistics(
+                train_metrics_dict["pop_episode_return"], histogram=True
             )
 
-            train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_lengths"], histogram=True
+            train_metrics_dict["pop_episode_length"] = get_1d_array_statistics(
+                train_metrics_dict["pop_episode_length"], histogram=True
             )
 
             if train_metrics_dict["rl_metrics"] is not None:

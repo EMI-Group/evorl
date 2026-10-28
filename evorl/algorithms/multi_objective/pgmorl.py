@@ -300,7 +300,7 @@ class PGMORLWorkflow(Workflow):
         state = State(
             key=key,
             population=population,
-            performances=evaluation.episode_returns,
+            performances=evaluation.episode_return,
             metrics=MultiObjectiveWorkflowMetric(),
             pool_agents=template,
             pool_optimizers=optimizer,
@@ -496,7 +496,7 @@ class PGMORLWorkflow(Workflow):
         n = len(trained_indices)
         state = state.replace(
             population=population,
-            performances=evaluation.episode_returns,
+            performances=evaluation.episode_return,
             history_weights=state.history_weights.at[
                 history_count : history_count + n
             ].set(population.agent_state.extra_state.preferences[trained_indices]),
@@ -504,7 +504,7 @@ class PGMORLWorkflow(Workflow):
                 history_count : history_count + n
             ].set(before[trained_indices]),
             history_after=state.history_after.at[history_count : history_count + n].set(
-                evaluation.episode_returns[trained_indices]
+                evaluation.episode_return[trained_indices]
             ),
             history_count=jnp.int32(history_count + n),
             metrics=state.metrics.replace(
@@ -536,12 +536,12 @@ class PGMORLWorkflow(Workflow):
             else _evaluate_archive
         )
         evaluation = evaluate_fn(self, agents, jax.random.split(eval_key, count))
-        returns = evaluation.episode_returns.mean(axis=1)
+        returns = evaluation.episode_return.mean(axis=1)
         return MultiObjectiveEvaluateMetric(
             preferences=preferences,
-            episode_returns=returns,
-            scalarized_returns=(preferences * returns).sum(-1),
-            episode_lengths=evaluation.episode_lengths.mean(axis=1),
+            episode_return=returns,
+            scalarized_return=(preferences * returns).sum(-1),
+            episode_length=evaluation.episode_length.mean(axis=1),
         ), state.replace(key=key)
 
     def learn(self, state):

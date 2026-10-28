@@ -28,10 +28,8 @@ class _FixedEvaluator:
         axes = jax.sharding.get_abstract_mesh().manual_axes
         rank = jax.lax.axis_index("DP") if "DP" in axes else 0
         return EvaluateMetric(
-            episode_returns=jax.tree.map(
-                lambda x: x + offset + 10 * rank, self.rewards
-            ),
-            episode_lengths=jnp.array([2.0, 4.0]) + 2 * rank,
+            episode_return=jax.tree.map(lambda x: x + offset + 10 * rank, self.rewards),
+            episode_length=jnp.array([2.0, 4.0]) + 2 * rank,
         )
 
 
@@ -78,7 +76,7 @@ def test_evaluation_keeps_objectives_and_nested_population(
                 rank_mean = (mesh.size - 1) / 2 if distributed else 0
 
                 for got, source in zip(
-                    jax.tree.leaves(result.episode_returns),
+                    jax.tree.leaves(result.episode_return),
                     jax.tree.leaves(rewards),
                     strict=True,
                 ):
@@ -88,8 +86,8 @@ def test_evaluation_keeps_objectives_and_nested_population(
                         (*shape, *((1,) * average.ndim))
                     )
                     np.testing.assert_allclose(got, average + offset + 10 * rank_mean)
-                np.testing.assert_allclose(result.episode_lengths, 3 + 2 * rank_mean)
-                assert result.episode_lengths.shape == shape
+                np.testing.assert_allclose(result.episode_length, 3 + 2 * rank_mean)
+                assert result.episode_length.shape == shape
                 np.testing.assert_array_equal(updated.agent_state.model_state, offsets)
     finally:
         workflow.close()
@@ -125,9 +123,9 @@ def test_pbt_evaluation_keeps_each_members_reward_coordinates(
             result, _ = evaluate(state)
         expected = np.asarray(rewards).mean(0)
         offsets = (np.arange(4) * 100).reshape(4, *((1,) * expected.ndim))
-        assert result.pop_episode_returns.shape == (4, *expected.shape)
-        np.testing.assert_allclose(result.pop_episode_returns, expected + offsets)
-        np.testing.assert_allclose(result.pop_episode_lengths, 3)
-        assert result.pop_episode_lengths.shape == (4,)
+        assert result.pop_episode_return.shape == (4, *expected.shape)
+        np.testing.assert_allclose(result.pop_episode_return, expected + offsets)
+        np.testing.assert_allclose(result.pop_episode_length, 3)
+        assert result.pop_episode_length.shape == (4,)
     finally:
         workflow.close()

@@ -126,7 +126,7 @@ def test_morld_sac_data_parallel_local_replay_and_independent_policies(
             for leaf in jax.tree.leaves(updated.population.agent_state.model_state):
                 assert leaf.sharding.is_fully_replicated
             evaluation, _ = workflow.evaluate(updated)
-            assert np.isfinite(evaluation.episode_returns).all()
+            assert np.isfinite(evaluation.episode_return).all()
     finally:
         workflow.close()
 
@@ -224,8 +224,8 @@ def test_replay_ownership_and_training_counts(shared, continuous, jit):
             ring.data.extras.env_extras.termination[8:12], [0, 0, 1, 1]
         )
         evaluation, _ = workflow.evaluate(updated)
-        assert evaluation.episode_returns.shape == (2, 2)
-        assert np.isfinite(evaluation.episode_returns).all()
+        assert evaluation.episode_return.shape == (2, 2)
+        assert np.isfinite(evaluation.episode_return).all()
         assert int(state.metrics.training_updates) == 0
     finally:
         workflow.close()
@@ -428,8 +428,8 @@ def test_real_morld_sac_training(environment, request, multi_device):
                 else 6,
             )
             evaluation, _ = workflow.evaluate(state)
-            assert np.isfinite(evaluation.episode_returns).all()
-            assert np.all(np.asarray(evaluation.episode_lengths) > 0)
+            assert np.isfinite(evaluation.episode_return).all()
+            assert np.all(np.asarray(evaluation.episode_length) > 0)
     finally:
         workflow.close()
 
@@ -475,7 +475,7 @@ def test_nested_host_shared_replay_uses_the_selected_member_batch(mo_gymnasium_p
         train, state = jax.jit(jax.vmap(jax.vmap(workflow.step)))(state)
         evaluation, _ = jax.jit(jax.vmap(jax.vmap(workflow.evaluate)))(state)
         assert train.loss.shape == (2, 2)
-        assert evaluation.episode_returns.shape == (2, 2, 3, 2)
+        assert evaluation.episode_return.shape == (2, 2, 3, 2)
         assert state.population.replay_buffer_state is None
         assert state.replay_buffer_state.data.rewards.shape == (2, 2, 16, 2)
         np.testing.assert_array_equal(
@@ -488,7 +488,7 @@ def test_nested_host_shared_replay_uses_the_selected_member_batch(mo_gymnasium_p
             state.metrics.training_updates, np.full((2, 2), 6)
         )
         assert np.isfinite(train.loss).all()
-        assert np.isfinite(evaluation.episode_returns).all()
+        assert np.isfinite(evaluation.episode_return).all()
         jax.effects_barrier()
     finally:
         workflow.close()

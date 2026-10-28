@@ -129,12 +129,12 @@ class ERLOriginalWorkflow(ERLGAWorkflow):
         )
 
         # calculate the number of timestep
-        sampled_timesteps += ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        sampled_timesteps += ec_eval_metrics.episode_length.sum().astype(jnp.uint32)
         sampled_episodes += jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         train_metrics = ERLTrainMetric(
-            pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
-            pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
+            pop_episode_length=ec_eval_metrics.episode_length.mean(-1),
+            pop_episode_return=ec_eval_metrics.episode_return.mean(-1),
         )
 
         # ======== RL update ========
@@ -173,19 +173,19 @@ class ERLOriginalWorkflow(ERLGAWorkflow):
 
         train_metrics = train_metrics.replace(
             num_updates_per_iter=num_updates,
-            rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
-            rl_episode_returns=rl_eval_metrics.episode_returns.mean(-1),
+            rl_episode_length=rl_eval_metrics.episode_length.mean(-1),
+            rl_episode_return=rl_eval_metrics.episode_return.mean(-1),
             rl_metrics=td3_metrics,
         )
 
-        rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        rl_sampled_timesteps = rl_eval_metrics.episode_length.sum().astype(jnp.uint32)
         sampled_timesteps += rl_sampled_timesteps
         sampled_episodes += jnp.uint32(
             self.config.num_rl_agents * self.config.rollout_episodes
         )
 
         # ======== EC update ========
-        fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
+        fitnesses = ec_eval_metrics.episode_return.mean(axis=-1)
 
         if iterations % self.config.rl_injection_interval == 0:
             ec_metrics, ec_opt_state = self._ec_update_with_rl_injection(

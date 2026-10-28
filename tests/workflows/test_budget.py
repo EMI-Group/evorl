@@ -97,7 +97,7 @@ def test_learn_uses_only_workflow_devices(learn, mesh_size):
     workflow.evaluate = Mock(
         side_effect=lambda state: (
             EvaluateMetric(
-                episode_returns=jnp.float32(0), episode_lengths=jnp.float32(0)
+                episode_return=jnp.float32(0), episode_length=jnp.float32(0)
             ),
             state,
         )

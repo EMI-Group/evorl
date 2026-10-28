@@ -119,11 +119,11 @@ def test_mosac_warmup_step_and_replay_only_update(continuous, adaptive_alpha, ji
         assert int(updated.metrics.sampled_episodes) == 4
         assert int(updated.metrics.training_updates) == 8
         evaluation, _ = workflow.evaluate(updated)
-        assert evaluation.episode_returns.shape == (2,)
-        assert evaluation.episode_lengths.shape == ()
+        assert evaluation.episode_return.shape == (2,)
+        assert evaluation.episode_length.shape == ()
         np.testing.assert_allclose(
-            evaluation.scalarized_returns,
-            evaluation.preferences @ evaluation.episode_returns,
+            evaluation.scalarized_return,
+            evaluation.preferences @ evaluation.episode_return,
         )
     finally:
         workflow.close()
@@ -195,7 +195,7 @@ def test_mosac_two_device_step_and_standalone_update(
         assert np.isfinite(pure_update.loss)
         assert int(state.metrics.sampled_timesteps) == 20
         assert int(state.metrics.training_updates) == 8
-        assert evaluation.episode_returns.shape == (2,)
+        assert evaluation.episode_return.shape == (2,)
     finally:
         workflow.close()
 
@@ -237,9 +237,9 @@ def test_mosac_real_native_training(example):
         train, state = workflow.step(state)
         evaluation, _ = workflow.evaluate(state)
         assert np.isfinite(train.loss)
-        assert np.isfinite(evaluation.episode_returns).all()
+        assert np.isfinite(evaluation.episode_return).all()
         assert int(state.metrics.sampled_timesteps) == 4
-        assert evaluation.episode_returns.shape == (2,)
+        assert evaluation.episode_return.shape == (2,)
     finally:
         workflow.close()
 
@@ -283,8 +283,8 @@ def test_mosac_host_nested_vmap_training(example, mo_gymnasium_pools):
         evaluation, _ = jax.jit(jax.vmap(jax.vmap(workflow.evaluate)))(state)
         jax.effects_barrier()
         assert np.isfinite(train.loss).all()
-        assert np.isfinite(evaluation.episode_returns).all()
-        assert evaluation.episode_returns.shape == (2, 2, 2)
+        assert np.isfinite(evaluation.episode_return).all()
+        assert evaluation.episode_return.shape == (2, 2, 2)
         np.testing.assert_array_equal(state.metrics.sampled_timesteps, 4)
     finally:
         workflow.close()

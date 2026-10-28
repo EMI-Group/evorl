@@ -62,18 +62,18 @@ def test_mixed_scalar_and_vector_returns_keep_episode_and_objective_axes(
         key = jax.random.split(key, (2, 3))
         shape = (2, 3)
     result = (jax.jit(evaluate) if jit else evaluate)(key)
-    assert result.episode_returns.first.shape == (*shape, 6, num_objectives)
-    assert result.episode_returns.second.shape == (*shape, 6)
-    assert result.episode_lengths.shape == (*shape, 6)
+    assert result.episode_return.first.shape == (*shape, 6, num_objectives)
+    assert result.episode_return.second.shape == (*shape, 6)
+    assert result.episode_length.shape == (*shape, 6)
     expected = (1 + discount) * np.arange(1, num_objectives + 1)
     np.testing.assert_allclose(
-        result.episode_returns.first,
+        result.episode_return.first,
         np.broadcast_to(expected, (*shape, 6, num_objectives)),
     )
     np.testing.assert_allclose(
-        result.episode_returns.second, -2 * (1 + discount + discount**2)
+        result.episode_return.second, -2 * (1 + discount + discount**2)
     )
-    np.testing.assert_array_equal(result.episode_lengths, 3)
+    np.testing.assert_array_equal(result.episode_length, 3)
 
 
 @pytest.mark.parametrize("discount", [0.5, 1.0])
@@ -109,12 +109,12 @@ def test_returns_stop_at_agent_and_episode_boundaries(
     # Five requested episodes round up to three batches of two environments.
     shape = (*batch_shape, 6)
     length = min(episode_length, 4)
-    assert set(result.episode_returns) == {"first", "second"}
-    assert result.episode_lengths.shape == shape
-    for returns in result.episode_returns.values():
+    assert set(result.episode_return) == {"first", "second"}
+    assert result.episode_length.shape == shape
+    for returns in result.episode_return.values():
         assert returns.shape == shape
-    np.testing.assert_allclose(result.episode_lengths, length)
-    np.testing.assert_allclose(result.episode_returns.first, 1 + discount)
+    np.testing.assert_allclose(result.episode_length, length)
+    np.testing.assert_allclose(result.episode_return.first, 1 + discount)
     np.testing.assert_allclose(
-        result.episode_returns.second, -2 * sum(discount**t for t in range(length))
+        result.episode_return.second, -2 * sum(discount**t for t in range(length))
     )

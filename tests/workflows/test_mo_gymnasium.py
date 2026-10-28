@@ -78,14 +78,14 @@ def test_real_mo_workflow_updates_and_evaluates_vectors(
             state.metrics.training_updates, np.full(batch_shape, 2)
         )
         assert np.isfinite(training.loss).all()
-        assert evaluation.episode_returns.shape == (*batch_shape, 2, 2)
-        assert evaluation.episode_lengths.shape == (*batch_shape, 2)
-        assert np.isfinite(evaluation.episode_returns).all()
-        assert np.all(np.asarray(evaluation.episode_lengths) > 0)
-        assert np.all(np.asarray(evaluation.episode_lengths) <= 3)
+        assert evaluation.episode_return.shape == (*batch_shape, 2, 2)
+        assert evaluation.episode_length.shape == (*batch_shape, 2)
+        assert np.isfinite(evaluation.episode_return).all()
+        assert np.all(np.asarray(evaluation.episode_length) > 0)
+        assert np.all(np.asarray(evaluation.episode_length) <= 3)
         np.testing.assert_allclose(
-            evaluation.scalarized_returns,
-            (np.asarray(evaluation.preferences) * evaluation.episode_returns).sum(-1),
+            evaluation.scalarized_return,
+            (np.asarray(evaluation.preferences) * evaluation.episode_return).sum(-1),
             atol=1e-6,
         )
         assert any(

@@ -60,7 +60,7 @@ def test_native_ec_workflow_setup_step_and_learn(agent, multi_device, jit):
             assert np.all(np.isfinite(metrics.objectives))
             if agent != "nsga2":
                 evaluated, _ = workflow.evaluate(stepped)
-                assert np.isfinite(evaluated.episode_returns)
+                assert np.isfinite(evaluated.episode_return)
             final = workflow.learn(state)
             jax.block_until_ready(final)
             assert int(final.metrics.iterations) == 2

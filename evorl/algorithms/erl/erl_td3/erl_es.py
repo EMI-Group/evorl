@@ -26,10 +26,10 @@ logger = logging.getLogger(__name__)
 
 
 class EvaluateMetric(MetricBase):
-    rl_episode_returns: jax.Array
-    rl_episode_lengths: jax.Array
-    pop_center_episode_returns: jax.Array
-    pop_center_episode_lengths: jax.Array
+    rl_episode_return: jax.Array
+    rl_episode_length: jax.Array
+    pop_center_episode_return: jax.Array
+    pop_center_episode_length: jax.Array
 
 
 class ERLESWorkflow(ERLWorkflowBase):
@@ -149,21 +149,21 @@ class ERLESWorkflow(ERLWorkflowBase):
             pop_agent_state, replay_buffer_state, ec_rollout_key
         )
 
-        ec_sampled_timesteps = ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        ec_sampled_timesteps = ec_eval_metrics.episode_length.sum().astype(jnp.uint32)
         ec_sampled_episodes = jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         rl_eval_metrics, rl_trajectory, replay_buffer_state = self._rl_rollout(
             agent_state, replay_buffer_state, rl_rollout_key
         )
 
-        rl_sampled_timesteps = rl_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        rl_sampled_timesteps = rl_eval_metrics.episode_length.sum().astype(jnp.uint32)
         rl_sampled_episodes = jnp.uint32(
             self.config.num_rl_agents * self.config.rollout_episodes
         )
 
         train_metrics = ERLTrainMetric(
-            pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
-            pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
+            pop_episode_length=ec_eval_metrics.episode_length.mean(-1),
+            pop_episode_return=ec_eval_metrics.episode_return.mean(-1),
         )
 
         # ======== RL update ========
@@ -178,16 +178,16 @@ class ERLESWorkflow(ERLWorkflowBase):
         )
 
         train_metrics = train_metrics.replace(
-            rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
-            rl_episode_returns=rl_eval_metrics.episode_returns.mean(-1),
+            rl_episode_length=rl_eval_metrics.episode_length.mean(-1),
+            rl_episode_return=rl_eval_metrics.episode_return.mean(-1),
             rl_metrics=td3_metrics,
         )
 
         # ======== EC update ========
         # inject RL into EC
 
-        ec_fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
-        rl_fitnesses = rl_eval_metrics.episode_returns.mean(axis=-1)
+        ec_fitnesses = ec_eval_metrics.episode_return.mean(axis=-1)
+        rl_fitnesses = rl_eval_metrics.episode_return.mean(axis=-1)
         fitnesses, ec_opt_state = self._rl_injection(
             ec_opt_state, agent_state, ec_fitnesses, rl_fitnesses
         )
@@ -244,10 +244,10 @@ class ERLESWorkflow(ERLWorkflowBase):
         )
 
         eval_metrics = EvaluateMetric(
-            rl_episode_returns=rl_eval_metrics.episode_returns.mean(-1),
-            rl_episode_lengths=rl_eval_metrics.episode_lengths.mean(-1),
-            pop_center_episode_returns=ec_eval_metrics.episode_returns.mean(),
-            pop_center_episode_lengths=ec_eval_metrics.episode_lengths.mean(),
+            rl_episode_return=rl_eval_metrics.episode_return.mean(-1),
+            rl_episode_length=rl_eval_metrics.episode_length.mean(-1),
+            pop_center_episode_return=ec_eval_metrics.episode_return.mean(),
+            pop_center_episode_length=ec_eval_metrics.episode_length.mean(),
         )
 
         state = state.replace(key=key)
@@ -275,31 +275,31 @@ class ERLESWorkflow(ERLWorkflowBase):
             self.recorder.write(workflow_metrics_dict, iters)
 
             train_metrics_dict = train_metrics.to_local_dict()
-            train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_returns"], histogram=True
+            train_metrics_dict["pop_episode_return"] = get_1d_array_statistics(
+                train_metrics_dict["pop_episode_return"], histogram=True
             )
 
-            train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
-                train_metrics_dict["pop_episode_lengths"], histogram=True
+            train_metrics_dict["pop_episode_length"] = get_1d_array_statistics(
+                train_metrics_dict["pop_episode_length"], histogram=True
             )
 
             if self.config.num_rl_agents > 1:
-                train_metrics_dict["rl_episode_lengths"] = get_1d_array_statistics(
-                    train_metrics_dict["rl_episode_lengths"], histogram=True
+                train_metrics_dict["rl_episode_length"] = get_1d_array_statistics(
+                    train_metrics_dict["rl_episode_length"], histogram=True
                 )
-                train_metrics_dict["rl_episode_returns"] = get_1d_array_statistics(
-                    train_metrics_dict["rl_episode_returns"], histogram=True
+                train_metrics_dict["rl_episode_return"] = get_1d_array_statistics(
+                    train_metrics_dict["rl_episode_return"], histogram=True
                 )
                 train_metrics_dict["rl_metrics"]["raw_loss_dict"] = jtu.tree_map(
                     get_1d_array_statistics,
                     train_metrics_dict["rl_metrics"]["raw_loss_dict"],
                 )
             else:
-                train_metrics_dict["rl_episode_lengths"] = train_metrics_dict[
-                    "rl_episode_lengths"
+                train_metrics_dict["rl_episode_length"] = train_metrics_dict[
+                    "rl_episode_length"
                 ].squeeze(0)
-                train_metrics_dict["rl_episode_returns"] = train_metrics_dict[
-                    "rl_episode_returns"
+                train_metrics_dict["rl_episode_return"] = train_metrics_dict[
+                    "rl_episode_return"
                 ].squeeze(0)
 
             self.recorder.write(train_metrics_dict, iters)

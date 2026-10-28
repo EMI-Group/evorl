@@ -653,7 +653,7 @@ class GPILSWorkflow(MultiObjectiveOffPolicyWorkflow):
     def _evaluate_support(self, agent_state, key):
         key = rng_fold_in_axis(key, self.dp_axis_name)
         result = self.evaluator.evaluate(agent_state, key, self.config.eval_episodes)
-        return pmean(result.episode_returns.mean(0), self.dp_axis_name)
+        return pmean(result.episode_return.mean(0), self.dp_axis_name)
 
     @classmethod
     def enable_shmap(cls):

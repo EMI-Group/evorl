@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 
 
 class PBTTrainMetric(MetricBase):
-    pop_episode_returns: jax.Array
-    pop_episode_lengths: jax.Array
+    pop_episode_return: jax.Array
+    pop_episode_length: jax.Array
     pop_train_metrics: MetricBase
     pop: chex.ArrayTree
 
@@ -54,8 +54,8 @@ class PBTOffpolicyTrainMetric(PBTTrainMetric):
 
 
 class PBTEvalMetric(MetricBase):
-    pop_episode_returns: jax.Array
-    pop_episode_lengths: jax.Array
+    pop_episode_return: jax.Array
+    pop_episode_length: jax.Array
 
 
 class PBTWorkflowMetric(MetricBase):
@@ -236,7 +236,7 @@ class PBTWorkflowBase(Workflow):
         pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)
 
         # customize your pop metrics here
-        pop_episode_returns = pop_eval_metrics.episode_returns
+        pop_episode_returns = pop_eval_metrics.episode_return
 
         # ===== warmup or exploit & explore ======
         key, exploit_and_explore_key = jax.random.split(state.key)
@@ -277,8 +277,8 @@ class PBTWorkflowBase(Workflow):
         )
 
         train_metrics = PBTTrainMetric(
-            pop_episode_returns=pop_eval_metrics.episode_returns,
-            pop_episode_lengths=pop_eval_metrics.episode_lengths,
+            pop_episode_return=pop_eval_metrics.episode_return,
+            pop_episode_length=pop_eval_metrics.episode_length,
             pop_train_metrics=pop_train_metrics,
             pop=state.pop,  # save prev pop instead of new pop to match the metrics
         )
@@ -301,8 +301,8 @@ class PBTWorkflowBase(Workflow):
             )
 
             eval_metrics = EvaluateMetric(
-                episode_returns=raw_eval_metrics.episode_returns.mean(axis=0),
-                episode_lengths=raw_eval_metrics.episode_lengths.mean(),
+                episode_return=raw_eval_metrics.episode_return.mean(axis=0),
+                episode_length=raw_eval_metrics.episode_length.mean(),
             )
             return eval_metrics
 
@@ -321,8 +321,8 @@ class PBTWorkflowBase(Workflow):
         )
 
         eval_metrics = PBTEvalMetric(
-            pop_episode_returns=pop_eval_metrics.episode_returns,
-            pop_episode_lengths=pop_eval_metrics.episode_lengths,
+            pop_episode_return=pop_eval_metrics.episode_return,
+            pop_episode_length=pop_eval_metrics.episode_length,
         )
 
         return eval_metrics, state.replace(key=key)
@@ -428,11 +428,11 @@ class PBTWorkflowTemplate(PBTWorkflowBase):
             pop_train_metric["train_episode_return"] = train_episode_return
 
         train_metrics_dict.update(
-            pop_episode_returns=get_1d_array_statistics(
-                train_metrics_dict["pop_episode_returns"], histogram=True
+            pop_episode_return=get_1d_array_statistics(
+                train_metrics_dict["pop_episode_return"], histogram=True
             ),
-            pop_episode_lengths=get_1d_array_statistics(
-                train_metrics_dict["pop_episode_lengths"], histogram=True
+            pop_episode_length=get_1d_array_statistics(
+                train_metrics_dict["pop_episode_length"], histogram=True
             ),
             pop=convert_pop_to_df(train_metrics_dict["pop"]),
             pop_train_metrics=jtu.tree_map(get_1d_array_statistics, pop_train_metric),
@@ -709,7 +709,7 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         pop_eval_metrics, pop_workflow_state = eval_fn(pop_workflow_state)
 
         # customize your pop metrics here
-        pop_episode_returns = pop_eval_metrics.episode_returns
+        pop_episode_returns = pop_eval_metrics.episode_return
 
         # ===== warmup or exploit & explore ======
         key, exploit_and_explore_key = jax.random.split(state.key)
@@ -738,8 +738,8 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
         )
 
         train_metrics = PBTOffpolicyTrainMetric(
-            pop_episode_returns=pop_eval_metrics.episode_returns,
-            pop_episode_lengths=pop_eval_metrics.episode_lengths,
+            pop_episode_return=pop_eval_metrics.episode_return,
+            pop_episode_length=pop_eval_metrics.episode_length,
             pop_train_metrics=pop_train_metrics,
             pop=state.pop,  # save prev pop instead of new pop to match the metrics
             rb_size=replay_buffer_state.buffer_size,
@@ -757,11 +757,11 @@ class PBTOffpolicyWorkflowTemplate(PBTWorkflowTemplate):
     def _record_step_metrics(self, train_metrics, workflow_metrics, iters):
         train_metrics_dict = train_metrics.to_local_dict()
 
-        train_metrics_dict["pop_episode_returns"] = get_1d_array_statistics(
-            train_metrics_dict["pop_episode_returns"], histogram=True
+        train_metrics_dict["pop_episode_return"] = get_1d_array_statistics(
+            train_metrics_dict["pop_episode_return"], histogram=True
         )
-        train_metrics_dict["pop_episode_lengths"] = get_1d_array_statistics(
-            train_metrics_dict["pop_episode_lengths"], histogram=True
+        train_metrics_dict["pop_episode_length"] = get_1d_array_statistics(
+            train_metrics_dict["pop_episode_length"], histogram=True
         )
         train_metrics_dict["pop"] = convert_pop_to_df(train_metrics_dict["pop"])
         train_metrics_dict["pop_train_metrics"] = jtu.tree_map(

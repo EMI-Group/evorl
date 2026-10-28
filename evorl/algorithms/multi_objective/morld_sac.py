@@ -225,7 +225,7 @@ class MORLDSACWorkflow(Workflow):
             ),
         )
         archive = update_decomposition_archive(
-            archive, evaluation.episode_returns, population.agent_state, preferences
+            archive, evaluation.episode_return, population.agent_state, preferences
         )
         return State(
             key=key,
@@ -311,7 +311,7 @@ class MORLDSACWorkflow(Workflow):
         evaluation, population = jax.vmap(self.workflow.evaluate)(population)
         archive = update_decomposition_archive(
             state.archive,
-            evaluation.episode_returns,
+            evaluation.episode_return,
             population.agent_state,
             state.preferences,
         )
@@ -370,7 +370,7 @@ class MORLDSACWorkflow(Workflow):
         if self.config.weight_adaptation == "PSA":
             preferences = psa_preferences(
                 preferences,
-                evaluation.episode_returns,
+                evaluation.episode_return,
                 archive.returns,
                 archive.valid,
                 self.config.psa_delta,
@@ -415,9 +415,9 @@ class MORLDSACWorkflow(Workflow):
         preferences = state.preferences
         result = MultiObjectiveEvaluateMetric(
             preferences=preferences,
-            episode_returns=evaluation.episode_returns,
-            scalarized_returns=(preferences * evaluation.episode_returns).sum(-1),
-            episode_lengths=evaluation.episode_lengths,
+            episode_return=evaluation.episode_return,
+            scalarized_return=(preferences * evaluation.episode_return).sum(-1),
+            episode_length=evaluation.episode_length,
         )
         return result, state.replace(population=population)
 

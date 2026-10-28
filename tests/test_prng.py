@@ -288,6 +288,6 @@ def test_multiobjective_evaluator_maps_typed_key_batch_axes(batch_shape):
     for _ in batch_shape:
         evaluate = jax.vmap(evaluate)
     metrics = jax.jit(evaluate)(keys)
-    assert metrics.episode_returns.shape == (*batch_shape, 4, 1)
-    np.testing.assert_array_equal(metrics.episode_returns, 2.0)
-    np.testing.assert_array_equal(metrics.episode_lengths, 2)
+    assert metrics.episode_return.shape == (*batch_shape, 4, 1)
+    np.testing.assert_array_equal(metrics.episode_return, 2.0)
+    np.testing.assert_array_equal(metrics.episode_length, 2)

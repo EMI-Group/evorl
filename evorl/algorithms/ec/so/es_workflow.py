@@ -81,8 +81,8 @@ class ESWorkflowTemplate(ECWorkflowTemplate):
         )
 
         eval_metrics = EvaluateMetric(
-            episode_returns=raw_eval_metrics.episode_returns.mean(),
-            episode_lengths=raw_eval_metrics.episode_lengths.mean(),
+            episode_return=raw_eval_metrics.episode_return.mean(),
+            episode_length=raw_eval_metrics.episode_length.mean(),
         ).all_reduce(axis_name=self.dp_axis_name)
 
         return eval_metrics, state.replace(key=key)

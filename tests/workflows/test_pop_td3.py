@@ -107,8 +107,8 @@ def test_population_step_preserves_members_and_updates_native_optimizers(
                 )
             )
         evaluation, _ = workflow.evaluate(updated)
-        assert evaluation.episode_returns.shape == (3,)
-        assert np.isfinite(evaluation.episode_returns).all()
+        assert evaluation.episode_return.shape == (3,)
+        assert np.isfinite(evaluation.episode_return).all()
         if normalize_obs:
             np.testing.assert_array_equal(
                 updated.agent_state.obs_preprocessor_state.count,

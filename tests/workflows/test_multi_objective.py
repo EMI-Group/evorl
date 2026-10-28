@@ -130,12 +130,12 @@ def test_vector_workflow_training_evaluation_and_input_isolation(
         )
         evaluation, _ = workflow.evaluate(updated)
         num_preferences = 1 if objectives == 1 else objectives + 1
-        assert evaluation.episode_returns.shape == (num_preferences, objectives)
-        assert evaluation.episode_lengths.shape == (num_preferences,)
-        np.testing.assert_allclose(evaluation.episode_lengths, 2)
+        assert evaluation.episode_return.shape == (num_preferences, objectives)
+        assert evaluation.episode_length.shape == (num_preferences,)
+        np.testing.assert_allclose(evaluation.episode_length, 2)
         np.testing.assert_allclose(
-            evaluation.scalarized_returns,
-            (evaluation.preferences * evaluation.episode_returns).sum(-1),
+            evaluation.scalarized_return,
+            (evaluation.preferences * evaluation.episode_return).sum(-1),
         )
         for previous, current in zip(
             jax.tree.leaves(before),
@@ -185,7 +185,7 @@ def test_morl_two_device_training(algorithm, mesh_factory):
         assert not state.rollout_preferences.sharding.is_fully_replicated
         for value in jax.tree.leaves(state.agent_state):
             assert value.sharding.is_fully_replicated
-        assert evaluation.episode_returns.shape == (3, 2)
+        assert evaluation.episode_return.shape == (3, 2)
     finally:
         workflow.close()
 
@@ -212,7 +212,7 @@ def test_morl_nested_populations_match_independent_training(algorithm):
         ):
             np.testing.assert_allclose(actual[0, 0], expected, atol=2e-5, rtol=2e-5)
         evaluation, _ = jax.jit(jax.vmap(jax.vmap(workflow.evaluate)))(state)
-        assert evaluation.episode_returns.shape == (2, 2, 3, 2)
+        assert evaluation.episode_return.shape == (2, 2, 3, 2)
     finally:
         workflow.close()
 
@@ -228,7 +228,7 @@ def test_morl_learn_budget_and_logging(algorithm):
         assert int(state.metrics.sampled_timesteps) == 24
         assert int(state.metrics.iterations) == 2
         data = workflow.recorder.write.call_args.args[0]
-        assert data["eval/episode_returns"].shape == (3, 2)
+        assert data["eval/episode_return"].shape == (3, 2)
         assert data["eval/preferences"].shape == (3, 2)
         assert workflow.checkpoint_manager.save.call_args.kwargs["force"] is True
         workflow.recorder.reset_mock()
@@ -400,9 +400,9 @@ def test_morl_yaml_runs_training_and_evaluation_on_real_environments(example):
         evaluation, _ = workflow.evaluate(state)
         assert np.isfinite(metrics.loss)
         assert int(state.metrics.sampled_timesteps) == 4
-        assert evaluation.episode_returns.shape == (5, 2)
-        assert np.isfinite(evaluation.episode_returns).all()
-        assert np.all(evaluation.episode_lengths > 0)
+        assert evaluation.episode_return.shape == (5, 2)
+        assert np.isfinite(evaluation.episode_return).all()
+        assert np.all(evaluation.episode_length > 0)
     finally:
         workflow.close()
 

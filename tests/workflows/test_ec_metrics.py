@@ -25,8 +25,8 @@ from omegaconf import OmegaConf
 class _FitnessEvaluator(Evaluator):
     def evaluate(self, agent_state, key, num_episodes):
         return PyTreeDict(
-            episode_returns=agent_state.model_state + jnp.arange(num_episodes),
-            episode_lengths=jnp.full((num_episodes,), 2),
+            episode_return=agent_state.model_state + jnp.arange(num_episodes),
+            episode_length=jnp.full((num_episodes,), 2),
         )
 
 
@@ -34,8 +34,8 @@ class _VectorFitnessEvaluator(_FitnessEvaluator):
     def evaluate(self, agent_state, key, num_episodes):
         metrics = super().evaluate(agent_state, key, num_episodes)
         return metrics.replace(
-            episode_returns=jnp.stack(
-                [metrics.episode_returns, jnp.full((num_episodes,), 2.0)], axis=-1
+            episode_return=jnp.stack(
+                [metrics.episode_return, jnp.full((num_episodes,), 2.0)], axis=-1
             )
         )
 

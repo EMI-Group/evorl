@@ -22,7 +22,7 @@ for i in range(100):
     if i % 10 == 0:
         eval_metrics, state = workflow.evaluate(state)
         print(
-            f"Step {i} Avg Return: {eval_metrics.episode_returns} Avg Length: {eval_metrics.episode_lengths}"
+            f"Step {i} Avg Return: {eval_metrics.episode_return} Avg Length: {eval_metrics.episode_length}"
         )
 
 # release resources like checkpoint manager, recorders.

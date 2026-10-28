@@ -89,8 +89,8 @@ class RandomAgentWorkflow(RLWorkflow):
         )
 
         eval_metrics = EvaluateMetric(
-            episode_returns=raw_eval_metrics.episode_returns.mean(axis=0),
-            episode_lengths=raw_eval_metrics.episode_lengths.mean(),
+            episode_return=raw_eval_metrics.episode_return.mean(axis=0),
+            episode_length=raw_eval_metrics.episode_length.mean(),
         ).all_reduce(axis_name=self.dp_axis_name)
 
         state = state.replace(key=key)

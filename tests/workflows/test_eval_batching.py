@@ -48,7 +48,7 @@ def test_nested_evaluation_preserves_completed_members():
     ):
         np.testing.assert_allclose(result, reference, rtol=1e-6, atol=1e-6)
     metrics, state = actual
-    assert np.unique(np.asarray(metrics.episode_lengths.max(-1))).size > 1
+    assert np.unique(np.asarray(metrics.episode_length.max(-1))).size > 1
     # Completed members freeze at their own stopping point while others run.
     assert np.all(np.asarray(state.env_state) <= 4)
 
@@ -112,5 +112,5 @@ def test_host_evaluation_with_mixed_agent_axes(shared_key, rollout_length):
     ):
         np.testing.assert_allclose(result, reference, rtol=1e-6, atol=1e-6)
     np.testing.assert_array_equal(
-        actual[0].episode_lengths, np.minimum(states.info.lengths, rollout_length)
+        actual[0].episode_length, np.minimum(states.info.lengths, rollout_length)
     )

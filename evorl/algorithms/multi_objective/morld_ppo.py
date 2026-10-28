@@ -36,9 +36,9 @@ def _evaluate_policies(workflow, population, preferences):
     metrics, population = jax.vmap(workflow.evaluate)(population)
     return MultiObjectiveEvaluateMetric(
         preferences=preferences,
-        episode_returns=metrics.episode_returns,
-        scalarized_returns=(preferences * metrics.episode_returns).sum(-1),
-        episode_lengths=metrics.episode_lengths,
+        episode_return=metrics.episode_return,
+        scalarized_return=(preferences * metrics.episode_return).sum(-1),
+        episode_length=metrics.episode_length,
     ), population
 
 
@@ -157,7 +157,7 @@ class MORLDPPOWorkflow(Workflow):
             ),
         )
         archive = update_decomposition_archive(
-            archive, evaluation.episode_returns, population.agent_state, preferences
+            archive, evaluation.episode_return, population.agent_state, preferences
         )
         return State(
             key=key,
@@ -196,7 +196,7 @@ class MORLDPPOWorkflow(Workflow):
         )
         archive = update_decomposition_archive(
             state.archive,
-            evaluation.episode_returns,
+            evaluation.episode_return,
             population.agent_state,
             state.preferences,
         )
@@ -249,7 +249,7 @@ class MORLDPPOWorkflow(Workflow):
         if self.config.weight_adaptation == "PSA":
             preferences = psa_preferences(
                 preferences,
-                evaluation.episode_returns,
+                evaluation.episode_return,
                 archive.returns,
                 archive.valid,
                 self.config.psa_delta,

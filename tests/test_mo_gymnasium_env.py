@@ -303,9 +303,9 @@ def test_vector_host_evaluation_stops_at_each_native_episode(
     )
     jax.block_until_ready(states)
     np.testing.assert_array_equal(
-        metrics.episode_lengths, np.broadcast_to([2, 3], (2, 2, 2))
+        metrics.episode_length, np.broadcast_to([2, 3], (2, 2, 2))
     )
     np.testing.assert_allclose(
-        metrics.episode_returns,
+        metrics.episode_return,
         np.broadcast_to(np.array([23, 6])[:, None] * [1, -2, 3], (2, 2, 2, 3)),
     )

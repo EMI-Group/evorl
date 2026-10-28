@@ -149,8 +149,8 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
 
         def evaluate(self, state):
             return EvaluateMetric(
-                episode_returns=state.agent_state.model_state.w.sum(),
-                episode_lengths=jnp.float32(1),
+                episode_return=state.agent_state.model_state.w.sum(),
+                episode_length=jnp.float32(1),
             ), state
 
     class Harness(PBTWorkflowTemplate):
@@ -226,8 +226,8 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
 
     evaluator = SimpleNamespace(
         evaluate=lambda agent_state, key, num_episodes: EvaluateMetric(
-            episode_returns=agent_state.model_state.w.sum()[None],
-            episode_lengths=jnp.ones(1),
+            episode_return=agent_state.model_state.w.sum()[None],
+            episode_length=jnp.ones(1),
         )
     )
 
@@ -249,7 +249,7 @@ def test_population_selection_matches_single_device(workflow_kind, meta_mesh, re
     assert state.pop_workflow_state.agent_state.model_state.w.sharding.spec == jax.P(
         META_POP_AXIS_NAME, None
     )
-    assert metrics.pop_episode_returns.shape == (4,)
+    assert metrics.pop_episode_return.shape == (4,)
     jax.block_until_ready(state)
     if cls is OffHarness:
         if cfg.shared_replay_buffer:

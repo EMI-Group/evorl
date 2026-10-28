@@ -34,7 +34,7 @@ class _CountingESWorkflow(ESWorkflowTemplate):
 
     def evaluate(self, state):
         return EvaluateMetric(
-            episode_returns=jnp.float32(0), episode_lengths=jnp.float32(0)
+            episode_return=jnp.float32(0), episode_length=jnp.float32(0)
         ), state
 
 

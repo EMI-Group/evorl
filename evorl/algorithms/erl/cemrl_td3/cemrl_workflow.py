@@ -33,14 +33,14 @@ logger = logging.getLogger(__name__)
 
 
 class EvaluateMetric(MetricBase):
-    pop_center_episode_returns: jax.Array
-    pop_center_episode_lengths: jax.Array
+    pop_center_episode_return: jax.Array
+    pop_center_episode_length: jax.Array
 
 
 class CEMRLTrainMetric(MetricBase):
     rb_size: jax.Array
-    pop_episode_returns: jax.Array
-    pop_episode_lengths: jax.Array
+    pop_episode_return: jax.Array
+    pop_episode_length: jax.Array
     rl_metrics: MetricBase | None = None
     ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
@@ -368,8 +368,8 @@ class CEMRLWorkflowBase(Workflow):
         )
 
         eval_metrics = EvaluateMetric(
-            pop_center_episode_returns=raw_eval_metrics.episode_returns.mean(),
-            pop_center_episode_lengths=raw_eval_metrics.episode_lengths.mean(),
+            pop_center_episode_return=raw_eval_metrics.episode_return.mean(),
+            pop_center_episode_length=raw_eval_metrics.episode_length.mean(),
         )
 
         state = state.replace(key=key)

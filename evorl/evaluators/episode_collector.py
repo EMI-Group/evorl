@@ -112,8 +112,8 @@ class EpisodeCollector(PyTreeNode):
         episode_lengths = compute_episode_length(episode_trajectory.dones)
 
         eval_metrics = EvaluateMetric(
-            episode_returns=discount_returns,
-            episode_lengths=episode_lengths,
+            episode_return=discount_returns,
+            episode_length=episode_lengths,
         )
 
         return eval_metrics, episode_trajectory

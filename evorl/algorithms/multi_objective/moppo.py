@@ -442,13 +442,13 @@ class MOPPOWorkflow(OnPolicyWorkflow):
         metrics = self.evaluator.evaluate(
             state.agent_state, eval_key, self.config.eval_episodes
         )
-        returns = pmean(metrics.episode_returns.mean(0), self.dp_axis_name)
+        returns = pmean(metrics.episode_return.mean(0), self.dp_axis_name)
         preferences = state.agent_state.extra_state.preferences
         result = MultiObjectiveEvaluateMetric(
             preferences=preferences,
-            episode_returns=returns,
-            scalarized_returns=jnp.sum(returns * preferences),
-            episode_lengths=pmean(metrics.episode_lengths.mean(), self.dp_axis_name),
+            episode_return=returns,
+            scalarized_return=jnp.sum(returns * preferences),
+            episode_length=pmean(metrics.episode_length.mean(), self.dp_axis_name),
         )
         return result, state.replace(key=key)
 

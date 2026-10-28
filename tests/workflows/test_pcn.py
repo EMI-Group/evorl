@@ -121,13 +121,13 @@ def test_pcn_training_and_command_evaluation_are_functional(
             )
         )
         evaluation, evaluated = workflow.evaluate(updated)
-        assert evaluation.episode_returns.shape == (2, objectives)
-        assert evaluation.desired_returns.shape == (2, objectives)
-        np.testing.assert_allclose(evaluation.episode_lengths, 2)
+        assert evaluation.episode_return.shape == (2, objectives)
+        assert evaluation.desired_return.shape == (2, objectives)
+        np.testing.assert_allclose(evaluation.episode_length, 2)
         np.testing.assert_allclose(
             evaluation.command_error,
             np.linalg.norm(
-                evaluation.episode_returns - evaluation.desired_returns, axis=-1
+                evaluation.episode_return - evaluation.desired_return, axis=-1
             ),
         )
         assert evaluated.metrics.sampled_timesteps == updated.metrics.sampled_timesteps
@@ -160,7 +160,7 @@ def test_pcn_nested_vmap_matches_independent_instances(
         metrics, updated = jax.jit(jax.vmap(jax.vmap(workflow.step)))(states)
         evaluation, _ = jax.jit(jax.vmap(jax.vmap(workflow.evaluate)))(updated)
         assert metrics.loss.shape == (2, 2)
-        assert evaluation.episode_returns.shape == (2, 2, 2, 2)
+        assert evaluation.episode_return.shape == (2, 2, 2, 2)
         independent = workflow.setup(keys[1, 0])
         _, independent = workflow.step(independent)
         for batched, separate in zip(
@@ -257,7 +257,7 @@ def test_real_deep_sea_treasure_data_parallel_training(normalize_obs):
             metric, updated = workflow.step(state)
             evaluation, _ = workflow.evaluate(updated)
             assert np.isfinite(metric.loss)
-            assert np.isfinite(evaluation.episode_returns).all()
+            assert np.isfinite(evaluation.episode_return).all()
             assert int(state.metrics.sampled_episodes) == 0
             assert int(updated.metrics.sampled_episodes) == 2
             assert int(updated.metrics.sampled_timesteps) > int(
@@ -295,11 +295,11 @@ def test_real_mo_gymnasium_complete_pcn_training(
             batch_shape = ()
         jax.block_until_ready(state)
         assert state.episode_archive.returns.shape == (*batch_shape, 6, 4, 2)
-        assert evaluation.episode_returns.shape == (*batch_shape, 2, 2)
+        assert evaluation.episode_return.shape == (*batch_shape, 2, 2)
         assert np.isfinite(training.loss).all()
-        assert np.isfinite(evaluation.episode_returns).all()
-        assert np.all(np.asarray(evaluation.episode_lengths) > 0)
-        assert np.all(np.asarray(evaluation.episode_lengths) <= 4)
+        assert np.isfinite(evaluation.episode_return).all()
+        assert np.all(np.asarray(evaluation.episode_length) > 0)
+        assert np.all(np.asarray(evaluation.episode_length) <= 4)
         np.testing.assert_array_equal(state.metrics.sampled_episodes, 2)
         np.testing.assert_array_equal(state.metrics.training_updates, 2)
         # The archive contains four prefill episodes and two training episodes.
@@ -544,7 +544,7 @@ def test_pcn_data_parallel_global_archive_and_replicated_updates(
             np.testing.assert_allclose(
                 evaluation.command_error,
                 np.linalg.norm(
-                    evaluation.episode_returns - evaluation.desired_returns, axis=-1
+                    evaluation.episode_return - evaluation.desired_return, axis=-1
                 ),
             )
     finally:

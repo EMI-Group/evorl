@@ -65,8 +65,8 @@ class PBTParamOpenESWorkflow(PBTWorkflowTemplate):
             )
 
             eval_metrics = EvaluateMetric(
-                episode_returns=raw_eval_metrics.episode_returns.mean(),
-                episode_lengths=raw_eval_metrics.episode_lengths.mean(),
+                episode_return=raw_eval_metrics.episode_return.mean(),
+                episode_length=raw_eval_metrics.episode_length.mean(),
             )
             return eval_metrics
 
@@ -85,8 +85,8 @@ class PBTParamOpenESWorkflow(PBTWorkflowTemplate):
         )
 
         eval_metrics = PBTEvalMetric(
-            pop_episode_returns=pop_eval_metrics.episode_returns,
-            pop_episode_lengths=pop_eval_metrics.episode_lengths,
+            pop_episode_return=pop_eval_metrics.episode_return,
+            pop_episode_length=pop_eval_metrics.episode_length,
         )
 
         return eval_metrics, state.replace(key=key)

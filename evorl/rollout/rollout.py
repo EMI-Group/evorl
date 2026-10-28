@@ -254,8 +254,8 @@ def fast_eval_rollout_episode(
             `max_episode_steps`.
 
     Returns:
-        A tuple `(metrics, env_state)`. The metrics contain `episode_returns`
-        and `episode_lengths` for each environment; `env_state` is the final
+        A tuple `(metrics, env_state)`. The metrics contain `episode_return`
+        and `episode_length` for each environment; `env_state` is the final
         environment state. Returns retain the reward's optional objective
         axis; lengths have the same shape as `env_state.done`.
     """
@@ -264,7 +264,7 @@ def fast_eval_rollout_episode(
 
     def _terminate_cond(carry):
         env_state, current_key, prev_metrics = carry
-        return (prev_metrics.episode_lengths < rollout_length).all() & (
+        return (prev_metrics.episode_length < rollout_length).all() & (
             ~env_state.done.all()
         )
 
@@ -282,9 +282,9 @@ def fast_eval_rollout_episode(
             reward_mask = reward_mask[..., None]
 
         metrics = PyTreeDict(
-            episode_returns=prev_metrics.episode_returns
+            episode_return=prev_metrics.episode_return
             + reward_mask * transition.rewards,
-            episode_lengths=prev_metrics.episode_lengths + active.astype(jnp.int32),
+            episode_length=prev_metrics.episode_length + active.astype(jnp.int32),
         )
 
         return env_nstate, next_key, metrics
@@ -297,8 +297,8 @@ def fast_eval_rollout_episode(
             key,
             mark_varying(
                 PyTreeDict(
-                    episode_returns=jnp.zeros_like(env_state.reward),
-                    episode_lengths=jnp.zeros_like(env_state.done, dtype=jnp.int32),
+                    episode_return=jnp.zeros_like(env_state.reward),
+                    episode_length=jnp.zeros_like(env_state.done, dtype=jnp.int32),
                 ),
                 manual_axes,
             ),
@@ -337,21 +337,21 @@ def host_fast_eval_rollout_episode(
         rollout_length: Maximum number of steps per episode.
 
     Returns:
-        A tuple `(metrics, env_state)` containing `episode_returns`,
-        `episode_lengths`, and the final environment state.
+        A tuple `(metrics, env_state)` containing `episode_return`,
+        `episode_length`, and the final environment state.
     """
 
     @custom_vmap
     def evaluate(env_state, agent_state, key):
         manual_axes = jax.sharding.get_abstract_mesh().manual_axes
         metrics = PyTreeDict(
-            episode_returns=jnp.zeros_like(env_state.reward),
-            episode_lengths=jnp.zeros_like(env_state.done, dtype=jnp.int32),
+            episode_return=jnp.zeros_like(env_state.reward),
+            episode_length=jnp.zeros_like(env_state.done, dtype=jnp.int32),
         )
 
         def continue_evaluation(carry):
             state, key, metrics = carry
-            return (metrics.episode_lengths.max() < rollout_length) & ~state.done.all()
+            return (metrics.episode_length.max() < rollout_length) & ~state.done.all()
 
         def step(carry):
             state, key, metrics = carry
@@ -364,9 +364,9 @@ def host_fast_eval_rollout_episode(
             if next_state.reward.ndim == state.done.ndim + 1:
                 reward_mask = reward_mask[..., None]
             metrics = metrics.replace(
-                episode_returns=metrics.episode_returns
+                episode_return=metrics.episode_return
                 + jnp.where(reward_mask, next_state.reward, 0),
-                episode_lengths=metrics.episode_lengths + active.astype(jnp.int32),
+                episode_length=metrics.episode_length + active.astype(jnp.int32),
             )
             return next_state, next_key, metrics
 

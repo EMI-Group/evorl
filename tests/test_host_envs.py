@@ -279,7 +279,7 @@ def test_host_episode_resets_stay_ordered(host_envs, monkeypatch):
         ("step", 2),
     ]
     for metrics, state in (first, second):
-        np.testing.assert_array_equal(metrics.episode_lengths, [3])
+        np.testing.assert_array_equal(metrics.episode_length, [3])
         np.testing.assert_array_equal(state.done, [1])
 
 

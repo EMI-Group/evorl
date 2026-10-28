@@ -123,15 +123,15 @@ def test_evaluator_and_collector_preserve_reward_axes(reward_keys, discount):
     metrics = evaluate(keys)
     collected, trajectory = collect(keys)
     reward_shape = () if reward_keys is None else (len(reward_keys),)
-    assert metrics.episode_returns.shape == (2, 2, 6, *reward_shape)
-    assert metrics.episode_lengths.shape == (2, 2, 6)
-    assert collected.episode_returns.shape == metrics.episode_returns.shape
+    assert metrics.episode_return.shape == (2, 2, 6, *reward_shape)
+    assert metrics.episode_length.shape == (2, 2, 6)
+    assert collected.episode_return.shape == metrics.episode_return.shape
     assert trajectory.rewards.shape == (2, 2, 5, 6, *reward_shape)
     assert trajectory.dones.shape == (2, 2, 5, 6)
     for result in (metrics, collected):
         np.testing.assert_allclose(
-            result.episode_returns,
-            expected_returns(result.episode_lengths, reward_keys, discount),
+            result.episode_return,
+            expected_returns(result.episode_length, reward_keys, discount),
         )
 
 
@@ -160,9 +160,9 @@ def test_nested_fast_evaluation_masks_each_environment(
     metrics, horizons = jax.jit(jax.vmap(jax.vmap(evaluate)))(keys)
     assert np.unique(np.asarray(horizons)).size > 1
     lengths = np.minimum(horizons, rollout_length)
-    np.testing.assert_array_equal(metrics.episode_lengths, lengths)
+    np.testing.assert_array_equal(metrics.episode_length, lengths)
     np.testing.assert_allclose(
-        metrics.episode_returns, expected_returns(lengths, reward_keys)
+        metrics.episode_return, expected_returns(lengths, reward_keys)
     )
 
 
@@ -408,7 +408,7 @@ def test_multiobjective_fitness_averages_episodes_only(num_objectives):
         3, 4, num_objectives
     )
     workflow = object.__new__(MultiObjectiveECWorkflowTemplate)
-    actual = workflow._metrics_to_fitnesses(PyTreeDict(episode_returns=returns))
+    actual = workflow._metrics_to_fitnesses(PyTreeDict(episode_return=returns))
     np.testing.assert_allclose(actual, np.asarray(returns).mean(axis=1))
     assert actual.shape == (3, num_objectives)
 
@@ -437,10 +437,10 @@ def test_sharded_evaluation_preserves_objectives_without_communication(
     key = jax.device_put(jax.random.key(1), jax.P())
     compiled = evaluate.lower(key).compile()
     metrics = compiled(key)
-    assert metrics.episode_lengths.shape == (dp_mesh.size * 3,)
+    assert metrics.episode_length.shape == (dp_mesh.size * 3,)
     np.testing.assert_allclose(
-        metrics.episode_returns,
-        expected_returns(metrics.episode_lengths, reward_keys),
+        metrics.episode_return,
+        expected_returns(metrics.episode_length, reward_keys),
     )
     # Shards evaluate independent episodes; gathering them is not part of rollout.
     assert not compiled_collectives(compiled.as_text())

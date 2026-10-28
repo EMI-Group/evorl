@@ -221,11 +221,11 @@ def test_population_training_preserves_input_and_updates_critic(
     )
     assert int(updated.metrics.iterations) == expected_iterations
     episodes_per_iter = config.pop_size * config.episodes_for_fitness
-    timesteps_per_iter = metrics.pop_episode_lengths.sum() * config.episodes_for_fitness
-    if isinstance(metrics, ERLTrainMetric) and metrics.rl_episode_lengths is not None:
+    timesteps_per_iter = metrics.pop_episode_length.sum() * config.episodes_for_fitness
+    if isinstance(metrics, ERLTrainMetric) and metrics.rl_episode_length is not None:
         num_learners = 1 if algorithm == "erl-openes" else config.num_rl_agents
         episodes_per_iter += num_learners * config.rollout_episodes
-        timesteps_per_iter += metrics.rl_episode_lengths.sum() * config.rollout_episodes
+        timesteps_per_iter += metrics.rl_episode_length.sum() * config.rollout_episodes
     assert (
         int(updated.metrics.sampled_episodes) == expected_iterations * episodes_per_iter
     )
@@ -794,10 +794,10 @@ def test_erl_learn_records_evaluates_and_saves_final_state(
         )
     )
     train_metrics = ERLTrainMetric(
-        pop_episode_returns=jnp.ones(2),
-        pop_episode_lengths=jnp.ones(2),
-        rl_episode_returns=jnp.ones(2),
-        rl_episode_lengths=jnp.ones(2),
+        pop_episode_return=jnp.ones(2),
+        pop_episode_length=jnp.ones(2),
+        rl_episode_return=jnp.ones(2),
+        rl_episode_length=jnp.ones(2),
         rl_metrics=TD3TrainMetric(
             actor_loss=jnp.zeros(()),
             critic_loss=jnp.zeros(()),
@@ -807,7 +807,7 @@ def test_erl_learn_records_evaluates_and_saves_final_state(
     workflow.step = Mock(side_effect=[(train_metrics, final)])
     workflow.evaluate = Mock(
         return_value=(
-            EvaluateMetric(episode_returns=jnp.ones(2), episode_lengths=jnp.ones(2)),
+            EvaluateMetric(episode_return=jnp.ones(2), episode_length=jnp.ones(2)),
             final,
         )
     )

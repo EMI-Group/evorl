@@ -107,16 +107,16 @@ class EvaluateMetric(MetricBase):
     """Evaluation metrics for RLWorkflow.
 
     Attributes:
-        episode_returns: Evaluators return shape `(num_episodes,)` for scalar
+        episode_return: Evaluators return shape `(num_episodes,)` for scalar
             rewards or `(num_episodes, num_objectives)` for vector rewards.
             Workflows average only the episode axis, producing a scalar or
             `(num_objectives,)`. Multi-agent returns keep the agent mapping.
-        episode_lengths: Evaluators return shape `(num_episodes,)`; workflows
+        episode_length: Evaluators return shape `(num_episodes,)`; workflows
             report the mean length, independent of the reward objectives.
     """
 
-    episode_returns: jax.Array | AgentMapping[jax.Array] = metric_field(reduce_fn=pmean)
-    episode_lengths: jax.Array = metric_field(reduce_fn=pmean)
+    episode_return: jax.Array | AgentMapping[jax.Array] = metric_field(reduce_fn=pmean)
+    episode_length: jax.Array = metric_field(reduce_fn=pmean)
 
 
 class ECWorkflowMetric(MetricBase):

@@ -61,7 +61,7 @@ def test_folded_steps_evaluate_and_force_save_at_the_end(
     workflow.evaluate = Mock(
         side_effect=lambda state: (
             EvaluateMetric(
-                episode_returns=jnp.float32(0), episode_lengths=jnp.float32(0)
+                episode_return=jnp.float32(0), episode_length=jnp.float32(0)
             ),
             state,
         )

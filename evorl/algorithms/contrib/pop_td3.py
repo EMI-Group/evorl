@@ -480,8 +480,8 @@ class PopTD3Workflow(TD3Workflow):
         )
 
         eval_metrics = EvaluateMetric(
-            episode_returns=raw_eval_metrics.episode_returns.mean(-1),
-            episode_lengths=raw_eval_metrics.episode_lengths.mean(-1),
+            episode_return=raw_eval_metrics.episode_return.mean(-1),
+            episode_length=raw_eval_metrics.episode_length.mean(-1),
         ).all_reduce(axis_name=self.dp_axis_name)
 
         state = state.replace(key=key)

@@ -139,11 +139,11 @@ def test_moppo_step_and_vector_evaluation(continuous, jit):
         assert int(updated.metrics.sampled_episodes) == 4
         assert int(updated.metrics.training_updates) == 4
         evaluation, _ = workflow.evaluate(updated)
-        assert evaluation.episode_returns.shape == (2,)
-        assert evaluation.episode_lengths.shape == ()
+        assert evaluation.episode_return.shape == (2,)
+        assert evaluation.episode_length.shape == ()
         np.testing.assert_allclose(
-            evaluation.scalarized_returns,
-            evaluation.episode_returns @ evaluation.preferences,
+            evaluation.scalarized_return,
+            evaluation.episode_return @ evaluation.preferences,
         )
         assert any(
             not np.array_equal(x, y)
@@ -173,7 +173,7 @@ def test_moppo_nested_vmap():
         metrics, state = jax.jit(jax.vmap(jax.vmap(workflow.step)))(state)
         evaluation, _ = jax.jit(jax.vmap(jax.vmap(workflow.evaluate)))(state)
         assert metrics.loss.shape == (2, 2)
-        assert evaluation.episode_returns.shape == (2, 2, 2)
+        assert evaluation.episode_return.shape == (2, 2, 2)
         assert bool(jnp.isfinite(metrics.loss).all())
         metrics, _ = jax.jit(jax.vmap(jax.vmap(workflow.step)))(state)
         assert bool(jnp.isfinite(metrics.loss).all())
@@ -222,7 +222,7 @@ def test_moppo_two_device_step(mesh_factory):
             evaluation, _ = workflow.evaluate(state)
         assert np.isfinite(metrics.loss)
         assert int(state.metrics.sampled_timesteps) == 16
-        assert evaluation.episode_returns.shape == (2,)
+        assert evaluation.episode_return.shape == (2,)
     finally:
         workflow.close()
 
@@ -269,8 +269,8 @@ def test_moppo_family_real_playground_training(algorithm):
         metric, state = workflow.step(state)
         evaluation, _ = workflow.evaluate(state)
         assert np.isfinite(metric.loss)
-        assert np.isfinite(evaluation.episode_returns).all()
-        assert np.all(evaluation.episode_lengths > 0)
+        assert np.isfinite(evaluation.episode_return).all()
+        assert np.all(evaluation.episode_length > 0)
     finally:
         workflow.close()
 
@@ -316,7 +316,7 @@ def test_moppo_family_host_multi_objective_training(algorithm, mo_gymnasium_pool
             state = jax.jit(jax.vmap(jax.vmap(workflow.setup)))(keys)
             metric, state = jax.jit(jax.vmap(jax.vmap(workflow.step)))(state)
             evaluation, _ = jax.jit(jax.vmap(jax.vmap(workflow.evaluate)))(state)
-            assert evaluation.episode_returns.shape == (2, 2, 2)
+            assert evaluation.episode_return.shape == (2, 2, 2)
         else:
             state = workflow.setup(jax.random.key(8))
             metric, state = workflow.step(state)
@@ -327,10 +327,10 @@ def test_moppo_family_host_multi_objective_training(algorithm, mo_gymnasium_pool
             state = workflow.learn(state)
             assert int(state.metrics.iterations) == before
             evaluation, _ = workflow.evaluate(state)
-            assert evaluation.episode_returns.shape[1] == 2
+            assert evaluation.episode_return.shape[1] == 2
         jax.effects_barrier()
         assert np.isfinite(metric.loss).all()
-        assert np.isfinite(evaluation.episode_returns).all()
-        assert np.all(evaluation.episode_lengths == 3)
+        assert np.isfinite(evaluation.episode_return).all()
+        assert np.all(evaluation.episode_length == 3)
     finally:
         workflow.close()

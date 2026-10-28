@@ -311,8 +311,8 @@ class IPPOWorkflow(OnPolicyWorkflow):
             state.agent_state, eval_key, self.config.eval_episodes
         )
         return EvaluateMetric(
-            episode_returns=jax.tree.map(jnp.mean, metrics.episode_returns),
-            episode_lengths=metrics.episode_lengths.mean(),
+            episode_return=jax.tree.map(jnp.mean, metrics.episode_return),
+            episode_length=metrics.episode_length.mean(),
         ).all_reduce(self.dp_axis_name), state.replace(key=key)
 
     def step(self, state):

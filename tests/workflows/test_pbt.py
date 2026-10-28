@@ -104,7 +104,7 @@ def test_rollout_uses_local_population_axes(rollout_kind, meta_mesh):
             result, _ = eval_rollout_episode(env.step, action_fn, state, None, key, 2)
             return result.rewards.sum()
         result, _ = fast_eval_rollout_episode(env.step, action_fn, state, None, key, 2)
-        return result.episode_returns.sum()
+        return result.episode_return.sum()
 
     keys = jax.random.split(jax.random.key(3), 4)
     expected = jax.jit(instance)(keys[0])
@@ -248,7 +248,7 @@ def test_pbt_members_train_independently(target):
             _, state = workflow.step(state)
             metrics, state = workflow.evaluate(state)
             jax.block_until_ready(state)
-            assert np.isfinite(metrics.pop_episode_returns).all()
+            assert np.isfinite(metrics.pop_episode_return).all()
             assert state.pop_workflow_state.key.sharding.spec == jax.P(
                 META_POP_AXIS_NAME
             )

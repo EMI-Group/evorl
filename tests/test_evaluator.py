@@ -37,8 +37,8 @@ def test_eval_rollout_epsiode():
 
         metric = evaluator.evaluate(agent_state, rollout_key, 7 * 3)
 
-        assert metric.episode_returns.shape == (7 * 3,)
-        assert metric.episode_lengths.shape == (7 * 3,)
+        assert metric.episode_return.shape == (7 * 3,)
+        assert metric.episode_length.shape == (7 * 3,)
 
 
 def _normal_eval(rewards, dones, max_length):
@@ -52,7 +52,7 @@ def _normal_eval(rewards, dones, max_length):
 def _fast_eval(rewards, dones, rollout_length):
     def _terminate_cond(carry):
         env_state, prev_metrics = carry
-        return (prev_metrics.episode_lengths < rollout_length).all() & (
+        return (prev_metrics.episode_length < rollout_length).all() & (
             ~env_state.done.all()
         )
 
@@ -70,8 +70,8 @@ def _fast_eval(rewards, dones, rollout_length):
         )
 
         metrics = PyTreeDict(
-            episode_returns=prev_metrics.episode_returns + (1 - prev_dones) * reward,
-            episode_lengths=prev_metrics.episode_lengths
+            episode_return=prev_metrics.episode_return + (1 - prev_dones) * reward,
+            episode_length=prev_metrics.episode_length
             + (1 - prev_dones).astype(
                 jnp.int32
             ),  # this will miss counting the last step
@@ -92,13 +92,13 @@ def _fast_eval(rewards, dones, rollout_length):
         (
             env_state,
             PyTreeDict(
-                episode_returns=jnp.zeros(batch_shape),
-                episode_lengths=jnp.zeros(batch_shape, dtype=jnp.int32),
+                episode_return=jnp.zeros(batch_shape),
+                episode_length=jnp.zeros(batch_shape, dtype=jnp.int32),
             ),
         ),
     )
 
-    return metrics.episode_returns, metrics.episode_lengths
+    return metrics.episode_return, metrics.episode_length
 
 
 def _setup_trajectory1(max_length=17):

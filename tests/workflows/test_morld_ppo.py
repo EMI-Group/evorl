@@ -101,7 +101,7 @@ def test_morld_data_parallel_round_robin_and_policy_transfer():
                 assert not env_obs.sharding.is_fully_replicated
             assert env_obs.shape[:2] == (2, 2)
             evaluation, _ = workflow.evaluate(state)
-            assert np.isfinite(evaluation.episode_returns).all()
+            assert np.isfinite(evaluation.episode_return).all()
     finally:
         workflow.close()
 
@@ -151,7 +151,7 @@ def test_morld_training_transfer_only_copies_actor_and_resets_optimizer(jit):
         assert_tree_close(reset_optimizer, target.opt_state)
         assert int(state.metrics.sampled_timesteps) == 0
         evaluation, _ = workflow.evaluate(updated)
-        assert evaluation.episode_returns.shape == (2, 2)
+        assert evaluation.episode_return.shape == (2, 2)
     finally:
         workflow.close()
 
@@ -171,7 +171,7 @@ def test_morld_vector_shape_and_psa_nested_vmap(objectives, multi_device, mesh_f
             train, state = jax.jit(jax.vmap(jax.vmap(workflow.step)))(state)
             evaluation, _ = jax.jit(jax.vmap(jax.vmap(workflow.evaluate)))(state)
         assert train.loss.shape == (2, 2)
-        assert evaluation.episode_returns.shape == (2, 2, 2, objectives)
+        assert evaluation.episode_return.shape == (2, 2, 2, objectives)
         assert bool(jnp.isfinite(train.loss).all())
         np.testing.assert_allclose(state.preferences.sum(-1), 1)
     finally:
@@ -272,22 +272,22 @@ def test_morld_real_environment_training(environment, request, multi_device):
                 evaluate.assert_called_once()
             assert int(state.metrics.sampled_timesteps) == 4
             evaluation, _ = workflow.evaluate(state)
-            assert evaluation.episode_returns.shape == (
+            assert evaluation.episode_return.shape == (
                 2,
                 workflow.workflow.agent.num_objectives,
             )
-            assert np.isfinite(evaluation.episode_returns).all()
-            assert np.all(np.asarray(evaluation.episode_lengths) > 0)
+            assert np.isfinite(evaluation.episode_return).all()
+            assert np.all(np.asarray(evaluation.episode_length) > 0)
             # Final logging must evaluate the transferred population, not the
             # pre-cooperation snapshots used by the archive and PSA.
             logged = [
                 call.args[0]
                 for call in workflow.recorder.write.call_args_list
-                if "eval/episode_returns" in call.args[0]
+                if "eval/episode_return" in call.args[0]
             ]
             assert len(logged) == 1
             np.testing.assert_allclose(
-                logged[0]["eval/episode_returns"], state.evaluation.episode_returns
+                logged[0]["eval/episode_return"], state.evaluation.episode_return
             )
     finally:
         workflow.close()

@@ -670,9 +670,9 @@ class MOSACWorkflow(OffPolicyWorkflowTemplate):
         weights = state.agent_state.extra_state.preferences
         return MultiObjectiveEvaluateMetric(
             preferences=weights,
-            episode_returns=evaluation.episode_returns.mean(0),
-            scalarized_returns=(evaluation.episode_returns.mean(0) * weights).sum(),
-            episode_lengths=evaluation.episode_lengths.mean(),
+            episode_return=evaluation.episode_return.mean(0),
+            scalarized_return=(evaluation.episode_return.mean(0) * weights).sum(),
+            episode_length=evaluation.episode_length.mean(),
         ).all_reduce(self.dp_axis_name), state.replace(key=key)
 
     @classmethod

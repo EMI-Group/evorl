@@ -60,10 +60,10 @@ def test_ppo_jumanji_under_nested_vmap():
         for leaf in jax.tree.leaves(metrics):
             assert np.isfinite(leaf).all()
         metrics, state = jax.jit(jax.vmap(jax.vmap(workflow.evaluate)))(state)
-        assert metrics.episode_returns.shape == (2, 2)
-        assert np.isfinite(metrics.episode_returns).all()
-        assert np.all(metrics.episode_lengths > 0)
-        assert np.all(metrics.episode_lengths <= 3)
+        assert metrics.episode_return.shape == (2, 2)
+        assert np.isfinite(metrics.episode_return).all()
+        assert np.all(metrics.episode_length > 0)
+        assert np.all(metrics.episode_length <= 3)
     finally:
         workflow.close()
 
@@ -86,8 +86,8 @@ def test_random_agent_with_integer_vector_actions():
     try:
         state = jax.jit(workflow.setup)(jax.random.key(0))
         metrics, state = jax.jit(workflow.evaluate)(state)
-        assert np.isfinite(metrics.episode_returns).all()
-        assert np.all(metrics.episode_lengths > 0)
-        assert np.all(metrics.episode_lengths <= 2)
+        assert np.isfinite(metrics.episode_return).all()
+        assert np.all(metrics.episode_length > 0)
+        assert np.all(metrics.episode_length <= 2)
     finally:
         workflow.close()

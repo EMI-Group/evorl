@@ -232,11 +232,11 @@ class EvoXWorkflow(Workflow):
         )
         workflow_metrics = MultiObjectiveECWorkflowMetric(
             sampled_episodes=jnp.asarray(
-                sum(batch.episode_lengths.size for batch in evaluation_metrics),
+                sum(batch.episode_length.size for batch in evaluation_metrics),
                 dtype=jnp.uint32,
             ),
             sampled_timesteps_m=sum(
-                batch.episode_lengths.sum() for batch in evaluation_metrics
+                batch.episode_length.sum() for batch in evaluation_metrics
             )
             / 1e6,
         )
@@ -275,10 +275,10 @@ class EvoXWorkflow(Workflow):
             self.config.episodes_for_fitness,
         )
         # Axis 1 is episodes for both scalar and vector rewards.
-        fitness = metrics.episode_returns.mean(axis=1)
+        fitness = metrics.episode_return.mean(axis=1)
         return (
             fitness,
-            PyTreeDict(objectives=fitness, episode_lengths=metrics.episode_lengths),
+            PyTreeDict(objectives=fitness, episode_length=metrics.episode_length),
             evaluation_state.replace(key=key),
         )
 
@@ -296,9 +296,9 @@ class EvoXWorkflow(Workflow):
         workflow_metrics = state.metrics.replace(
             iterations=state.metrics.iterations + 1,
             sampled_episodes=state.metrics.sampled_episodes
-            + sum(batch.episode_lengths.size for batch in evaluation_metrics),
+            + sum(batch.episode_length.size for batch in evaluation_metrics),
             sampled_timesteps_m=state.metrics.sampled_timesteps_m
-            + sum(batch.episode_lengths.sum() for batch in evaluation_metrics) / 1e6,
+            + sum(batch.episode_length.sum() for batch in evaluation_metrics) / 1e6,
         )
         return train_metrics, state.replace(
             algorithm_state=algorithm_state, metrics=workflow_metrics

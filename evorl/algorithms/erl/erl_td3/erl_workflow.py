@@ -33,11 +33,11 @@ logger = logging.getLogger(__name__)
 
 
 class ERLTrainMetric(MetricBase):
-    pop_episode_returns: jax.Array | None = None
-    pop_episode_lengths: jax.Array | None = None
+    pop_episode_return: jax.Array | None = None
+    pop_episode_length: jax.Array | None = None
     rb_size: jax.Array | None = None
-    rl_episode_returns: jax.Array | None = None
-    rl_episode_lengths: jax.Array | None = None
+    rl_episode_return: jax.Array | None = None
+    rl_episode_length: jax.Array | None = None
     rl_metrics: MetricBase | None = None
     ec_info: PyTreeDict = metric_field(default_factory=PyTreeDict)
 
@@ -284,19 +284,19 @@ class ERLWorkflowBase(Workflow):
         ec_eval_metrics, ec_trajectory, replay_buffer_state = self._ec_rollout(
             pop_agent_state, replay_buffer_state, ec_rollout_key
         )
-        fitnesses = ec_eval_metrics.episode_returns.mean(axis=-1)
+        fitnesses = ec_eval_metrics.episode_return.mean(axis=-1)
         # 3. tell()
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         train_metrics = ERLTrainMetric(
-            pop_episode_lengths=ec_eval_metrics.episode_lengths.mean(-1),
-            pop_episode_returns=ec_eval_metrics.episode_returns.mean(-1),
+            pop_episode_length=ec_eval_metrics.episode_length.mean(-1),
+            pop_episode_return=ec_eval_metrics.episode_return.mean(-1),
             ec_info=ec_metrics,
             rb_size=replay_buffer_state.buffer_size,
         )
 
         # calculate the number of timestep
-        sampled_timesteps = ec_eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        sampled_timesteps = ec_eval_metrics.episode_length.sum().astype(jnp.uint32)
         sampled_episodes = jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         workflow_metrics = state.metrics.replace(

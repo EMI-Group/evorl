@@ -70,8 +70,6 @@ class MultiAgentEvaluator(PyTreeNode):
             episode, key, (), length=math.ceil(num_episodes / self.env.num_envs)
         )
         return EvaluateMetric(
-            episode_returns=jax.tree.map(
-                lambda x: x.reshape(-1, *x.shape[2:]), returns
-            ),
-            episode_lengths=lengths.reshape(-1),
+            episode_return=jax.tree.map(lambda x: x.reshape(-1, *x.shape[2:]), returns),
+            episode_length=lengths.reshape(-1),
         )

@@ -124,9 +124,9 @@ def test_ppo_multi_agent_workflow_updates_and_evaluates(algorithm, continuous, j
                 )
             )
         evaluation, _ = workflow.evaluate(updated)
-        np.testing.assert_allclose(evaluation.episode_returns.first, 2)
-        np.testing.assert_allclose(evaluation.episode_returns.second, -6)
-        np.testing.assert_allclose(evaluation.episode_lengths, 3)
+        np.testing.assert_allclose(evaluation.episode_return.first, 2)
+        np.testing.assert_allclose(evaluation.episode_return.second, -6)
+        np.testing.assert_allclose(evaluation.episode_length, 3)
         for before, after in zip(
             jax.tree.leaves(original), jax.tree.leaves(state.agent_state), strict=True
         ):
@@ -206,7 +206,7 @@ def test_multi_agent_learn_records_agent_returns_and_stops_at_budget(algorithm):
         assert int(state.metrics.iterations) == 2
         assert int(state.metrics.sampled_timesteps) == budget
         evaluation = workflow.recorder.write.call_args.args[0]
-        assert set(evaluation["eval/episode_returns"]) == {"first", "second"}
+        assert set(evaluation["eval/episode_return"]) == {"first", "second"}
         assert workflow.recorder.write.call_args.args[1] == 2
         assert workflow.checkpoint_manager.save.call_args.kwargs["force"] is True
         # Resuming a completed budget does not run another optimizer update.
@@ -251,8 +251,8 @@ def test_offpolicy_multi_agent_workflow_preserves_joint_replay_and_targets(
                 nnx.merge(updated.opt_state[name].actor, copy=True).step[...]
             ) == (1 if algorithm == "matd3" else 2)
         evaluation, _ = workflow.evaluate(updated)
-        np.testing.assert_allclose(evaluation.episode_returns.first, 2)
-        np.testing.assert_allclose(evaluation.episode_returns.second, -6)
+        np.testing.assert_allclose(evaluation.episode_return.first, 2)
+        np.testing.assert_allclose(evaluation.episode_return.second, -6)
         for before, after in zip(
             jax.tree.leaves(original),
             jax.tree.leaves((state.agent_state, state.opt_state)),
@@ -319,7 +319,7 @@ def test_multi_agent_workflows_run_with_two_data_parallel_devices(algorithm, dp_
             metrics, updated = workflow.step(state)
             evaluation, _ = workflow.evaluate(updated)
         assert np.isfinite(metrics.loss)
-        np.testing.assert_allclose(evaluation.episode_returns.first, 2)
+        np.testing.assert_allclose(evaluation.episode_return.first, 2)
         expected_samples = 24 if algorithm in ("maddpg", "matd3") else 16
         assert int(updated.metrics.sampled_timesteps) == expected_samples
         for variable in jax.tree.leaves(updated.agent_state):
@@ -368,8 +368,8 @@ def test_multi_agent_workflows_train_on_real_jaxmarl_mpe(algorithm):
         metrics2, updated = workflow.step(updated)
         evaluation, _ = workflow.evaluate(updated)
         assert np.isfinite(metrics.loss) and np.isfinite(metrics2.loss)
-        assert set(evaluation.episode_returns) == set(workflow.env.agents)
-        assert all(np.isfinite(x) for x in evaluation.episode_returns.values())
+        assert set(evaluation.episode_return) == set(workflow.env.agents)
+        assert all(np.isfinite(x) for x in evaluation.episode_return.values())
         assert int(updated.metrics.iterations) == 2
     finally:
         workflow.close()
@@ -413,9 +413,9 @@ def test_multi_agent_ppo_with_real_jumanji_structured_observations(algorithm):
         evaluation, _ = workflow.evaluate(state)
         assert np.isfinite(metrics.loss)
         assert int(state.metrics.sampled_timesteps) == 8
-        assert set(evaluation.episode_returns) == set(workflow.env.agents)
-        assert all(np.isfinite(x) for x in evaluation.episode_returns.values())
-        np.testing.assert_allclose(evaluation.episode_lengths, 3)
+        assert set(evaluation.episode_return) == set(workflow.env.agents)
+        assert all(np.isfinite(x) for x in evaluation.episode_return.values())
+        np.testing.assert_allclose(evaluation.episode_length, 3)
     finally:
         workflow.close()
 

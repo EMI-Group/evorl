@@ -129,7 +129,7 @@ class CEMRLOriginalWorkflow(CEMRLWorkflow):
             pop_agent_state, replay_buffer_state, key
         )
 
-        fitnesses = eval_metrics.episode_returns.mean(axis=-1)
+        fitnesses = eval_metrics.episode_return.mean(axis=-1)
         ec_metrics, ec_opt_state = self.ec_optimizer.tell(ec_opt_state, fitnesses)
 
         return eval_metrics, ec_metrics, fitnesses, replay_buffer_state, ec_opt_state
@@ -233,8 +233,8 @@ class CEMRLOriginalWorkflow(CEMRLWorkflow):
 
         train_metrics = CEMRLTrainMetric(
             rb_size=replay_buffer_state.buffer_size,
-            pop_episode_lengths=eval_metrics.episode_lengths.mean(-1),
-            pop_episode_returns=eval_metrics.episode_returns.mean(-1),
+            pop_episode_length=eval_metrics.episode_length.mean(-1),
+            pop_episode_return=eval_metrics.episode_return.mean(-1),
             rl_metrics=td3_metrics,
             ec_info=ec_info,
             num_updates_per_iter=num_updates,
@@ -242,7 +242,7 @@ class CEMRLOriginalWorkflow(CEMRLWorkflow):
         )
 
         # calculate the number of timestep
-        sampled_timesteps = eval_metrics.episode_lengths.sum().astype(jnp.uint32)
+        sampled_timesteps = eval_metrics.episode_length.sum().astype(jnp.uint32)
         sampled_episodes = jnp.uint32(self.config.episodes_for_fitness * pop_size)
 
         workflow_metrics = state.metrics.replace(
