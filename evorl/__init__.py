@@ -2,7 +2,7 @@ from .agent import Agent, RandomAgent
 from .sample_batch import SampleBatch, Episode
 from .types import PyTreeDict, PyTreeData, PyTreeNode
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = [
     "__version__",
