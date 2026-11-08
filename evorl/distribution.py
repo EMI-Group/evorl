@@ -51,9 +51,10 @@ def get_trancated_norm_dist(loc, scale, low, high):
 
 
 def _normal_log_cdf(x: jax.Array) -> jax.Array:
-    """Compute a standard Normal log CDF for the JAX 0.12.0 workaround.
+    """Compute a standard Normal log CDF for the JAX VMA workaround.
 
-    JAX 0.12.0's `erf`/`erfc` derivatives fail VMA checks inside `shard_map`.
+    The `erf`/`erfc` derivatives in JAX 0.12.0 and 0.12.0.1 fail VMA checks
+    inside `shard_map`.
     Use `log_ndtr` in the central region, and differentiate the same third-order
     tail expansion used by TFP directly. This avoids the cancellation in
     `log_ndtr`'s `exp(log_pdf - log_cdf)` derivative for large negative inputs.
@@ -108,10 +109,8 @@ class TanhTransformedDistribution(tfd.TransformedDistribution):
         log_epsilon = jnp.log(1.0 - threshold)
         # Those 2 values are differentiable w.r.t. model parameters, such that the
         # gradient is defined everywhere.
-        # Temporary workaround for the confirmed JAX 0.12.0 VMA regression.
-        # Leave other releases on the original TFP path; do not assume that
-        # future JAX versions need this workaround without reproducing it.
-        if jax.__version_info__ == (0, 12, 0):
+        # Temporary workaround for the JAX releases with the VMA regression.
+        if jax.__version_info__ in ((0, 12, 0), (0, 12, 0, 1)):
             loc, scale = self.distribution.loc, self.distribution.scale
             self._log_prob_left = (
                 _normal_log_cdf((-inverse_threshold - loc) / scale) - log_epsilon

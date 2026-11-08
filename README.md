@@ -90,8 +90,8 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 
 
 > [!NOTE]
-> JAX 0.12.0 currently fails VMA checks when differentiating `erf`/`erfc` inside
-> `shard_map`. EvoRL includes a local workaround for this release only. For now,
+> JAX 0.12.0 and 0.12.0.1 fail VMA checks when differentiating `erf`/`erfc`
+> inside `shard_map`. EvoRL includes a local workaround for these releases. For now,
 > install the tested JAX version with CUDA 13 support:
 >
 > ```shell

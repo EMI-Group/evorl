@@ -212,7 +212,8 @@ def test_tanh_normal_forward_and_backward_grid(jit):
 
 
 @pytest.mark.skipif(
-    jax.__version_info__ == (0, 12, 0), reason="Other releases retain the TFP path"
+    jax.__version_info__ in ((0, 12, 0), (0, 12, 0, 1)),
+    reason="These JAX releases use the VMA workaround",
 )
 def test_other_jax_versions_preserve_tfp_tail_probabilities():
     normal = tfd.Normal(jnp.array([-20.0, 0.0, 20.0]), jnp.array([0.001, 0.3, 1.0]))
