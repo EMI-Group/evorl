@@ -23,6 +23,7 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
     "myst_parser",
+    "sphinxcontrib.mermaid",
     "sphinx_copybutton",
     "autodoc2",
 ]
@@ -80,12 +81,15 @@ myst_enable_extensions = [
     # "linkify",
 ]
 
+myst_fence_as_directive = ["mermaid"]
+mermaid_height = "auto"
+
 # fix duplicate object description issue for class attributes (e.g.: dataclass)
 napoleon_use_ivar = True
 napoleon_include_special_with_doc = False
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "dev-notes/**", "Thumbs.db", ".DS_Store"]
 
 
 # -- Options for HTML output -------------------------------------------------

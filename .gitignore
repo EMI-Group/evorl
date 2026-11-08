@@ -253,3 +253,6 @@ pip-selfcheck.json
 
 # MuJoCo runtime log
 MUJOCO_LOG.TXT
+
+# Local development notes
+/docs/dev-notes/

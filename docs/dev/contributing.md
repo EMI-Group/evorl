@@ -231,8 +231,6 @@ migration code for old checkpoints. For an abstract restore template, use
 typed-key shapes and dtypes; Orbax's general conversion helper expands keys to
 their raw uint32 representation.
 
-Deferred audits are tracked in [Development TODO](todo.md).
-
 ### Debugging
 
 We provide some examples in `.vscode/launch.json` for debugging in Visual Studio Code.

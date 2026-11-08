@@ -122,6 +122,7 @@ dev = [
     "sphinx",
     "sphinx-autodoc2",
     "sphinx-copybutton",
+    "sphinxcontrib-mermaid",
 ]
 
 [build-system]

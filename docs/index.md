@@ -32,7 +32,6 @@ apidocs/index
 :hidden:
 
 dev/contributing
-dev/todo
 ```
 
 EvoRL is a fully GPU-accelerated framework for Evolutionary Reinforcement Learning, implemented with JAX.
