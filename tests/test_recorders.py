@@ -14,6 +14,7 @@ from evorl.recorders import (
     AimRecorder,
     ChainRecorder,
     CometRecorder,
+    JSONLRecorder,
     LogRecorder,
     NeptuneRecorder,
     SwanlabRecorder,
@@ -337,6 +338,7 @@ def test_chain_closes_all_backends_after_a_failure():
     [
         ChainRecorder,
         LogRecorder,
+        JSONLRecorder,
         WandbRecorder,
         AimRecorder,
         SwanlabRecorder,

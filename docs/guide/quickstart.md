@@ -133,7 +133,7 @@ python scripts/train.py agent=ppo env=brax/ant 'recorders=[log,wandb,swanlab]'
 
 See [Experiment Logging installation](installation.md#experiment-logging) for all backend extras and SDK package names. Installing a backend does not select it automatically; `recorders` controls which trackers are enabled.
 
-The `recorders` list can contain `log`, `aim`, `wandb`, `swanlab`, `comet`, or `neptune`. Backend SDKs are imported when their recorder starts; importing EvoRL does not require them. Each backend receives the same `project`, run `name`, resolved `config`, `tags`, `path`, and `group` values. `scripts/recorder_setup.py` builds the name, tags, paths, and group in one place. `train.py` calls `setup_recorders(config, workflow_cls.name())`; `train_dist.py` adds `parallel=True`. This flag selects the entrypoint's grouping convention, independently of GPU count or whether Joblib is enabled.
+The `recorders` list can contain `log`, `jsonl`, `aim`, `wandb`, `swanlab`, `comet`, or `neptune`. Tracking SDKs are imported when their recorder starts; importing EvoRL does not require them. Each non-log recorder receives the same `project`, run `name`, resolved `config`, `tags`, `path`, and `group` values. `scripts/recorder_setup.py` builds the name, tags, paths, and group in one place. `train.py` calls `setup_recorders(config, workflow_cls.name())`; `train_dist.py` adds `parallel=True`. This flag selects the entrypoint's grouping convention, independently of GPU count or whether Joblib is enabled.
 
 To customize a backend, add `recorder_kwargs` to that script's call:
 
@@ -145,12 +145,13 @@ recorders = setup_recorders(
 )
 ```
 
-Each tracking backend's dictionary can override common constructor values or supply SDK-specific initialization options. `recorder_kwargs` accepts `aim`, `wandb`, `swanlab`, `comet`, and `neptune`; misspelled backend keys raise an error. `LogRecorder` uses the script's log path and console defaults. Keep `parallel=True` when customizing the `train_dist.py` call. Grouping and backend options remain script conventions and are not fields in `logging.yaml`; no separate `group` argument is required by `setup_recorders`.
+Each non-log recorder's dictionary can override common constructor values; tracking backends also accept SDK-specific initialization options. `recorder_kwargs` accepts `jsonl`, `aim`, `wandb`, `swanlab`, `comet`, and `neptune`; misspelled backend keys raise an error. `LogRecorder` uses the script's log path and console defaults. Keep `parallel=True` when customizing the `train_dist.py` call. Grouping and backend options remain script conventions and are not fields in `logging.yaml`; no separate `group` argument is required by `setup_recorders`.
 
 The common constructor parameters are EvoRL concepts, not identical SDK features:
 
 | Recorder | `project` and `name` | `group` | `path` |
 | --- | --- | --- | --- |
+| JSONL | Header metadata; name also determines the filename | Header metadata | Directory containing `<encoded-name>.jsonl` |
 | WandB | Native project and run name | Native group | Local run directory |
 | Aim | Project metadata and native run name | Experiment | Local repository at `<output_dir>/.aim/` |
 | SwanLab | Native project and experiment name | Native group | Local log directory |
@@ -172,6 +173,27 @@ In this project, `DataFrame` logging records the PBT population's hyperparameter
 Comet requires an asset filename: the recorder uses the encoded metric key with a `.json` suffix. Snapshots retain their asset step and are not overwritten. The adapter does not create a local table file. Aim and Neptune preserve each snapshot and its step, but offer no native table view through these APIs. The neptune-scale SDK limits each string-series data point to 1 MiB; larger table snapshots would require a file-series adapter.
 
 Every EvoRL recorder requires `write(data, step: int)`. Omitted steps, `None`, booleans, and noninteger values are rejected. NumPy and JAX integer scalars are converted to Python integers. Existing workflows already pass their iteration explicitly, and multiple writes in an iteration use the same step. Comet stores a current step internally: the adapter sets it once at the start of each write, then all metrics, histograms, text, and tables inherit it. Neptune's logging APIs require a step on each call. EvoRL always uses the supplied iteration and never generates an internal counter.
+
+Duplicate-step handling remains backend-specific. Aim updates the same metric/context/step while retaining other metrics. W&B accumulates writes to its pending current step, but rejects writes to earlier finalized steps. JSONL preserves every write and merges records by step when loaded.
+
+#### Local JSONL records
+
+Select `recorders=[log,jsonl]` to save metrics in the output directory without a tracking SDK. `JSONLRecorder(project=..., name=..., config=..., tags=..., path=..., group=None)` writes to `path/<encoded-name>.jsonl`. Initialization overwrites the file and writes a metadata header; subsequent writes append the supplied step and nested data and flush the file:
+
+```json
+{"metadata": {"project": "EvoRL", "name": "PPO_ant_brax", "group": "dev", "config": {"seed": 42}, "tags": ["PPO", "ant", "brax"]}}
+{"step": 10, "data": {"train": {"loss": 0.25}}}
+{"step": 8, "data": {"eval": {"episode_return": 120.0}}}
+{"step": 10, "data": {"train": {"loss": 0.20}}}
+```
+
+Steps may arrive out of order or repeat. All records remain in write order; `step` identifies the workflow iteration, independently of the write order. Arrays and Series become lists; DataFrames become objects with `columns` and row `data` (without their index). NaN, infinity, and pandas missing values become JSON `null`.
+
+JSONL and script-created LogRecorder files use percent-encoded names, so `MetaWorld/Hammer-v3` stays within one filename as `MetaWorld%2FHammer-v3`. Metadata and tracking backend names retain the original text. Their `.jsonl` and `.log` files are separate. Reusing the same JSONL `path` and `name` overwrites that JSONL file on initialization.
+
+Load the complete dataset with `from evorl.recorders import load_jsonl_records`, then call `load_jsonl_records(path)`. It skips the optional first-line metadata header and returns a `list[dict]` sorted by step, with one merged record per step. Nested metric dictionaries merge by key; later writes replace the same metric's value, including whole arrays and `null`, while unmentioned metrics remain unchanged. Malformed or incomplete lines raise an error with the file and line number. The outer `step` is recorder metadata; a metric named `step` remains separate inside `data`.
+
+#### Tracking backend lifecycle
 
 WandB marks an interrupted run as failed on close, and SwanLab marks it as crashed. Aim, Comet, and Neptune only close or finalize their runs and do not currently set an equivalent failure state.
 

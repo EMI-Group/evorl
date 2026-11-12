@@ -1,5 +1,6 @@
 from .aim_recorder import AimRecorder
 from .comet_recorder import CometRecorder
+from .jsonl_recorder import JSONLRecorder, load_jsonl_records
 from .log_recorder import LogRecorder
 from .neptune_recorder import NeptuneRecorder
 from .recorder import ChainRecorder, Recorder
@@ -11,6 +12,7 @@ __all__ = [
     "AimRecorder",
     "ChainRecorder",
     "CometRecorder",
+    "JSONLRecorder",
     "LogRecorder",
     "NeptuneRecorder",
     "Recorder",
@@ -19,4 +21,5 @@ __all__ = [
     "add_prefix",
     "get_1d_array",
     "get_1d_array_statistics",
+    "load_jsonl_records",
 ]

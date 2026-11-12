@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from omegaconf import DictConfig, OmegaConf
 
@@ -24,6 +25,7 @@ def setup_recorders(
     from evorl.recorders import (
         AimRecorder,
         CometRecorder,
+        JSONLRecorder,
         LogRecorder,
         NeptuneRecorder,
         SwanlabRecorder,
@@ -41,6 +43,7 @@ def setup_recorders(
     config_data = OmegaConf.to_container(config, resolve=True)
     backend_options = recorder_kwargs or {}
     recorder_types = {
+        "jsonl": JSONLRecorder,
         "wandb": WandbRecorder,
         "aim": AimRecorder,
         "swanlab": SwanlabRecorder,
@@ -50,7 +53,7 @@ def setup_recorders(
     unknown_options = set(backend_options) - recorder_types.keys()
     if unknown_options:
         raise ValueError(
-            "recorder_kwargs only accepts tracking backends; unknown keys: "
+            "recorder_kwargs only accepts non-log recorders; unknown keys: "
             + ", ".join(sorted(unknown_options))
         )
 
@@ -58,7 +61,10 @@ def setup_recorders(
     for rec in config.recorders:
         if rec == "log":
             recorders.append(
-                LogRecorder(log_path=output_dir / f"{exp_name}.log", console=True)
+                LogRecorder(
+                    log_path=output_dir / f"{quote(exp_name, safe='')}.log",
+                    console=True,
+                )
             )
         elif rec in recorder_types:
             kwargs = {
