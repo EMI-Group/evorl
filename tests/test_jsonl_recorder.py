@@ -200,21 +200,23 @@ def test_load_jsonl_records_empty_file(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "env_name, env_type, filename",
+    "env_name, env_type, tags, filename",
     [
-        ("ant", "brax", "PPO_ant_brax"),
-        ("MetaWorld/Hammer-v3", "envpool", "PPO_MetaWorld%2FHammer-v3_envpool"),
-        ("MetaWorld%2FHammer-v3", "envpool", "PPO_MetaWorld%252FHammer-v3_envpool"),
+        ("ant", "brax", [], "PPO_ant_brax"),
+        ("MetaWorld/Hammer-v3", "envpool", [], "PPO_MetaWorld_Hammer-v3_envpool"),
+        ("MetaWorld%2FHammer-v3", "envpool", [], "PPO_MetaWorld%2FHammer-v3_envpool"),
+        ("walker2d", "brax", ["evoresearch"], "PPO_walker2d_brax|evoresearch"),
+        ("ant", "brax", ["中文"], "PPO_ant_brax|中文"),
     ],
 )
 def test_jsonl_and_log_recorders_keep_separate_files(
-    tmp_path, env_name, env_type, filename
+    tmp_path, env_name, env_type, tags, filename
 ):
     config = OmegaConf.create(
         {
             "output_dir": str(tmp_path),
             "project": "EvoRL",
-            "tags": [],
+            "tags": tags,
             "recorders": ["log", "jsonl"],
             "env": {"env_name": env_name, "env_type": env_type},
         }
@@ -228,9 +230,10 @@ def test_jsonl_and_log_recorders_keep_separate_files(
         log.write({"log_only": 1}, 8)
         jsonl.write({"jsonl_only": 2}, 8)
         with jsonl.log_path.open() as stream:
-            assert json.loads(next(stream))["metadata"]["name"] == (
-                f"PPO_{env_name}_{env_type}"
-            )
+            name = f"PPO_{env_name}_{env_type}"
+            if tags:
+                name += "|" + ",".join(tags)
+            assert json.loads(next(stream))["metadata"]["name"] == name
     finally:
         log.close()
         jsonl.close()
@@ -253,7 +256,7 @@ def test_setup_selects_jsonl_with_the_script_run_name(tmp_path):
     )
     (recorder,) = setup_recorders(config, "PPO", parallel=True)
     assert isinstance(recorder, JSONLRecorder)
-    assert recorder.log_path == tmp_path / "PPO_ant_brax%7Cbaseline.jsonl"
+    assert recorder.log_path == tmp_path / "PPO_ant_brax|baseline.jsonl"
     recorder.init()
     try:
         assert load_jsonl_records(recorder.log_path) == []

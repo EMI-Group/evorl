@@ -14,7 +14,7 @@ from .recorder_utils import normalize_step
 class LogRecorder(Recorder):
     """Write metrics to `log_path`, overwriting the file when initialized.
 
-    Training scripts percent-encode the experiment name for the `.log` filename.
+    Training scripts replace `/` with `_` in the experiment name for the filename.
     With `console=True`, records also propagate to the root logger.
     """
 

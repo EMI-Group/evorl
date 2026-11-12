@@ -151,7 +151,7 @@ The common constructor parameters are EvoRL concepts, not identical SDK features
 
 | Recorder | `project` and `name` | `group` | `path` |
 | --- | --- | --- | --- |
-| JSONL | Header metadata; name also determines the filename | Header metadata | Directory containing `<encoded-name>.jsonl` |
+| JSONL | Header metadata; name also determines the filename | Header metadata | Directory containing `<name>.jsonl` |
 | WandB | Native project and run name | Native group | Local run directory |
 | Aim | Project metadata and native run name | Experiment | Local repository at `<output_dir>/.aim/` |
 | SwanLab | Native project and experiment name | Native group | Local log directory |
@@ -178,7 +178,7 @@ Duplicate-step handling remains backend-specific. Aim updates the same metric/co
 
 #### Local JSONL records
 
-Select `recorders=[log,jsonl]` to save metrics in the output directory without a tracking SDK. `JSONLRecorder(project=..., name=..., config=..., tags=..., path=..., group=None)` writes to `path/<encoded-name>.jsonl`. Initialization overwrites the file and writes a metadata header; subsequent writes append the supplied step and nested data and flush the file:
+Select `recorders=[log,jsonl]` to save metrics in the output directory without a tracking SDK. `JSONLRecorder(project=..., name=..., config=..., tags=..., path=..., group=None)` writes to `path/<name>.jsonl`, replacing `/` in the name with `_`. Initialization overwrites the file and writes a metadata header; subsequent writes append the supplied step and nested data and flush the file:
 
 ```json
 {"metadata": {"project": "EvoRL", "name": "PPO_ant_brax", "group": "dev", "config": {"seed": 42}, "tags": ["PPO", "ant", "brax"]}}
@@ -189,7 +189,7 @@ Select `recorders=[log,jsonl]` to save metrics in the output directory without a
 
 Steps may arrive out of order or repeat. All records remain in write order; `step` identifies the workflow iteration, independently of the write order. Arrays and Series become lists; DataFrames become objects with `columns` and row `data` (without their index). NaN, infinity, and pandas missing values become JSON `null`.
 
-JSONL and script-created LogRecorder files use percent-encoded names, so `MetaWorld/Hammer-v3` stays within one filename as `MetaWorld%2FHammer-v3`. Metadata and tracking backend names retain the original text. Their `.jsonl` and `.log` files are separate. Reusing the same JSONL `path` and `name` overwrites that JSONL file on initialization.
+JSONL and script-created LogRecorder files share the same filename rule: `/` becomes `_`, while other characters remain unchanged. For example, `MetaWorld/Hammer-v3` becomes `MetaWorld_Hammer-v3`. Metadata and tracking backend names retain the original text. Their `.jsonl` and `.log` files are separate. Reusing the same JSONL file path overwrites that file on initialization.
 
 Load the complete dataset with `from evorl.recorders import load_jsonl_records`, then call `load_jsonl_records(path)`. It skips the optional first-line metadata header and returns a `list[dict]` sorted by step, with one merged record per step. Nested metric dictionaries merge by key; later writes replace the same metric's value, including whole arrays and `null`, while unmentioned metrics remain unchanged. Malformed or incomplete lines raise an error with the file and line number. The outer `step` is recorder metadata; a metric named `step` remains separate inside `data`.
 

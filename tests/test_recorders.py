@@ -19,8 +19,8 @@ from evorl.recorders import (
     NeptuneRecorder,
     SwanlabRecorder,
     WandbRecorder,
+    histogram_values,
 )
-from evorl.recorders.recorder_utils import histogram_values
 from omegaconf import OmegaConf
 from scripts import recorder_setup
 

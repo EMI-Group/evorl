@@ -3,7 +3,6 @@
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 from omegaconf import DictConfig, OmegaConf
 
@@ -30,6 +29,7 @@ def setup_recorders(
         NeptuneRecorder,
         SwanlabRecorder,
         WandbRecorder,
+        sanitize_filename,
     )
 
     output_dir = Path(config.output_dir)
@@ -62,7 +62,7 @@ def setup_recorders(
         if rec == "log":
             recorders.append(
                 LogRecorder(
-                    log_path=output_dir / f"{quote(exp_name, safe='')}.log",
+                    log_path=output_dir / f"{sanitize_filename(exp_name)}.log",
                     console=True,
                 )
             )

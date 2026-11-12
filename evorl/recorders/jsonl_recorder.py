@@ -5,18 +5,17 @@ import math
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TextIO
-from urllib.parse import quote
 
 import pandas as pd
 
 from .recorder import Recorder
-from .recorder_utils import jsonable, normalize_step
+from .recorder_utils import jsonable, normalize_step, sanitize_filename
 
 
 class JSONLRecorder(Recorder):
-    """Record metadata and metrics to `path/<encoded-name>.jsonl`.
+    """Record metadata and metrics to `path/<name>.jsonl`.
 
-    The filename percent-encodes `name`; metadata retains the original name.
+    The filename replaces `/` with `_`; metadata retains the original name.
     Initialization overwrites the file and writes a metadata header. Metric
     records remain in write order, allowing out-of-order and duplicate steps.
     Each write flushes the file. Nonfinite numbers and pandas missing values
@@ -30,7 +29,7 @@ class JSONLRecorder(Recorder):
         self.tags = tags
         self.path = Path(path)
         self.group = group
-        self.log_path = self.path / f"{quote(name, safe='')}.jsonl"
+        self.log_path = self.path / f"{sanitize_filename(name)}.jsonl"
         self._file: TextIO | None = None
 
     def init(self) -> None:

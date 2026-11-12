@@ -12,6 +12,11 @@ def add_prefix(data: dict, prefix: str):
     return {f"{prefix}/{k}": v for k, v in data.items()}
 
 
+def sanitize_filename(name: str) -> str:
+    """Replace `/` with `_` in a recorder name, preserving other characters."""
+    return name.replace("/", "_")
+
+
 def get_1d_array_statistics(data, histogram=False):
     """Return min, max, mean and optionally a histogram source Series."""
     if data is None:
