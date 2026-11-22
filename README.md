@@ -87,8 +87,6 @@ EvoRL provides a highly efficient and user-friendly platform to develop and eval
 - **SampleBatch** is a data structure for continuous trajectories or shuffled transition batch.
 - **EC** module provide EC components like Evolutionary Algorithms (EAs) and related operators.
 
-
-
 > [!NOTE]
 > JAX 0.12.0 and 0.12.0.1 fail VMA checks when differentiating `erf`/`erfc`
 > inside `shard_map`. EvoRL includes a local workaround for these releases. For now,
@@ -222,8 +220,7 @@ pip install -e ".[envpool]"
 pip install -e ".[gymnasium]"
 ```
 
-> [!WARNING]
-> These additional environments have limited supports and some algorithms are incompatible with them.
+The optional environments below are experimental, and algorithm compatibility varies by environment.
 
 ## Current Supported Environments
 
@@ -287,3 +284,4 @@ If you use EvoRL in your research and want to cite it in your work, please use:
   year    = {2025}
 }
 ```
+
